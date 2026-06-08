@@ -8,6 +8,18 @@
 - `resolveConsent()` defaults both `routingEnabled` and `outcomeReportingEnabled` to `false`.
 - `canRoute()` reads only `routingEnabled`.
 - `canReportOutcome()` reads only `outcomeReportingEnabled`.
+- `canRouteWithAuth()` requires both an API key and explicit routing consent.
+- `canSubmitOutcomeWithAuth()` requires an API key, routing consent, and a separate outcome opt-in.
+
+## Plugin auth and allowlist
+
+- Plugin defaults are private: `routingConsentEnabled` and `outcomeSubmissionEnabled` both default to `false`.
+- Supported env vars are `HOKUSAI_API_KEY`, `HOKUSAI_API_BASE_URL`, `HOKUSAI_ROUTING_CONSENT`, `HOKUSAI_OUTCOME_OPT_IN`, and `HOKUSAI_MODEL_ALLOWLIST`.
+- Truthy env values are `true`, `1`, and `yes`, case-insensitive. Any other value is treated as `false`.
+- Routing and outcome submission are independently controllable, but outcome transport still depends on routing auth and consent being enabled.
+- `redactPluginConfig()` reports only `<set>` or `<unset>` for the key plus an optional last-4 fingerprint.
+- Plugin config stores must not persist `apiKey`, and the doctor output never includes the raw key.
+- The allowlist is Anthropic-only. Unsupported or non-Anthropic recommendations are rejected with allowlisted suggestions when available.
 
 ## Local store
 

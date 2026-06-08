@@ -51,7 +51,11 @@ All three adapters accept the same optional shared client instance:
 ```ts
 import { createCodexAdapter } from '@hokusai/adapter-codex';
 import { createClaudeCodeAdapter } from '@hokusai/adapter-claude-code';
-import { createWavemillAdapter } from '@hokusai/adapter-wavemill';
+import {
+  createWavemillAdapter,
+  reportWavemillOutcome,
+  routeWithWavemill,
+} from '@hokusai/adapter-wavemill';
 
 const apiClient = new HokusaiClient({ apiKey: 'k_prod_xxx' });
 
@@ -68,11 +72,39 @@ createClaudeCodeAdapter({
 createWavemillAdapter({ integrationId: 'wavemill', apiClient });
 ```
 
+Wavemill also exposes `buildWavemillTaskPacket`, `previewWavemillTaskPacket`, `buildWavemillOutcomeReport`, `wavemillConformanceFixtures`, and thin `routeWithWavemill` / `reportWavemillOutcome` helpers for harnesses that want a public reference implementation of replay-aware dispatch plus typed harness telemetry.
+
 ## Scope
 
 - Adapters still expose typed factories and metadata only.
 - Harness-specific config discovery and command output stay out of `@hokusai/core`.
 - Private Wavemill code is out of scope for this repository.
+
+## Reusable SDK Components vs. Harness-Specific Adapter Methods
+
+Third-party harness authors implement the `HarnessAdapter` interface and wire it to reusable `@hokusai/core` utilities. The reference implementation in [`examples/reference-harness`](../examples/reference-harness/README.md) shows the smallest complete mocked flow.
+
+Reusable `@hokusai/core` components:
+
+- `HokusaiDispatchBuilder` prepares a route payload, applies consent checks, and redacts task text before submission.
+- `InMemoryModelRegistry` and `mapRecommendation()` resolve Hokusai model ids into concrete model definitions.
+- `buildTaskPacket()` creates a normalized task packet from generic task signals.
+- `buildOutcomeReport()` and `previewOutcomePayload()` build and preview an anonymized outcome report.
+- `InMemoryLocalStore` persists correlation ids and packet hashes without storing raw prompts.
+- `HokusaiClient` is the real transport when a harness is ready to call the API instead of using the mock client from the example.
+
+Harness-specific adapter methods:
+
+- `context.collectTaskContext()` reads the current task, prompt, cwd, command, and harness metadata from your environment.
+- `models.discoverModels()` lists the harness models a user can actually run.
+- `models.mapModel()` maps a harness-specific model id or alias onto a Hokusai model definition.
+- `recommendations.displayRecommendation()` renders the selected recommendation in the harness UI or CLI.
+- `outcomes.collectOutcome()` gathers completion status and a user-visible summary from the harness runtime.
+- `payloads.previewPayload()` decides how dispatch previews are shown before sending.
+- `consent.promptConsent()` implements the harness-specific consent UX.
+- `storage.get()/set()/delete()` bridges Hokusai state to the harness-local storage mechanism when needed.
+
+The boundary is deliberate: core owns schemas, validation, anonymization, routing, reporting, and generic persistence primitives; the adapter owns runtime discovery, UX, and harness-specific execution details.
 
 ## Minimal adapter implementation
 
@@ -206,4 +238,68 @@ export const minimalAdapter = {
     },
   },
 } satisfies HarnessAdapter;
+```
+
+Wavemill is the richer reference point when your harness needs more than this minimal shape. It adds:
+
+- correlation replay metadata for reruns
+- customer-specific redaction lexicons
+- typed outcome extensions like `spendUsdBucket` and `wallClockMinutes`
+- a default TypeScript/pnpm-oriented task profile
+
+That route/report flow stays on the shared core client:
+
+```ts
+import {
+  HokusaiClient,
+  HokusaiDispatchBuilder,
+  InMemoryModelRegistry,
+} from '@hokusai/core';
+import {
+  reportWavemillOutcome,
+  routeWithWavemill,
+} from '@hokusai/adapter-wavemill';
+
+const client = new HokusaiClient({ apiKey: 'k_prod_xxx' });
+const dispatchBuilder = new HokusaiDispatchBuilder({
+  consent: {
+    subjectId: 'developer-123',
+    grantedScopes: ['task-execution'],
+  },
+  modelRegistry: new InMemoryModelRegistry([
+    {
+      id: 'gpt-5-codex',
+      provider: 'openai',
+      family: 'gpt',
+      capabilities: ['reasoning', 'tool-use'],
+      default: true,
+    },
+  ]),
+});
+
+await routeWithWavemill({
+  client,
+  dispatchBuilder,
+  task: {
+    id: 'task-1',
+    prompt: 'Implement the planned adapter change.',
+  },
+  modelId: 'gpt-5-codex',
+});
+
+await reportWavemillOutcome({
+  client,
+  input: {
+    correlationId: 'route_123',
+    recommendedModel: 'gpt-5-codex',
+    actualModel: 'gpt-5-codex',
+    recommendationAccepted: true,
+    completionStatus: 'succeeded',
+    latencyBucket: 'medium',
+    costBucket: 'medium',
+    tokenBucket: 'medium',
+    spendUsdBucket: '0.50-1.00',
+    wallClockMinutes: 18,
+  },
+});
 ```
