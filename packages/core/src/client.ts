@@ -83,7 +83,9 @@ export class HokusaiClient {
       model: this.#toModelSelection(model),
       correlation: correlationRecord,
       prompt: 'output' in promptPayload ? promptPayload.output : promptPayload.text,
-      redactions: promptPayload.redactions,
+      redactions: 'output' in promptPayload
+        ? promptPayload.redactions
+        : promptPayload.redactions.map(({ label }) => ({ label })),
       createdAt: this.#clock().toISOString(),
     };
   }

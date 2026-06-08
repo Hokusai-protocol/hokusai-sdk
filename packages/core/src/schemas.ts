@@ -1,6 +1,6 @@
 import type { ConsentSnapshot } from './consent.js';
 import type { ModelSelection } from './model-registry.js';
-import type { RedactionMatch, RedactionRecord } from './anonymization.js';
+import type { RedactionRecord } from './anonymization.js';
 import type { CorrelationRecord } from './storage.js';
 
 export interface HokusaiTaskInput {
@@ -28,6 +28,7 @@ export interface HokusaiDispatchPayload {
   consent: ConsentSnapshot;
   model: ModelSelection;
   correlation: CorrelationRecord;
-  redactions: Array<RedactionMatch | RedactionRecord>;
+  /** Redaction records — original sensitive values are never included. */
+  redactions: Array<{ label: string } | RedactionRecord>;
   createdAt: string;
 }
