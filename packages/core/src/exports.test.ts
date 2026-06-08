@@ -20,6 +20,12 @@ describe('core public surface', () => {
     expect(core.StoreCorruptError).toBeDefined();
     expect(core.InvalidStoreIdError).toBeDefined();
     expect(core.InMemoryModelRegistry).toBeDefined();
+    expect(core.ModelMappingError).toBeDefined();
+    expect(new core.ModelMappingError('UNKNOWN_MODEL', 'message', [])).toBeInstanceOf(
+      Error,
+    );
+    expect(core.mapRecommendation).toBeDefined();
+    expect(Array.isArray(core.ANTHROPIC_MODELS)).toBe(true);
     expect(core.anonymizeText).toBeDefined();
     expect(core.redact).toBeDefined();
     expect(core.preview).toBeDefined();

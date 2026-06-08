@@ -1,4 +1,16 @@
-import type { HarnessAdapter, HokusaiClient, HokusaiTaskInput } from '@hokusai/core';
+import {
+  ANTHROPIC_MODELS,
+  InMemoryModelRegistry,
+  ModelMappingError,
+  mapRecommendation,
+  type HarnessAdapter,
+  type HarnessDiscoveredModel,
+  type HarnessModelProvider,
+  type HokusaiClient,
+  type HokusaiTaskInput,
+  type ModelDefinition,
+  type ModelRegistry,
+} from '@hokusai/core';
 
 export interface ClaudeCodeAdapterOptions {
   apiClient?: HokusaiClient;
@@ -44,6 +56,68 @@ export function createClaudeCodeAdapter(
   };
 }
 
+function toDiscoveredModel(model: ModelDefinition): HarnessDiscoveredModel {
+  return {
+    id: model.id,
+    label: model.id,
+    metadata: {
+      family: model.family,
+      provider: model.provider,
+    },
+  };
+}
+
+export function createClaudeCodeModelProvider(options?: {
+  registry?: ModelRegistry;
+}): HarnessModelProvider {
+  const registry = options?.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
+
+  return {
+    discoverModels() {
+      return Promise.resolve({
+        ok: true,
+        value: registry.listAvailable().map(toDiscoveredModel),
+      });
+    },
+    mapModel(request) {
+      try {
+        const model = mapRecommendation(
+          { model: request.harnessModelId },
+          {
+            registry,
+            allowedProviders: ['anthropic'],
+            requireAvailable: true,
+          },
+        );
+
+        return Promise.resolve({
+          ok: true,
+          value: {
+            id: model.id,
+            provider: model.provider,
+            capabilities: model.capabilities,
+          },
+        });
+      } catch (error) {
+        if (error instanceof ModelMappingError) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              code: error.code,
+              message: error.message,
+              details: {
+                suggestions: error.suggestions,
+              },
+            },
+          });
+        }
+
+        throw error;
+      }
+    },
+  };
+}
+
 void ({
   context: {
     collectTaskContext() {
@@ -61,31 +135,7 @@ void ({
       });
     },
   },
-  models: {
-    discoverModels(request) {
-      void request;
-      return Promise.resolve({
-        ok: true,
-        value: [
-          {
-            id: 'claude-sonnet-4',
-            label: 'Claude Sonnet 4',
-          },
-        ],
-      });
-    },
-    mapModel(request) {
-      void request;
-      return Promise.resolve({
-        ok: true,
-        value: {
-          id: 'claude-sonnet-4',
-          provider: 'anthropic',
-          capabilities: ['reasoning', 'tool-use'],
-        },
-      });
-    },
-  },
+  models: createClaudeCodeModelProvider(),
   recommendations: {
     displayRecommendation() {
       return {
