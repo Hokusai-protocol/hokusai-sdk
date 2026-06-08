@@ -67,9 +67,14 @@ export type {
   HarnessTaskContextRequest,
 } from './adapter.js';
 export {
+  ANTHROPIC_MODELS,
   InMemoryModelRegistry,
+  ModelMappingError,
+  mapRecommendation,
+  type MapRecommendationOptions,
   type ModelCapability,
   type ModelDefinition,
+  type ModelMappingErrorCode,
   type ModelRegistry,
   type ModelSelection,
 } from './model-registry.js';
