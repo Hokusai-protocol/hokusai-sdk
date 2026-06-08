@@ -31,12 +31,17 @@ describe('core public surface', () => {
     expect(core.preview).toBeDefined();
     expect(core.hashPayload).toBeDefined();
     expect(core.DEFAULT_REDACTION_CONFIG).toBeDefined();
-    expect(core.TASK_PACKET_SCHEMA_VERSION).toBe('1.0.0');
+    expect(core.TASK_PACKET_SCHEMA_VERSION).toBe('1.1.0');
     expect(core.OUTCOME_REPORT_SCHEMA_VERSION).toBe('1');
     expect(core.buildTaskPacket).toBeDefined();
     expect(core.buildOutcomeReport).toBeDefined();
     expect(core.previewOutcomePayload).toBeDefined();
     expect(core.validateTaskPacket).toBeDefined();
+    expect(core.classifyTaskFamily).toBeDefined();
+    expect(core.inferReasoningDepth).toBeDefined();
+    expect(core.bucketRepositoryScale).toBeDefined();
+    expect(core.summarizeLanguageSignals).toBeDefined();
+    expect(core.summarizeFrameworkSignals).toBeDefined();
     expect(core.genericTaskPacketFixture).toBeDefined();
   });
 });

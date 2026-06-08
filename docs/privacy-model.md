@@ -65,3 +65,4 @@
 - `preview(input, config)` returns the exact redacted payload that would be sent in `willSend`.
 - `redactionSummary` includes counts only.
 - No preview field includes original sensitive values.
+- Task-packet builders should redact user-supplied array fields such as `constraints`, `availableTools`, and provider/model hints entry-by-entry, so customer names and internal identifiers do not survive outside free-text fields.

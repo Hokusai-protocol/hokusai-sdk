@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildClaudeCodeTaskPacket,
   createClaudeCodeAdapter,
   createClaudeCodeModelProvider,
 } from './index.js';
@@ -14,6 +15,10 @@ describe('createClaudeCodeAdapter', () => {
     expect(adapter.harness).toBe('claude-code');
     expect(adapter.commands[0]?.name).toBe('hokusai.run');
     expect(adapter.manifest.entrypoint).toBe('hokusai');
+  });
+
+  it('re-exports the task packet builder', () => {
+    expect(buildClaudeCodeTaskPacket).toBeTypeOf('function');
   });
 
   it('uses Anthropic defaults for model discovery and mapping', async () => {

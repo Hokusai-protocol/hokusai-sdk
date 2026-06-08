@@ -12,6 +12,16 @@ import {
   type ModelRegistry,
 } from '@hokusai/core';
 
+export {
+  buildClaudeCodeTaskPacket,
+  previewClaudeCodeTaskPacket,
+  type ClaudeCodeBuilderOptions,
+  type ClaudeCodeRepositorySignals,
+  type ClaudeCodeTaskInput,
+  type ClaudeCodeTaskPacketBuildResult,
+  type ClaudeCodeTaskPacketPreview,
+} from './task-packet.js';
+
 export interface ClaudeCodeAdapterOptions {
   apiClient?: HokusaiClient;
   modelId: string;

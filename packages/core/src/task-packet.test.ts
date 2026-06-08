@@ -70,8 +70,29 @@ describe('validateTaskPacket', () => {
     expect(result.ok ? [] : result.errors).toContainEqual({
       path: 'taskFamily',
       message:
-        '"taskFamily" must be one of: bugfix, feature, refactor, test, docs, chore, investigation.',
+        '"taskFamily" must be one of: bugfix, feature, migration, refactor, test, docs, infra, mixed, chore, investigation.',
     });
+  });
+
+  it('accepts newly added task families', () => {
+    for (const taskFamily of ['migration', 'infra', 'mixed'] as const) {
+      expect(
+        validateTaskPacket({
+          schemaVersion: TASK_PACKET_SCHEMA_VERSION,
+          userIntent: 'Do the thing.',
+          taskFamily,
+          reasoningDepth: 'standard',
+        }),
+      ).toEqual({
+        ok: true,
+        packet: {
+          schemaVersion: TASK_PACKET_SCHEMA_VERSION,
+          userIntent: 'Do the thing.',
+          taskFamily,
+          reasoningDepth: 'standard',
+        },
+      });
+    }
   });
 
   it('rejects invalid reasoningDepth and repositoryScale values', () => {
