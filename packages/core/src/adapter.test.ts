@@ -291,7 +291,6 @@ describe('HarnessAdapter contracts', () => {
       redactions: [
         {
           label: 'email',
-          value: 'alice@example.com',
         },
       ],
       createdAt: '2026-06-01T00:00:00.000Z',

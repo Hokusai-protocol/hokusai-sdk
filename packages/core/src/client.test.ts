@@ -464,7 +464,7 @@ describe('HokusaiClient', () => {
           correlationId: '',
           createdAt: '',
         },
-        redactions: [{ label: '', value: '' }],
+        redactions: [{ label: '' }],
         createdAt: '',
       }),
     ).rejects.toMatchObject({

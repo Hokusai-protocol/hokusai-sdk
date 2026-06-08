@@ -1,6 +1,6 @@
 import type { ConsentSnapshot } from './consent.js';
 import type { ModelSelection } from './model-registry.js';
-import type { RedactionMatch } from './anonymization.js';
+import type { RedactionRecord } from './anonymization.js';
 import type { CorrelationRecord } from './storage.js';
 
 export interface HokusaiTaskInput {
@@ -14,7 +14,12 @@ export type OutcomeStatus = 'accepted' | 'completed' | 'failed';
 export interface HokusaiOutcome {
   taskId: string;
   status: OutcomeStatus;
+  /**
+   * Builders should pass user-visible summaries through redact() before
+   * constructing outcome packets when the reusable redaction engine is enabled.
+   */
   summary: string;
+  redactions?: RedactionRecord[];
 }
 
 export interface HokusaiDispatchPayload {
@@ -23,7 +28,8 @@ export interface HokusaiDispatchPayload {
   consent: ConsentSnapshot;
   model: ModelSelection;
   correlation: CorrelationRecord;
-  redactions: RedactionMatch[];
+  /** Redaction records — original sensitive values are never included. */
+  redactions: Array<{ label: string } | RedactionRecord>;
   createdAt: string;
 }
 
@@ -229,8 +235,26 @@ function validateRedactions(
       return;
     }
 
-    validateNonEmptyString(entry.label, `${path}.${index}.label`, errors);
-    validateNonEmptyString(entry.value, `${path}.${index}.value`, errors);
+    if ('label' in entry) {
+      validateNonEmptyString(entry.label, `${path}.${index}.label`, errors);
+      return;
+    }
+
+    validateNonEmptyString(entry.category, `${path}.${index}.category`, errors);
+    validateNonEmptyString(
+      entry.placeholder,
+      `${path}.${index}.placeholder`,
+      errors,
+    );
+
+    if (typeof entry.count !== 'number') {
+      pushFieldError(
+        errors,
+        `${path}.${index}.count`,
+        'Expected a number.',
+        'invalid_type',
+      );
+    }
   });
 }
 

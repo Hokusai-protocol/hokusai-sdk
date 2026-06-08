@@ -1,4 +1,9 @@
-import { anonymizeText, type AnonymizationOptions } from './anonymization.js';
+import {
+  anonymizeText,
+  redact,
+  type AnonymizationOptions,
+  type RedactionConfig,
+} from './anonymization.js';
 import {
   isConsentGranted,
   type ConsentConfig,
@@ -79,6 +84,7 @@ export interface HokusaiClientOptions {
 export interface HokusaiDispatchBuilderOptions {
   consent: ConsentConfig;
   anonymization?: AnonymizationOptions;
+  redactionConfig?: RedactionConfig;
   modelRegistry: ModelRegistry;
   storage?: CorrelationStorage;
   clock?: () => Date;
@@ -168,6 +174,7 @@ export class HokusaiRateLimitError extends HokusaiApiError {
 
 export class HokusaiDispatchBuilder {
   readonly #anonymization: AnonymizationOptions | undefined;
+  readonly #redactionConfig: RedactionConfig | undefined;
   readonly #clock: () => Date;
   readonly #consent: ConsentConfig;
   readonly #modelRegistry: ModelRegistry;
@@ -176,6 +183,7 @@ export class HokusaiDispatchBuilder {
   constructor(options: HokusaiDispatchBuilderOptions) {
     this.#consent = options.consent;
     this.#anonymization = options.anonymization;
+    this.#redactionConfig = options.redactionConfig;
     this.#modelRegistry = options.modelRegistry;
     this.#storage = options.storage ?? new InMemoryCorrelationStorage();
     this.#clock = options.clock ?? (() => new Date());
@@ -194,10 +202,9 @@ export class HokusaiDispatchBuilder {
 
     const model = this.#resolveModel(modelId);
     const correlationRecord = await this.#getOrCreateCorrelationRecord(task.id);
-    const anonymizedPrompt = anonymizeText(
-      task.prompt,
-      this.#anonymization ?? {},
-    );
+    const promptPayload = this.#redactionConfig
+      ? redact(task.prompt, this.#redactionConfig)
+      : anonymizeText(task.prompt, this.#anonymization ?? {});
 
     return {
       task,
@@ -207,8 +214,10 @@ export class HokusaiDispatchBuilder {
       },
       model: this.#toModelSelection(model),
       correlation: correlationRecord,
-      prompt: anonymizedPrompt.text,
-      redactions: anonymizedPrompt.redactions,
+      prompt: 'output' in promptPayload ? promptPayload.output : promptPayload.text,
+      redactions: 'output' in promptPayload
+        ? promptPayload.redactions
+        : promptPayload.redactions.map(({ label }) => ({ label })),
       createdAt: this.#clock().toISOString(),
     };
   }
