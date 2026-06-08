@@ -1,6 +1,7 @@
 import {
   InMemoryLocalStore,
   InMemoryModelRegistry,
+  InvalidStoreIdError,
   ModelMappingError,
   mapRecommendation,
   type AdapterResult,
@@ -100,6 +101,7 @@ export interface CreateCodexModelProviderOptions {
 }
 
 export interface CodexHarnessAdapterOptions {
+  clock?: () => Date;
   consent?: ConsentConfig;
   defaultModel: string;
   models?: ModelDefinition[];
@@ -218,7 +220,8 @@ export function createCodexHarnessAdapter(
   options: CodexHarnessAdapterOptions,
 ): HarnessAdapter {
   const store = options.store ?? new InMemoryLocalStore();
-  const storage = createHarnessStorage(store);
+  const clock = options.clock ?? (() => new Date());
+  const storage = createHarnessStorage(store, clock);
   const modelDefinitions = options.models ?? [
     {
       id: options.defaultModel,
@@ -319,33 +322,68 @@ function createOutcomeCollector(
   };
 }
 
-function createHarnessStorage(store: LocalStore): HarnessLocalStorage {
+function createHarnessStorage(
+  store: LocalStore,
+  clock: () => Date,
+): HarnessLocalStorage {
   return {
     async get(key) {
-      const record = await store.getCorrelation(key);
-      return {
-        ok: true,
-        value: record?.metadata?.value,
-      };
+      try {
+        const record = await store.getCorrelation(key);
+        return {
+          ok: true,
+          value: record?.metadata?.value,
+        };
+      } catch (error) {
+        return toStorageFailure(error);
+      }
     },
     async set(key, value) {
-      await store.putCorrelation({
-        correlationId: key,
-        packetHash: 'codex-state',
-        createdAt: Date.now(),
-        metadata: { value },
-      });
-      return {
-        ok: true,
-        value: undefined,
-      };
+      try {
+        await store.putCorrelation({
+          correlationId: key,
+          packetHash: 'codex-state',
+          createdAt: clock().getTime(),
+          metadata: { value },
+        });
+        return {
+          ok: true,
+          value: undefined,
+        };
+      } catch (error) {
+        return toStorageFailure(error);
+      }
     },
     async delete(key) {
-      await store.deleteCorrelation(key);
-      return {
-        ok: true,
-        value: undefined,
-      };
+      try {
+        await store.deleteCorrelation(key);
+        return {
+          ok: true,
+          value: undefined,
+        };
+      } catch (error) {
+        return toStorageFailure(error);
+      }
+    },
+  };
+}
+
+function toStorageFailure(error: unknown): AdapterResult<never> {
+  if (error instanceof InvalidStoreIdError) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid_storage_key',
+        message: error.message,
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: 'storage_failure',
+      message: error instanceof Error ? error.message : String(error),
     },
   };
 }
