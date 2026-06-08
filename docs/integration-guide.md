@@ -51,7 +51,11 @@ All three adapters accept the same optional shared client instance:
 ```ts
 import { createCodexAdapter } from '@hokusai/adapter-codex';
 import { createClaudeCodeAdapter } from '@hokusai/adapter-claude-code';
-import { createWavemillAdapter } from '@hokusai/adapter-wavemill';
+import {
+  createWavemillAdapter,
+  reportWavemillOutcome,
+  routeWithWavemill,
+} from '@hokusai/adapter-wavemill';
 
 const apiClient = new HokusaiClient({ apiKey: 'k_prod_xxx' });
 
@@ -67,6 +71,8 @@ createClaudeCodeAdapter({
 });
 createWavemillAdapter({ integrationId: 'wavemill', apiClient });
 ```
+
+Wavemill also exposes `buildWavemillTaskPacket`, `previewWavemillTaskPacket`, `buildWavemillOutcomeReport`, `wavemillConformanceFixtures`, and thin `routeWithWavemill` / `reportWavemillOutcome` helpers for harnesses that want a public reference implementation of replay-aware dispatch plus typed harness telemetry.
 
 ## Scope
 
@@ -206,4 +212,68 @@ export const minimalAdapter = {
     },
   },
 } satisfies HarnessAdapter;
+```
+
+Wavemill is the richer reference point when your harness needs more than this minimal shape. It adds:
+
+- correlation replay metadata for reruns
+- customer-specific redaction lexicons
+- typed outcome extensions like `spendUsdBucket` and `wallClockMinutes`
+- a default TypeScript/pnpm-oriented task profile
+
+That route/report flow stays on the shared core client:
+
+```ts
+import {
+  HokusaiClient,
+  HokusaiDispatchBuilder,
+  InMemoryModelRegistry,
+} from '@hokusai/core';
+import {
+  reportWavemillOutcome,
+  routeWithWavemill,
+} from '@hokusai/adapter-wavemill';
+
+const client = new HokusaiClient({ apiKey: 'k_prod_xxx' });
+const dispatchBuilder = new HokusaiDispatchBuilder({
+  consent: {
+    subjectId: 'developer-123',
+    grantedScopes: ['task-execution'],
+  },
+  modelRegistry: new InMemoryModelRegistry([
+    {
+      id: 'gpt-5-codex',
+      provider: 'openai',
+      family: 'gpt',
+      capabilities: ['reasoning', 'tool-use'],
+      default: true,
+    },
+  ]),
+});
+
+await routeWithWavemill({
+  client,
+  dispatchBuilder,
+  task: {
+    id: 'task-1',
+    prompt: 'Implement the planned adapter change.',
+  },
+  modelId: 'gpt-5-codex',
+});
+
+await reportWavemillOutcome({
+  client,
+  input: {
+    correlationId: 'route_123',
+    recommendedModel: 'gpt-5-codex',
+    actualModel: 'gpt-5-codex',
+    recommendationAccepted: true,
+    completionStatus: 'succeeded',
+    latencyBucket: 'medium',
+    costBucket: 'medium',
+    tokenBucket: 'medium',
+    spendUsdBucket: '0.50-1.00',
+    wallClockMinutes: 18,
+  },
+});
 ```
