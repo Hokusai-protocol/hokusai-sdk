@@ -320,4 +320,8 @@ describe('REQ-F8: input validation', () => {
   it('throws TaskPacketBuildError for empty userIntent', () => {
     expect(() => buildTaskPacket({ userIntent: '' }, TEST_OPTIONS)).toThrow(TaskPacketBuildError);
   });
+
+  it('previewTaskPacket throws TaskPacketBuildError for null input', () => {
+    expect(() => previewTaskPacket(null as never)).toThrow(TaskPacketBuildError);
+  });
 });

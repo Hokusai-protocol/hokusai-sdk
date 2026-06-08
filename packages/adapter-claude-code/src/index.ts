@@ -338,6 +338,11 @@ export function previewTaskPacket(
   input: ClaudeCodeTaskInput,
   options: ClaudeCodeBuilderOptions = {},
 ): ClaudeCodeTaskPacketPreview {
+  if (input == null || typeof input !== 'object') {
+    throw new TaskPacketBuildError('ClaudeCodeTaskInput must be a non-null object.', [
+      { path: '', message: 'ClaudeCodeTaskInput must be a non-null object.' },
+    ]);
+  }
   const { packet, redactions } = composeAnonymizedPacket(input, options);
   return {
     packet,
