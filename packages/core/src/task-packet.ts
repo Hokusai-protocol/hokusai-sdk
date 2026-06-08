@@ -1,3 +1,5 @@
+import { redact, type RedactionConfig, type RedactionRecord } from './anonymization.js';
+
 const TASK_FAMILIES = [
   'bugfix',
   'feature',
@@ -6,6 +8,10 @@ const TASK_FAMILIES = [
   'docs',
   'chore',
   'investigation',
+  'bug',
+  'migration',
+  'infra',
+  'mixed',
 ] as const;
 
 const REASONING_DEPTHS = ['shallow', 'standard', 'deep'] as const;
@@ -271,4 +277,71 @@ function formatBuildErrorMessage(errors: ValidationError[]): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export interface AnonymizeTaskPacketResult {
+  packet: TaskPacket;
+  redactions: RedactionRecord[];
+}
+
+// Free-text fields that may carry user-supplied sensitive data and must be redacted.
+const FREE_TEXT_ARRAY_FIELDS = [
+  'constraints',
+  'modelConstraints',
+  'providerConstraints',
+] as const satisfies readonly PacketKey[];
+
+export function anonymizeTaskPacket(
+  packet: TaskPacket,
+  config: RedactionConfig,
+): AnonymizeTaskPacketResult {
+  const allRedactions: RedactionRecord[] = [];
+
+  function redactString(value: string): string {
+    const result = redact(value, config);
+    allRedactions.push(...result.redactions);
+    return result.output;
+  }
+
+  function redactStringArray(values: string[]): string[] {
+    return values.map((v) => redactString(v));
+  }
+
+  const redacted: Record<string, unknown> = {
+    schemaVersion: packet.schemaVersion,
+    userIntent: redactString(packet.userIntent),
+    taskFamily: packet.taskFamily,
+    reasoningDepth: packet.reasoningDepth,
+  };
+
+  if (packet.repositoryScale !== undefined) {
+    redacted.repositoryScale = packet.repositoryScale;
+  }
+
+  // Controlled-vocabulary arrays (languageSignals, frameworkSignals, availableTools) are
+  // passed through unchanged — they are derived from a fixed map, never raw user text.
+  for (const field of ['languageSignals', 'frameworkSignals', 'availableTools'] as const) {
+    const value = packet[field];
+    if (value !== undefined) {
+      redacted[field] = [...value];
+    }
+  }
+
+  // Free-text arrays flow through the redactor.
+  for (const field of FREE_TEXT_ARRAY_FIELDS) {
+    const value = packet[field];
+    if (value !== undefined) {
+      redacted[field] = redactStringArray(value);
+    }
+  }
+
+  const validationResult = validateTaskPacket(redacted);
+  if (!validationResult.ok) {
+    throw new TaskPacketBuildError(
+      formatBuildErrorMessage(validationResult.errors),
+      validationResult.errors,
+    );
+  }
+
+  return { packet: validationResult.packet, redactions: allRedactions };
 }

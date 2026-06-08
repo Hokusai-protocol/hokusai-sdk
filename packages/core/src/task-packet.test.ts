@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   TASK_PACKET_SCHEMA_VERSION,
   TaskPacketBuildError,
+  anonymizeTaskPacket,
   buildTaskPacket,
   validateTaskPacket,
 } from './task-packet.js';
+import { DEFAULT_REDACTION_CONFIG } from './anonymization.js';
 import {
   claudeCodeTaskPacketFixture,
   codexTaskPacketFixture,
@@ -70,7 +72,7 @@ describe('validateTaskPacket', () => {
     expect(result.ok ? [] : result.errors).toContainEqual({
       path: 'taskFamily',
       message:
-        '"taskFamily" must be one of: bugfix, feature, refactor, test, docs, chore, investigation.',
+        '"taskFamily" must be one of: bugfix, feature, refactor, test, docs, chore, investigation, bug, migration, infra, mixed.',
     });
   });
 
@@ -195,5 +197,99 @@ describe('task packet fixtures', () => {
       ok: true,
       packet: fixture,
     });
+  });
+});
+
+describe('extended TaskFamily values', () => {
+  it.each(['bug', 'migration', 'infra', 'mixed'] as const)(
+    'validates new taskFamily "%s"',
+    (family) => {
+      const result = validateTaskPacket({
+        schemaVersion: TASK_PACKET_SCHEMA_VERSION,
+        userIntent: 'Test the new family value.',
+        taskFamily: family,
+        reasoningDepth: 'standard',
+      });
+      expect(result.ok).toBe(true);
+    },
+  );
+
+  it('rejects invalid taskFamily with updated allowed values listed', () => {
+    const result = validateTaskPacket({
+      schemaVersion: TASK_PACKET_SCHEMA_VERSION,
+      userIntent: 'Do the thing.',
+      taskFamily: 'rewrite',
+      reasoningDepth: 'standard',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]?.message).toContain('bug');
+      expect(result.errors[0]?.message).toContain('migration');
+      expect(result.errors[0]?.message).toContain('infra');
+      expect(result.errors[0]?.message).toContain('mixed');
+    }
+  });
+});
+
+describe('anonymizeTaskPacket', () => {
+  it('redacts sensitive userIntent and returns a valid packet', () => {
+    const packet = buildTaskPacket({
+      userIntent: 'Fix bug for alice@acme-corp.com using sk-ABCD1234EFGH5678',
+      taskFamily: 'bug',
+      reasoningDepth: 'standard',
+      repositoryScale: 'medium',
+    });
+
+    const { packet: redacted, redactions } = anonymizeTaskPacket(packet, {
+      ...DEFAULT_REDACTION_CONFIG,
+      salt: 'test-salt',
+    });
+
+    expect(redacted.userIntent).not.toContain('alice@acme-corp.com');
+    expect(redacted.userIntent).not.toContain('sk-ABCD1234EFGH5678');
+    expect(redactions.length).toBeGreaterThan(0);
+    expect(validateTaskPacket(redacted).ok).toBe(true);
+  });
+
+  it('redacts sensitive values in array fields', () => {
+    const packet = buildTaskPacket({
+      userIntent: 'Refactor the billing module.',
+      taskFamily: 'refactor',
+      reasoningDepth: 'standard',
+      constraints: ['contact alice@corp.io for approval'],
+      modelConstraints: ['hosted at https://internal.corp.local/api'],
+    });
+
+    const { packet: redacted } = anonymizeTaskPacket(packet, {
+      ...DEFAULT_REDACTION_CONFIG,
+      salt: 'test-salt',
+    });
+
+    expect(redacted.constraints?.[0]).not.toContain('alice@corp.io');
+    expect(redacted.modelConstraints?.[0]).not.toContain('https://internal.corp.local/api');
+    expect(validateTaskPacket(redacted).ok).toBe(true);
+  });
+
+  it('passes through controlled-vocabulary fields unchanged', () => {
+    const packet = buildTaskPacket({
+      userIntent: 'Deploy to production.',
+      taskFamily: 'infra',
+      reasoningDepth: 'deep',
+      repositoryScale: 'large',
+      languageSignals: ['TypeScript'],
+      frameworkSignals: ['Node.js'],
+    });
+
+    const { packet: redacted } = anonymizeTaskPacket(packet, {
+      ...DEFAULT_REDACTION_CONFIG,
+      salt: 'test-salt',
+    });
+
+    expect(redacted.taskFamily).toBe('infra');
+    expect(redacted.reasoningDepth).toBe('deep');
+    expect(redacted.repositoryScale).toBe('large');
+    expect(redacted.languageSignals).toEqual(['TypeScript']);
+    expect(redacted.frameworkSignals).toEqual(['Node.js']);
   });
 });

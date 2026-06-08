@@ -93,8 +93,10 @@ export {
 export {
   TASK_PACKET_SCHEMA_VERSION,
   TaskPacketBuildError,
+  anonymizeTaskPacket,
   buildTaskPacket,
   validateTaskPacket,
+  type AnonymizeTaskPacketResult,
   type HarnessContext,
   type ReasoningDepth,
   type RepositoryScale,

@@ -103,7 +103,7 @@ Fields:
 
 - `schemaVersion`: exact string literal, currently `1.0.0`
 - `userIntent`: non-empty string summarizing the requested outcome
-- `taskFamily`: one of `bugfix`, `feature`, `refactor`, `test`, `docs`, `chore`, `investigation`
+- `taskFamily`: one of `bugfix`, `feature`, `refactor`, `test`, `docs`, `chore`, `investigation`, `bug`, `migration`, `infra`, `mixed`
 - `reasoningDepth`: one of `shallow`, `standard`, `deep`
 - `repositoryScale`: optional, one of `small`, `medium`, `large`, `xlarge`
 - `languageSignals`: optional array of non-empty strings
@@ -114,6 +114,57 @@ Fields:
 - `providerConstraints`: optional array of non-empty strings
 
 The validator enforces a strict top-level shape. Unknown fields such as raw code, file trees, or other harness-specific blobs are rejected.
+
+### anonymizeTaskPacket
+
+`@hokusai/core` also exposes `anonymizeTaskPacket(packet, config)` which applies a
+`RedactionConfig` to every free-text field of a `TaskPacket` and returns both the
+redacted packet and an aggregated list of `RedactionRecord` entries. Controlled-vocabulary
+fields (`languageSignals`, `frameworkSignals`, `availableTools`) are passed through
+unchanged; user-supplied free-text fields (`userIntent`, `constraints`,
+`modelConstraints`, `providerConstraints`) are redacted.
+
+### Claude Code adapter: buildTaskPacket and previewTaskPacket
+
+`@hokusai/adapter-claude-code` exposes two functions for converting a Claude Code task
+description into a normalized, anonymized `TaskPacket`:
+
+**`buildTaskPacket(input, options?)`** — returns the anonymized `TaskPacket` ready for
+submission. It classifies the task family from `userIntent` keywords, buckets the file
+count into a coarse `repositoryScale`, derives `languageSignals` from file extensions
+and `frameworkSignals` from manifest/dep names, maps constraint preferences to tag
+strings, and runs the full redaction pass before returning.
+
+**`previewTaskPacket(input, options?)`** — returns `{ packet, redactionSummary, json }`
+with no network calls. The `packet` is byte-identical to what `buildTaskPacket` returns.
+Use this to let users inspect what would be sent to Hokusai before enabling submission.
+
+Input type:
+
+```ts
+interface ClaudeCodeTaskInput {
+  userIntent: string;
+  files?: Array<{ extension: string; count: number }>; // e.g. [{ extension: '.ts', count: 42 }]
+  deps?: string[];  // manifest filenames or dep names, e.g. ['package.json', 'Cargo.toml']
+  constraints?: {
+    latencyPreference?: 'low' | 'standard';
+    costPreference?: 'low' | 'standard';
+    reasoningDepth?: 'shallow' | 'standard' | 'deep';
+    tools?: string[];
+    modelConstraints?: string[];
+    providerConstraints?: string[];
+  };
+}
+```
+
+Repository scale thresholds:
+
+| file count     | bucket   |
+|----------------|----------|
+| < 50           | small    |
+| >= 50 < 500    | medium   |
+| >= 500 < 5000  | large    |
+| >= 5000        | xlarge   |
 
 Version policy:
 
