@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@hokusai/core": ["packages/core/src/index.ts"],
+      "@hokusai/adapter-claude-code": ["packages/adapter-claude-code/src/index.ts"],
+      "@hokusai/adapter-codex": ["packages/adapter-codex/src/index.ts"],
+      "@hokusai/adapter-wavemill": ["packages/adapter-wavemill/src/index.ts"]
+    }
+  }
+}

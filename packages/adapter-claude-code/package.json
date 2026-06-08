@@ -1,0 +1,26 @@
+{
+  "name": "@hokusai/adapter-claude-code",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@hokusai/core": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json --pretty false",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --pretty false"
+  }
+}
