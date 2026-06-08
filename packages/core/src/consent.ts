@@ -49,10 +49,11 @@ export class ConsentRequiredError extends Error {
     scope: ConsentRequiredScope,
     reason: ConsentRequiredReason,
   ) {
+    const action = scope === 'routing' ? 'route' : 'submit outcome';
     super(
       reason === 'no-auth'
-        ? `Cannot ${scope} without a configured Hokusai API key.`
-        : `Cannot ${scope} until explicit Hokusai consent is enabled.`,
+        ? `Cannot ${action} without a configured Hokusai API key.`
+        : `Cannot ${action} until explicit Hokusai consent is enabled.`,
     );
     this.name = 'ConsentRequiredError';
     this.scope = scope;

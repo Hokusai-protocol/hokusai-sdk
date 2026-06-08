@@ -128,7 +128,7 @@ function mapReachabilityStatus(
     return 'unauthorized';
   }
 
-  if ((response.status >= 200 && response.status < 300) || response.status === 204) {
+  if (response.status >= 200 && response.status < 300) {
     return 'ok';
   }
 
