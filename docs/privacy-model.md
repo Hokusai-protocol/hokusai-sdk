@@ -27,6 +27,14 @@
 - A non-empty `salt` is required for both redaction and payload hashing.
 - Placeholder records never store original values. Summaries expose only category, placeholder, and count.
 
+> **Security note — salt**: `DEFAULT_REDACTION_CONFIG` ships with a public salt
+> (`hokusai-default-redaction-salt`). Because this salt is published with the package,
+> anyone who knows it can pre-compute HMAC tokens for common values (email addresses,
+> key prefixes, etc.) and correlate them across payloads. **Always supply a private,
+> application-specific salt when constructing a `RedactionConfig` for production use.**
+> Spreading `DEFAULT_REDACTION_CONFIG` without overriding `salt` is safe only in
+> test environments where no real sensitive data is processed.
+
 ## Payload hashing
 
 - `hashPayload(payload, salt)` accepts strings or objects.
