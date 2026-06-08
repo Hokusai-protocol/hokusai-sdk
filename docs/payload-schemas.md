@@ -101,9 +101,9 @@ Both methods validate requests before any network call. Validation failures use 
 
 Fields:
 
-- `schemaVersion`: exact string literal, currently `1.0.0`
+- `schemaVersion`: exact string literal, currently `1.1.0`
 - `userIntent`: non-empty string summarizing the requested outcome
-- `taskFamily`: one of `bugfix`, `feature`, `refactor`, `test`, `docs`, `chore`, `investigation`
+- `taskFamily`: one of `bugfix`, `feature`, `migration`, `refactor`, `test`, `docs`, `infra`, `mixed`, `chore`, `investigation`
 - `reasoningDepth`: one of `shallow`, `standard`, `deep`
 - `repositoryScale`: optional, one of `small`, `medium`, `large`, `xlarge`
 - `languageSignals`: optional array of non-empty strings
@@ -115,11 +115,13 @@ Fields:
 
 The validator enforces a strict top-level shape. Unknown fields such as raw code, file trees, or other harness-specific blobs are rejected.
 
+Claude Code adapters can also expose a dry-run preview path that returns the exact redacted `TaskPacket` payload before submission.
+
 Version policy:
 
 - Packets must always include `schemaVersion`.
 - Validators accept only the exact exported `TASK_PACKET_SCHEMA_VERSION`.
-- Additive optional fields should use a minor or patch version bump.
+- Additive optional fields and additive enum values should use a minor version bump.
 - Required-field changes, renamed fields, or removed fields require a major version bump.
 
 Example:

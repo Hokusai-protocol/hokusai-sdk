@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { HokusaiClient } from '@hokusai/core';
-import { createClaudeCodeAdapter } from './index.js';
+import {
+  buildClaudeCodeTaskPacket,
+  createClaudeCodeAdapter,
+} from './index.js';
 
 describe('createClaudeCodeAdapter', () => {
   it('returns stable manifest and command metadata', () => {
@@ -31,5 +34,9 @@ describe('createClaudeCodeAdapter', () => {
     expect(adapter.harness).toBe('claude-code');
     expect(adapter.commands[0]?.name).toBe('hokusai.run');
     expect(adapter.manifest.entrypoint).toBe('hokusai');
+  });
+
+  it('re-exports the task packet builder', () => {
+    expect(buildClaudeCodeTaskPacket).toBeTypeOf('function');
   });
 });

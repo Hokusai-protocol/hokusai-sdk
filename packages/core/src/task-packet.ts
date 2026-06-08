@@ -1,9 +1,12 @@
 const TASK_FAMILIES = [
   'bugfix',
   'feature',
+  'migration',
   'refactor',
   'test',
   'docs',
+  'infra',
+  'mixed',
   'chore',
   'investigation',
 ] as const;
@@ -11,7 +14,7 @@ const TASK_FAMILIES = [
 const REASONING_DEPTHS = ['shallow', 'standard', 'deep'] as const;
 const REPOSITORY_SCALES = ['small', 'medium', 'large', 'xlarge'] as const;
 
-export const TASK_PACKET_SCHEMA_VERSION = '1.0.0';
+export const TASK_PACKET_SCHEMA_VERSION = '1.1.0';
 
 export type TaskFamily = (typeof TASK_FAMILIES)[number];
 export type ReasoningDepth = (typeof REASONING_DEPTHS)[number];

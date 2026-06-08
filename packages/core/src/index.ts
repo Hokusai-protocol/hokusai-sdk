@@ -104,6 +104,15 @@ export {
   type ValidationResult,
 } from './task-packet.js';
 export {
+  bucketRepositoryScale,
+  classifyTaskFamily,
+  inferReasoningDepth,
+  summarizeFrameworkSignals,
+  summarizeLanguageSignals,
+  type ReasoningDepthInferenceInput,
+  type TaskFamilyClassificationInput,
+} from './task-signals.js';
+export {
   claudeCodeTaskPacketFixture,
   codexTaskPacketFixture,
   genericTaskPacketFixture,
