@@ -100,6 +100,19 @@ describe('InMemoryModelRegistry', () => {
           },
         ]),
     ).toThrow(/model-c/i);
+
+    expect(
+      () =>
+        new InMemoryModelRegistry([
+          ...models,
+          {
+            id: 'alpha',
+            provider: 'other',
+            family: 'other',
+            capabilities: ['reasoning'],
+          },
+        ]),
+    ).toThrow(/alpha/i);
   });
 });
 

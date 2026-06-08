@@ -33,6 +33,12 @@ export class InMemoryModelRegistry implements ModelRegistry {
     this.#models = [...models];
 
     for (const model of this.#models) {
+      const normalizedId = this.#normalizeKey(model.id);
+
+      if (normalizedId && this.#aliasIndex.has(normalizedId)) {
+        throw new Error(`Duplicate model key: ${model.id}`);
+      }
+
       this.#registerKey(this.#idIndex, model.id, model);
 
       for (const alias of model.aliases ?? []) {
