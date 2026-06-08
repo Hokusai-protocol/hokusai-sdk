@@ -10,10 +10,11 @@ import {
   HokusaiNetworkError,
   HokusaiRateLimitError,
   HokusaiValidationError,
+  createGatedClient,
+  type ConsentRequiredError,
   type FetchTransport,
   type FetchTransportRequestInit,
-  type FetchTransportResponse,
-} from './client.js';
+} from './index.js';
 import { InMemoryModelRegistry } from './model-registry.js';
 import type { OutcomeReport, RouteRequest } from './schemas.js';
 import { InMemoryCorrelationStorage } from './storage.js';
@@ -23,9 +24,17 @@ interface MockCall {
   input: string;
 }
 
+interface MockTransportResponse {
+  headers: {
+    get(name: string): string | null;
+  };
+  status: number;
+  text(): Promise<string>;
+}
+
 function createHeaders(
   values: Record<string, string> = {},
-): FetchTransportResponse['headers'] {
+): MockTransportResponse['headers'] {
   const normalized = new Map(
     Object.entries(values).map(([key, value]) => [key.toLowerCase(), value]),
   );
@@ -41,7 +50,7 @@ function createResponse(
   status: number,
   body?: unknown,
   headers?: Record<string, string>,
-): FetchTransportResponse {
+): MockTransportResponse {
   return {
     status,
     headers: createHeaders(headers),
@@ -57,7 +66,9 @@ function createResponse(
   };
 }
 
-function createMockTransport(sequence: Array<FetchTransportResponse | Error>): {
+type MockTransportEntry = Error | MockTransportResponse;
+
+function createMockTransport(sequence: MockTransportEntry[]): {
   calls: MockCall[];
   transport: FetchTransport;
 } {
@@ -82,6 +93,16 @@ function createMockTransport(sequence: Array<FetchTransportResponse | Error>): {
       return Promise.resolve(result);
     },
   };
+}
+
+function getRequestIdHeader(call: MockCall): string {
+  const headers = call.init.headers;
+  if (!headers) {
+    return '';
+  }
+
+  const requestId = headers['X-Hokusai-Request-Id'];
+  return typeof requestId === 'string' ? requestId : '';
 }
 
 async function createRouteRequest(): Promise<RouteRequest> {
@@ -527,7 +548,7 @@ describe('HokusaiClient', () => {
     expect(calls).toHaveLength(3);
     expect(
       new Set(
-        calls.map((call) => call.init.headers?.['X-Hokusai-Request-Id'] ?? ''),
+        calls.map((call) => getRequestIdHeader(call)),
       ),
     ).toEqual(new Set(['req-retry-1']));
   });
@@ -710,5 +731,88 @@ describe('HokusaiClient', () => {
           baseUrl: 'not-a-url',
         }),
     ).toThrow(HokusaiApiError);
+  });
+});
+
+describe('createGatedClient', () => {
+  it('blocks route calls before transport when auth or consent is missing', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-never',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+    const client = createGatedClient({
+      config: {
+        apiBaseUrl: 'https://api.hokusai.app',
+        routingConsentEnabled: false,
+        outcomeSubmissionEnabled: false,
+        modelAllowlist: ['claude-sonnet-4-6'],
+      },
+      transport,
+    });
+
+    await expect(client.route(routeRequest)).rejects.toMatchObject({
+      scope: 'routing',
+      reason: 'no-auth',
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('blocks outcome calls before transport when the outcome opt-in is off', async () => {
+    const { calls, transport } = createMockTransport([
+      createResponse(202, {
+        taskId: 'corr-123',
+        status: 'accepted',
+      }),
+    ]);
+    const client = createGatedClient({
+      config: {
+        apiKey: 'hk_live',
+        apiBaseUrl: 'https://api.hokusai.app',
+        routingConsentEnabled: true,
+        outcomeSubmissionEnabled: false,
+        modelAllowlist: ['claude-sonnet-4-6'],
+      },
+      transport,
+    });
+
+    await expect(client.reportOutcome(createOutcomeReport())).rejects.toEqual(
+      expect.objectContaining<Partial<ConsentRequiredError>>({
+        scope: 'outcome',
+        reason: 'no-consent',
+      }),
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it('passes through to the underlying client when gates are satisfied', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-ok',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+    const client = createGatedClient({
+      config: {
+        apiKey: 'hk_live',
+        apiBaseUrl: 'https://api.hokusai.app',
+        routingConsentEnabled: true,
+        outcomeSubmissionEnabled: true,
+        modelAllowlist: ['claude-sonnet-4-6'],
+      },
+      transport,
+    });
+
+    await expect(client.route(routeRequest)).resolves.toMatchObject({
+      routeId: 'route-ok',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+    });
+    expect(calls).toHaveLength(1);
   });
 });

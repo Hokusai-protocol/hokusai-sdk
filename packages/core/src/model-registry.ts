@@ -134,6 +134,18 @@ export interface MapRecommendationOptions {
   requireAvailable?: boolean;
 }
 
+export type ValidateRecommendedModelResult =
+  | {
+      ok: true;
+      modelId: string;
+      mappedFrom?: string;
+    }
+  | {
+      ok: false;
+      reason: 'unknown' | 'not-anthropic' | 'not-in-allowlist';
+      suggestions: string[];
+    };
+
 export function mapRecommendation(
   recommendation: { model: unknown },
   options: MapRecommendationOptions,
@@ -186,6 +198,75 @@ export function mapRecommendation(
   }
 
   return descriptor;
+}
+
+export function validateRecommendedModel(
+  modelId: string,
+  options: {
+    allowlist: string[];
+    registry?: ModelRegistry;
+  },
+): ValidateRecommendedModelResult {
+  const registry = options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
+  const normalizedModelId = modelId.trim();
+  const allowlistedIds = new Set(
+    options.allowlist
+      .map((entry) => registry.resolve(entry))
+      .filter(
+        (descriptor): descriptor is ModelDefinition =>
+          descriptor !== undefined && descriptor.provider === 'anthropic',
+      )
+      .map((descriptor) => descriptor.id),
+  );
+  const suggestions = registry
+    .listAvailable()
+    .filter((descriptor) => descriptor.provider === 'anthropic')
+    .filter((descriptor) => allowlistedIds.has(descriptor.id))
+    .map((descriptor) => descriptor.id);
+
+  if (normalizedModelId.length === 0) {
+    return {
+      ok: false,
+      reason: 'unknown',
+      suggestions,
+    };
+  }
+
+  const descriptor = registry.resolve(normalizedModelId);
+  if (!descriptor) {
+    return {
+      ok: false,
+      reason: 'unknown',
+      suggestions,
+    };
+  }
+
+  if (descriptor.provider !== 'anthropic') {
+    return {
+      ok: false,
+      reason: 'not-anthropic',
+      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor.id),
+    };
+  }
+
+  if (!allowlistedIds.has(descriptor.id)) {
+    return {
+      ok: false,
+      reason: 'not-in-allowlist',
+      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor.id),
+    };
+  }
+
+  return normalizedModelId === descriptor.id
+    ? {
+        ok: true,
+        modelId: descriptor.id,
+      }
+    : {
+        ok: true,
+        modelId: descriptor.id,
+        mappedFrom: normalizedModelId,
+      };
 }
 
 export const ANTHROPIC_MODELS: ModelDefinition[] = [

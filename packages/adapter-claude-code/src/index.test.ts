@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildClaudeCodeTaskPacket,
   createClaudeCodeAdapter,
+  createClaudeCodeDoctor,
   createClaudeCodeModelProvider,
+  loadClaudeCodePluginConfig,
 } from './index.js';
 
 describe('createClaudeCodeAdapter', () => {
@@ -14,6 +16,7 @@ describe('createClaudeCodeAdapter', () => {
 
     expect(adapter.harness).toBe('claude-code');
     expect(adapter.commands[0]?.name).toBe('hokusai.run');
+    expect(adapter.commands[1]?.name).toBe('hokusai.doctor');
     expect(adapter.manifest.entrypoint).toBe('hokusai');
   });
 
@@ -63,6 +66,34 @@ describe('createClaudeCodeAdapter', () => {
       return;
     }
     expect(mapped.value.id).toBe('claude-sonnet-4-6');
+  });
+
+  it('enforces the configured allowlist during discovery and mapping', async () => {
+    const provider = createClaudeCodeModelProvider({
+      allowlist: ['claude-haiku-4-5-20251001'],
+    });
+
+    const discovered = await provider.discoverModels({
+      task: { id: 'task-1', prompt: 'test' },
+    });
+    expect(discovered.ok).toBe(true);
+    if (!discovered.ok) {
+      return;
+    }
+    expect(discovered.value.map((model) => model.id)).toEqual([
+      'claude-haiku-4-5-20251001',
+    ]);
+
+    const mapped = await provider.mapModel({
+      harnessModelId: 'claude-sonnet-4-6',
+      discoveredModels: [],
+      availableModels: [],
+    });
+    expect(mapped.ok).toBe(false);
+    if (mapped.ok) {
+      return;
+    }
+    expect(mapped.error.code).toBe('MODEL_NOT_ALLOWED');
   });
 
   it('rejects non-Anthropic models with suggestions', async () => {
@@ -118,5 +149,47 @@ describe('createClaudeCodeAdapter', () => {
     }
     expect(mapped.error.code).toBe('PROVIDER_NOT_ALLOWED');
     expect(mapped.error.details?.suggestions).toEqual(['claude-sonnet-4-6']);
+  });
+
+  it('creates a doctor helper with the expected report shape', async () => {
+    const doctor = createClaudeCodeDoctor({
+      config: {
+        apiKey: 'hk_live_abcd',
+        apiBaseUrl: 'https://api.hokusai.app',
+        routingConsentEnabled: true,
+        outcomeSubmissionEnabled: false,
+        modelAllowlist: ['claude-sonnet-4-6'],
+      },
+      transport: () => Promise.resolve({
+        status: 200,
+        headers: { get: () => null },
+        text: () => Promise.resolve(''),
+      }),
+    });
+
+    const result = await doctor.run();
+    expect(result.report).toMatchObject({
+      auth: 'configured',
+      routingConsent: true,
+      outcomeConsent: false,
+      apiReachable: 'ok',
+      allowlistCount: 1,
+    });
+    expect(result.rendered).toContain('Hokusai doctor');
+  });
+
+  it('loads plugin config with adapter defaults', async () => {
+    const config = await loadClaudeCodePluginConfig({
+      env: {
+        HOKUSAI_API_KEY: 'hk_live_abcd',
+        HOKUSAI_ROUTING_CONSENT: 'yes',
+      },
+    });
+
+    expect(config).toMatchObject({
+      apiKey: 'hk_live_abcd',
+      routingConsentEnabled: true,
+      outcomeSubmissionEnabled: false,
+    });
   });
 });

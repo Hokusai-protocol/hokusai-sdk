@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANTHROPIC_MODELS,
   InMemoryModelRegistry,
   ModelMappingError,
   mapRecommendation,
   type ModelDefinition,
+  validateRecommendedModel,
 } from './model-registry.js';
 
 describe('InMemoryModelRegistry', () => {
@@ -223,5 +225,82 @@ describe('mapRecommendation', () => {
     } catch (error) {
       expect((error as ModelMappingError).code).toBe('UNKNOWN_MODEL');
     }
+  });
+});
+
+describe('validateRecommendedModel', () => {
+  const registry = new InMemoryModelRegistry([
+    ...ANTHROPIC_MODELS,
+    {
+      id: 'gpt-5-codex',
+      provider: 'openai',
+      family: 'gpt',
+      aliases: ['codex'],
+      capabilities: ['reasoning', 'tool-use'],
+    },
+  ]);
+
+  it('accepts exact allowlisted identifiers', () => {
+    expect(
+      validateRecommendedModel('claude-sonnet-4-6', {
+        allowlist: ['claude-sonnet-4-6'],
+        registry,
+      }),
+    ).toEqual({
+      ok: true,
+      modelId: 'claude-sonnet-4-6',
+    });
+  });
+
+  it('maps aliases to canonical allowlisted identifiers', () => {
+    expect(
+      validateRecommendedModel('sonnet', {
+        allowlist: ['claude-sonnet-4-6'],
+        registry,
+      }),
+    ).toEqual({
+      ok: true,
+      modelId: 'claude-sonnet-4-6',
+      mappedFrom: 'sonnet',
+    });
+  });
+
+  it('rejects non-anthropic models', () => {
+    expect(
+      validateRecommendedModel('gpt-5-codex', {
+        allowlist: ['claude-sonnet-4-6'],
+        registry,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: 'not-anthropic',
+      suggestions: ['claude-sonnet-4-6'],
+    });
+  });
+
+  it('rejects anthropic models outside the allowlist', () => {
+    expect(
+      validateRecommendedModel('claude-opus-4-8', {
+        allowlist: ['claude-sonnet-4-6'],
+        registry,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: 'not-in-allowlist',
+      suggestions: ['claude-sonnet-4-6'],
+    });
+  });
+
+  it('rejects unknown model identifiers', () => {
+    expect(
+      validateRecommendedModel('', {
+        allowlist: ['claude-sonnet-4-6'],
+        registry,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: 'unknown',
+      suggestions: ['claude-sonnet-4-6'],
+    });
   });
 });
