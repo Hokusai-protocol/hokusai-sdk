@@ -79,10 +79,8 @@ export {
   type HokusaiOutcome,
   type HokusaiValidationSuccess,
   type HokusaiTaskInput,
-  type OutcomeReport,
   type OutcomeResponse,
   type OutcomeResponseStatus,
-  type OutcomeStatus,
   type RouteRequest,
   type RouteResponse,
   validateOutcomeReport,
@@ -90,6 +88,20 @@ export {
   validateRouteRequest,
   validateRouteResponse,
 } from './schemas.js';
+export {
+  OUTCOME_REPORT_SCHEMA_VERSION,
+  OutcomeReportBuildError,
+  buildOutcomeReport,
+  previewOutcomePayload,
+  type BuildSummary,
+  type CoarseBucket,
+  type CompletionStatus,
+  type OutcomeExtensions,
+  type OutcomeReport,
+  type OutcomeReportInput,
+  type OutcomeValidationError,
+  type TestSummary,
+} from './outcome.js';
 export {
   TASK_PACKET_SCHEMA_VERSION,
   TaskPacketBuildError,
@@ -105,8 +117,14 @@ export {
 } from './task-packet.js';
 export {
   claudeCodeTaskPacketFixture,
+  claudeCodeFailureOutcomeFixture,
+  claudeCodeSuccessOutcomeFixture,
+  codexAbandonedOutcomeFixture,
+  codexSuccessOutcomeFixture,
   codexTaskPacketFixture,
   genericTaskPacketFixture,
+  wavemillOverriddenOutcomeFixture,
+  wavemillSuccessOutcomeFixture,
   wavemillTaskPacketFixture,
 } from './fixtures/index.js';
 export {
