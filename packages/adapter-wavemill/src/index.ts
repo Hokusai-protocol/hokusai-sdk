@@ -1,11 +1,13 @@
-import type { CorrelationRecord, HarnessAdapter } from '@hokusai/core';
+import type { CorrelationRecord, HarnessAdapter, HokusaiClient } from '@hokusai/core';
 
 export interface WavemillAdapterOptions {
+  apiClient?: HokusaiClient;
   integrationId: string;
   supportsCorrelationReplay?: boolean;
 }
 
 export interface WavemillAdapter {
+  apiClient?: HokusaiClient;
   harness: 'wavemill';
   integrationId: string;
   capabilities: string[];
@@ -16,6 +18,7 @@ export function createWavemillAdapter(
   options: WavemillAdapterOptions,
 ): WavemillAdapter {
   return {
+    ...(options.apiClient ? { apiClient: options.apiClient } : {}),
     harness: 'wavemill',
     integrationId: options.integrationId,
     capabilities: options.supportsCorrelationReplay

@@ -9,10 +9,14 @@ const repoRoot = path.resolve(currentDir, '../../..');
 describe('core boundaries', () => {
   it('does not import adapters or examples', () => {
     expect(() =>
-      execFileSync('node', [path.join(repoRoot, 'scripts/check-core-boundaries.mjs')], {
-        cwd: repoRoot,
-        stdio: 'pipe',
-      }),
+      execFileSync(
+        'node',
+        [path.join(repoRoot, 'scripts/check-core-boundaries.mjs')],
+        {
+          cwd: repoRoot,
+          stdio: 'pipe',
+        },
+      ),
     ).not.toThrow();
   });
 });

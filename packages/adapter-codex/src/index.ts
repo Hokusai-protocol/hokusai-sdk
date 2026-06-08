@@ -1,15 +1,18 @@
 import type {
   ConsentScope,
   HarnessAdapter,
+  HokusaiClient,
   HokusaiTaskInput,
 } from '@hokusai/core';
 
 export interface CodexAdapterOptions {
+  apiClient?: HokusaiClient;
   defaultModel: string;
   pluginId: string;
 }
 
 export interface CodexAdapter {
+  apiClient?: HokusaiClient;
   harness: 'codex';
   commands: Array<{
     name: 'hokusai:run';
@@ -24,6 +27,7 @@ export interface CodexAdapter {
 
 export function createCodexAdapter(options: CodexAdapterOptions): CodexAdapter {
   return {
+    ...(options.apiClient ? { apiClient: options.apiClient } : {}),
     harness: 'codex',
     commands: [
       {
