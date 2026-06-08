@@ -28,6 +28,34 @@ export {
   type ConsentScope,
   type ConsentSnapshot,
 } from './consent.js';
+export type {
+  AdapterError,
+  AdapterResult,
+  HarnessAdapter,
+  HarnessConsentDecision,
+  HarnessConsentDecisionState,
+  HarnessConsentPromptRequest,
+  HarnessConsentPrompter,
+  HarnessDiscoveredModel,
+  HarnessLocalStorage,
+  HarnessModelDiscoveryRequest,
+  HarnessModelHandoff,
+  HarnessModelHandoffRequest,
+  HarnessModelHandoffResult,
+  HarnessModelMappingRequest,
+  HarnessModelProvider,
+  HarnessOutcomeCollectionRequest,
+  HarnessOutcomeCollector,
+  HarnessPayloadPreview,
+  HarnessPayloadPreviewRequest,
+  HarnessPayloadPreviewer,
+  HarnessRecommendation,
+  HarnessRecommendationDisplayRequest,
+  HarnessRecommendationRenderer,
+  HarnessTaskContext,
+  HarnessTaskContextProvider,
+  HarnessTaskContextRequest,
+} from './adapter.js';
 export {
   InMemoryModelRegistry,
   type ModelCapability,
@@ -41,6 +69,25 @@ export {
   type HokusaiTaskInput,
   type OutcomeStatus,
 } from './schemas.js';
+export {
+  TASK_PACKET_SCHEMA_VERSION,
+  TaskPacketBuildError,
+  buildTaskPacket,
+  validateTaskPacket,
+  type HarnessContext,
+  type ReasoningDepth,
+  type RepositoryScale,
+  type TaskFamily,
+  type TaskPacket,
+  type ValidationError,
+  type ValidationResult,
+} from './task-packet.js';
+export {
+  claudeCodeTaskPacketFixture,
+  codexTaskPacketFixture,
+  genericTaskPacketFixture,
+  wavemillTaskPacketFixture,
+} from './fixtures/index.js';
 export {
   InMemoryCorrelationStorage,
   type CorrelationRecord,
