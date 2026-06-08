@@ -229,7 +229,6 @@ export function deriveFrameworkSignals(deps: string[]): string[] {
 interface ComposeResult {
   packet: TaskPacket;
   redactions: RedactionRecord[];
-  raw: TaskPacket;
 }
 
 function aggregateRedactions(
@@ -308,7 +307,7 @@ function composeAnonymizedPacket(
   const config = options.redaction ?? DEFAULT_REDACTION_CONFIG;
   const { packet, redactions } = anonymizeTaskPacket(raw, config);
 
-  return { packet, redactions, raw };
+  return { packet, redactions };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
