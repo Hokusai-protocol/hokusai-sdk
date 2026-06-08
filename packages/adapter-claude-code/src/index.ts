@@ -1,11 +1,13 @@
-import type { HarnessAdapter, HokusaiTaskInput } from '@hokusai/core';
+import type { HarnessAdapter, HokusaiClient, HokusaiTaskInput } from '@hokusai/core';
 
 export interface ClaudeCodeAdapterOptions {
+  apiClient?: HokusaiClient;
   modelId: string;
   packageVersion: string;
 }
 
 export interface ClaudeCodeAdapter {
+  apiClient?: HokusaiClient;
   harness: 'claude-code';
   commands: Array<{
     name: 'hokusai.run';
@@ -23,6 +25,7 @@ export function createClaudeCodeAdapter(
   options: ClaudeCodeAdapterOptions,
 ): ClaudeCodeAdapter {
   return {
+    ...(options.apiClient ? { apiClient: options.apiClient } : {}),
     harness: 'claude-code',
     commands: [
       {
