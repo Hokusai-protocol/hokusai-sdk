@@ -7,5 +7,9 @@ describe('core public surface', () => {
     expect(core.InMemoryCorrelationStorage).toBeDefined();
     expect(core.InMemoryModelRegistry).toBeDefined();
     expect(core.anonymizeText).toBeDefined();
+    expect(core.redact).toBeDefined();
+    expect(core.preview).toBeDefined();
+    expect(core.hashPayload).toBeDefined();
+    expect(core.DEFAULT_REDACTION_CONFIG).toBeDefined();
   });
 });

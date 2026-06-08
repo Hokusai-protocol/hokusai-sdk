@@ -5,10 +5,22 @@ export {
 } from './client.js';
 export {
   anonymizeText,
+  DEFAULT_REDACTION_CONFIG,
+  hashPayload,
+  makePlaceholder,
+  preview,
+  redact,
   type AnonymizationOptions,
   type AnonymizedText,
+  type CustomRedactionRule,
+  type PreviewResult,
+  type RedactionCategory,
+  type RedactionConfig,
   type RedactionMatch,
+  type RedactionMode,
+  type RedactionRecord,
   type RedactionPattern,
+  type RedactionResult,
 } from './anonymization.js';
 export {
   isConsentGranted,

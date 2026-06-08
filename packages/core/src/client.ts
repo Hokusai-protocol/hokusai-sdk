@@ -1,4 +1,9 @@
-import { anonymizeText, type AnonymizationOptions } from './anonymization.js';
+import {
+  anonymizeText,
+  redact,
+  type AnonymizationOptions,
+  type RedactionConfig,
+} from './anonymization.js';
 import {
   isConsentGranted,
   type ConsentConfig,
@@ -29,6 +34,7 @@ export class HokusaiClientError extends Error {
 export interface HokusaiClientOptions {
   consent: ConsentConfig;
   anonymization?: AnonymizationOptions;
+  redactionConfig?: RedactionConfig;
   modelRegistry: ModelRegistry;
   storage?: CorrelationStorage;
   clock?: () => Date;
@@ -37,6 +43,7 @@ export interface HokusaiClientOptions {
 export class HokusaiClient {
   readonly #consent: ConsentConfig;
   readonly #anonymization: AnonymizationOptions | undefined;
+  readonly #redactionConfig: RedactionConfig | undefined;
   readonly #modelRegistry: ModelRegistry;
   readonly #storage: CorrelationStorage;
   readonly #clock: () => Date;
@@ -44,6 +51,7 @@ export class HokusaiClient {
   constructor(options: HokusaiClientOptions) {
     this.#consent = options.consent;
     this.#anonymization = options.anonymization;
+    this.#redactionConfig = options.redactionConfig;
     this.#modelRegistry = options.modelRegistry;
     this.#storage = options.storage ?? new InMemoryCorrelationStorage();
     this.#clock = options.clock ?? (() => new Date());
@@ -62,10 +70,9 @@ export class HokusaiClient {
 
     const model = this.#resolveModel(modelId);
     const correlationRecord = await this.#getOrCreateCorrelationRecord(task.id);
-    const anonymizedPrompt = anonymizeText(
-      task.prompt,
-      this.#anonymization ?? {},
-    );
+    const promptPayload = this.#redactionConfig
+      ? redact(task.prompt, this.#redactionConfig)
+      : anonymizeText(task.prompt, this.#anonymization ?? {});
 
     return {
       task,
@@ -75,8 +82,8 @@ export class HokusaiClient {
       },
       model: this.#toModelSelection(model),
       correlation: correlationRecord,
-      prompt: anonymizedPrompt.text,
-      redactions: anonymizedPrompt.redactions,
+      prompt: 'output' in promptPayload ? promptPayload.output : promptPayload.text,
+      redactions: promptPayload.redactions,
       createdAt: this.#clock().toISOString(),
     };
   }
