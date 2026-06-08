@@ -93,7 +93,9 @@ function prepareTaskPacket(
   }
 
   const rawUserIntent = buildUserIntent(input);
-  const previewResult = preview(rawUserIntent, options.redactionConfig);
+  const rawArrayFields = collectRawArrayFields(input);
+  const rawCombinedInput = [rawUserIntent, ...rawArrayFields].filter(Boolean).join('\n');
+  const previewResult = preview(rawCombinedInput, options.redactionConfig);
   const intentRedaction = redact(rawUserIntent, options.redactionConfig);
 
   const redactedAvailableTools = redactStringArray(
@@ -172,6 +174,27 @@ function buildUserIntent(input: ClaudeCodeTaskInput): string {
   }
 
   return sections.filter(Boolean).join('\n\n');
+}
+
+function collectRawArrayFields(input: ClaudeCodeTaskInput): string[] {
+  const sources = [
+    input.availableTools,
+    input.constraints,
+    input.modelConstraints,
+    input.providerConstraints,
+    input.hints,
+  ];
+
+  const entries: string[] = [];
+  for (const source of sources) {
+    if (!source) continue;
+    for (const entry of source) {
+      if (typeof entry === 'string' && entry.trim().length > 0) {
+        entries.push(entry);
+      }
+    }
+  }
+  return entries;
 }
 
 function buildConstraintList(input: ClaudeCodeTaskInput): string[] | undefined {
