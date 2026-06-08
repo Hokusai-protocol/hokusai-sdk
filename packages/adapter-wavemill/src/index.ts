@@ -1,4 +1,15 @@
-import type { CorrelationRecord, HarnessAdapter, HokusaiClient } from '@hokusai/core';
+import {
+  InMemoryModelRegistry,
+  ModelMappingError,
+  mapRecommendation,
+  type CorrelationRecord,
+  type HarnessAdapter,
+  type HarnessDiscoveredModel,
+  type HarnessModelProvider,
+  type HokusaiClient,
+  type ModelDefinition,
+  type ModelRegistry,
+} from '@hokusai/core';
 
 export interface WavemillAdapterOptions {
   apiClient?: HokusaiClient;
@@ -30,6 +41,66 @@ export function createWavemillAdapter(
   };
 }
 
+function toDiscoveredModel(model: ModelDefinition): HarnessDiscoveredModel {
+  return {
+    id: model.id,
+    label: model.id,
+    metadata: {
+      family: model.family,
+      provider: model.provider,
+    },
+  };
+}
+
+function createMappedModelProvider(registry: ModelRegistry): HarnessModelProvider {
+  return {
+    discoverModels() {
+      return Promise.resolve({
+        ok: true,
+        value: registry.listAvailable().map(toDiscoveredModel),
+      });
+    },
+    mapModel(request) {
+      try {
+        const model = mapRecommendation(
+          { model: request.harnessModelId },
+          { registry, requireAvailable: true },
+        );
+
+        return Promise.resolve({
+          ok: true,
+          value: {
+            id: model.id,
+            provider: model.provider,
+            capabilities: model.capabilities,
+          },
+        });
+      } catch (error) {
+        if (error instanceof ModelMappingError) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              code: error.code,
+              message: error.message,
+              details: {
+                suggestions: error.suggestions,
+              },
+            },
+          });
+        }
+
+        throw error;
+      }
+    },
+  };
+}
+
+export function createWavemillModelProvider(
+  models: ModelDefinition[],
+): HarnessModelProvider {
+  return createMappedModelProvider(new InMemoryModelRegistry(models));
+}
+
 void ({
   context: {
     collectTaskContext() {
@@ -47,31 +118,15 @@ void ({
       });
     },
   },
-  models: {
-    discoverModels(request) {
-      void request;
-      return Promise.resolve({
-        ok: true,
-        value: [
-          {
-            id: 'wavemill/default',
-            label: 'Wavemill Default',
-          },
-        ],
-      });
+  models: createWavemillModelProvider([
+    {
+      id: 'wavemill/default',
+      provider: 'wavemill',
+      family: 'wavemill',
+      capabilities: ['reasoning'],
+      default: true,
     },
-    mapModel(request) {
-      void request;
-      return Promise.resolve({
-        ok: true,
-        value: {
-          id: 'wavemill-default',
-          provider: 'wavemill',
-          capabilities: ['reasoning'],
-        },
-      });
-    },
-  },
+  ]),
   recommendations: {
     displayRecommendation() {
       return {

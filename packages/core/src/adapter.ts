@@ -23,7 +23,7 @@ import type {
 export interface AdapterError {
   code: string;
   message: string;
-  details?: Record<string, string>;
+  details?: Record<string, string | string[]>;
 }
 
 export type AdapterResult<T> =

@@ -33,10 +33,17 @@ export {
   type RedactionResult,
 } from './anonymization.js';
 export {
+  canReportOutcome,
+  canRoute,
   isConsentGranted,
+  resolveConsent,
   type ConsentConfig,
+  type ConsentSettings,
   type ConsentScope,
   type ConsentSnapshot,
+  type HokusaiApiConfig,
+  type PayloadPreviewSettings,
+  type RetentionPolicy,
 } from './consent.js';
 export type {
   AdapterError,
@@ -67,9 +74,14 @@ export type {
   HarnessTaskContextRequest,
 } from './adapter.js';
 export {
+  ANTHROPIC_MODELS,
   InMemoryModelRegistry,
+  ModelMappingError,
+  mapRecommendation,
+  type MapRecommendationOptions,
   type ModelCapability,
   type ModelDefinition,
+  type ModelMappingErrorCode,
   type ModelRegistry,
   type ModelSelection,
 } from './model-registry.js';
@@ -79,10 +91,8 @@ export {
   type HokusaiOutcome,
   type HokusaiValidationSuccess,
   type HokusaiTaskInput,
-  type OutcomeReport,
   type OutcomeResponse,
   type OutcomeResponseStatus,
-  type OutcomeStatus,
   type RouteRequest,
   type RouteResponse,
   validateOutcomeReport,
@@ -90,6 +100,20 @@ export {
   validateRouteRequest,
   validateRouteResponse,
 } from './schemas.js';
+export {
+  OUTCOME_REPORT_SCHEMA_VERSION,
+  OutcomeReportBuildError,
+  buildOutcomeReport,
+  previewOutcomePayload,
+  type BuildSummary,
+  type CoarseBucket,
+  type CompletionStatus,
+  type OutcomeExtensions,
+  type OutcomeReport,
+  type OutcomeReportInput,
+  type OutcomeValidationError,
+  type TestSummary,
+} from './outcome.js';
 export {
   TASK_PACKET_SCHEMA_VERSION,
   TaskPacketBuildError,
@@ -114,12 +138,29 @@ export {
 } from './task-signals.js';
 export {
   claudeCodeTaskPacketFixture,
+  claudeCodeFailureOutcomeFixture,
+  claudeCodeSuccessOutcomeFixture,
+  codexAbandonedOutcomeFixture,
+  codexSuccessOutcomeFixture,
   codexTaskPacketFixture,
   genericTaskPacketFixture,
+  wavemillOverriddenOutcomeFixture,
+  wavemillSuccessOutcomeFixture,
   wavemillTaskPacketFixture,
 } from './fixtures/index.js';
 export {
+  FsLocalStore,
   InMemoryCorrelationStorage,
+  InMemoryLocalStore,
+  InvalidStoreIdError,
+  RawPayloadRejectedError,
+  StoreCorruptError,
   type CorrelationRecord,
   type CorrelationStorage,
+  type LocalCorrelationRecord,
+  type LocalStore,
+  type PayloadHashRecord,
+  type SubmissionAuditEntry,
+  type SubmissionAuditKind,
+  type SubmissionAuditStatus,
 } from './storage.js';

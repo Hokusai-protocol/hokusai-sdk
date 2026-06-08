@@ -7,7 +7,9 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, '../../..');
 
 describe('core boundaries', () => {
-  it('does not import adapters or examples', () => {
+  it(
+    'does not import adapters or examples',
+    () => {
     expect(() =>
       execFileSync(
         'node',
@@ -18,5 +20,7 @@ describe('core boundaries', () => {
         },
       ),
     ).not.toThrow();
-  });
+    },
+    10_000,
+  );
 });

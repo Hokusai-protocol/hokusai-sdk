@@ -1,8 +1,15 @@
-import type {
-  ConsentScope,
-  HarnessAdapter,
-  HokusaiClient,
-  HokusaiTaskInput,
+import {
+  InMemoryModelRegistry,
+  ModelMappingError,
+  mapRecommendation,
+  type ConsentScope,
+  type HarnessAdapter,
+  type HarnessDiscoveredModel,
+  type HarnessModelProvider,
+  type HokusaiClient,
+  type HokusaiTaskInput,
+  type ModelDefinition,
+  type ModelRegistry,
 } from '@hokusai/core';
 
 export interface CodexAdapterOptions {
@@ -45,6 +52,66 @@ export function createCodexAdapter(options: CodexAdapterOptions): CodexAdapter {
   };
 }
 
+function toDiscoveredModel(model: ModelDefinition): HarnessDiscoveredModel {
+  return {
+    id: model.id,
+    label: model.id,
+    metadata: {
+      family: model.family,
+      provider: model.provider,
+    },
+  };
+}
+
+function createMappedModelProvider(registry: ModelRegistry): HarnessModelProvider {
+  return {
+    discoverModels() {
+      return Promise.resolve({
+        ok: true,
+        value: registry.listAvailable().map(toDiscoveredModel),
+      });
+    },
+    mapModel(request) {
+      try {
+        const model = mapRecommendation(
+          { model: request.harnessModelId },
+          { registry, requireAvailable: true },
+        );
+
+        return Promise.resolve({
+          ok: true,
+          value: {
+            id: model.id,
+            provider: model.provider,
+            capabilities: model.capabilities,
+          },
+        });
+      } catch (error) {
+        if (error instanceof ModelMappingError) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              code: error.code,
+              message: error.message,
+              details: {
+                suggestions: error.suggestions,
+              },
+            },
+          });
+        }
+
+        throw error;
+      }
+    },
+  };
+}
+
+export function createCodexModelProvider(
+  models: ModelDefinition[],
+): HarnessModelProvider {
+  return createMappedModelProvider(new InMemoryModelRegistry(models));
+}
+
 void ({
   context: {
     collectTaskContext() {
@@ -62,31 +129,15 @@ void ({
       });
     },
   },
-  models: {
-    discoverModels(request) {
-      void request;
-      return Promise.resolve({
-        ok: true,
-        value: [
-          {
-            id: 'gpt-5-codex',
-            label: 'GPT-5 Codex',
-          },
-        ],
-      });
+  models: createCodexModelProvider([
+    {
+      id: 'gpt-5-codex',
+      provider: 'openai',
+      family: 'gpt',
+      capabilities: ['reasoning', 'tool-use'],
+      default: true,
     },
-    mapModel(request) {
-      void request;
-      return Promise.resolve({
-        ok: true,
-        value: {
-          id: 'gpt-5-codex',
-          provider: 'openai',
-          capabilities: ['reasoning', 'tool-use'],
-        },
-      });
-    },
-  },
+  ]),
   recommendations: {
     displayRecommendation() {
       return {

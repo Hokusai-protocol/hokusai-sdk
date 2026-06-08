@@ -53,11 +53,87 @@ Example response:
 
 ```ts
 interface OutcomeReport {
-  taskId: string;
-  status: 'accepted' | 'completed' | 'failed';
-  summary: string;
-  correlationId?: string;
-  metadata?: Record<string, string>;
+  schemaVersion: '1';
+  correlationId: string;
+  recommendedModel: string;
+  actualModel: string;
+  recommendationAccepted: boolean;
+  completionStatus: 'succeeded' | 'failed' | 'abandoned' | 'overridden' | 'partial';
+  userRating?: 1 | 2 | 3 | 4 | 5;
+  latencyBucket: 'low' | 'medium' | 'high';
+  costBucket: 'low' | 'medium' | 'high';
+  tokenBucket: 'low' | 'medium' | 'high';
+  build?: {
+    status: 'passed' | 'failed' | 'skipped';
+    failures?: number;
+  };
+  test?: {
+    status: 'passed' | 'failed' | 'skipped';
+    failures?: number;
+  };
+  notes?: string;
+  extensions?: {
+    version: string;
+    data: Record<string, unknown>;
+  };
+}
+```
+
+Fields:
+
+- `schemaVersion`: required exact string literal, currently `1`
+- `correlationId`: required non-empty route decision or correlation identifier
+- `recommendedModel`: required non-empty model id recommended by the router
+- `actualModel`: required non-empty model id actually used by the harness
+- `recommendationAccepted`: required boolean indicating whether the recommendation was followed
+- `completionStatus`: required outcome category, one of `succeeded`, `failed`, `abandoned`, `overridden`, or `partial`
+- `userRating`: optional integer from `1` through `5`
+- `latencyBucket`: required coarse latency signal, one of `low`, `medium`, `high`
+- `costBucket`: required coarse cost signal, one of `low`, `medium`, `high`
+- `tokenBucket`: required coarse token-usage signal, one of `low`, `medium`, `high`
+- `build`: optional build summary with `status` and optional non-negative `failures`
+- `test`: optional test summary with `status` and optional non-negative `failures`
+- `notes`: optional redacted notes string; `buildOutcomeReport()` redacts sensitive content before submission
+- `extensions`: optional versioned harness-specific metadata container
+
+`extensions` contract:
+
+- Harness-specific metadata must live under `extensions.data`.
+- `extensions.version` is required whenever `extensions` is present.
+- `extensions.data` must be an object.
+- Additive harness changes should rev the extension version without changing the shared top-level schema.
+
+Raw content fields are rejected. Unknown keys such as `prompt`, `code`, `logs`, or unversioned harness blobs fail validation.
+
+Example outcome payload:
+
+```json
+{
+  "schemaVersion": "1",
+  "correlationId": "route-codex-001",
+  "recommendedModel": "gpt-5-codex",
+  "actualModel": "gpt-5-codex",
+  "recommendationAccepted": true,
+  "completionStatus": "succeeded",
+  "userRating": 5,
+  "latencyBucket": "medium",
+  "costBucket": "low",
+  "tokenBucket": "high",
+  "build": {
+    "status": "passed"
+  },
+  "test": {
+    "status": "passed",
+    "failures": 0
+  },
+  "notes": "Reached <redacted:id> after notifying EMAIL_1234abcd",
+  "extensions": {
+    "version": "1",
+    "data": {
+      "harness": "codex",
+      "toolCalls": 12
+    }
+  }
 }
 ```
 
