@@ -248,7 +248,7 @@ function sortedJsonStringify(value: unknown): string {
     if (v !== null && typeof v === 'object') {
       return Object.fromEntries(
         Object.entries(v as Record<string, unknown>)
-          .sort(([a], [b]) => a.localeCompare(b))
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
           .map(([k, val]) => [k, sortKeys(val)]),
       );
     }

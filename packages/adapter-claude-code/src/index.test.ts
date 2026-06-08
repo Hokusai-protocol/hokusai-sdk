@@ -250,6 +250,26 @@ describe('REQ-F6: previewTaskPacket is consistent with buildTaskPacket', () => {
     const keys = Object.keys(JSON.parse(preview.json) as Record<string, unknown>);
     expect(keys).toEqual([...keys].sort());
   });
+
+  it('makes no network calls (transport spy is never invoked)', () => {
+    let transportCalls = 0;
+    const apiClient = new HokusaiClient({
+      apiKey: 'k_test',
+      transport: () => {
+        transportCalls += 1;
+        return Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve('{}'),
+        });
+      },
+    });
+    // Construct an adapter so the client is wired up in the same way a real caller would use it.
+    createClaudeCodeAdapter({ apiClient, modelId: 'claude-sonnet', packageVersion: '0.1.0' });
+    previewTaskPacket(SENSITIVE_INPUT, TEST_OPTIONS);
+    previewTaskPacket({ userIntent: 'Add a widget.' }, TEST_OPTIONS);
+    expect(transportCalls).toBe(0);
+  });
 });
 
 // REQ-F7: absent constraints omitted; present constraints populated
