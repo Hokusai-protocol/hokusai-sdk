@@ -58,6 +58,16 @@ export class RawPayloadRejectedError extends Error {
   }
 }
 
+export class InvalidStoreIdError extends Error {
+  readonly id: string;
+
+  constructor(id: string) {
+    super(`Invalid local store identifier: ${id}`);
+    this.name = 'InvalidStoreIdError';
+    this.id = id;
+  }
+}
+
 export class StoreCorruptError extends Error {
   readonly filePath: string;
 
@@ -95,6 +105,14 @@ const RAW_FIELD_NAMES = new Set([
   'rawPrompt',
   'rawContent',
 ]);
+
+const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function assertSafeStoreId(id: string): void {
+  if (id.length === 0 || id.length > 255 || !SAFE_ID_PATTERN.test(id)) {
+    throw new InvalidStoreIdError(id);
+  }
+}
 
 function assertNoRawPayloadFields(record: object): void {
   for (const key of Object.keys(record)) {
@@ -359,16 +377,19 @@ export class FsLocalStore implements LocalStore {
   }
 
   async pruneExpired(now: number, policy: RetentionPolicy): Promise<void> {
+    const correlations = await this.listCorrelations();
     await this.#rewriteRecords(
       this.#correlationsDir(),
-      await this.listCorrelations(),
-      pruneByRetention(await this.listCorrelations(), now, policy),
+      correlations,
+      pruneByRetention(correlations, now, policy),
       (record) => this.#correlationFilePath(record.correlationId),
     );
+
+    const payloadHashes = await this.listPayloadHashes();
     await this.#rewriteRecords(
       this.#hashesDir(),
-      await this.listPayloadHashes(),
-      pruneByRetention(await this.listPayloadHashes(), now, policy),
+      payloadHashes,
+      pruneByRetention(payloadHashes, now, policy),
       (record) => this.#payloadHashFilePath(record.hash),
     );
 
@@ -415,14 +436,17 @@ export class FsLocalStore implements LocalStore {
   }
 
   #correlationFilePath(correlationId: string): string {
+    assertSafeStoreId(correlationId);
     return join(this.#correlationsDir(), `${correlationId}.json`);
   }
 
   #payloadHashFilePath(hash: string): string {
+    assertSafeStoreId(hash);
     return join(this.#hashesDir(), `${hash}.json`);
   }
 
   #auditFilePath(id: string): string {
+    assertSafeStoreId(id);
     return join(this.#auditDir(), `${id}.json`);
   }
 

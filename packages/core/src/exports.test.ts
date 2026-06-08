@@ -18,6 +18,7 @@ describe('core public surface', () => {
     expect(core.InMemoryLocalStore).toBeDefined();
     expect(core.RawPayloadRejectedError).toBeDefined();
     expect(core.StoreCorruptError).toBeDefined();
+    expect(core.InvalidStoreIdError).toBeDefined();
     expect(core.InMemoryModelRegistry).toBeDefined();
     expect(core.anonymizeText).toBeDefined();
     expect(core.redact).toBeDefined();

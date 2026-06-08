@@ -8,6 +8,7 @@ import {
   FsLocalStore,
   InMemoryCorrelationStorage,
   InMemoryLocalStore,
+  InvalidStoreIdError,
   RawPayloadRejectedError,
 } from './storage.js';
 
@@ -244,6 +245,43 @@ describe('local store implementations', () => {
     await expect(store.listCorrelations()).rejects.toMatchObject({
       filePath: join(correlationsDir, 'broken.json'),
     } satisfies Partial<StoreCorruptError>);
+  });
+
+  it('rejects path-traversal identifiers in the filesystem store', async () => {
+    const { store } = await createFsStore();
+
+    await expect(
+      store.putCorrelation({
+        correlationId: '../escape',
+        packetHash: 'safe-hash',
+        createdAt: 0,
+      }),
+    ).rejects.toBeInstanceOf(InvalidStoreIdError);
+
+    await expect(
+      store.putPayloadHash({
+        hash: 'a/b',
+        algorithm: 'sha-256',
+        createdAt: 0,
+      }),
+    ).rejects.toBeInstanceOf(InvalidStoreIdError);
+
+    await expect(
+      store.appendAudit({
+        id: '..',
+        kind: 'routing',
+        correlationId: 'correlation-1',
+        status: 'submitted',
+        timestamp: 0,
+      }),
+    ).rejects.toBeInstanceOf(InvalidStoreIdError);
+
+    await expect(store.getCorrelation('../escape')).rejects.toBeInstanceOf(
+      InvalidStoreIdError,
+    );
+    await expect(store.deleteCorrelation('../escape')).rejects.toBeInstanceOf(
+      InvalidStoreIdError,
+    );
   });
 
   it('exposes both local store implementations through the shared interface', () => {

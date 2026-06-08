@@ -120,6 +120,7 @@ export {
   FsLocalStore,
   InMemoryCorrelationStorage,
   InMemoryLocalStore,
+  InvalidStoreIdError,
   RawPayloadRejectedError,
   StoreCorruptError,
   type CorrelationRecord,
