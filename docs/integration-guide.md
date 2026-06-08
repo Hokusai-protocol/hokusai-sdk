@@ -8,8 +8,37 @@ This repository is intentionally split between reusable contracts and harness ad
 2. Choose an adapter package when a harness needs opinionated command or manifest metadata.
 3. Use `examples/reference-harness` as the smallest offline composition template.
 
-## Current scope
+## Shared API client
 
-- Adapters expose typed factories and metadata only.
-- Live harness APIs, authentication, transport, and protocol negotiation are future work.
-- Private Wavemill code is out of scope for this repository.
+`@hokusai/core` exports `HokusaiClient`, which supports both offline dispatch and live API calls.
+
+```typescript
+import { HokusaiClient } from '@hokusai/core';
+
+const client = new HokusaiClient({ apiKey: process.env.HOKUSAI_API_KEY });
+
+// Route a task
+const route = await client.route({ taskId: 'task-1', prompt: 'summarise HOK-2104' });
+
+// Report an outcome
+await client.reportOutcome({
+  taskId: 'task-1',
+  routingId: route.routingId,
+  status: 'completed',
+  summary: 'Done',
+});
+```
+
+All three adapters (Wavemill, Claude Code, Codex) accept an optional `client` or `clientOptions`
+field and expose the resolved `HokusaiClient` as `adapter.client`.
+
+Key options:
+- `apiKey` — required for network calls; omit for offline `prepareDispatch` use only.
+- `baseUrl` — override the default API origin.
+- `dryRun` — validate inputs and return a request descriptor without calling the network.
+- `maxRetries` — default `2`; set to `0` to disable retries.
+- `transport` — inject a custom `fetch`-compatible function (useful in tests).
+
+Structured errors (`HokusaiAuthError`, `HokusaiValidationError`, `HokusaiNetworkError`,
+`HokusaiApiError`) are exported from `@hokusai/core` and carry `code`, `status`, and `requestId`
+fields for actionable error handling.

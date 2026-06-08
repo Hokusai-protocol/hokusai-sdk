@@ -1,7 +1,18 @@
 export {
   HokusaiClient,
   HokusaiClientError,
+  HokusaiError,
+  HokusaiAuthError,
+  HokusaiValidationError,
+  HokusaiNetworkError,
+  HokusaiApiError,
+  SDK_VERSION,
+  ROUTE_PATH,
+  OUTCOME_PATH,
   type HokusaiClientOptions,
+  type HokusaiErrorCode,
+  type FetchLike,
+  type ApiCallOptions,
 } from './client.js';
 export {
   anonymizeText,
@@ -28,6 +39,16 @@ export {
   type HokusaiOutcome,
   type HokusaiTaskInput,
   type OutcomeStatus,
+  type RouteRequest,
+  type RouteResponse,
+  type OutcomeRequest,
+  type OutcomeResponse,
+  type DryRunDescriptor,
+  type HokusaiValidationIssue,
+  validateRouteRequest,
+  validateRouteResponse,
+  validateOutcomeRequest,
+  validateOutcomeResponse,
 } from './schemas.js';
 export {
   InMemoryCorrelationStorage,

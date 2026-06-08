@@ -1,6 +1,6 @@
 # Payload Schemas
 
-`@hokusai/core` currently exposes TypeScript-first payload contracts for:
+`@hokusai/core` exposes TypeScript-first payload contracts for:
 
 - task input
 - dispatch payload
@@ -9,4 +9,18 @@
 - correlation records
 - model definitions
 
-The scaffold is intentionally minimal. Future tasks can harden these contracts into versioned wire schemas once the cross-harness protocol is finalized.
+## Route and outcome wire schemas
+
+For live API calls, `@hokusai/core` also exports typed request/response schemas
+with local runtime validators:
+
+| Type | Validator | Description |
+|---|---|---|
+| `RouteRequest` | `validateRouteRequest` | POST to `/v1/route` |
+| `RouteResponse` | `validateRouteResponse` | Response from `/v1/route` |
+| `OutcomeRequest` | `validateOutcomeRequest` | POST to `/v1/outcomes` |
+| `OutcomeResponse` | `validateOutcomeResponse` | Response from `/v1/outcomes` |
+
+Validators return the typed value on success, or an array of `HokusaiValidationIssue`
+objects on failure. `HokusaiClient` applies these validators before every network call
+and after every response parse.
