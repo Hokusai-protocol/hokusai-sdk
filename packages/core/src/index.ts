@@ -33,10 +33,17 @@ export {
   type RedactionResult,
 } from './anonymization.js';
 export {
+  canReportOutcome,
+  canRoute,
   isConsentGranted,
+  resolveConsent,
   type ConsentConfig,
+  type ConsentSettings,
   type ConsentScope,
   type ConsentSnapshot,
+  type HokusaiApiConfig,
+  type PayloadPreviewSettings,
+  type RetentionPolicy,
 } from './consent.js';
 export type {
   AdapterError,
@@ -128,7 +135,18 @@ export {
   wavemillTaskPacketFixture,
 } from './fixtures/index.js';
 export {
+  FsLocalStore,
   InMemoryCorrelationStorage,
+  InMemoryLocalStore,
+  InvalidStoreIdError,
+  RawPayloadRejectedError,
+  StoreCorruptError,
   type CorrelationRecord,
   type CorrelationStorage,
+  type LocalCorrelationRecord,
+  type LocalStore,
+  type PayloadHashRecord,
+  type SubmissionAuditEntry,
+  type SubmissionAuditKind,
+  type SubmissionAuditStatus,
 } from './storage.js';

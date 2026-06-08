@@ -2,6 +2,25 @@
 
 `@hokusai/core` now exposes one shared redaction engine for task and outcome payload builders.
 
+## Consent settings
+
+- `ConsentSettings` separates routing consent from outcome-reporting consent.
+- `resolveConsent()` defaults both `routingEnabled` and `outcomeReportingEnabled` to `false`.
+- `canRoute()` reads only `routingEnabled`.
+- `canReportOutcome()` reads only `outcomeReportingEnabled`.
+
+## Local store
+
+- `LocalStore` defines the shared interface for correlation records, payload hashes, and submission audit logs.
+- `FsLocalStore` is the default filesystem-backed implementation for harnesses that do not have their own config or state system.
+- Stored files contain hashes, ids, metadata, and timestamps only. Raw task text, raw code, and raw logs are intentionally excluded.
+- `RawPayloadRejectedError` is thrown if a caller attempts to persist known raw-data fields such as `rawTaskText`, `rawCode`, or `rawLog`.
+
+## Retention and deletion
+
+- `pruneExpired(now, policy)` enforces `maxAgeMs` and `maxRecords` independently for correlations, payload hashes, and audit entries.
+- `listCorrelations()`, `listAudit()`, and `clear()` provide the primitives adapters need to implement inspect-and-purge commands for local Hokusai state.
+
 ## Supported categories
 
 - `secret`: API keys, OAuth-style secrets, GitHub and Slack tokens, and long high-entropy strings

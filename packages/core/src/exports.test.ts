@@ -10,7 +10,15 @@ describe('core public surface', () => {
     expect(core.HokusaiAuthError).toBeDefined();
     expect(core.HokusaiValidationError).toBeDefined();
     expect(core.HokusaiNetworkError).toBeDefined();
+    expect(core.canRoute).toBeDefined();
+    expect(core.canReportOutcome).toBeDefined();
+    expect(core.resolveConsent).toBeDefined();
+    expect(core.FsLocalStore).toBeDefined();
     expect(core.InMemoryCorrelationStorage).toBeDefined();
+    expect(core.InMemoryLocalStore).toBeDefined();
+    expect(core.RawPayloadRejectedError).toBeDefined();
+    expect(core.StoreCorruptError).toBeDefined();
+    expect(core.InvalidStoreIdError).toBeDefined();
     expect(core.InMemoryModelRegistry).toBeDefined();
     expect(core.anonymizeText).toBeDefined();
     expect(core.redact).toBeDefined();
