@@ -1,9 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { HokusaiDispatchPayload } from '@hokusai/core';
 import {
   buildClaudeCodeTaskPacket,
   createClaudeCodeAdapter,
+  createClaudeCodeHarnessAdapter,
   createClaudeCodeModelProvider,
 } from './index.js';
+
+const tempDirs: string[] = [];
+
+async function createTempDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 describe('createClaudeCodeAdapter', () => {
   it('returns stable manifest and command metadata', () => {
@@ -118,5 +135,84 @@ describe('createClaudeCodeAdapter', () => {
     }
     expect(mapped.error.code).toBe('PROVIDER_NOT_ALLOWED');
     expect(mapped.error.details?.suggestions).toEqual(['claude-sonnet-4-6']);
+  });
+});
+
+describe('createClaudeCodeHarnessAdapter', () => {
+  it('persists simple storage state and previews payloads', async () => {
+    const configPath = await createTempDir('hokusai-claude-harness-');
+    const adapter = createClaudeCodeHarnessAdapter({
+      configPath,
+    });
+
+    await adapter.storage.set('key', 'value');
+    expect(await adapter.storage.get('key')).toEqual({
+      ok: true,
+      value: 'value',
+    });
+    await adapter.storage.delete('key');
+    expect(await adapter.storage.get('key')).toEqual({
+      ok: true,
+      value: undefined,
+    });
+
+    const discovered = await adapter.models.discoverModels({
+      task: {
+        id: 'task-1',
+        prompt: 'test',
+      },
+    });
+    expect(discovered.ok).toBe(true);
+    if (!discovered.ok) {
+      return;
+    }
+    expect(discovered.value.map((model) => model.id)).toContain('claude-sonnet-4-6');
+
+    const payload: HokusaiDispatchPayload = {
+      task: {
+        id: 'task-1',
+        prompt: 'Dispatch the task',
+      },
+      prompt: 'Dispatch the task',
+      consent: {
+        subjectId: 'claude-code',
+        grantedScopes: ['task-execution'],
+      },
+      model: {
+        id: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        capabilities: ['reasoning', 'streaming', 'tool-use'],
+      },
+      correlation: {
+        taskId: 'task-1',
+        correlationId: 'corr-123',
+        createdAt: '2026-06-08T00:00:00.000Z',
+      },
+      redactions: [{ label: 'email' }],
+      createdAt: '2026-06-08T00:00:00.000Z',
+    };
+
+    expect(adapter.payloads.previewPayload({ payload })).toEqual({
+      ok: true,
+      value: {
+        summary: 'Task task-1 (model: claude-sonnet-4-6)',
+        promptPreview: 'Dispatch the task',
+        redactionCount: 1,
+      },
+    });
+  });
+
+  it('treats a corrupt state file as empty state', async () => {
+    const configPath = await createTempDir('hokusai-claude-corrupt-');
+    await writeFile(path.join(configPath, 'state.json'), '{not-json', 'utf8');
+
+    const adapter = createClaudeCodeHarnessAdapter({
+      configPath,
+    });
+
+    expect(await adapter.storage.get('missing')).toEqual({
+      ok: true,
+      value: undefined,
+    });
   });
 });

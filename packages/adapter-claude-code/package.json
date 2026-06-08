@@ -12,7 +12,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "plugin.json"
   ],
   "dependencies": {
     "@hokusai/core": "workspace:*"
