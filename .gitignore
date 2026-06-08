@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.turbo
+.typecheck
+.changeset/pre.json
+*.tsbuildinfo
+features/

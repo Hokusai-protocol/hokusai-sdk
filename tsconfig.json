@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/adapter-claude-code" },
+    { "path": "./packages/adapter-codex" },
+    { "path": "./packages/adapter-wavemill" },
+    { "path": "./examples/reference-harness" }
+  ]
+}

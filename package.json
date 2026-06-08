@@ -1,0 +1,30 @@
+{
+  "name": "hokusai-sdk",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.11.0",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "changeset": "changeset",
+    "check:boundaries": "node ./scripts/check-core-boundaries.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "release": "changeset publish",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "version-packages": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.6",
+    "@eslint/js": "^9.28.0",
+    "@types/node": "^24.0.1",
+    "eslint": "^9.28.0",
+    "globals": "^16.2.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.1",
+    "vitest": "^3.2.3"
+  }
+}
