@@ -117,13 +117,16 @@ async function createRouteRequest(): Promise<RouteRequest> {
 
 function createOutcomeReport(): OutcomeReport {
   return {
-    taskId: 'task-1',
-    status: 'completed',
-    summary: 'Completed successfully.',
+    schemaVersion: '1',
     correlationId: 'corr-123',
-    metadata: {
-      source: 'unit-test',
-    },
+    recommendedModel: 'gpt-5-codex',
+    actualModel: 'gpt-5-codex',
+    recommendationAccepted: true,
+    completionStatus: 'succeeded',
+    latencyBucket: 'medium',
+    costBucket: 'low',
+    tokenBucket: 'medium',
+    notes: 'Completed successfully.',
   };
 }
 
@@ -352,7 +355,7 @@ describe('HokusaiClient', () => {
     const outcomeReport = createOutcomeReport();
     const { transport } = createMockTransport([
       createResponse(202, {
-        taskId: outcomeReport.taskId,
+        taskId: outcomeReport.correlationId,
         status: 'accepted',
       }),
     ]);
@@ -363,7 +366,7 @@ describe('HokusaiClient', () => {
     });
 
     await expect(client.reportOutcome(outcomeReport)).resolves.toEqual({
-      taskId: outcomeReport.taskId,
+      taskId: outcomeReport.correlationId,
       status: 'accepted',
       requestId: expect.any(String),
     });
@@ -383,7 +386,7 @@ describe('HokusaiClient', () => {
     });
 
     await expect(client.reportOutcome(outcomeReport)).resolves.toEqual({
-      taskId: outcomeReport.taskId,
+      taskId: '',
       status: 'recorded',
       requestId: 'server-204',
     });
@@ -662,17 +665,23 @@ describe('HokusaiClient', () => {
     await expect(
       client.reportOutcome(
         {
-          taskId: '',
-          status: 'completed',
-          summary: '',
+          schemaVersion: '1',
+          correlationId: '',
+          recommendedModel: '',
+          actualModel: '',
+          recommendationAccepted: true,
+          completionStatus: 'succeeded',
+          latencyBucket: 'medium',
+          costBucket: 'low',
+          tokenBucket: 'medium',
         },
         { dryRun: true, requestId: 'dry-run-invalid' },
       ),
     ).rejects.toMatchObject({
       requestId: 'dry-run-invalid',
       fieldErrors: expect.arrayContaining([
-        expect.objectContaining({ path: 'taskId' }),
-        expect.objectContaining({ path: 'summary' }),
+        expect.objectContaining({ path: 'correlationId' }),
+        expect.objectContaining({ path: 'recommendedModel' }),
       ]),
     });
   });

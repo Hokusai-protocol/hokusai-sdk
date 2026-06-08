@@ -2,6 +2,17 @@ import type { ConsentSnapshot } from './consent.js';
 import type { ModelSelection } from './model-registry.js';
 import type { RedactionRecord } from './anonymization.js';
 import type { CorrelationRecord } from './storage.js';
+export type {
+  BuildSummary,
+  CoarseBucket,
+  CompletionStatus,
+  OutcomeExtensions,
+  OutcomeReport,
+  OutcomeReportInput,
+  OutcomeValidationError,
+  TestSummary,
+} from './outcome.js';
+import { validateOutcomeReport as validateNormalizedOutcomeReport } from './outcome.js';
 
 export interface HokusaiTaskInput {
   id: string;
@@ -9,11 +20,9 @@ export interface HokusaiTaskInput {
   metadata?: Record<string, string>;
 }
 
-export type OutcomeStatus = 'accepted' | 'completed' | 'failed';
-
 export interface HokusaiOutcome {
   taskId: string;
-  status: OutcomeStatus;
+  status: 'accepted' | 'completed' | 'failed';
   /**
    * Builders should pass user-visible summaries through redact() before
    * constructing outcome packets when the reusable redaction engine is enabled.
@@ -40,11 +49,6 @@ export interface RouteResponse {
   taskId: string;
   status: 'accepted';
   requestId?: string | undefined;
-}
-
-export interface OutcomeReport extends HokusaiOutcome {
-  correlationId?: string;
-  metadata?: Record<string, string>;
 }
 
 export type OutcomeResponseStatus = 'accepted' | 'recorded';
@@ -283,45 +287,10 @@ export function validateRouteRequest(request: unknown): HokusaiFieldError[] {
 }
 
 export function validateOutcomeReport(request: unknown): HokusaiFieldError[] {
-  const errors: HokusaiFieldError[] = [];
-
-  if (!isRecord(request)) {
-    return [
-      {
-        path: '$',
-        message: 'Expected an outcome report object.',
-        code: 'invalid_type',
-      },
-    ];
-  }
-
-  validateNonEmptyString(request.taskId, 'taskId', errors);
-  validateNonEmptyString(request.summary, 'summary', errors);
-
-  if (typeof request.status !== 'string') {
-    pushFieldError(errors, 'status', 'Expected a string.', 'invalid_type');
-  } else if (
-    request.status !== 'accepted' &&
-    request.status !== 'completed' &&
-    request.status !== 'failed'
-  ) {
-    pushFieldError(
-      errors,
-      'status',
-      'Expected one of accepted, completed, or failed.',
-      'invalid_value',
-    );
-  }
-
-  if ('correlationId' in request && request.correlationId !== undefined) {
-    validateNonEmptyString(request.correlationId, 'correlationId', errors);
-  }
-
-  if ('metadata' in request && request.metadata !== undefined) {
-    validateStringRecord(request.metadata, 'metadata', errors);
-  }
-
-  return errors;
+  return validateNormalizedOutcomeReport(request).map((error) => ({
+    path: error.path,
+    message: error.message,
+  }));
 }
 
 export function validateRouteResponse(response: unknown): HokusaiFieldError[] {
