@@ -82,7 +82,7 @@ export interface SubmitOutcomeArgs {
 
 export async function requestRecommendation(
   args: RequestRecommendationArgs,
-): Promise<AdapterResult<RouteResponse | HokusaiValidationSuccess<HokusaiDispatchPayload>>> {
+): Promise<AdapterResult<RouteResponse>> {
   if (!args.client) {
     return fail('client_unavailable', 'A Hokusai client is required to request a recommendation.');
   }
@@ -94,6 +94,9 @@ export async function requestRecommendation(
       args.scope,
     );
     const response = await args.client.route(payload);
+    if (!isRouteResponse(response)) {
+      return fail('invalid_route_response', 'Hokusai client returned an unexpected route response shape.');
+    }
     return ok(response);
   } catch (error) {
     return failFromError(error);
@@ -206,6 +209,15 @@ function failFromError(error: unknown): AdapterResult<never> {
     ok: false,
     error: normalizeError(error),
   };
+}
+
+function isRouteResponse(
+  response: RouteResponse | HokusaiValidationSuccess<HokusaiDispatchPayload>,
+): response is RouteResponse {
+  return (
+    typeof (response as RouteResponse).routeId === 'string' &&
+    typeof (response as RouteResponse).status === 'string'
+  );
 }
 
 function normalizeError(error: unknown): AdapterError {
