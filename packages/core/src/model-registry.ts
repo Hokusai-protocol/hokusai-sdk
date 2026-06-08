@@ -122,6 +122,7 @@ export class ModelMappingError extends Error {
     suggestions: string[],
   ) {
     super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.name = 'ModelMappingError';
     this.code = code;
     this.suggestions = suggestions;
