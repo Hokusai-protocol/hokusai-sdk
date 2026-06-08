@@ -1,15 +1,99 @@
 # Payload Schemas
 
-`@hokusai/core` currently exposes TypeScript-first payload contracts for:
+`@hokusai/core` now exposes two shared wire payloads for the Hokusai API client.
 
-- task input
-- dispatch payload
-- outcome payload
-- consent snapshots
-- correlation records
-- model definitions
+## Route request
 
-The scaffold is intentionally minimal. Future tasks can harden these contracts into versioned wire schemas once the cross-harness protocol is finalized.
+`HokusaiClient.route()` accepts `RouteRequest`, which reuses the existing dispatch payload shape:
+
+```ts
+interface RouteRequest {
+  task: {
+    id: string;
+    prompt: string;
+    metadata?: Record<string, string>;
+  };
+  prompt: string;
+  consent: {
+    subjectId: string;
+    grantedScopes: string[];
+  };
+  model: {
+    id: string;
+    provider: string;
+    capabilities: string[];
+  };
+  correlation: {
+    taskId: string;
+    correlationId: string;
+    createdAt: string;
+  };
+  redactions: Array<{
+    label: string;
+    value: string;
+  }>;
+  createdAt: string;
+}
+```
+
+Example response:
+
+```json
+{
+  "routeId": "route_123",
+  "taskId": "task-1",
+  "status": "accepted",
+  "requestId": "req_123"
+}
+```
+
+## Outcome report
+
+`HokusaiClient.reportOutcome()` accepts `OutcomeReport`:
+
+```ts
+interface OutcomeReport {
+  taskId: string;
+  status: 'accepted' | 'completed' | 'failed';
+  summary: string;
+  correlationId?: string;
+  metadata?: Record<string, string>;
+}
+```
+
+Example response:
+
+```json
+{
+  "taskId": "task-1",
+  "status": "accepted",
+  "requestId": "req_124"
+}
+```
+
+`204 No Content` is also treated as success for outcome reporting and is surfaced as:
+
+```json
+{
+  "taskId": "task-1",
+  "status": "recorded",
+  "requestId": "req_124"
+}
+```
+
+## Validation errors
+
+Both methods validate requests before any network call. Validation failures use `HokusaiValidationError` with structured `fieldErrors`:
+
+```json
+[
+  {
+    "path": "task.id",
+    "message": "Value must not be empty.",
+    "code": "required"
+  }
+]
+```
 
 ## Task Packet Schema
 

@@ -5,7 +5,7 @@ import {
   preview,
   redact,
 } from './anonymization.js';
-import { HokusaiClient } from './client.js';
+import { HokusaiDispatchBuilder } from './client.js';
 import { claudeCodeFixture } from './fixtures/claude-code.fixture.js';
 import { codexFixture } from './fixtures/codex.fixture.js';
 import { wavemillFixture } from './fixtures/wavemill.fixture.js';
@@ -171,7 +171,7 @@ describe('redact', () => {
 
 describe('HokusaiClient redaction integration', () => {
   it('uses the reusable redaction engine when redactionConfig is supplied', async () => {
-    const client = new HokusaiClient({
+    const builder = new HokusaiDispatchBuilder({
       consent: {
         subjectId: 'user-123',
         grantedScopes: ['task-execution'],
@@ -190,7 +190,7 @@ describe('HokusaiClient redaction integration', () => {
       ]),
     });
 
-    const payload = await client.prepareDispatch(
+    const payload = await builder.prepareDispatch(
       {
         id: 'task-redaction',
         prompt: 'Email alice@example.com before using sk-12345678 for Acme Corp',

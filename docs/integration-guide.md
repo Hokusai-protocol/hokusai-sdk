@@ -4,14 +4,74 @@ This repository is intentionally split between reusable contracts and harness ad
 
 ## Recommended integration flow
 
-1. Depend on `@hokusai/core` for shared task, outcome, consent, anonymization, and correlation abstractions.
+1. Depend on `@hokusai/core` for the shared `HokusaiClient`, payload types, validation helpers, and typed error classes.
 2. Choose an adapter package when a harness needs opinionated command or manifest metadata.
-3. Use `examples/reference-harness` as the smallest offline composition template.
+3. Use `HokusaiDispatchBuilder` only when you need the offline dispatch-preparation helper.
 
-## Current scope
+## Shared API client
 
-- Adapters expose typed factories and metadata only.
-- Live harness APIs, authentication, transport, and protocol negotiation are future work.
+```ts
+import { HokusaiClient } from '@hokusai/core';
+
+const client = new HokusaiClient({
+  apiKey: 'k_prod_xxx',
+  baseUrl: 'https://api.hokusai.app',
+});
+```
+
+The client:
+
+- sends `Authorization`, request ID, and SDK version headers
+- validates route and outcome payloads before any network call
+- supports dry-run validation via `{ dryRun: true }`
+- retries network failures, `429`, and `5xx` responses with backoff
+
+For tests, inject a transport instead of mocking globals:
+
+```ts
+const client = new HokusaiClient({
+  apiKey: 'k_test',
+  transport: async () => ({
+    status: 200,
+    headers: { get: () => null },
+    text: async () =>
+      JSON.stringify({
+        routeId: 'route_123',
+        taskId: 'task-1',
+        status: 'accepted',
+      }),
+  }),
+});
+```
+
+## Adapter reuse
+
+All three adapters accept the same optional shared client instance:
+
+```ts
+import { createCodexAdapter } from '@hokusai/adapter-codex';
+import { createClaudeCodeAdapter } from '@hokusai/adapter-claude-code';
+import { createWavemillAdapter } from '@hokusai/adapter-wavemill';
+
+const apiClient = new HokusaiClient({ apiKey: 'k_prod_xxx' });
+
+createCodexAdapter({
+  defaultModel: 'gpt-5-codex',
+  pluginId: 'hokusai.codex',
+  apiClient,
+});
+createClaudeCodeAdapter({
+  modelId: 'claude-sonnet',
+  packageVersion: '0.1.0',
+  apiClient,
+});
+createWavemillAdapter({ integrationId: 'wavemill', apiClient });
+```
+
+## Scope
+
+- Adapters still expose typed factories and metadata only.
+- Harness-specific config discovery and command output stay out of `@hokusai/core`.
 - Private Wavemill code is out of scope for this repository.
 
 ## Minimal adapter implementation

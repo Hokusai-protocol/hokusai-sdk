@@ -1,7 +1,17 @@
 export {
+  DEFAULT_HOKUSAI_BASE_URL,
+  HokusaiApiError,
+  HokusaiAuthError,
   HokusaiClient,
-  HokusaiClientError,
+  HokusaiDispatchBuilder,
+  HokusaiDispatchError,
+  HokusaiNetworkError,
+  HokusaiRateLimitError,
+  HokusaiValidationError,
+  type FetchTransport,
   type HokusaiClientOptions,
+  type HokusaiDispatchBuilderOptions,
+  type HokusaiRequestOptions,
 } from './client.js';
 export {
   anonymizeText,
@@ -65,9 +75,20 @@ export {
 } from './model-registry.js';
 export {
   type HokusaiDispatchPayload,
+  type HokusaiFieldError,
   type HokusaiOutcome,
+  type HokusaiValidationSuccess,
   type HokusaiTaskInput,
+  type OutcomeReport,
+  type OutcomeResponse,
+  type OutcomeResponseStatus,
   type OutcomeStatus,
+  type RouteRequest,
+  type RouteResponse,
+  validateOutcomeReport,
+  validateOutcomeResponse,
+  validateRouteRequest,
+  validateRouteResponse,
 } from './schemas.js';
 export {
   TASK_PACKET_SCHEMA_VERSION,

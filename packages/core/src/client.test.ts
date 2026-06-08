@@ -1,11 +1,144 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { HokusaiClient, HokusaiClientError } from './client.js';
+import {
+  DEFAULT_HOKUSAI_BASE_URL,
+  HokusaiApiError,
+  HokusaiAuthError,
+  HokusaiClient,
+  HokusaiDispatchBuilder,
+  HokusaiDispatchError,
+  HokusaiNetworkError,
+  HokusaiRateLimitError,
+  HokusaiValidationError,
+  type FetchTransport,
+  type FetchTransportRequestInit,
+  type FetchTransportResponse,
+} from './client.js';
 import { InMemoryModelRegistry } from './model-registry.js';
+import type { OutcomeReport, RouteRequest } from './schemas.js';
 import { InMemoryCorrelationStorage } from './storage.js';
 
-describe('HokusaiClient', () => {
+interface MockCall {
+  init: FetchTransportRequestInit;
+  input: string;
+}
+
+function createHeaders(
+  values: Record<string, string> = {},
+): FetchTransportResponse['headers'] {
+  const normalized = new Map(
+    Object.entries(values).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+
+  return {
+    get(name: string): string | null {
+      return normalized.get(name.toLowerCase()) ?? null;
+    },
+  };
+}
+
+function createResponse(
+  status: number,
+  body?: unknown,
+  headers?: Record<string, string>,
+): FetchTransportResponse {
+  return {
+    status,
+    headers: createHeaders(headers),
+    text(): Promise<string> {
+      if (body === undefined) {
+        return Promise.resolve('');
+      }
+
+      return Promise.resolve(
+        typeof body === 'string' ? body : JSON.stringify(body),
+      );
+    },
+  };
+}
+
+function createMockTransport(sequence: Array<FetchTransportResponse | Error>): {
+  calls: MockCall[];
+  transport: FetchTransport;
+} {
+  const calls: MockCall[] = [];
+  let index = 0;
+
+  return {
+    calls,
+    transport: (input, init) => {
+      calls.push({ input, init });
+      const result = sequence[index] ?? sequence[sequence.length - 1];
+      index += 1;
+
+      if (!result) {
+        return Promise.reject(new Error('Mock transport sequence is empty.'));
+      }
+
+      if (result instanceof Error) {
+        return Promise.reject(result);
+      }
+
+      return Promise.resolve(result);
+    },
+  };
+}
+
+async function createRouteRequest(): Promise<RouteRequest> {
+  const builder = new HokusaiDispatchBuilder({
+    consent: {
+      subjectId: 'user-123',
+      grantedScopes: ['task-execution'],
+    },
+    modelRegistry: new InMemoryModelRegistry([
+      {
+        id: 'gpt-5-codex',
+        provider: 'openai',
+        family: 'gpt-5',
+        capabilities: ['reasoning', 'tool-use'],
+        default: true,
+      },
+    ]),
+    storage: new InMemoryCorrelationStorage(),
+    clock: () => new Date('2026-01-02T03:04:05.000Z'),
+  });
+
+  return builder.prepareDispatch(
+    {
+      id: 'task-1',
+      prompt: 'Email alice@example.com before using sk-12345678',
+      metadata: {
+        repo: 'hokusai-sdk',
+      },
+    },
+    'gpt-5-codex',
+  );
+}
+
+function createOutcomeReport(): OutcomeReport {
+  return {
+    taskId: 'task-1',
+    status: 'completed',
+    summary: 'Completed successfully.',
+    correlationId: 'corr-123',
+    metadata: {
+      source: 'unit-test',
+    },
+  };
+}
+
+function readCorePackageVersion(): string {
+  const packageJson = readFileSync(
+    new URL('../package.json', import.meta.url),
+    'utf8',
+  );
+
+  return (JSON.parse(packageJson) as { version: string }).version;
+}
+
+describe('HokusaiDispatchBuilder', () => {
   it('builds an offline dispatch payload with deterministic redactions', async () => {
-    const client = new HokusaiClient({
+    const builder = new HokusaiDispatchBuilder({
       consent: {
         subjectId: 'user-123',
         grantedScopes: ['task-execution'],
@@ -23,7 +156,7 @@ describe('HokusaiClient', () => {
       clock: () => new Date('2026-01-02T03:04:05.000Z'),
     });
 
-    const payload = await client.prepareDispatch(
+    const payload = await builder.prepareDispatch(
       {
         id: 'task-1',
         prompt: 'Email alice@example.com before using sk-12345678',
@@ -43,7 +176,7 @@ describe('HokusaiClient', () => {
   });
 
   it('rejects dispatches for missing consent', async () => {
-    const client = new HokusaiClient({
+    const builder = new HokusaiDispatchBuilder({
       consent: {
         subjectId: 'user-123',
         grantedScopes: [],
@@ -59,13 +192,514 @@ describe('HokusaiClient', () => {
     });
 
     await expect(
-      client.prepareDispatch(
+      builder.prepareDispatch(
         {
           id: 'task-2',
           prompt: 'No consent',
         },
         'gpt-5-codex',
       ),
-    ).rejects.toBeInstanceOf(HokusaiClientError);
+    ).rejects.toBeInstanceOf(HokusaiDispatchError);
+  });
+});
+
+describe('HokusaiClient', () => {
+  it('sends the auth header and default SDK version on route requests', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-1',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    const response = await client.route(routeRequest);
+
+    expect(response).toMatchObject({
+      routeId: 'route-1',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init.headers?.Authorization).toBe('Bearer k_test');
+    expect(calls[0]?.init.headers?.['X-Hokusai-Sdk-Version']).toBe(
+      readCorePackageVersion(),
+    );
+  });
+
+  it('uses the default base URL when none is provided', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-1',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await client.route(routeRequest);
+
+    expect(calls[0]?.input).toBe(`${DEFAULT_HOKUSAI_BASE_URL}/v1/route`);
+  });
+
+  it('uses a normalized custom base URL without double slashes', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-2',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      baseUrl: 'https://example.test/custom-root/',
+      transport,
+    });
+
+    await client.route(routeRequest);
+
+    expect(calls[0]?.input).toBe('https://example.test/custom-root/v1/route');
+  });
+
+  it('supports overriding the SDK version header', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-3',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      sdkVersion: '9.9.9-test',
+      transport,
+    });
+
+    await client.route(routeRequest);
+
+    expect(calls[0]?.init.headers?.['X-Hokusai-Sdk-Version']).toBe(
+      '9.9.9-test',
+    );
+  });
+
+  it('uses deterministic request IDs and per-call overrides', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(
+        403,
+        { message: 'Forbidden.' },
+        { 'x-hokusai-request-id': 'server-req-1' },
+      ),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      requestIdFactory: () => 'generated-req-1',
+      transport,
+    });
+
+    await expect(
+      client.route(routeRequest, { requestId: 'caller-req-1' }),
+    ).rejects.toMatchObject({
+      requestId: 'server-req-1',
+      status: 403,
+    });
+
+    expect(calls[0]?.init.headers?.['X-Hokusai-Request-Id']).toBe(
+      'caller-req-1',
+    );
+  });
+
+  it('returns a typed route response', async () => {
+    const routeRequest = await createRouteRequest();
+    const { transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-4',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(client.route(routeRequest)).resolves.toEqual({
+      routeId: 'route-4',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+      requestId: expect.any(String),
+    });
+  });
+
+  it('returns a typed outcome response for JSON responses', async () => {
+    const outcomeReport = createOutcomeReport();
+    const { transport } = createMockTransport([
+      createResponse(202, {
+        taskId: outcomeReport.taskId,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(client.reportOutcome(outcomeReport)).resolves.toEqual({
+      taskId: outcomeReport.taskId,
+      status: 'accepted',
+      requestId: expect.any(String),
+    });
+  });
+
+  it('handles 204 outcome responses without parsing JSON', async () => {
+    const outcomeReport = createOutcomeReport();
+    const { transport } = createMockTransport([
+      createResponse(204, undefined, {
+        'x-hokusai-request-id': 'server-204',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(client.reportOutcome(outcomeReport)).resolves.toEqual({
+      taskId: outcomeReport.taskId,
+      status: 'recorded',
+      requestId: 'server-204',
+    });
+  });
+
+  it('throws an auth error before any network call when the API key is missing', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-never',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({ transport });
+
+    await expect(client.route(routeRequest)).rejects.toBeInstanceOf(
+      HokusaiAuthError,
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it('maps 401 and 403 responses to auth errors without leaking the API key', async () => {
+    const routeRequest = await createRouteRequest();
+    const { transport } = createMockTransport([
+      createResponse(401, { message: 'Unauthorized.' }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test_secret',
+      transport,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.route(routeRequest);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HokusaiAuthError);
+    expect((thrown as Error).message).not.toContain('k_test_secret');
+  });
+
+  it('throws validation errors for invalid route requests without calling transport', async () => {
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-never',
+        taskId: 'task-1',
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(
+      client.route({
+        task: {
+          id: '',
+          prompt: '',
+        },
+        prompt: '',
+        consent: {
+          subjectId: '',
+          grantedScopes: ['task-execution'],
+        },
+        model: {
+          id: '',
+          provider: '',
+          capabilities: ['reasoning'],
+        },
+        correlation: {
+          taskId: '',
+          correlationId: '',
+          createdAt: '',
+        },
+        redactions: [{ label: '' }],
+        createdAt: '',
+      }),
+    ).rejects.toMatchObject({
+      fieldErrors: expect.arrayContaining([
+        expect.objectContaining({ path: 'task.id' }),
+        expect.objectContaining({ path: 'prompt' }),
+      ]),
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('maps API validation responses to HokusaiValidationError and does not retry 422', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(422, {
+        message: 'Validation failed.',
+        fieldErrors: [{ path: 'task.id', message: 'Task id is required.' }],
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      sleep: () => Promise.resolve(),
+    });
+
+    await expect(client.route(routeRequest)).rejects.toBeInstanceOf(
+      HokusaiValidationError,
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it('retries network failures and reuses the same request ID across attempts', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      new Error('socket hang up'),
+      new Error('socket hang up'),
+      createResponse(200, {
+        routeId: 'route-5',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      requestIdFactory: () => 'req-retry-1',
+      transport,
+      sleep: () => Promise.resolve(),
+    });
+
+    await expect(client.route(routeRequest)).resolves.toMatchObject({
+      routeId: 'route-5',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+    });
+    expect(calls).toHaveLength(3);
+    expect(
+      new Set(
+        calls.map((call) => call.init.headers?.['X-Hokusai-Request-Id'] ?? ''),
+      ),
+    ).toEqual(new Set(['req-retry-1']));
+  });
+
+  it('throws a network error after exhausting transport retries', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      new Error('offline'),
+      new Error('offline'),
+      new Error('offline'),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      maxRetries: 2,
+      transport,
+      sleep: () => Promise.resolve(),
+    });
+
+    await expect(client.route(routeRequest)).rejects.toBeInstanceOf(
+      HokusaiNetworkError,
+    );
+    expect(calls).toHaveLength(3);
+  });
+
+  it('retries 503 responses and eventually succeeds', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(503, { message: 'Unavailable.' }),
+      createResponse(200, {
+        routeId: 'route-6',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      sleep: async () => {},
+    });
+
+    await expect(client.route(routeRequest)).resolves.toMatchObject({
+      routeId: 'route-6',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('retries 429 responses, preserves retry-after, and fails with HokusaiRateLimitError when exhausted', async () => {
+    const routeRequest = await createRouteRequest();
+    const delays: number[] = [];
+    const { calls, transport } = createMockTransport([
+      createResponse(
+        429,
+        { message: 'Slow down.' },
+        { 'retry-after': '1', 'x-hokusai-request-id': 'rate-limit-1' },
+      ),
+      createResponse(
+        429,
+        { message: 'Slow down again.' },
+        { 'retry-after': '1', 'x-hokusai-request-id': 'rate-limit-2' },
+      ),
+      createResponse(
+        429,
+        { message: 'Still limited.' },
+        { 'retry-after': '1', 'x-hokusai-request-id': 'rate-limit-3' },
+      ),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      maxRetries: 2,
+      transport,
+      sleep: (delay) => {
+        delays.push(delay);
+        return Promise.resolve();
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await client.route(routeRequest);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HokusaiRateLimitError);
+    expect((thrown as HokusaiRateLimitError).retryAfter).toBe(1000);
+    expect(delays).toEqual([1000, 1000]);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('supports dry-run validation without a network call or API key', async () => {
+    const routeRequest = await createRouteRequest();
+    const outcomeReport = createOutcomeReport();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-never',
+        taskId: routeRequest.task.id,
+        status: 'accepted',
+      }),
+    ]);
+
+    const client = new HokusaiClient({ transport });
+
+    await expect(client.route(routeRequest, { dryRun: true })).resolves.toEqual(
+      {
+        ok: true,
+        request: routeRequest,
+      },
+    );
+    await expect(
+      client.reportOutcome(outcomeReport, { dryRun: true }),
+    ).resolves.toEqual({
+      ok: true,
+      request: outcomeReport,
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('throws a validation error for invalid dry-run payloads', async () => {
+    const client = new HokusaiClient({
+      transport: () =>
+        Promise.resolve(
+          createResponse(200, {
+            routeId: 'route-never',
+            taskId: 'task-1',
+            status: 'accepted',
+          }),
+        ),
+    });
+
+    await expect(
+      client.reportOutcome(
+        {
+          taskId: '',
+          status: 'completed',
+          summary: '',
+        },
+        { dryRun: true, requestId: 'dry-run-invalid' },
+      ),
+    ).rejects.toMatchObject({
+      requestId: 'dry-run-invalid',
+      fieldErrors: expect.arrayContaining([
+        expect.objectContaining({ path: 'taskId' }),
+        expect.objectContaining({ path: 'summary' }),
+      ]),
+    });
+  });
+
+  it('throws a structured API error when success JSON is malformed', async () => {
+    const routeRequest = await createRouteRequest();
+    const { transport } = createMockTransport([
+      createResponse(200, 'not-json'),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(client.route(routeRequest)).rejects.toBeInstanceOf(
+      HokusaiApiError,
+    );
+  });
+
+  it('rejects invalid base URLs with a configuration error', () => {
+    expect(
+      () =>
+        new HokusaiClient({
+          apiKey: 'k_test',
+          baseUrl: 'not-a-url',
+        }),
+    ).toThrow(HokusaiApiError);
   });
 });

@@ -1,5 +1,5 @@
 import { createCodexAdapter } from '@hokusai/adapter-codex';
-import { HokusaiClient, InMemoryModelRegistry } from '@hokusai/core';
+import { HokusaiDispatchBuilder, InMemoryModelRegistry } from '@hokusai/core';
 
 export function createReferenceHarness() {
   const adapter = createCodexAdapter({
@@ -7,7 +7,7 @@ export function createReferenceHarness() {
     pluginId: 'hokusai.codex',
   });
 
-  const client = new HokusaiClient({
+  const client = new HokusaiDispatchBuilder({
     consent: {
       subjectId: 'reference-user',
       grantedScopes: ['task-execution'],

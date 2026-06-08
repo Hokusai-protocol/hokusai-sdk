@@ -22,7 +22,9 @@
     "baseUrl": ".",
     "paths": {
       "@hokusai/core": ["packages/core/src/index.ts"],
-      "@hokusai/adapter-claude-code": ["packages/adapter-claude-code/src/index.ts"],
+      "@hokusai/adapter-claude-code": [
+        "packages/adapter-claude-code/src/index.ts"
+      ],
       "@hokusai/adapter-codex": ["packages/adapter-codex/src/index.ts"],
       "@hokusai/adapter-wavemill": ["packages/adapter-wavemill/src/index.ts"]
     }

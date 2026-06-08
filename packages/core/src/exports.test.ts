@@ -4,6 +4,12 @@ import * as core from './index.js';
 describe('core public surface', () => {
   it('exposes the expected entry points', () => {
     expect(core.HokusaiClient).toBeDefined();
+    expect(core.HokusaiDispatchBuilder).toBeDefined();
+    expect(core.DEFAULT_HOKUSAI_BASE_URL).toBeDefined();
+    expect(core.HokusaiApiError).toBeDefined();
+    expect(core.HokusaiAuthError).toBeDefined();
+    expect(core.HokusaiValidationError).toBeDefined();
+    expect(core.HokusaiNetworkError).toBeDefined();
     expect(core.InMemoryCorrelationStorage).toBeDefined();
     expect(core.InMemoryModelRegistry).toBeDefined();
     expect(core.anonymizeText).toBeDefined();
