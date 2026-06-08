@@ -2,9 +2,13 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   ANTHROPIC_MODELS,
+  FilePluginConfigStore,
   InMemoryModelRegistry,
-  ModelMappingError,
-  mapRecommendation,
+  defaultPluginConfigPath,
+  loadPluginConfig,
+  renderDoctorReport,
+  runDoctor,
+  validateRecommendedModel,
   type AdapterResult,
   type ConsentConfig,
   type HarnessAdapter,
@@ -13,9 +17,12 @@ import {
   type HarnessModelHandoffRequest,
   type HarnessModelProvider,
   type HokusaiClient,
+  type HokusaiPluginConfig,
   type HokusaiTaskInput,
   type ModelDefinition,
   type ModelRegistry,
+  type LoadPluginConfigOptions,
+  type RunDoctorInput,
 } from '@hokusai/core';
 import {
   getClaudeCodeStateFilePath,
@@ -63,13 +70,14 @@ export interface ClaudeCodeAdapterOptions {
   apiClient?: HokusaiClient;
   modelId: string;
   packageVersion: string;
+  pluginConfig?: HokusaiPluginConfig;
 }
 
 export interface ClaudeCodeAdapter {
   apiClient?: HokusaiClient;
   harness: 'claude-code';
   commands: Array<{
-    name: 'hokusai.run';
+    name: 'hokusai.run' | 'hokusai.doctor';
     description: string;
   }>;
   manifest: {
@@ -151,6 +159,10 @@ export function createClaudeCodeAdapter(
         name: 'hokusai.run',
         description: 'Dispatch a Hokusai task from Claude Code.',
       },
+      {
+        name: 'hokusai.doctor',
+        description: 'Inspect Hokusai auth, consent, reachability, and allowlist state.',
+      },
     ],
     manifest: {
       entrypoint: 'hokusai',
@@ -165,26 +177,45 @@ export function createClaudeCodeAdapter(
 
 export function createClaudeCodeModelProvider(options?: {
   registry?: ModelRegistry;
+  allowlist?: string[];
 }): HarnessModelProvider {
   const registry = options?.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
+  const allowlist =
+    options?.allowlist ?? ANTHROPIC_MODELS.map((model) => model.id);
 
   return {
     discoverModels() {
       return Promise.resolve({
         ok: true,
-        value: registry.listAvailable().map(toDiscoveredModel),
+        value: registry
+          .listAvailable()
+          .filter((model) => model.provider === 'anthropic')
+          .filter((model) =>
+            validateRecommendedModel(model.id, {
+              allowlist,
+              registry,
+            }).ok,
+          )
+          .map(toDiscoveredModel),
       });
     },
     mapModel(request) {
-      try {
-        const model = mapRecommendation(
-          { model: request.harnessModelId },
-          {
-            registry,
-            allowedProviders: ['anthropic'],
-            requireAvailable: true,
-          },
-        );
+      const validation = validateRecommendedModel(request.harnessModelId, {
+        allowlist,
+        registry,
+      });
+
+      if (validation.ok) {
+        const model = registry.get(validation.modelId);
+        if (!model) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              code: 'UNKNOWN_MODEL',
+              message: `Unsupported model recommendation: ${validation.modelId}.`,
+            },
+          });
+        }
 
         return Promise.resolve({
           ok: true,
@@ -194,25 +225,73 @@ export function createClaudeCodeModelProvider(options?: {
             capabilities: model.capabilities,
           },
         });
-      } catch (error) {
-        if (error instanceof ModelMappingError) {
-          return Promise.resolve({
-            ok: false,
-            error: {
-              code: error.code,
-              message: error.message,
-              details: {
-                suggestions: error.suggestions,
-              },
-            },
-          });
-        }
-
-        throw error;
       }
+
+      const code =
+        validation.reason === 'not-anthropic'
+          ? 'PROVIDER_NOT_ALLOWED'
+          : validation.reason === 'not-in-allowlist'
+            ? 'MODEL_NOT_ALLOWED'
+            : 'UNKNOWN_MODEL';
+      const message =
+        validation.reason === 'not-anthropic'
+          ? `Model ${request.harnessModelId} is not supported by this harness.`
+          : validation.reason === 'not-in-allowlist'
+            ? `Model ${request.harnessModelId} is not permitted by the configured allowlist.`
+            : `Unsupported model recommendation: ${request.harnessModelId}.`;
+
+      return Promise.resolve({
+        ok: false,
+        error: {
+          code,
+          message,
+          details: {
+            suggestions: validation.suggestions,
+          },
+        },
+      });
     },
   };
 }
+
+export async function loadClaudeCodePluginConfig(
+  options: Omit<LoadPluginConfigOptions, 'store'> & {
+    configPath?: string;
+  } = {},
+): Promise<HokusaiPluginConfig> {
+  const { configPath, ...loadOptions } = options;
+  const store = configPath
+    ? new FilePluginConfigStore(configPath)
+    : undefined;
+
+  return loadPluginConfig({
+    registry: options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS),
+    ...(store ? { store } : {}),
+    ...loadOptions,
+  });
+}
+
+export function createClaudeCodeDoctor(
+  options: Omit<RunDoctorInput, 'registry'>,
+): {
+  run(): Promise<{ report: Awaited<ReturnType<typeof runDoctor>>; rendered: string }>;
+} {
+  return {
+    async run() {
+      const report = await runDoctor({
+        ...options,
+        registry: new InMemoryModelRegistry(ANTHROPIC_MODELS),
+      });
+
+      return {
+        report,
+        rendered: renderDoctorReport(report),
+      };
+    },
+  };
+}
+
+export { defaultPluginConfigPath };
 
 export function createClaudeCodeHarnessAdapter(
   options: ClaudeCodeHarnessAdapterOptions,

@@ -10,9 +10,20 @@ describe('core public surface', () => {
     expect(core.HokusaiAuthError).toBeDefined();
     expect(core.HokusaiValidationError).toBeDefined();
     expect(core.HokusaiNetworkError).toBeDefined();
+    expect(core.createGatedClient).toBeDefined();
     expect(core.canRoute).toBeDefined();
     expect(core.canReportOutcome).toBeDefined();
+    expect(core.canRouteWithAuth).toBeDefined();
+    expect(core.canSubmitOutcomeWithAuth).toBeDefined();
+    expect(core.assertCanRoute).toBeDefined();
+    expect(core.assertCanSubmitOutcome).toBeDefined();
+    expect(core.ConsentRequiredError).toBeDefined();
     expect(core.resolveConsent).toBeDefined();
+    expect(core.loadPluginConfig).toBeDefined();
+    expect(core.redactPluginConfig).toBeDefined();
+    expect(core.summarizeAllowlist).toBeDefined();
+    expect(core.LocalStorePluginConfigStore).toBeDefined();
+    expect(core.ConfigValidationError).toBeDefined();
     expect(core.FsLocalStore).toBeDefined();
     expect(core.InMemoryCorrelationStorage).toBeDefined();
     expect(core.InMemoryLocalStore).toBeDefined();
@@ -25,7 +36,10 @@ describe('core public surface', () => {
       Error,
     );
     expect(core.mapRecommendation).toBeDefined();
+    expect(core.validateRecommendedModel).toBeDefined();
     expect(Array.isArray(core.ANTHROPIC_MODELS)).toBe(true);
+    expect(core.runDoctor).toBeDefined();
+    expect(core.renderDoctorReport).toBeDefined();
     expect(core.anonymizeText).toBeDefined();
     expect(core.redact).toBeDefined();
     expect(core.preview).toBeDefined();

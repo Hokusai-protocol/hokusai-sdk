@@ -93,6 +93,10 @@ export interface LocalStore {
   appendAudit(entry: SubmissionAuditEntry): Promise<void>;
   listAudit(): Promise<SubmissionAuditEntry[]>;
 
+  putConfigRecord(id: string, record: Record<string, unknown>): Promise<void>;
+  getConfigRecord(id: string): Promise<Record<string, unknown> | undefined>;
+  deleteConfigRecord(id: string): Promise<void>;
+
   pruneExpired(now: number, policy: RetentionPolicy): Promise<void>;
   clear(): Promise<void>;
 }
@@ -133,6 +137,21 @@ function cloneCorrelationRecord(
     ...record,
     metadata: { ...record.metadata },
   };
+}
+
+function cloneConfigRecord(
+  record: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => {
+      if (Array.isArray(value)) {
+        const arrayValue: unknown[] = value;
+        return [key, arrayValue.slice()];
+      }
+
+      return [key, value];
+    }),
+  );
 }
 
 function pruneByRetention<T extends { createdAt: number }>(
@@ -203,6 +222,7 @@ export class InMemoryLocalStore implements LocalStore {
   readonly #correlations = new Map<string, LocalCorrelationRecord>();
   readonly #payloadHashes = new Map<string, PayloadHashRecord>();
   readonly #auditEntries = new Map<string, SubmissionAuditEntry>();
+  readonly #configRecords = new Map<string, Record<string, unknown>>();
 
   putCorrelation(record: LocalCorrelationRecord): Promise<void> {
     try {
@@ -268,6 +288,32 @@ export class InMemoryLocalStore implements LocalStore {
     );
   }
 
+  putConfigRecord(id: string, record: Record<string, unknown>): Promise<void> {
+    try {
+      assertSafeStoreId(id);
+      assertNoRawPayloadFields(record);
+    } catch (error) {
+      return Promise.reject(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    this.#configRecords.set(id, cloneConfigRecord(record));
+    return Promise.resolve();
+  }
+
+  getConfigRecord(id: string): Promise<Record<string, unknown> | undefined> {
+    const record = this.#configRecords.get(id);
+    return Promise.resolve(
+      record ? cloneConfigRecord(record) : undefined,
+    );
+  }
+
+  deleteConfigRecord(id: string): Promise<void> {
+    this.#configRecords.delete(id);
+    return Promise.resolve();
+  }
+
   async pruneExpired(now: number, policy: RetentionPolicy): Promise<void> {
     this.#replaceMap(
       this.#correlations,
@@ -304,6 +350,7 @@ export class InMemoryLocalStore implements LocalStore {
     this.#correlations.clear();
     this.#payloadHashes.clear();
     this.#auditEntries.clear();
+    this.#configRecords.clear();
     return Promise.resolve();
   }
 
@@ -376,6 +423,35 @@ export class FsLocalStore implements LocalStore {
     );
   }
 
+  async putConfigRecord(
+    id: string,
+    record: Record<string, unknown>,
+  ): Promise<void> {
+    assertSafeStoreId(id);
+    assertNoRawPayloadFields(record);
+    await writeJsonFile(this.#configFilePath(id), record);
+  }
+
+  async getConfigRecord(
+    id: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const filePath = this.#configFilePath(id);
+
+    try {
+      return JSON.parse(await readFile(filePath, 'utf8')) as Record<string, unknown>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return undefined;
+      }
+
+      throw new StoreCorruptError(filePath, error);
+    }
+  }
+
+  deleteConfigRecord(id: string): Promise<void> {
+    return removeFile(this.#configFilePath(id));
+  }
+
   async pruneExpired(now: number, policy: RetentionPolicy): Promise<void> {
     const correlations = await this.listCorrelations();
     await this.#rewriteRecords(
@@ -420,6 +496,7 @@ export class FsLocalStore implements LocalStore {
       rm(this.#correlationsDir(), { recursive: true, force: true }),
       rm(this.#hashesDir(), { recursive: true, force: true }),
       rm(this.#auditDir(), { recursive: true, force: true }),
+      rm(this.#configDir(), { recursive: true, force: true }),
     ]);
   }
 
@@ -435,6 +512,10 @@ export class FsLocalStore implements LocalStore {
     return join(this.#baseDir, 'audit');
   }
 
+  #configDir(): string {
+    return join(this.#baseDir, 'config');
+  }
+
   #correlationFilePath(correlationId: string): string {
     assertSafeStoreId(correlationId);
     return join(this.#correlationsDir(), `${correlationId}.json`);
@@ -448,6 +529,11 @@ export class FsLocalStore implements LocalStore {
   #auditFilePath(id: string): string {
     assertSafeStoreId(id);
     return join(this.#auditDir(), `${id}.json`);
+  }
+
+  #configFilePath(id: string): string {
+    assertSafeStoreId(id);
+    return join(this.#configDir(), `${id}.json`);
   }
 
   async #rewriteRecords<T>(

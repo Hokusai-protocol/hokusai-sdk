@@ -5,10 +5,13 @@ import {
   type RedactionConfig,
 } from './anonymization.js';
 import {
+  assertCanRoute,
+  assertCanSubmitOutcome,
   isConsentGranted,
   type ConsentConfig,
   type ConsentScope,
 } from './consent.js';
+import type { HokusaiPluginConfig } from './config.js';
 import {
   type HokusaiDispatchPayload,
   type HokusaiFieldError,
@@ -27,6 +30,7 @@ import {
   type ModelDefinition,
   type ModelRegistry,
   type ModelSelection,
+  validateRecommendedModel,
 } from './model-registry.js';
 import {
   InMemoryCorrelationStorage,
@@ -86,8 +90,26 @@ export interface HokusaiDispatchBuilderOptions {
   anonymization?: AnonymizationOptions;
   redactionConfig?: RedactionConfig;
   modelRegistry: ModelRegistry;
+  modelAllowlist?: string[];
   storage?: CorrelationStorage;
   clock?: () => Date;
+}
+
+export interface HokusaiPluginClientOptions
+  extends Omit<HokusaiClientOptions, 'apiKey' | 'baseUrl'> {
+  config: HokusaiPluginConfig;
+}
+
+export interface GatedClient {
+  readonly client: HokusaiClient;
+  route(
+    request: RouteRequest,
+    options?: HokusaiRequestOptions,
+  ): Promise<RouteResponse | HokusaiValidationSuccess<RouteRequest>>;
+  reportOutcome(
+    request: OutcomeReport,
+    options?: HokusaiRequestOptions,
+  ): Promise<OutcomeResponse | HokusaiValidationSuccess<OutcomeReport>>;
 }
 
 interface ParsedErrorBody {
@@ -178,6 +200,7 @@ export class HokusaiDispatchBuilder {
   readonly #clock: () => Date;
   readonly #consent: ConsentConfig;
   readonly #modelRegistry: ModelRegistry;
+  readonly #modelAllowlist: string[] | undefined;
   readonly #storage: CorrelationStorage;
 
   constructor(options: HokusaiDispatchBuilderOptions) {
@@ -185,6 +208,7 @@ export class HokusaiDispatchBuilder {
     this.#anonymization = options.anonymization;
     this.#redactionConfig = options.redactionConfig;
     this.#modelRegistry = options.modelRegistry;
+    this.#modelAllowlist = options.modelAllowlist;
     this.#storage = options.storage ?? new InMemoryCorrelationStorage();
     this.#clock = options.clock ?? (() => new Date());
   }
@@ -201,6 +225,18 @@ export class HokusaiDispatchBuilder {
     }
 
     const model = this.#resolveModel(modelId);
+    if (this.#modelAllowlist) {
+      const validation = validateRecommendedModel(model.id, {
+        allowlist: this.#modelAllowlist,
+        registry: this.#modelRegistry,
+      });
+
+      if (!validation.ok) {
+        throw new HokusaiDispatchError(
+          `Model "${model.id}" is not permitted by the configured allowlist.`,
+        );
+      }
+    }
     const correlationRecord = await this.#getOrCreateCorrelationRecord(task.id);
     const promptPayload = this.#redactionConfig
       ? redact(task.prompt, this.#redactionConfig)
@@ -580,6 +616,28 @@ export class HokusaiClient {
       code: options.parsedError.code,
     });
   }
+}
+
+export function createGatedClient(
+  options: HokusaiPluginClientOptions,
+): GatedClient {
+  const client = new HokusaiClient({
+    ...options,
+    baseUrl: options.config.apiBaseUrl,
+    ...(options.config.apiKey ? { apiKey: options.config.apiKey } : {}),
+  });
+
+  return {
+    client,
+    async route(request, requestOptions) {
+      assertCanRoute(options.config);
+      return client.route(request, requestOptions);
+    },
+    async reportOutcome(request, requestOptions) {
+      assertCanSubmitOutcome(options.config);
+      return client.reportOutcome(request, requestOptions);
+    },
+  };
 }
 
 function buildUrl(baseUrl: URL, path: string): string {
