@@ -30,6 +30,25 @@ export {
   type OutcomeStatus,
 } from './schemas.js';
 export {
+  TASK_PACKET_SCHEMA_VERSION,
+  TaskPacketBuildError,
+  buildTaskPacket,
+  validateTaskPacket,
+  type HarnessContext,
+  type ReasoningDepth,
+  type RepositoryScale,
+  type TaskFamily,
+  type TaskPacket,
+  type ValidationError,
+  type ValidationResult,
+} from './task-packet.js';
+export {
+  claudeCodeTaskPacketFixture,
+  codexTaskPacketFixture,
+  genericTaskPacketFixture,
+  wavemillTaskPacketFixture,
+} from './fixtures/index.js';
+export {
   InMemoryCorrelationStorage,
   type CorrelationRecord,
   type CorrelationStorage,
