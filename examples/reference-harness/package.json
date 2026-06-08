@@ -1,15 +1,18 @@
 {
-  "name": "reference-harness",
+  "name": "@hokusai/reference-harness",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",
     "lint": "eslint src --max-warnings=0",
+    "start": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc -b tsconfig.json --pretty false"
   },
   "dependencies": {
-    "@hokusai/adapter-codex": "workspace:*",
     "@hokusai/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
   }
 }

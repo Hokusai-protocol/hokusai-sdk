@@ -74,6 +74,32 @@ createWavemillAdapter({ integrationId: 'wavemill', apiClient });
 - Harness-specific config discovery and command output stay out of `@hokusai/core`.
 - Private Wavemill code is out of scope for this repository.
 
+## Reusable SDK Components vs. Harness-Specific Adapter Methods
+
+Third-party harness authors implement the `HarnessAdapter` interface and wire it to reusable `@hokusai/core` utilities. The reference implementation in [`examples/reference-harness`](../examples/reference-harness/README.md) shows the smallest complete mocked flow.
+
+Reusable `@hokusai/core` components:
+
+- `HokusaiDispatchBuilder` prepares a route payload, applies consent checks, and redacts task text before submission.
+- `InMemoryModelRegistry` and `mapRecommendation()` resolve Hokusai model ids into concrete model definitions.
+- `buildTaskPacket()` creates a normalized task packet from generic task signals.
+- `buildOutcomeReport()` and `previewOutcomePayload()` build and preview an anonymized outcome report.
+- `InMemoryLocalStore` persists correlation ids and packet hashes without storing raw prompts.
+- `HokusaiClient` is the real transport when a harness is ready to call the API instead of using the mock client from the example.
+
+Harness-specific adapter methods:
+
+- `context.collectTaskContext()` reads the current task, prompt, cwd, command, and harness metadata from your environment.
+- `models.discoverModels()` lists the harness models a user can actually run.
+- `models.mapModel()` maps a harness-specific model id or alias onto a Hokusai model definition.
+- `recommendations.displayRecommendation()` renders the selected recommendation in the harness UI or CLI.
+- `outcomes.collectOutcome()` gathers completion status and a user-visible summary from the harness runtime.
+- `payloads.previewPayload()` decides how dispatch previews are shown before sending.
+- `consent.promptConsent()` implements the harness-specific consent UX.
+- `storage.get()/set()/delete()` bridges Hokusai state to the harness-local storage mechanism when needed.
+
+The boundary is deliberate: core owns schemas, validation, anonymization, routing, reporting, and generic persistence primitives; the adapter owns runtime discovery, UX, and harness-specific execution details.
+
 ## Minimal adapter implementation
 
 Core owns Hokusai task, payload, consent, validation, anonymization, outcome, and persistence contracts. Adapters stay responsible for harness-specific command surfaces, config paths, model labels, execution telemetry, and user-facing rendering.
