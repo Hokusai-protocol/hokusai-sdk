@@ -51,6 +51,10 @@ importers:
       '@hokusai/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
 
   packages/adapter-codex:
     dependencies:

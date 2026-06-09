@@ -2,6 +2,30 @@
 
 `@hokusai/adapter-claude-code` now includes an installable Claude Code plugin surface for Hokusai task routing.
 
+## Download and install (stable release)
+
+Download the latest plugin zip from GitHub Releases:
+
+```sh
+curl -L -o hokusai-plugin.zip \
+  https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip
+```
+
+Verify the checksum:
+
+```sh
+curl -L -o hokusai-plugin.zip.sha256 \
+  https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256
+sha256sum -c hokusai-plugin.zip.sha256
+```
+
+Unzip and install into Claude Code:
+
+```sh
+unzip hokusai-plugin.zip
+claude --plugin-dir ./hokusai-claude-code-plugin/plugin
+```
+
 ## Install the plugin
 
 Build the package first so the plugin bin can import `dist/`:
