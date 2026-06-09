@@ -259,6 +259,155 @@ describe('runReportCli', () => {
     expect(result.stderr).toContain('completionStatus');
   });
 
+  it('treats --dry-run as preview even when --send is also passed', async () => {
+    const reportTaskOutcomeImpl = vi.fn(() => Promise.reject(new Error('should not be called')));
+    const previewReportOutcomeImpl = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          report: {
+            schemaVersion: '1' as const,
+            correlationId: 'route-1',
+            recommendedModel: 'claude-sonnet-4-6',
+            actualModel: 'claude-sonnet-4-6',
+            recommendationAccepted: true,
+            completionStatus: 'succeeded' as const,
+            latencyBucket: 'medium' as const,
+            costBucket: 'medium' as const,
+            tokenBucket: 'medium' as const,
+          },
+          preview: {
+            lines: ['Outcome report preview.'],
+            payload: {
+              schemaVersion: '1' as const,
+              correlationId: 'route-1',
+              recommendedModel: 'claude-sonnet-4-6',
+              actualModel: 'claude-sonnet-4-6',
+              recommendationAccepted: true,
+              completionStatus: 'succeeded' as const,
+              latencyBucket: 'medium' as const,
+              costBucket: 'medium' as const,
+              tokenBucket: 'medium' as const,
+            },
+          },
+        },
+      }),
+    );
+
+    const result = await runReportCli(
+      [
+        '--dry-run',
+        '--send',
+        '--correlation-id',
+        'route-1',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokusai.app',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        previewReportOutcomeImpl,
+        reportTaskOutcomeImpl,
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+    expect(reportTaskOutcomeImpl).not.toHaveBeenCalled();
+    expect(previewReportOutcomeImpl).toHaveBeenCalledOnce();
+  });
+
+  it('prints field errors only once in non-JSON mode', async () => {
+    const previewReportOutcomeImpl = vi.fn(() =>
+      Promise.resolve({
+        ok: false as const,
+        error: {
+          code: 'OUTCOME_VALIDATION_FAILED' as const,
+          message: 'Outcome report validation failed.',
+          details: {
+            fieldErrors: ['someUniqueField: must be present'],
+          },
+        },
+      }),
+    );
+
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--correlation-id',
+        'route-1',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokusai.app',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        previewReportOutcomeImpl,
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR);
+    const occurrences = result.stderr.split('someUniqueField').length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('surfaces a clear error when reading local routing decisions fails', async () => {
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokusai.app',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        findLatestRoutingDecisionImpl: () =>
+          Promise.reject(new Error('EACCES: permission denied')),
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR);
+    expect(result.stderr).toContain('Could not read local routing correlations');
+  });
+
   it.each(['failed', 'abandoned', 'overridden'])(
     'builds a valid preview for %s outcomes',
     async (status) => {

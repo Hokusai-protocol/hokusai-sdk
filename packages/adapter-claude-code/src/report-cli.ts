@@ -559,10 +559,25 @@ export async function runReportCli(
   const configDir = resolveClaudeCodeConfigPath(
     parsed.configPath ? { override: parsed.configPath } : undefined,
   ).dir;
-  const latest =
-    parsed.useLatest || (parsed.correlationId === undefined && pipedInput.correlationId === undefined)
-      ? await findLatestRoutingDecisionImpl({ configDir })
-      : undefined;
+  let latest: Awaited<ReturnType<typeof findLatestRoutingDecision>> | undefined;
+  if (
+    parsed.useLatest ||
+    (parsed.correlationId === undefined && pipedInput.correlationId === undefined)
+  ) {
+    try {
+      latest = await findLatestRoutingDecisionImpl({ configDir });
+    } catch (error) {
+      return toMessage(
+        parsed,
+        `Could not read local routing correlations: ${error instanceof Error ? error.message : String(error)}`,
+        REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR,
+      );
+    }
+  }
+
+  if (parsed.dryRun) {
+    parsed.send = false;
+  }
 
   if (!parsed.send) {
     parsed.preview = true;
@@ -671,12 +686,9 @@ export async function runReportCli(
         );
 
     if (!result.ok) {
-      const fieldErrors = result.error.details?.fieldErrors;
       return toMessage(
         parsed,
-        fieldErrors && Array.isArray(fieldErrors)
-          ? `${result.error.message}\n${fieldErrors.join('\n')}`
-          : result.error.message,
+        result.error.message,
         result.error.code === 'OUTCOME_VALIDATION_FAILED'
           ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
           : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR,
