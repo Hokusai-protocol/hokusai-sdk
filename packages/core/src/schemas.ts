@@ -37,18 +37,32 @@ export interface HokusaiDispatchPayload {
   consent: ConsentSnapshot;
   model: ModelSelection;
   correlation: CorrelationRecord;
-  /** Redaction records — original sensitive values are never included. */
+  /** Redaction records - original sensitive values are never included. */
   redactions: Array<{ label: string } | RedactionRecord>;
   createdAt: string;
 }
 
 export type RouteRequest = HokusaiDispatchPayload;
 
+export interface RouteRecommendationAlternative {
+  model: string;
+  reason?: string | undefined;
+  confidence?: number | undefined;
+}
+
+export interface RouteRecommendation {
+  model: string;
+  reason?: string | undefined;
+  confidence?: number | undefined;
+  alternatives?: RouteRecommendationAlternative[] | undefined;
+}
+
 export interface RouteResponse {
   routeId: string;
   taskId: string;
   status: 'accepted';
   requestId?: string | undefined;
+  recommendation?: RouteRecommendation | undefined;
 }
 
 export type OutcomeResponseStatus = 'accepted' | 'recorded';
@@ -140,6 +154,88 @@ function validateTaskInput(
 
   if ('metadata' in value && value.metadata !== undefined) {
     validateStringRecord(value.metadata, `${path}.metadata`, errors);
+  }
+}
+
+function validateConfidence(
+  value: unknown,
+  path: string,
+  errors: HokusaiFieldError[],
+): void {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    pushFieldError(errors, path, 'Expected a number.', 'invalid_type');
+    return;
+  }
+
+  if (value < 0 || value > 1) {
+    pushFieldError(
+      errors,
+      path,
+      'Expected a number between 0 and 1.',
+      'invalid_value',
+    );
+  }
+}
+
+function validateRouteRecommendationAlternative(
+  value: unknown,
+  path: string,
+  errors: HokusaiFieldError[],
+): void {
+  if (!isRecord(value)) {
+    pushFieldError(errors, path, 'Expected an object.', 'invalid_type');
+    return;
+  }
+
+  validateNonEmptyString(value.model, `${path}.model`, errors);
+
+  if ('reason' in value && value.reason !== undefined) {
+    validateNonEmptyString(value.reason, `${path}.reason`, errors);
+  }
+
+  if ('confidence' in value && value.confidence !== undefined) {
+    validateConfidence(value.confidence, `${path}.confidence`, errors);
+  }
+}
+
+function validateRouteRecommendation(
+  value: unknown,
+  path: string,
+  errors: HokusaiFieldError[],
+): void {
+  if (!isRecord(value)) {
+    pushFieldError(errors, path, 'Expected an object.', 'invalid_type');
+    return;
+  }
+
+  validateNonEmptyString(value.model, `${path}.model`, errors);
+
+  if ('reason' in value && value.reason !== undefined) {
+    validateNonEmptyString(value.reason, `${path}.reason`, errors);
+  }
+
+  if ('confidence' in value && value.confidence !== undefined) {
+    validateConfidence(value.confidence, `${path}.confidence`, errors);
+  }
+
+  if ('alternatives' in value && value.alternatives !== undefined) {
+    if (!Array.isArray(value.alternatives)) {
+      pushFieldError(
+        errors,
+        `${path}.alternatives`,
+        'Expected an array.',
+        'invalid_type',
+      );
+      return;
+    }
+
+    value.alternatives.forEach((alternative, index) => {
+      validateRouteRecommendationAlternative(
+        alternative,
+        `${path}.alternatives.${index}`,
+        errors,
+      );
+    });
   }
 }
 
@@ -315,6 +411,14 @@ export function validateRouteResponse(response: unknown): HokusaiFieldError[] {
 
   if ('requestId' in response && response.requestId !== undefined) {
     validateNonEmptyString(response.requestId, 'requestId', errors);
+  }
+
+  if ('recommendation' in response && response.recommendation !== undefined) {
+    validateRouteRecommendation(
+      response.recommendation,
+      'recommendation',
+      errors,
+    );
   }
 
   return errors;

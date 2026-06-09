@@ -5,7 +5,7 @@ Standalone monorepo scaffold for the public Hokusai SDK. The repository separate
 ## Package map
 
 - `packages/core`: public client contracts, task/outcome schemas, anonymization helpers, consent/config types, model registry, and correlation storage interfaces.
-- `packages/adapter-claude-code`: Claude Code command and manifest stubs built on `@hokusai/core`.
+- `packages/adapter-claude-code`: installable Claude Code plugin surface and routing adapter built on `@hokusai/core`.
 - `packages/adapter-codex`: Codex command and manifest stubs built on `@hokusai/core`.
 - `packages/adapter-wavemill`: Wavemill reference adapter boundary built on `@hokusai/core` without Wavemill internals.
 - `examples/reference-harness`: minimal offline composition template.

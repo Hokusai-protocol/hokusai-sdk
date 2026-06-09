@@ -86,7 +86,12 @@ export interface HarnessModelProvider {
 export interface HarnessRecommendation {
   model: ModelSelection;
   reason: string;
-  alternatives?: ModelSelection[];
+  confidence?: number;
+  alternatives?: Array<{
+    model: ModelSelection;
+    reason?: string;
+    confidence?: number;
+  }>;
 }
 
 export interface HarnessRecommendationDisplayRequest {

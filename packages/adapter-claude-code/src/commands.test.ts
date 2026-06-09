@@ -177,6 +177,82 @@ describe('routeTask', () => {
 
     expect(result.error.code).toBe('PROVIDER_NOT_ALLOWED');
   });
+
+  it('prefers the API recommendation when the route response includes one', async () => {
+    const { transport } = createMockTransport([
+      createResponse(200, {
+        routeId: 'route-1',
+        taskId: 'task-1',
+        status: 'accepted',
+        requestId: 'req-1',
+        recommendation: {
+          model: 'claude-opus-4-8',
+          reason: 'High reasoning depth needed.',
+          confidence: 0.91,
+          alternatives: [
+            {
+              model: 'claude-sonnet-4-6',
+              reason: 'Faster but slightly less depth.',
+              confidence: 0.73,
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+    const registry = new InMemoryModelRegistry([
+      {
+        id: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        family: 'claude',
+        capabilities: ['reasoning', 'streaming', 'tool-use'],
+        default: true,
+      },
+      {
+        id: 'claude-opus-4-8',
+        provider: 'anthropic',
+        family: 'claude',
+        capabilities: ['reasoning', 'streaming', 'tool-use'],
+      },
+    ]);
+
+    const result = await routeTask(
+      {
+        taskId: 'task-1',
+        taskText: 'Deeply debug an intermittent production issue.',
+      },
+      {
+        apiClient: client,
+        registry,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.value.recommendation).toMatchObject({
+      model: {
+        id: 'claude-opus-4-8',
+      },
+      reason: 'High reasoning depth needed.',
+      confidence: 0.91,
+      alternatives: [
+        {
+          model: {
+            id: 'claude-sonnet-4-6',
+          },
+          reason: 'Faster but slightly less depth.',
+          confidence: 0.73,
+        },
+      ],
+    });
+    expect(result.value.route?.requestId).toBe('req-1');
+  });
 });
 
 describe('reportTaskOutcome', () => {
@@ -291,16 +367,23 @@ describe('displayTaskRecommendation', () => {
       reason: 'Best balanced Claude model.',
       alternatives: [
         {
-          id: 'claude-opus-4-8',
-          provider: 'anthropic',
-          capabilities: ['reasoning'],
+          model: {
+            id: 'claude-opus-4-8',
+            provider: 'anthropic',
+            capabilities: ['reasoning'],
+          },
+          reason: 'More headroom for hard problems.',
+          confidence: 0.64,
         },
       ],
+      confidence: 0.82,
     });
 
     expect(result.lines.join('\n')).toContain('Recommended model: claude-sonnet-4-6');
     expect(result.lines.join('\n')).toContain('Provider: anthropic');
     expect(result.lines.join('\n')).toContain('Reason: Best balanced Claude model.');
+    expect(result.lines.join('\n')).toContain('Confidence: 82%');
+    expect(result.lines.join('\n')).toContain('Alternatives: claude-opus-4-8');
   });
 });
 

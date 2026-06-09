@@ -50,6 +50,8 @@ export {
   type RouteResult,
   type RouteSuccess,
 } from './commands.js';
+export { CLI_EXIT_CODES, type CliExitCode, type CliRunResult } from './cli.js';
+export { runCli } from './cli.js';
 export {
   CLAUDE_CODE_STATE_FILE,
   getClaudeCodeStateFilePath,

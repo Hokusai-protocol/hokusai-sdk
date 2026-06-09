@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises';
 import {
   DEFAULT_REDACTION_CONFIG,
   FsLocalStore,
+  HokusaiNetworkError,
   HokusaiDispatchBuilder,
   InMemoryModelRegistry,
   ModelMappingError,
@@ -24,6 +25,7 @@ import {
   type OutcomeResponse,
   type RouteResponse,
   type ModelRegistry,
+  type ModelSelection,
 } from '@hokusai/core';
 import {
   getClaudeCodeStateFilePath,
@@ -191,10 +193,64 @@ function buildRecommendation(
       .filter((candidate) => candidate.provider === 'anthropic')
       .filter((candidate) => candidate.id !== mapped.id)
       .map((candidate) => ({
-        id: candidate.id,
-        provider: candidate.provider,
-        capabilities: candidate.capabilities,
+        model: {
+          id: candidate.id,
+          provider: candidate.provider,
+          capabilities: candidate.capabilities,
+        },
       })),
+  };
+}
+
+function toSelection(model: ModelSelection): ModelSelection {
+  return {
+    id: model.id,
+    provider: model.provider,
+    capabilities: model.capabilities,
+  };
+}
+
+function buildRecommendationFromRoute(
+  route: RouteResponse,
+  registry: ModelRegistry,
+): HarnessRecommendation | undefined {
+  if (!route.recommendation) {
+    return undefined;
+  }
+
+  const mapped = mapRecommendation(route.recommendation, {
+    registry,
+    allowedProviders: ['anthropic'],
+    requireAvailable: true,
+  });
+
+  return {
+    model: toSelection(mapped),
+    reason:
+      route.recommendation.reason ??
+      'Recommended by the Hokusai router for this Claude Code task.',
+    ...(route.recommendation.confidence === undefined
+      ? {}
+      : { confidence: route.recommendation.confidence }),
+    ...(route.recommendation.alternatives?.length
+      ? {
+          alternatives: route.recommendation.alternatives.map((alternative) => ({
+            model: toSelection(
+              mapRecommendation(alternative, {
+                registry,
+                allowedProviders: ['anthropic'],
+                requireAvailable: true,
+              }),
+            ),
+            ...(alternative.reason === undefined
+              ? {}
+              : { reason: alternative.reason }),
+            ...(alternative.confidence === undefined
+              ? {}
+              : { confidence: alternative.confidence }),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -246,15 +302,15 @@ export async function routeTask(
     storage: {
       async get(taskId) {
         const records = await store.listCorrelations();
-        return records.find((record) => record.metadata?.taskId === taskId)
-          ? {
-              taskId,
-              correlationId: records.find((record) => record.metadata?.taskId === taskId)?.correlationId ?? '',
-              createdAt: new Date(
-                records.find((record) => record.metadata?.taskId === taskId)?.createdAt ?? Date.now(),
-              ).toISOString(),
-            }
-          : undefined;
+        const found = records.find((record) => record.metadata?.taskId === taskId);
+        if (!found) {
+          return undefined;
+        }
+        return {
+          taskId,
+          correlationId: found.metadata?.originalCorrelationId ?? found.correlationId,
+          createdAt: new Date(found.createdAt).toISOString(),
+        };
       },
       async set(record) {
         await store.putCorrelation({
@@ -263,6 +319,7 @@ export async function routeTask(
           createdAt: Date.parse(record.createdAt),
           metadata: {
             taskId: record.taskId,
+            originalCorrelationId: record.correlationId,
           },
         });
       },
@@ -286,7 +343,30 @@ export async function routeTask(
 
   let route: RouteResponse | undefined;
   if (options?.apiClient) {
-    route = (await options.apiClient.route(payload)) as RouteResponse;
+    try {
+      route = (await options.apiClient.route(payload)) as RouteResponse;
+      const routeRecommendation = buildRecommendationFromRoute(
+        route,
+        context.registry,
+      );
+      if (routeRecommendation) {
+        recommendation = routeRecommendation;
+      }
+    } catch (error) {
+      if (error instanceof ModelMappingError) {
+        return fail(error.code, error.message, {
+          suggestions: error.suggestions,
+        });
+      }
+
+      if (error instanceof HokusaiNetworkError) {
+        return fail('NETWORK_ERROR', error.message, {
+          requestId: error.requestId,
+        });
+      }
+
+      throw error;
+    }
   }
 
   return ok({
@@ -435,10 +515,24 @@ export function displayTaskRecommendation(
     `Reason: ${recommendation.reason}`,
   ];
 
+  if (recommendation.confidence !== undefined) {
+    lines.push(`Confidence: ${Math.round(recommendation.confidence * 100)}%`);
+  }
+
   if (recommendation.alternatives && recommendation.alternatives.length > 0) {
     lines.push(
-      `Alternatives: ${recommendation.alternatives.map((model) => model.id).join(', ')}`,
+      `Alternatives: ${recommendation.alternatives.map((entry) => entry.model.id).join(', ')}`,
     );
+    for (const alternative of recommendation.alternatives) {
+      const parts = [alternative.model.id];
+      if (alternative.reason) {
+        parts.push(alternative.reason);
+      }
+      if (alternative.confidence !== undefined) {
+        parts.push(`${Math.round(alternative.confidence * 100)}%`);
+      }
+      lines.push(`- ${parts.join(' - ')}`);
+    }
   }
 
   return {
