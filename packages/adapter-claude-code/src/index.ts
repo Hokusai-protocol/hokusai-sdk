@@ -38,6 +38,8 @@ export {
   declineRecommendation,
   displayHandoff,
   displayTaskRecommendation,
+  findLatestRoutingDecision,
+  previewReportOutcome,
   previewTaskPayload,
   reportTaskOutcome,
   routeTask,
@@ -46,7 +48,10 @@ export {
   type DeclineRecommendationInput,
   type DeclineRecommendationResult,
   type DoctorResult,
+  type LatestRoutingDecision,
+  type OutcomeReportPreview,
   type PayloadPreviewResult,
+  type PreviewReportOutcomeResult,
   type RecommendationDisplay,
   type ReportOutcomeInput,
   type ReportOutcomeResult,
@@ -57,6 +62,11 @@ export {
 export { CLI_EXIT_CODES, type CliExitCode, type CliRunResult } from './cli.js';
 export { runCli } from './cli.js';
 export type { HandoffInstructions } from '@hokusai/core';
+export {
+  REPORT_CLI_EXIT_CODES,
+  type ReportCliExitCode,
+} from './report-cli.js';
+export { runReportCli } from './report-cli.js';
 export {
   renderPluginDoctorReport,
   runBootstrapDoctor,
