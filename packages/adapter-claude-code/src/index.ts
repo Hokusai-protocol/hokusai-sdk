@@ -35,16 +35,25 @@ import {
 
 export {
   clearClaudeCodeLocalState,
+  clearPrivacyState,
   declineRecommendation,
   displayHandoff,
   displayTaskRecommendation,
   findLatestRoutingDecision,
+  getReportingStatus,
+  listRoutingDecisions,
+  listSubmissionAudit,
   previewReportOutcome,
+  previewStoredDecision,
   previewTaskPayload,
   reportTaskOutcome,
+  resolveRetentionPolicy,
   routeTask,
   runDoctor,
+  setReportingEnabled,
   type ClaudeCodeCommandOptions,
+  type ClearResult,
+  type DecisionPreview,
   type DeclineRecommendationInput,
   type DeclineRecommendationResult,
   type DoctorResult,
@@ -52,9 +61,12 @@ export {
   type OutcomeReportPreview,
   type PayloadPreviewResult,
   type PreviewReportOutcomeResult,
+  type PrivacyResultWarnings,
   type RecommendationDisplay,
+  type ReportingStatusResult,
   type ReportOutcomeInput,
   type ReportOutcomeResult,
+  type RoutingDecisionSummary,
   type RouteInput,
   type RouteResult,
   type RouteSuccess,
@@ -67,6 +79,11 @@ export {
   type ReportCliExitCode,
 } from './report-cli.js';
 export { runReportCli } from './report-cli.js';
+export {
+  PRIVACY_CLI_EXIT_CODES,
+  type PrivacyCliExitCode,
+} from './privacy-cli.js';
+export { runPrivacyCli } from './privacy-cli.js';
 export {
   renderPluginDoctorReport,
   runBootstrapDoctor,

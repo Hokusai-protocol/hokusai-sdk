@@ -1,24 +1,33 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  FilePluginConfigStore,
   FsLocalStore,
   HokusaiClient,
+  HokusaiNetworkError,
   InMemoryModelRegistry,
   claudeCodeSuccessOutcomeFixture,
   type FetchTransport,
 } from '@hokusai/core';
 import {
   clearClaudeCodeLocalState,
+  clearPrivacyState,
   declineRecommendation,
   displayHandoff,
   displayTaskRecommendation,
   findLatestRoutingDecision,
+  getReportingStatus,
+  listRoutingDecisions,
+  listSubmissionAudit,
   previewReportOutcome,
+  previewStoredDecision,
   previewTaskPayload,
   reportTaskOutcome,
+  setReportingEnabled,
   routeTask,
+  resolveRetentionPolicy,
   runDoctor,
 } from './commands.js';
 
@@ -276,6 +285,24 @@ describe('routeTask', () => {
       JSON.parse(persisted?.metadata?.recommendedAlternativeIds ?? '[]'),
     ).toEqual(['claude-sonnet-4-6']);
     expect(persisted?.metadata?.reasonHash).toBeTruthy();
+    expect(persisted?.metadata?.payloadHash).toBeTruthy();
+
+    const auditEntries = await store.listAudit();
+    expect(auditEntries).toEqual([
+      expect.objectContaining({
+        kind: 'routing',
+        status: 'submitted',
+        correlationId: result.value.correlationId,
+      }),
+    ]);
+
+    const payloadHashes = await store.listPayloadHashes();
+    expect(payloadHashes).toEqual([
+      expect.objectContaining({
+        algorithm: 'sha-256-hmac',
+        hash: persisted?.metadata?.payloadHash,
+      }),
+    ]);
   });
 
   it('returns a no-op handoff when the current model already matches', async () => {
@@ -306,6 +333,113 @@ describe('routeTask', () => {
     expect(displayHandoff(result.value.handoff)).toEqual([
       'Switch in Claude Code: no switch needed.',
     ]);
+  });
+
+  it('writes a failed routing audit entry on network error', async () => {
+    const configPath = await createTempDir('hokusai-claude-route-fail-');
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport: () =>
+        Promise.reject(
+          new HokusaiNetworkError('router unavailable', {
+            requestId: 'req-fail',
+          }),
+        ),
+    });
+
+    const result = await routeTask(
+      {
+        taskId: 'task-failure',
+        taskText: 'Handle a failed route call.',
+      },
+      {
+        apiClient: client,
+        configPath,
+        registry: new InMemoryModelRegistry([
+          {
+            id: 'claude-sonnet-4-6',
+            provider: 'anthropic',
+            family: 'claude',
+            capabilities: ['reasoning', 'streaming', 'tool-use'],
+            default: true,
+          },
+        ]),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        message: 'router unavailable',
+        details: {
+          requestId: 'req-fail',
+        },
+      },
+    });
+
+    const store = new FsLocalStore(configPath);
+    expect(await store.listAudit()).toEqual([
+      expect.objectContaining({
+        kind: 'routing',
+        status: 'failed',
+        error: 'router unavailable',
+      }),
+    ]);
+  });
+
+  it('stores a redacted debug preview only when debug mode is enabled', async () => {
+    const configPath = await createTempDir('hokusai-claude-debug-preview-');
+    const rawTask =
+      'Email alice@example.com about sk-12345678 and inspect db-prod.internal.';
+
+    const debugResult = await routeTask(
+      {
+        taskId: 'task-debug',
+        taskText: rawTask,
+      },
+      {
+        configPath,
+        env: {
+          ...process.env,
+          HOKUSAI_DEBUG: '1',
+        },
+        registry: new InMemoryModelRegistry([
+          {
+            id: 'claude-sonnet-4-6',
+            provider: 'anthropic',
+            family: 'claude',
+            capabilities: ['reasoning', 'streaming', 'tool-use'],
+            default: true,
+          },
+        ]),
+      },
+    );
+
+    expect(debugResult.ok).toBe(true);
+    if (!debugResult.ok) {
+      return;
+    }
+
+    const store = new FsLocalStore(configPath);
+    const persisted = await store.getCorrelation(
+      debugResult.value.correlationId.replace(/[:.]/g, '_'),
+    );
+    expect(persisted?.metadata?.debugRedactedPayloadPreview).toContain('EMAIL_');
+    expect(persisted?.metadata?.debugRedactedPayloadPreview).not.toContain(
+      'alice@example.com',
+    );
+
+    const rawOnDisk = await readFile(
+      path.join(
+        configPath,
+        'correlations',
+        `${debugResult.value.correlationId.replace(/[:.]/g, '_')}.json`,
+      ),
+      'utf8',
+    );
+    expect(rawOnDisk).not.toContain('alice@example.com');
+    expect(rawOnDisk).not.toContain('sk-12345678');
   });
 });
 
@@ -407,6 +541,7 @@ describe('reportTaskOutcome', () => {
   });
 
   it('supports dry-run mode without calling the network', async () => {
+    const configPath = await createTempDir('hokusai-claude-outcome-dryrun-');
     const { calls, transport } = createMockTransport([
       createResponse(200, {
         taskId: 'task-1',
@@ -425,6 +560,7 @@ describe('reportTaskOutcome', () => {
       },
       {
         apiClient: client,
+        configPath,
         dryRun: true,
       },
     );
@@ -436,9 +572,20 @@ describe('reportTaskOutcome', () => {
       },
     });
     expect(calls).toHaveLength(0);
+
+    const store = new FsLocalStore(configPath);
+    const auditEntries = await store.listAudit();
+    expect(auditEntries).toEqual([
+      expect.objectContaining({
+        kind: 'outcome',
+        status: 'skipped',
+        error: 'dry-run',
+      }),
+    ]);
   });
 
   it('submits a valid outcome once', async () => {
+    const configPath = await createTempDir('hokusai-claude-outcome-success-');
     const { calls, transport } = createMockTransport([
       createResponse(200, {
         taskId: 'task-1',
@@ -457,6 +604,7 @@ describe('reportTaskOutcome', () => {
       },
       {
         apiClient: client,
+        configPath,
       },
     );
 
@@ -471,6 +619,16 @@ describe('reportTaskOutcome', () => {
       },
     });
     expect(calls).toHaveLength(1);
+
+    const store = new FsLocalStore(configPath);
+    expect(await store.listAudit()).toEqual([
+      expect.objectContaining({
+        kind: 'outcome',
+        status: 'submitted',
+        correlationId: claudeCodeSuccessOutcomeFixture.correlationId,
+      }),
+    ]);
+    expect(await store.listPayloadHashes()).toHaveLength(1);
   });
 
   it('returns validation errors without calling the network', async () => {
@@ -503,6 +661,78 @@ describe('reportTaskOutcome', () => {
 
     expect(result.error.code).toBe('OUTCOME_VALIDATION_FAILED');
     expect(calls).toHaveLength(0);
+  });
+
+  it('writes a skipped audit entry when no API client is configured', async () => {
+    const configPath = await createTempDir('hokusai-claude-outcome-skip-');
+    const result = await reportTaskOutcome(
+      {
+        taskId: 'task-1',
+        ...claudeCodeSuccessOutcomeFixture,
+      },
+      {
+        configPath,
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        submitted: false,
+      },
+    });
+
+    const store = new FsLocalStore(configPath);
+    expect(await store.listAudit()).toEqual([
+      expect.objectContaining({
+        kind: 'outcome',
+        status: 'skipped',
+      }),
+    ]);
+  });
+
+  it('writes a failed outcome audit entry on network error', async () => {
+    const configPath = await createTempDir('hokusai-claude-outcome-fail-');
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport: () =>
+        Promise.reject(
+          new HokusaiNetworkError('outcome unavailable', {
+            requestId: 'req-outcome',
+          }),
+        ),
+    });
+
+    const result = await reportTaskOutcome(
+      {
+        taskId: 'task-1',
+        ...claudeCodeSuccessOutcomeFixture,
+      },
+      {
+        apiClient: client,
+        configPath,
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        message: 'outcome unavailable',
+        details: {
+          requestId: 'req-outcome',
+        },
+      },
+    });
+
+    const store = new FsLocalStore(configPath);
+    expect(await store.listAudit()).toEqual([
+      expect.objectContaining({
+        kind: 'outcome',
+        status: 'failed',
+        error: 'outcome unavailable',
+      }),
+    ]);
   });
 });
 
@@ -573,6 +803,314 @@ describe('findLatestRoutingDecision', () => {
       taskId: 'task-2',
       createdAt: new Date(200).toISOString(),
     });
+  });
+});
+
+describe('privacy commands', () => {
+  it('lists routing decisions newest-first with limit and payload hashes', async () => {
+    const configPath = await createTempDir('hokusai-claude-privacy-list-');
+    const store = new FsLocalStore(configPath);
+    await store.putPayloadHash({
+      hash: 'hash-1',
+      algorithm: 'sha-256-hmac',
+      createdAt: Date.now() - 1000,
+    });
+    await store.putPayloadHash({
+      hash: 'hash-2',
+      algorithm: 'sha-256-hmac',
+      createdAt: Date.now(),
+    });
+    await store.putCorrelation({
+      correlationId: 'corr-1',
+      packetHash: 'task-1',
+      createdAt: Date.now(),
+      metadata: {
+        taskId: 'task-1',
+        originalCorrelationId: 'route:1',
+        recommendedModelId: 'claude-sonnet-4-6',
+        recommendedAlternativeIds: '["claude-opus-4-8"]',
+        reasonPreview: 'first',
+        status: 'pending',
+        reasonHash: 'reason-1',
+        payloadHash: 'hash-1',
+      },
+    });
+    await store.putCorrelation({
+      correlationId: 'corr-2',
+      packetHash: 'task-2',
+      createdAt: Date.now(),
+      metadata: {
+        taskId: 'task-2',
+        originalCorrelationId: 'route:2',
+        recommendedModelId: 'claude-opus-4-8',
+        recommendedAlternativeIds: '[]',
+        reasonPreview: 'second',
+        status: 'declined',
+        reasonHash: 'reason-2',
+        payloadHash: 'hash-2',
+      },
+    });
+
+    const result = await listRoutingDecisions(
+      { limit: 1 },
+      {
+        configPath,
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        decisions: [
+          expect.objectContaining({
+            correlationId: 'route:2',
+            taskId: 'task-2',
+            recommendedModelId: 'claude-opus-4-8',
+            alternatives: [],
+            status: 'declined',
+            payloadHash: expect.objectContaining({
+              hash: 'hash-2',
+            }),
+          }),
+        ],
+      },
+    });
+  });
+
+  it('previews a stored decision without debug data by default', async () => {
+    const configPath = await createTempDir('hokusai-claude-privacy-preview-');
+    const store = new FsLocalStore(configPath);
+    await store.putCorrelation({
+      correlationId: 'corr-preview',
+      packetHash: 'task-preview',
+      createdAt: Date.now(),
+      metadata: {
+        taskId: 'task-preview',
+        originalCorrelationId: 'route:preview',
+        recommendedModelId: 'claude-sonnet-4-6',
+        recommendedAlternativeIds: '["claude-opus-4-8"]',
+        reasonPreview: 'keep it short',
+        status: 'pending',
+        decisionAt: new Date(100).toISOString(),
+        debugRedactedPayloadPreview: 'redacted debug preview',
+      },
+    });
+
+    const normal = await previewStoredDecision(
+      { correlationId: 'route:preview' },
+      { configPath },
+    );
+    expect(normal.ok).toBe(true);
+    if (!normal.ok) {
+      return;
+    }
+    expect(normal.value.debugRedactedPayloadPreview).toBeUndefined();
+
+    const debug = await previewStoredDecision(
+      { correlationId: 'route:preview', debug: true },
+      { configPath },
+    );
+    expect(debug).toEqual({
+      ok: true,
+      value: expect.objectContaining({
+        correlationId: 'route:preview',
+        debugRedactedPayloadPreview: 'redacted debug preview',
+      }),
+    });
+  });
+
+  it('lists audit entries newest-first and prunes expired records', async () => {
+    const configPath = await createTempDir('hokusai-claude-privacy-audit-');
+    const store = new FsLocalStore(configPath);
+    const now = Date.UTC(2026, 5, 8);
+    await store.appendAudit({
+      id: 'audit-old',
+      kind: 'routing',
+      correlationId: 'old',
+      status: 'submitted',
+      timestamp: now - 10 * 24 * 60 * 60 * 1000,
+    });
+    await store.appendAudit({
+      id: 'audit-new',
+      kind: 'outcome',
+      correlationId: 'new',
+      status: 'failed',
+      timestamp: now,
+    });
+
+    const result = await listSubmissionAudit(
+      {},
+      {
+        clock: () => new Date(now),
+        configPath,
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        entries: [
+          expect.objectContaining({
+            id: 'audit-new',
+          }),
+        ],
+      },
+    });
+    expect(await store.listAudit()).toHaveLength(1);
+  });
+
+  it('clears records and audit scopes independently', async () => {
+    const configPath = await createTempDir('hokusai-claude-privacy-clear-');
+    const store = new FsLocalStore(configPath);
+    await store.putCorrelation({
+      correlationId: 'corr-clear',
+      packetHash: 'task-clear',
+      createdAt: 1,
+    });
+    await store.putPayloadHash({
+      hash: 'hash-clear',
+      algorithm: 'sha-256-hmac',
+      createdAt: 1,
+    });
+    await store.appendAudit({
+      id: 'audit-clear',
+      kind: 'routing',
+      correlationId: 'corr-clear',
+      status: 'submitted',
+      timestamp: 1,
+    });
+
+    await expect(
+      clearPrivacyState({ scope: 'records' }, { configPath }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        scope: 'records',
+        correlationsCleared: 1,
+        payloadHashesCleared: 1,
+        auditEntriesCleared: 0,
+        configCleared: false,
+      },
+    });
+    expect(await store.listCorrelations()).toHaveLength(0);
+    expect(await store.listPayloadHashes()).toHaveLength(0);
+    expect(await store.listAudit()).toHaveLength(1);
+
+    await expect(
+      clearPrivacyState({ scope: 'audit' }, { configPath }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        scope: 'audit',
+        correlationsCleared: 0,
+        payloadHashesCleared: 0,
+        auditEntriesCleared: 1,
+        configCleared: false,
+      },
+    });
+    expect(await store.listAudit()).toHaveLength(0);
+  });
+
+  it('persists and resolves reporting status sources', async () => {
+    const configPath = await createTempDir('hokusai-claude-reporting-');
+    await expect(
+      getReportingStatus({ configPath, env: {} }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        enabled: false,
+        source: 'default',
+      },
+    });
+
+    await expect(
+      setReportingEnabled({ enabled: true }, { configPath }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        enabled: true,
+      },
+    });
+
+    const store = new FilePluginConfigStore(
+      path.join(configPath, 'hokusai-plugin-config.json'),
+    );
+    const persisted = await store.read();
+    expect(persisted).toEqual({
+      outcomeSubmissionEnabled: true,
+    });
+    expect('apiKey' in (persisted ?? {})).toBe(false);
+
+    await expect(
+      getReportingStatus({ configPath, env: {} }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        enabled: true,
+        source: 'stored',
+      },
+    });
+
+    await expect(
+      getReportingStatus({
+        configPath,
+        env: {
+          HOKUSAI_OUTCOME_OPT_IN: 'false',
+        },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        enabled: false,
+        source: 'env',
+      },
+    });
+  });
+
+  it('resolves retention policy overrides and warns on invalid values', async () => {
+    expect(
+      resolveRetentionPolicy({
+        HOKUSAI_RETENTION_DAYS: '30',
+      }).maxAgeMs,
+    ).toBe(30 * 24 * 60 * 60 * 1000);
+
+    const configPath = await createTempDir('hokusai-claude-retention-invalid-');
+    const store = new FsLocalStore(configPath);
+    await store.putCorrelation({
+      correlationId: 'corr-retention',
+      packetHash: 'task-retention',
+      createdAt: 1,
+    });
+
+    const stderrChunks: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk: string | Uint8Array) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    };
+
+    try {
+      const result = await listRoutingDecisions(
+        {},
+        {
+          configPath,
+          env: {
+            HOKUSAI_RETENTION_DAYS: 'invalid',
+          },
+          clock: () => new Date(1),
+        },
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.warnings).toEqual([
+          'Ignoring invalid HOKUSAI_RETENTION_DAYS value: invalid. Using default 7 day retention.',
+        ]);
+      }
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    expect(stderrChunks.join('')).toContain('Ignoring invalid HOKUSAI_RETENTION_DAYS');
   });
 });
 

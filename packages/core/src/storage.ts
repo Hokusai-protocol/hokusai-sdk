@@ -86,12 +86,15 @@ export interface LocalStore {
   ): Promise<LocalCorrelationRecord | undefined>;
   listCorrelations(): Promise<LocalCorrelationRecord[]>;
   deleteCorrelation(correlationId: string): Promise<void>;
+  clearCorrelations(): Promise<void>;
 
   putPayloadHash(record: PayloadHashRecord): Promise<void>;
   listPayloadHashes(): Promise<PayloadHashRecord[]>;
+  clearPayloadHashes(): Promise<void>;
 
   appendAudit(entry: SubmissionAuditEntry): Promise<void>;
   listAudit(): Promise<SubmissionAuditEntry[]>;
+  clearAudit(): Promise<void>;
 
   putConfigRecord(id: string, record: Record<string, unknown>): Promise<void>;
   getConfigRecord(id: string): Promise<Record<string, unknown> | undefined>;
@@ -262,6 +265,11 @@ export class InMemoryLocalStore implements LocalStore {
     return Promise.resolve();
   }
 
+  clearCorrelations(): Promise<void> {
+    this.#correlations.clear();
+    return Promise.resolve();
+  }
+
   putPayloadHash(record: PayloadHashRecord): Promise<void> {
     this.#payloadHashes.set(record.hash, { ...record });
     return Promise.resolve();
@@ -275,6 +283,11 @@ export class InMemoryLocalStore implements LocalStore {
     );
   }
 
+  clearPayloadHashes(): Promise<void> {
+    this.#payloadHashes.clear();
+    return Promise.resolve();
+  }
+
   appendAudit(entry: SubmissionAuditEntry): Promise<void> {
     this.#auditEntries.set(entry.id, { ...entry });
     return Promise.resolve();
@@ -286,6 +299,11 @@ export class InMemoryLocalStore implements LocalStore {
         (left, right) => left.timestamp - right.timestamp,
       ),
     );
+  }
+
+  clearAudit(): Promise<void> {
+    this.#auditEntries.clear();
+    return Promise.resolve();
   }
 
   putConfigRecord(id: string, record: Record<string, unknown>): Promise<void> {
@@ -403,6 +421,10 @@ export class FsLocalStore implements LocalStore {
     await removeFile(this.#correlationFilePath(correlationId));
   }
 
+  async clearCorrelations(): Promise<void> {
+    await rm(this.#correlationsDir(), { recursive: true, force: true });
+  }
+
   async putPayloadHash(record: PayloadHashRecord): Promise<void> {
     await writeJsonFile(this.#payloadHashFilePath(record.hash), record);
   }
@@ -413,6 +435,10 @@ export class FsLocalStore implements LocalStore {
     );
   }
 
+  async clearPayloadHashes(): Promise<void> {
+    await rm(this.#hashesDir(), { recursive: true, force: true });
+  }
+
   async appendAudit(entry: SubmissionAuditEntry): Promise<void> {
     await writeJsonFile(this.#auditFilePath(entry.id), entry);
   }
@@ -421,6 +447,10 @@ export class FsLocalStore implements LocalStore {
     return (await readJsonFiles<SubmissionAuditEntry>(this.#auditDir())).sort(
       (left, right) => left.timestamp - right.timestamp,
     );
+  }
+
+  async clearAudit(): Promise<void> {
+    await rm(this.#auditDir(), { recursive: true, force: true });
   }
 
   async putConfigRecord(
@@ -493,9 +523,9 @@ export class FsLocalStore implements LocalStore {
 
   async clear(): Promise<void> {
     await Promise.all([
-      rm(this.#correlationsDir(), { recursive: true, force: true }),
-      rm(this.#hashesDir(), { recursive: true, force: true }),
-      rm(this.#auditDir(), { recursive: true, force: true }),
+      this.clearCorrelations(),
+      this.clearPayloadHashes(),
+      this.clearAudit(),
       rm(this.#configDir(), { recursive: true, force: true }),
     ]);
   }

@@ -32,6 +32,23 @@
 
 - `pruneExpired(now, policy)` enforces `maxAgeMs` and `maxRecords` independently for correlations, payload hashes, and audit entries.
 - `listCorrelations()`, `listAudit()`, and `clear()` provide the primitives adapters need to implement inspect-and-purge commands for local Hokusai state.
+- The Claude Code adapter defaults retention to 7 days and 200 records, with `HOKUSAI_RETENTION_DAYS` available as a positive integer override.
+- The Claude Code privacy CLI prunes lazily on `list`, `preview`, and `audit`, so expired local state disappears during normal inspection.
+
+## Claude Code local state
+
+- Routing records store correlation ids, timestamps, recommended model ids, alternative model ids, redacted reason previews, payload hashes, and local status metadata.
+- Submission audit entries store `routing` or `outcome`, `submitted` or `failed` or `skipped`, a timestamp, correlation id, and an optional redacted error string.
+- Payload hash records store only the HMAC digest, algorithm, and timestamp so users can verify what was sent without storing raw text.
+- `HOKUSAI_DEBUG=1` is an explicit opt-in that stores a truncated redacted payload preview for routed tasks. It does not bypass redaction and never writes raw prompts, code, or logs.
+
+## Claude Code privacy CLI
+
+- `hokusai-privacy list` shows recent routing decisions.
+- `hokusai-privacy preview <correlation-id>` shows one stored decision and, with `--debug`, the saved redacted debug preview when present.
+- `hokusai-privacy audit` shows the minimal submission log.
+- `hokusai-privacy clear --records --yes`, `--audit --yes`, or `--all --yes` deletes local state.
+- `hokusai-privacy reporting on|off|status` controls the persistent outcome-reporting default.
 
 ## Supported categories
 

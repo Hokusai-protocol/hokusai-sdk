@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 import {
   DEFAULT_REDACTION_CONFIG,
+  FilePluginConfigStore,
   FsLocalStore,
   HokusaiNetworkError,
   HokusaiDispatchBuilder,
@@ -10,9 +11,12 @@ import {
   buildOutcomeReport,
   canReportOutcome,
   canRoute,
+  defaultPluginConfigPath,
   hashPayload,
   isConsentGranted,
+  loadPluginConfig,
   mapRecommendation,
+  preview,
   redact,
   resolveConsent,
   validateRouteRequest,
@@ -27,7 +31,10 @@ import {
   type OutcomeReport,
   type OutcomeReportInput,
   type OutcomeResponse,
+  type PayloadHashRecord,
+  type RetentionPolicy,
   type RouteResponse,
+  type SubmissionAuditEntry,
   type ModelRegistry,
   type ModelSelection,
 } from '@hokusai/core';
@@ -114,6 +121,41 @@ export interface PreviewReportOutcomeResult {
   preview: OutcomeReportPreview;
 }
 
+export interface RoutingDecisionSummary {
+  correlationId: string;
+  taskId: string;
+  createdAt: string;
+  recommendedModelId?: string;
+  alternatives: string[];
+  reasonPreview?: string;
+  status?: string;
+  reasonHash?: string;
+  payloadHash?: PayloadHashRecord;
+}
+
+export interface DecisionPreview extends RoutingDecisionSummary {
+  decisionAt?: string;
+  declinedAt?: string;
+  debugRedactedPayloadPreview?: string;
+}
+
+export interface ClearResult {
+  scope: 'all' | 'records' | 'audit';
+  correlationsCleared: number;
+  payloadHashesCleared: number;
+  auditEntriesCleared: number;
+  configCleared: boolean;
+}
+
+export interface ReportingStatusResult {
+  enabled: boolean;
+  source: 'env' | 'stored' | 'default';
+}
+
+export interface PrivacyResultWarnings {
+  warnings?: string[];
+}
+
 export interface RecommendationDisplay {
   lines: string[];
   model: string;
@@ -121,6 +163,9 @@ export interface RecommendationDisplay {
 }
 
 const ROUTING_REASON_LIMIT = 120;
+const DEBUG_PREVIEW_LIMIT = 1000;
+const DEFAULT_RETENTION_DAYS = 7;
+const DEFAULT_RETENTION_MAX_RECORDS = 200;
 
 function toStoredCorrelationId(correlationId: string): string {
   return correlationId.replace(/[:.]/g, '_');
@@ -139,6 +184,127 @@ function redactForStorage(
   config: ClaudeCodeBuilderOptions['redactionConfig'],
 ): string {
   return truncateForStorage(redact(input, config).output);
+}
+
+function buildDebugPreview(
+  input: string,
+  config: ClaudeCodeBuilderOptions['redactionConfig'],
+): string {
+  return preview(input, config).willSend.slice(0, DEBUG_PREVIEW_LIMIT);
+}
+
+function toAuditId(correlationId: string, suffix: string): string {
+  return `${toStoredCorrelationId(correlationId)}-${suffix}`;
+}
+
+function parseAlternativeIds(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function toWarningMessage(rawValue: string): string {
+  return `Ignoring invalid HOKUSAI_RETENTION_DAYS value: ${rawValue}. Using default 7 day retention.`;
+}
+
+function resolveRetentionPolicyWithWarnings(
+  env: NodeJS.ProcessEnv = process.env,
+): { policy: RetentionPolicy; warnings: string[] } {
+  const rawValue = env.HOKUSAI_RETENTION_DAYS;
+  const defaults: RetentionPolicy = {
+    maxAgeMs: DEFAULT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    maxRecords: DEFAULT_RETENTION_MAX_RECORDS,
+  };
+
+  if (rawValue === undefined) {
+    return { policy: defaults, warnings: [] };
+  }
+
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return {
+      policy: defaults,
+      warnings: [toWarningMessage(rawValue)],
+    };
+  }
+
+  return {
+    policy: {
+      maxAgeMs: parsed * 24 * 60 * 60 * 1000,
+      maxRecords: DEFAULT_RETENTION_MAX_RECORDS,
+    },
+    warnings: [],
+  };
+}
+
+export function resolveRetentionPolicy(
+  env: NodeJS.ProcessEnv = process.env,
+): RetentionPolicy {
+  return resolveRetentionPolicyWithWarnings(env).policy;
+}
+
+async function pruneStoreForPrivacy(
+  store: FsLocalStore,
+  env?: NodeJS.ProcessEnv,
+  clock?: () => Date,
+): Promise<PrivacyResultWarnings> {
+  const { policy, warnings } = resolveRetentionPolicyWithWarnings(env);
+  if (warnings.length > 0) {
+    process.stderr.write(`${warnings.join('\n')}\n`);
+  }
+
+  await store.pruneExpired((clock ?? (() => new Date()))().getTime(), policy);
+  return warnings.length === 0 ? {} : { warnings };
+}
+
+function maybeWarnings(warnings: string[]): PrivacyResultWarnings {
+  return warnings.length === 0 ? {} : { warnings };
+}
+
+function findPayloadHashRecord(
+  payloadHashes: PayloadHashRecord[],
+  hash: string | undefined,
+): PayloadHashRecord | undefined {
+  if (!hash) {
+    return undefined;
+  }
+
+  return payloadHashes.find((record) => record.hash === hash);
+}
+
+function toRoutingDecisionSummary(
+  record: NonNullable<Awaited<ReturnType<FsLocalStore['getCorrelation']>>>,
+  payloadHashes: PayloadHashRecord[],
+): RoutingDecisionSummary {
+  const payloadHashRecord = findPayloadHashRecord(
+    payloadHashes,
+    record.metadata?.payloadHash,
+  );
+
+  return {
+    correlationId: record.metadata?.originalCorrelationId ?? record.correlationId,
+    taskId: record.metadata?.taskId ?? record.packetHash,
+    createdAt: new Date(record.createdAt).toISOString(),
+    ...(record.metadata?.recommendedModelId
+      ? { recommendedModelId: record.metadata.recommendedModelId }
+      : {}),
+    alternatives: parseAlternativeIds(record.metadata?.recommendedAlternativeIds),
+    ...(record.metadata?.reasonPreview
+      ? { reasonPreview: record.metadata.reasonPreview }
+      : {}),
+    ...(record.metadata?.status ? { status: record.metadata.status } : {}),
+    ...(record.metadata?.reasonHash ? { reasonHash: record.metadata.reasonHash } : {}),
+    ...(payloadHashRecord ? { payloadHash: payloadHashRecord } : {}),
+  };
 }
 
 async function findStoredCorrelationRecord(
@@ -172,6 +338,7 @@ export interface ClaudeCodeCommandOptions {
   apiClient?: HokusaiClient;
   configPath?: string;
   consent?: ConsentConfig;
+  env?: NodeJS.ProcessEnv;
   redactionConfig?: ClaudeCodeBuilderOptions['redactionConfig'];
   registry?: ModelRegistry;
   settings?: Partial<ConsentSettings>;
@@ -482,6 +649,18 @@ export async function routeTask(
     });
   }
 
+  const timestamp = (options?.clock ?? (() => new Date()))().getTime();
+  const correlationId = payload.correlation.correlationId;
+  const payloadHash = hashPayload(
+    payload,
+    context.builderOptions.redactionConfig.salt,
+  );
+  await store.putPayloadHash({
+    hash: payloadHash,
+    algorithm: 'sha-256-hmac',
+    createdAt: timestamp,
+  });
+
   let route: RouteResponse | undefined;
   if (options?.apiClient) {
     try {
@@ -494,6 +673,15 @@ export async function routeTask(
         recommendation = routeRecommendation;
       }
     } catch (error) {
+      await store.appendAudit({
+        id: toAuditId(correlationId, 'route'),
+        kind: 'routing',
+        correlationId,
+        status: 'failed',
+        timestamp,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
       if (error instanceof ModelMappingError) {
         return fail(error.code, error.message, {
           suggestions: error.suggestions,
@@ -508,6 +696,14 @@ export async function routeTask(
 
       throw error;
     }
+  } else {
+    await store.appendAudit({
+      id: toAuditId(correlationId, 'route'),
+      kind: 'routing',
+      correlationId,
+      status: 'skipped',
+      timestamp,
+    });
   }
 
   const handoff = buildHandoffInstructions({
@@ -515,7 +711,6 @@ export async function routeTask(
     currentModelId,
     harness: 'claude-code',
   });
-  const correlationId = payload.correlation.correlationId;
   const storedCorrelation = await findStoredCorrelationRecord(store, correlationId);
   if (storedCorrelation.record) {
     await store.putCorrelation({
@@ -534,9 +729,28 @@ export async function routeTask(
           recommendation.reason,
           context.builderOptions.redactionConfig,
         ),
+        payloadHash,
         status: 'pending',
         decisionAt: (options?.clock ?? (() => new Date()))().toISOString(),
+        ...(options?.env?.HOKUSAI_DEBUG === '1' || process.env.HOKUSAI_DEBUG === '1'
+          ? {
+              debugRedactedPayloadPreview: buildDebugPreview(
+                payload.prompt,
+                context.builderOptions.redactionConfig,
+              ),
+            }
+          : {}),
       },
+    });
+  }
+
+  if (options?.apiClient) {
+    await store.appendAudit({
+      id: toAuditId(correlationId, 'route'),
+      kind: 'routing',
+      correlationId,
+      status: 'submitted',
+      timestamp,
     });
   }
 
@@ -745,9 +959,66 @@ export async function reportTaskOutcome(
     return preview;
   }
 
+  const context = resolveCommandContext(options);
+  const store = new FsLocalStore(context.configDir);
+  const timestamp = (options?.clock ?? (() => new Date()))().getTime();
+  await store.putPayloadHash({
+    hash: hashPayload(
+      preview.value.report,
+      context.builderOptions.redactionConfig.salt,
+    ),
+    algorithm: 'sha-256-hmac',
+    createdAt: timestamp,
+  });
+
   let response: OutcomeResponse | undefined;
-  if (options?.apiClient && !options.dryRun) {
-    response = (await options.apiClient.reportOutcome(preview.value.report)) as OutcomeResponse;
+  if (options?.dryRun) {
+    await store.appendAudit({
+      id: toAuditId(input.correlationId, 'outcome'),
+      kind: 'outcome',
+      correlationId: input.correlationId,
+      status: 'skipped',
+      timestamp,
+      error: 'dry-run',
+    });
+  } else if (options?.apiClient) {
+    try {
+      response = (await options.apiClient.reportOutcome(
+        preview.value.report,
+      )) as OutcomeResponse;
+      await store.appendAudit({
+        id: toAuditId(input.correlationId, 'outcome'),
+        kind: 'outcome',
+        correlationId: input.correlationId,
+        status: 'submitted',
+        timestamp,
+      });
+    } catch (error) {
+      await store.appendAudit({
+        id: toAuditId(input.correlationId, 'outcome'),
+        kind: 'outcome',
+        correlationId: input.correlationId,
+        status: 'failed',
+        timestamp,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (error instanceof HokusaiNetworkError) {
+        return fail('NETWORK_ERROR', error.message, {
+          requestId: error.requestId,
+        });
+      }
+
+      throw error;
+    }
+  } else {
+    await store.appendAudit({
+      id: toAuditId(input.correlationId, 'outcome'),
+      kind: 'outcome',
+      correlationId: input.correlationId,
+      status: 'skipped',
+      timestamp,
+    });
   }
 
   return ok({
@@ -770,6 +1041,207 @@ export async function clearClaudeCodeLocalState(
   await rm(config.dir, { recursive: true, force: true });
 
   return ok({ ok: true });
+}
+
+export async function listRoutingDecisions(
+  input: { limit?: number } = {},
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<{ decisions: RoutingDecisionSummary[] } & PrivacyResultWarnings>> {
+  const context = resolveCommandContext(options);
+  const store = new FsLocalStore(context.configDir);
+  const { warnings = [] } = await pruneStoreForPrivacy(
+    store,
+    options?.env ?? process.env,
+    options?.clock,
+  );
+  const [records, payloadHashes] = await Promise.all([
+    store.listCorrelations(),
+    store.listPayloadHashes(),
+  ]);
+  const limit =
+    input.limit !== undefined ? Math.max(0, input.limit) : records.length;
+
+  return ok({
+    decisions: records
+      .slice()
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, limit)
+      .map((record) => toRoutingDecisionSummary(record, payloadHashes)),
+    ...maybeWarnings(warnings),
+  });
+}
+
+export async function previewStoredDecision(
+  input: { correlationId: string; debug?: boolean },
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<DecisionPreview & PrivacyResultWarnings>> {
+  if (typeof input.correlationId !== 'string' || input.correlationId.trim().length === 0) {
+    return fail('UNKNOWN_CORRELATION', 'A correlation id is required.');
+  }
+
+  const context = resolveCommandContext(options);
+  const store = new FsLocalStore(context.configDir);
+  const { warnings = [] } = await pruneStoreForPrivacy(
+    store,
+    options?.env ?? process.env,
+    options?.clock,
+  );
+  const resolved = await findStoredCorrelationRecord(store, input.correlationId.trim());
+
+  if (!resolved.record) {
+    return fail(
+      'UNKNOWN_CORRELATION',
+      `No record found for correlation id: ${input.correlationId.trim()}`,
+    );
+  }
+
+  const payloadHashes = await store.listPayloadHashes();
+  const summary = toRoutingDecisionSummary(resolved.record, payloadHashes);
+
+  return ok({
+    ...summary,
+    ...(resolved.record.metadata?.decisionAt
+      ? { decisionAt: resolved.record.metadata.decisionAt }
+      : {}),
+    ...(resolved.record.metadata?.declinedAt
+      ? { declinedAt: resolved.record.metadata.declinedAt }
+      : {}),
+    ...(input.debug && resolved.record.metadata?.debugRedactedPayloadPreview
+      ? {
+          debugRedactedPayloadPreview:
+            resolved.record.metadata.debugRedactedPayloadPreview,
+        }
+      : {}),
+    ...maybeWarnings(warnings),
+  });
+}
+
+export async function listSubmissionAudit(
+  input: { limit?: number } = {},
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<{ entries: SubmissionAuditEntry[] } & PrivacyResultWarnings>> {
+  const context = resolveCommandContext(options);
+  const store = new FsLocalStore(context.configDir);
+  const { warnings = [] } = await pruneStoreForPrivacy(
+    store,
+    options?.env ?? process.env,
+    options?.clock,
+  );
+  const entries = await store.listAudit();
+  const limit =
+    input.limit !== undefined ? Math.max(0, input.limit) : entries.length;
+
+  return ok({
+    entries: entries
+      .slice()
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(0, limit),
+    ...maybeWarnings(warnings),
+  });
+}
+
+export async function clearPrivacyState(
+  input: {
+    scope: 'all' | 'records' | 'audit';
+    configDir?: string;
+  },
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<ClearResult>> {
+  const configDir =
+    input.configDir ??
+    resolveClaudeCodeConfigPath(
+      options?.configPath ? { override: options.configPath } : undefined,
+    ).dir;
+  const store = new FsLocalStore(configDir);
+
+  if (input.scope === 'all') {
+    const [correlations, payloadHashes, auditEntries] = await Promise.all([
+      store.listCorrelations(),
+      store.listPayloadHashes(),
+      store.listAudit(),
+    ]);
+
+    await clearClaudeCodeLocalState({
+      ...options,
+      configPath: configDir,
+    });
+
+    return ok({
+      scope: 'all',
+      correlationsCleared: correlations.length,
+      payloadHashesCleared: payloadHashes.length,
+      auditEntriesCleared: auditEntries.length,
+      configCleared: true,
+    });
+  }
+
+  if (input.scope === 'records') {
+    const [correlations, payloadHashes] = await Promise.all([
+      store.listCorrelations(),
+      store.listPayloadHashes(),
+    ]);
+    await Promise.all([store.clearCorrelations(), store.clearPayloadHashes()]);
+    return ok({
+      scope: 'records',
+      correlationsCleared: correlations.length,
+      payloadHashesCleared: payloadHashes.length,
+      auditEntriesCleared: 0,
+      configCleared: false,
+    });
+  }
+
+  const auditEntries = await store.listAudit();
+  await store.clearAudit();
+  return ok({
+    scope: 'audit',
+    correlationsCleared: 0,
+    payloadHashesCleared: 0,
+    auditEntriesCleared: auditEntries.length,
+    configCleared: false,
+  });
+}
+
+export async function setReportingEnabled(
+  input: { enabled: boolean; configPath?: string },
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<{ enabled: boolean }>> {
+  const configDir = resolveClaudeCodeConfigPath(
+    options?.configPath ? { override: options.configPath } : undefined,
+  ).dir;
+  const pluginConfigPath = input.configPath ?? defaultPluginConfigPath(configDir);
+  const store = new FilePluginConfigStore(pluginConfigPath);
+  const existing = (await store.read()) ?? {};
+
+  await store.write({
+    ...existing,
+    outcomeSubmissionEnabled: input.enabled,
+  });
+
+  return ok({ enabled: input.enabled });
+}
+
+export async function getReportingStatus(
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<ReportingStatusResult>> {
+  const configDir = resolveClaudeCodeConfigPath(
+    options?.configPath ? { override: options.configPath } : undefined,
+  ).dir;
+  const store = new FilePluginConfigStore(defaultPluginConfigPath(configDir));
+  const stored = await store.read();
+  const config = await loadPluginConfig({
+    env: options?.env ?? process.env,
+    store,
+  });
+
+  return ok({
+    enabled: config.outcomeSubmissionEnabled,
+    source:
+      (options?.env ?? process.env).HOKUSAI_OUTCOME_OPT_IN !== undefined
+        ? 'env'
+        : stored?.outcomeSubmissionEnabled !== undefined
+          ? 'stored'
+          : 'default',
+  });
 }
 
 export function displayTaskRecommendation(

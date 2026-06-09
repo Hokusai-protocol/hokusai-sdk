@@ -11,7 +11,7 @@ pnpm -r build
 claude --plugin-dir /path/to/repo/packages/adapter-claude-code/plugin
 ```
 
-After install, Claude Code should show `/hokusai:route` and `/hokusai:report` in the slash-command menu. The task description may also refer to these as `/hokusai-route` and `/hokusai-report`, but the `hokusai:*` paths are the canonical Claude Code command paths.
+After install, Claude Code should show `/hokusai:route`, `/hokusai:report`, and `/hokusai:privacy` in the slash-command menu. The task description may also refer to these as `/hokusai-route`, `/hokusai-report`, and `/hokusai-privacy`, but the `hokusai:*` paths are the canonical Claude Code command paths.
 
 ## Configure auth and consent
 
@@ -97,3 +97,34 @@ Decline reasons are redacted and length-capped before local persistence. The ada
 - Outcome notes are redacted before preview and before submission.
 - The plugin config store never persists `apiKey`.
 - Model recommendations are limited to Anthropic models in the configured allowlist.
+
+## Data & Privacy
+
+- Local state lives under `~/.claude/hokusai/` by default, or `HOKUSAI_CONFIG_DIR` when overridden.
+- Stored routing records include correlation ids, timestamps, model recommendation metadata, payload hashes, short redacted reason previews, and local decision status.
+- Stored audit entries include `kind`, `status`, `timestamp`, `correlationId`, and any redacted error string.
+- Default retention is 7 days with a bounded record count. Override with a positive integer in `HOKUSAI_RETENTION_DAYS`.
+- Raw task text, raw code, raw logs, and raw prompts are never stored locally. `RawPayloadRejectedError` enforces that at write time.
+- `HOKUSAI_DEBUG=1` opt-in stores one extra field: a truncated redacted preview of the routed payload. The original raw text still never touches disk.
+
+Inspect local state:
+
+```sh
+hokusai-privacy list
+hokusai-privacy preview <correlation-id>
+hokusai-privacy audit
+```
+
+Clear local state:
+
+```sh
+hokusai-privacy clear --all --yes
+```
+
+Disable outcome reporting persistently:
+
+```sh
+hokusai-privacy reporting off
+```
+
+For one-shell overrides, use `HOKUSAI_OUTCOME_OPT_IN=false`.
