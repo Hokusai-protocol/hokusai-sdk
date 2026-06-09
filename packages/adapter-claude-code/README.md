@@ -1,5 +1,7 @@
 # Claude Code Adapter
 
+For the harness-agnostic integration pattern that this plugin implements, see [docs/reference-pattern.md](../../docs/reference-pattern.md). This README covers Claude Code-specific behavior layered on top of that shared route/report pattern.
+
 `@hokusai/adapter-claude-code` now includes an installable Claude Code plugin surface for Hokusai task routing.
 
 ## Install the plugin

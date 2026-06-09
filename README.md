@@ -35,4 +35,4 @@ pnpm -r test
 - Coordinated release: create a single changeset touching multiple packages.
 - Publish flow: `pnpm release`.
 
-See [docs/integration-guide.md](docs/integration-guide.md), [docs/privacy-model.md](docs/privacy-model.md), [docs/payload-schemas.md](docs/payload-schemas.md), and [docs/release-notes.md](docs/release-notes.md) for repository-level guidance.
+See [docs/integration-guide.md](docs/integration-guide.md), [docs/reference-pattern.md](docs/reference-pattern.md), [docs/privacy-model.md](docs/privacy-model.md), [docs/payload-schemas.md](docs/payload-schemas.md), and [docs/release-notes.md](docs/release-notes.md) for repository-level guidance.
