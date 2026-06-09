@@ -1,8 +1,19 @@
 # Claude Code Adapter
 
-`@hokusai/adapter-claude-code` keeps local model discovery available by default and requires explicit configuration before any routing or outcome submission can occur.
+`@hokusai/adapter-claude-code` now includes an installable Claude Code plugin surface for Hokusai task routing.
 
-## Configuration
+## Install the plugin
+
+Build the package first so the plugin bin can import `dist/`:
+
+```sh
+pnpm -r build
+claude --plugin-dir /path/to/repo/packages/adapter-claude-code/plugin
+```
+
+After install, Claude Code should show `/hokusai:route` in the slash-command menu. The task description may also refer to this as `/hokusai-route`, but `/hokusai:route` is the canonical Claude Code command path.
+
+## Configure auth and consent
 
 Use environment variables or a local config file loaded through `loadClaudeCodePluginConfig()`:
 
@@ -34,6 +45,22 @@ const models = createClaudeCodeModelProvider({
 });
 ```
 
+## Use the command
+
+```text
+/hokusai:route refactor the auth middleware to use the new policy engine
+```
+
+The command sends a normalized Hokusai task packet only after both auth and routing consent are configured. On success it returns the recommended Anthropic model, concise reasoning, confidence, and alternatives when the API provides them.
+
+## Failure behavior
+
+- Missing `HOKUSAI_API_KEY`: `Hokusai routing needs an API key. Set HOKUSAI_API_KEY and re-run.`
+- Missing `HOKUSAI_ROUTING_CONSENT=true`: `Routing consent is required. Run export HOKUSAI_ROUTING_CONSENT=true to opt in.`
+- Network failure: `Could not reach Hokusai (...)`. Retry after checking connectivity, or use `/hokusai:doctor`.
+- Unsupported recommendation: prints the unsupported model id and suggested Anthropic fallbacks.
+- Empty input: prompts for a task description example.
+
 ## Privacy posture
 
 - Local discovery and setup help work without network calls.
@@ -41,8 +68,3 @@ const models = createClaudeCodeModelProvider({
 - Outcome submission requires the routing gate plus `HOKUSAI_OUTCOME_OPT_IN=true`.
 - The plugin config store never persists `apiKey`.
 - Model recommendations are limited to Anthropic models in the configured allowlist.
-
-## Commands
-
-- `hokusai.run`: dispatch a task once auth and routing consent are configured.
-- `hokusai.doctor`: report auth, consent, API reachability, and allowlist status without printing the raw API key.

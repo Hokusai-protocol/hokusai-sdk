@@ -127,6 +127,7 @@ export {
   type HokusaiValidationSuccess,
   type HokusaiTaskInput,
   type OutcomeResponse,
+  type RouteRecommendation,
   type OutcomeResponseStatus,
   type RouteRequest,
   type RouteResponse,

@@ -5,15 +5,19 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "hokusai-route": "./plugin/bin/hokusai-route"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "plugin.json"
+    "plugin"
   ],
   "dependencies": {
     "@hokusai/core": "workspace:*"
