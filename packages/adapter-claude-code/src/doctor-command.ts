@@ -34,11 +34,14 @@ export async function runBootstrapDoctor(
   let validationCheck: DoctorCheckResult | undefined;
 
   try {
-    config = await loadPluginConfig({
-      env: options.env,
+    const loadOptions: Parameters<typeof loadPluginConfig>[0] = {
       store: new FilePluginConfigStore(pluginConfigPath),
       registry: new InMemoryModelRegistry(ANTHROPIC_MODELS),
-    });
+    };
+    if (options.env !== undefined) {
+      loadOptions.env = options.env;
+    }
+    config = await loadPluginConfig(loadOptions);
   } catch (error) {
     if (!(error instanceof ConfigValidationError)) {
       throw error;
@@ -58,13 +61,16 @@ export async function runBootstrapDoctor(
     config.apiKey?.trim() && config.routingConsentEnabled && options.transport
       ? 'network'
       : 'offline';
-  const baseReport = await runPluginDoctor({
+  const doctorInput: Parameters<typeof runPluginDoctor>[0] = {
     config,
     mode,
-    transport: options.transport,
     stateDir: configPath.dir,
     registry: new InMemoryModelRegistry(ANTHROPIC_MODELS),
-  });
+  };
+  if (options.transport !== undefined) {
+    doctorInput.transport = options.transport;
+  }
+  const baseReport = await runPluginDoctor(doctorInput);
   const report = validationCheck
     ? {
         ...baseReport,

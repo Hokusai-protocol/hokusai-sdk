@@ -362,12 +362,23 @@ export async function runPluginDoctor(
   ];
 
   if (mode === 'network' && input.transport) {
+    const reachabilityOptions: {
+      path?: string;
+      timeoutMs?: number;
+      requestId: string;
+    } = { requestId: checkedAt };
+    if (input.reachabilityPath !== undefined) {
+      reachabilityOptions.path = input.reachabilityPath;
+    }
+    if (input.reachabilityTimeoutMs !== undefined) {
+      reachabilityOptions.timeoutMs = input.reachabilityTimeoutMs;
+    }
     checks.push(
-      await checkApiReachability(input.config, input.transport, {
-        path: input.reachabilityPath,
-        timeoutMs: input.reachabilityTimeoutMs,
-        requestId: checkedAt,
-      }),
+      await checkApiReachability(
+        input.config,
+        input.transport,
+        reachabilityOptions,
+      ),
     );
   } else {
     checks.push({
