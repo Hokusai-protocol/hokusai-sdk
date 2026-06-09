@@ -8,6 +8,13 @@ This package is the smallest complete Hokusai integration example that is safe t
 pnpm --filter @hokusai/reference-harness start
 ```
 
+## Example payloads
+
+Published fake payloads live in [`examples/`](./examples/README.md):
+
+- [`task-packet.example.json`](./examples/task-packet.example.json)
+- [`outcome-report.example.json`](./examples/outcome-report.example.json)
+
 ## Expected console output
 
 The script prints nine labeled steps:

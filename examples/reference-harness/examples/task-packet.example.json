@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.1.0",
+  "userIntent": "Fix a flaky integration test in the checkout flow.",
+  "taskFamily": "bugfix",
+  "reasoningDepth": "standard",
+  "repositoryScale": "medium",
+  "languageSignals": ["TypeScript"],
+  "frameworkSignals": ["Node.js"],
+  "availableTools": ["filesystem", "terminal", "test runner"],
+  "constraints": ["Do not include raw code in the packet"]
+}
