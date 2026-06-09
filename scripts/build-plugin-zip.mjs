@@ -131,11 +131,31 @@ function createChecksumFile(zipFile, checksumFile, checksumTargetName = path.bas
   writeFileSync(checksumFile, `${digest}  ${checksumTargetName}\n`);
 }
 
+function readManifestVersion() {
+  const manifestPath = path.join(pluginSourceDir, '.claude-plugin', 'plugin.json');
+  assertExists(manifestPath, `missing plugin manifest at ${manifestPath}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (!manifest.version) {
+    throw new Error(`plugin manifest at ${manifestPath} has no version field`);
+  }
+  return String(manifest.version).trim();
+}
+
+function assertManifestVersionMatches(resolvedVersion) {
+  const manifestVersion = readManifestVersion();
+  if (manifestVersion !== resolvedVersion) {
+    throw new Error(
+      `plugin manifest version (${manifestVersion}) does not match resolved release version (${resolvedVersion}); update plugin/.claude-plugin/plugin.json before tagging`,
+    );
+  }
+}
+
 function main() {
   const version = resolveVersion();
   assertExists(pluginSourceDir, 'plugin source directory missing');
   assertExists(bundleSourceFile, 'bundle not found; run pnpm --filter @hokusai/adapter-claude-code bundle:plugin first');
   assertExists(readmeSourceFile, 'adapter README missing');
+  assertManifestVersionMatches(version);
 
   rmSync(distZipDir, { recursive: true, force: true });
   mkdirSync(distZipDir, { recursive: true });
