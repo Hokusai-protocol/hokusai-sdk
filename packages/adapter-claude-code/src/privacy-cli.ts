@@ -63,14 +63,6 @@ type ParsedArgs =
       configPath?: string;
     };
 
-function toConfigPath(configPath?: string): string | undefined {
-  if (!configPath) {
-    return undefined;
-  }
-
-  return configPath.endsWith('.json') ? configPath : configPath;
-}
-
 function parseNumber(value: string | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
@@ -84,8 +76,7 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
   const subcommand = argv[0];
   const json = argv.includes('--json');
   const configIndex = argv.indexOf('--config');
-  const configPath =
-    configIndex >= 0 ? toConfigPath(argv[configIndex + 1]) : undefined;
+  const configPath = configIndex >= 0 ? argv[configIndex + 1] : undefined;
 
   if (subcommand === 'list') {
     const limitIndex = argv.indexOf('--limit');
@@ -166,11 +157,11 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
 function ok(
   body: string,
   json: boolean,
-  payload?: unknown,
+  payload: unknown,
 ): PrivacyCliRunResult {
   return {
     exitCode: PRIVACY_CLI_EXIT_CODES.OK,
-    stdout: json ? `${JSON.stringify(payload, null, 2)}\n` : body,
+    stdout: json ? `${JSON.stringify(payload ?? {}, null, 2)}\n` : body,
     stderr: '',
   };
 }

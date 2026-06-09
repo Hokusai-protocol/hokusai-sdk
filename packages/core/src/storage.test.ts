@@ -205,6 +205,47 @@ describe('local store implementations', () => {
     }
   });
 
+  it('clears each record type independently via scoped clear methods', async () => {
+    const memoryStore = new InMemoryLocalStore();
+    const { store: fsStore } = await createFsStore();
+
+    for (const store of [memoryStore, fsStore]) {
+      await store.putCorrelation({
+        correlationId: 'correlation-scoped',
+        packetHash: 'packet-scoped',
+        createdAt: 10,
+      });
+      await store.putPayloadHash({
+        hash: 'hash-scoped',
+        algorithm: 'sha256',
+        createdAt: 11,
+      });
+      await store.appendAudit({
+        id: 'audit-scoped',
+        kind: 'routing',
+        correlationId: 'correlation-scoped',
+        status: 'submitted',
+        timestamp: 12,
+      });
+
+      await expect(store.clearCorrelations()).resolves.toBeUndefined();
+      await expect(store.listCorrelations()).resolves.toEqual([]);
+      await expect(store.listPayloadHashes()).resolves.toHaveLength(1);
+      await expect(store.listAudit()).resolves.toHaveLength(1);
+
+      await expect(store.clearPayloadHashes()).resolves.toBeUndefined();
+      await expect(store.listPayloadHashes()).resolves.toEqual([]);
+      await expect(store.listAudit()).resolves.toHaveLength(1);
+
+      await expect(store.clearAudit()).resolves.toBeUndefined();
+      await expect(store.listAudit()).resolves.toEqual([]);
+
+      await expect(store.clearCorrelations()).resolves.toBeUndefined();
+      await expect(store.clearPayloadHashes()).resolves.toBeUndefined();
+      await expect(store.clearAudit()).resolves.toBeUndefined();
+    }
+  });
+
   it('returns empty results when filesystem store directories do not exist', async () => {
     const { store } = await createFsStore();
 
