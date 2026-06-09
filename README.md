@@ -7,10 +7,10 @@ Hokusai is a task router and outcome-learning protocol for coding harnesses. The
 1. Install the latest Claude Code plugin from GitHub Releases.
 
 ```sh
-curl -L -o hokusai-plugin.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip && \
-curl -L -o hokusai-plugin.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256 && \
-sha256sum -c hokusai-plugin.zip.sha256 && \
-unzip hokusai-plugin.zip && \
+curl -L -o hokusai-claude-code-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip && \
+curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256 && \
+sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256 && \
+unzip hokusai-claude-code-plugin-latest.zip && \
 claude --plugin-dir ./hokusai-claude-code-plugin/plugin
 ```
 
