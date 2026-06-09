@@ -89,6 +89,14 @@ describe('runCli', () => {
             },
             payload: {} as never,
             preview: {} as never,
+            correlationId: 'corr-1',
+            routingDecisionId: 'corr-1',
+            handoff: {
+              mechanism: 'manual',
+              slashCommand: '/model claude-sonnet-4-6',
+              copyableCommand: '/model claude-sonnet-4-6',
+              instructions: [],
+            },
             route: {
               routeId: 'route-1',
               taskId: 'task-1',
@@ -113,8 +121,87 @@ describe('runCli', () => {
           confidence: 0.61,
         },
       ],
+      correlationId: 'corr-1',
+      routingDecisionId: 'corr-1',
+      handoff: {
+        mechanism: 'manual',
+        slashCommand: '/model claude-sonnet-4-6',
+        copyableCommand: '/model claude-sonnet-4-6',
+        instructions: [],
+      },
       requestId: 'req-1',
+      routeId: 'route-1',
     });
+  });
+
+  it('prints correlation and handoff guidance in plaintext output', async () => {
+    const result = await runCli(['--task', 'refactor auth'], {}, {
+      loadConfig: () =>
+        Promise.resolve({
+          apiKey: 'hk_live_test',
+          apiBaseUrl: 'https://api.hokusai.app',
+          routingConsentEnabled: true,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['claude-sonnet-4-6'],
+        }),
+      routeTaskImpl: () =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            recommendation: {
+              model: {
+                id: 'claude-opus-4-8',
+                provider: 'anthropic',
+                capabilities: ['reasoning'],
+              },
+              reason: 'Deeper reasoning needed.',
+            },
+            payload: {} as never,
+            preview: {} as never,
+            correlationId: 'corr-2',
+            routingDecisionId: 'corr-2',
+            handoff: {
+              mechanism: 'manual',
+              slashCommand: '/model claude-opus-4-8',
+              copyableCommand: '/model claude-opus-4-8',
+              instructions: [
+                'Run /model claude-opus-4-8 in Claude Code to switch to the recommended model.',
+              ],
+            },
+          },
+        }),
+    });
+
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.OK);
+    expect(result.stdout).toContain('Correlation ID: corr-2');
+    expect(result.stdout).toContain('Switch in Claude Code: /model claude-opus-4-8');
+  });
+
+  it('records a declined recommendation', async () => {
+    const result = await runCli(
+      ['--decline', '--correlation-id', 'corr-3', '--reason', 'prefer sonnet'],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiBaseUrl: 'https://api.hokusai.app',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: false,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        declineRecommendationImpl: () =>
+          Promise.resolve({
+            ok: true,
+            value: {
+              correlationId: 'corr-3',
+              status: 'declined',
+            },
+          }),
+      },
+    );
+
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.OK);
+    expect(result.stdout).toContain('corr-3');
   });
 
   it('maps network failures to a retryable error', async () => {

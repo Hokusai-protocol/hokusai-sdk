@@ -115,6 +115,11 @@ export {
   type ValidateRecommendedModelResult,
 } from './model-registry.js';
 export {
+  buildHandoffInstructions,
+  type BuildHandoffInstructionsInput,
+  type HandoffInstructions,
+} from './handoff.js';
+export {
   checkApiKey,
   checkApiReachability,
   checkModelAllowlist,

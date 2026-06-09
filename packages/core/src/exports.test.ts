@@ -37,6 +37,7 @@ describe('core public surface', () => {
     ).toBeInstanceOf(Error);
     expect(core.mapRecommendation).toBeDefined();
     expect(core.validateRecommendedModel).toBeDefined();
+    expect(core.buildHandoffInstructions).toBeDefined();
     expect(Array.isArray(core.ANTHROPIC_MODELS)).toBe(true);
     expect(core.runDoctor).toBeDefined();
     expect(core.runPluginDoctor).toBeDefined();

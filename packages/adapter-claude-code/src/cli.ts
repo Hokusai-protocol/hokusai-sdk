@@ -1,5 +1,6 @@
 import {
   ANTHROPIC_MODELS,
+  type AdapterResult,
   FilePluginConfigStore,
   HokusaiClient,
   InMemoryModelRegistry,
@@ -9,7 +10,10 @@ import {
 } from '@hokusai/core';
 import {
   displayTaskRecommendation,
+  declineRecommendation,
+  displayHandoff,
   routeTask,
+  type DeclineRecommendationResult,
   type RouteResult,
 } from './commands.js';
 
@@ -33,8 +37,11 @@ export interface CliRunResult {
 }
 
 interface ParsedArgs {
+  correlationId?: string;
   configPath?: string;
+  decline: boolean;
   json: boolean;
+  reason?: string;
   task?: string;
 }
 
@@ -49,10 +56,15 @@ interface CliDeps {
     input: { taskText: string },
     options: Parameters<typeof routeTask>[1],
   ) => Promise<RouteResult>;
+  declineRecommendationImpl?: (
+    input: { correlationId: string; reason?: string },
+    options: Parameters<typeof declineRecommendation>[1],
+  ) => Promise<AdapterResult<DeclineRecommendationResult>>;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
+    decline: false,
     json: false,
   };
 
@@ -66,6 +78,23 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === '--task') {
       parsed.task = argv[index + 1] ?? '';
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--decline') {
+      parsed.decline = true;
+      continue;
+    }
+
+    if (arg === '--correlation-id') {
+      parsed.correlationId = argv[index + 1] ?? '';
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--reason') {
+      parsed.reason = argv[index + 1] ?? '';
       index += 1;
       continue;
     }
@@ -135,6 +164,8 @@ export async function runCli(
           : {}),
       }));
   const routeTaskImpl = deps.routeTaskImpl ?? routeTask;
+  const declineRecommendationImpl =
+    deps.declineRecommendationImpl ?? declineRecommendation;
 
   let config: HokusaiPluginConfig;
   try {
@@ -153,6 +184,41 @@ export async function runCli(
         ? error.message
         : 'Failed to load Hokusai configuration.';
     return toMessage(parsed, message, CLI_EXIT_CODES.UNKNOWN_ERROR);
+  }
+
+  if (parsed.decline) {
+    if (!parsed.correlationId?.trim()) {
+      return toMessage(
+        parsed,
+        'Provide --correlation-id when declining a routing recommendation.',
+        CLI_EXIT_CODES.UNKNOWN_ERROR,
+      );
+    }
+
+    const result = await declineRecommendationImpl(
+      {
+        correlationId: parsed.correlationId.trim(),
+        ...(parsed.reason?.trim() ? { reason: parsed.reason.trim() } : {}),
+      },
+      {
+        registry,
+        ...(parsed.configPath ? { configPath: parsed.configPath } : {}),
+      },
+    );
+
+    if (!result.ok) {
+      return toMessage(parsed, result.error.message, CLI_EXIT_CODES.UNKNOWN_ERROR);
+    }
+
+    const body = parsed.json
+      ? JSON.stringify(result.value, null, 2)
+      : `Declined recommendation for correlation ${result.value.correlationId}.\n`;
+
+    return {
+      exitCode: CLI_EXIT_CODES.OK,
+      stdout: parsed.json ? `${body}\n` : body,
+      stderr: '',
+    };
   }
 
   if (!config.apiKey) {
@@ -256,8 +322,14 @@ export async function runCli(
                 })),
               }
             : {}),
+          correlationId: result.value.correlationId,
+          routingDecisionId: result.value.routingDecisionId,
+          handoff: result.value.handoff,
           ...(result.value.route?.requestId
             ? { requestId: result.value.route.requestId }
+            : {}),
+          ...(result.value.route?.routeId
+            ? { routeId: result.value.route.routeId }
             : {}),
         },
         null,
@@ -269,6 +341,9 @@ export async function runCli(
 
   const display = displayTaskRecommendation(recommendation);
   const lines = [...display.lines];
+  lines.push(`Correlation ID: ${result.value.correlationId}`);
+  lines.push('');
+  lines.push(...displayHandoff(result.value.handoff));
   if (result.value.route?.requestId) {
     lines.push(`Request ID: ${result.value.route.requestId}`);
   }
