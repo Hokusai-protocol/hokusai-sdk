@@ -9,6 +9,8 @@ import {
   createClaudeCodeDoctor,
   createClaudeCodeHarnessAdapter,
   createClaudeCodeModelProvider,
+  declineRecommendation,
+  displayHandoff,
   loadClaudeCodePluginConfig,
 } from './index.js';
 
@@ -39,6 +41,11 @@ describe('createClaudeCodeAdapter', () => {
 
   it('re-exports the task packet builder', () => {
     expect(buildClaudeCodeTaskPacket).toBeTypeOf('function');
+  });
+
+  it('re-exports the handoff and decline helpers', () => {
+    expect(displayHandoff).toBeTypeOf('function');
+    expect(declineRecommendation).toBeTypeOf('function');
   });
 
   it('uses Anthropic defaults for model discovery and mapping', async () => {

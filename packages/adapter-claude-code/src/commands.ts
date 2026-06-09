@@ -6,11 +6,14 @@ import {
   HokusaiDispatchBuilder,
   InMemoryModelRegistry,
   ModelMappingError,
+  buildHandoffInstructions,
   buildOutcomeReport,
   canReportOutcome,
   canRoute,
+  hashPayload,
   isConsentGranted,
   mapRecommendation,
+  redact,
   resolveConsent,
   validateRouteRequest,
   type AdapterResult,
@@ -20,6 +23,7 @@ import {
   type HarnessRecommendation,
   type HokusaiClient,
   type HokusaiDispatchPayload,
+  type HandoffInstructions,
   type OutcomeReport,
   type OutcomeReportInput,
   type OutcomeResponse,
@@ -48,10 +52,23 @@ export interface RouteSuccess {
   recommendation: HarnessRecommendation;
   payload: HokusaiDispatchPayload;
   preview: HarnessPayloadPreview;
+  correlationId: string;
+  routingDecisionId: string;
+  handoff: HandoffInstructions;
   route?: RouteResponse;
 }
 
 export type RouteResult = AdapterResult<RouteSuccess>;
+
+export interface DeclineRecommendationInput {
+  correlationId: string;
+  reason?: string;
+}
+
+export interface DeclineRecommendationResult {
+  correlationId: string;
+  status: 'declined';
+}
 
 export interface DoctorResult {
   configDir: string;
@@ -85,6 +102,54 @@ export interface RecommendationDisplay {
   lines: string[];
   model: string;
   provider: string;
+}
+
+const ROUTING_REASON_LIMIT = 120;
+
+function toStoredCorrelationId(correlationId: string): string {
+  return correlationId.replace(/[:.]/g, '_');
+}
+
+function truncateForStorage(value: string, maxLength = ROUTING_REASON_LIMIT): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function redactForStorage(
+  input: string,
+  config: ClaudeCodeBuilderOptions['redactionConfig'],
+): string {
+  return truncateForStorage(redact(input, config).output);
+}
+
+async function findStoredCorrelationRecord(
+  store: FsLocalStore,
+  correlationId: string,
+): Promise<{
+  storedCorrelationId: string;
+  record: Awaited<ReturnType<FsLocalStore['getCorrelation']>>;
+}> {
+  const storedCorrelationId = toStoredCorrelationId(correlationId);
+  const direct = await store.getCorrelation(storedCorrelationId);
+  if (direct) {
+    return {
+      storedCorrelationId,
+      record: direct,
+    };
+  }
+
+  const records = await store.listCorrelations();
+  const byOriginal = records.find(
+    (entry) => entry.metadata?.originalCorrelationId === correlationId,
+  );
+
+  return {
+    storedCorrelationId: byOriginal?.correlationId ?? storedCorrelationId,
+    record: byOriginal,
+  };
 }
 
 export interface ClaudeCodeCommandOptions {
@@ -281,6 +346,7 @@ export async function routeTask(
     return fail('UNKNOWN_MODEL', 'No Claude Code model is configured for routing.');
   }
 
+  const currentModelId = selectedModelId;
   let recommendation: HarnessRecommendation;
   try {
     recommendation = buildRecommendation(selectedModelId, context.registry);
@@ -369,11 +435,91 @@ export async function routeTask(
     }
   }
 
+  const handoff = buildHandoffInstructions({
+    recommendation,
+    currentModelId,
+    harness: 'claude-code',
+  });
+  const correlationId = payload.correlation.correlationId;
+  const storedCorrelation = await findStoredCorrelationRecord(store, correlationId);
+  if (storedCorrelation.record) {
+    await store.putCorrelation({
+      ...storedCorrelation.record,
+      metadata: {
+        ...storedCorrelation.record.metadata,
+        recommendedModelId: recommendation.model.id,
+        recommendedAlternativeIds: JSON.stringify(
+          recommendation.alternatives?.map((entry) => entry.model.id) ?? [],
+        ),
+        reasonHash: hashPayload(
+          recommendation.reason,
+          context.builderOptions.redactionConfig.salt,
+        ),
+        reasonPreview: redactForStorage(
+          recommendation.reason,
+          context.builderOptions.redactionConfig,
+        ),
+        status: 'pending',
+        decisionAt: (options?.clock ?? (() => new Date()))().toISOString(),
+      },
+    });
+  }
+
   return ok({
     recommendation,
     payload,
     preview: buildPreview(payload),
+    correlationId,
+    routingDecisionId: correlationId,
+    handoff,
     ...(route ? { route } : {}),
+  });
+}
+
+export async function declineRecommendation(
+  input: DeclineRecommendationInput,
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<DeclineRecommendationResult>> {
+  if (typeof input.correlationId !== 'string' || input.correlationId.trim().length === 0) {
+    return fail(
+      'UNKNOWN_CORRELATION',
+      'A correlation id is required to decline a recommendation.',
+    );
+  }
+
+  const context = resolveCommandContext(options);
+  const store = new FsLocalStore(context.configDir);
+  const resolved = await findStoredCorrelationRecord(store, input.correlationId.trim());
+
+  if (!resolved.record) {
+    return fail(
+      'UNKNOWN_CORRELATION',
+      `No stored routing decision matches correlation id ${input.correlationId.trim()}.`,
+    );
+  }
+
+  await store.putCorrelation({
+    ...resolved.record,
+    metadata: {
+      ...resolved.record.metadata,
+      status: 'declined',
+      declinedAt: (options?.clock ?? (() => new Date()))().toISOString(),
+      ...(input.reason?.trim()
+        ? {
+            declineReason: redactForStorage(
+              input.reason.trim(),
+              context.builderOptions.redactionConfig,
+            ),
+          }
+        : {}),
+    },
+  });
+
+  return ok({
+    correlationId:
+      resolved.record.metadata?.originalCorrelationId ??
+      input.correlationId.trim(),
+    status: 'declined',
   });
 }
 
@@ -540,4 +686,12 @@ export function displayTaskRecommendation(
     model: recommendation.model.id,
     provider: recommendation.model.provider,
   };
+}
+
+export function displayHandoff(handoff: HandoffInstructions): string[] {
+  if (handoff.instructions.length === 0) {
+    return ['Switch in Claude Code: no switch needed.'];
+  }
+
+  return [`Switch in Claude Code: ${handoff.copyableCommand ?? handoff.slashCommand}`];
 }

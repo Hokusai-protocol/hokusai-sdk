@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  FsLocalStore,
   HokusaiClient,
   InMemoryModelRegistry,
   claudeCodeSuccessOutcomeFixture,
@@ -10,6 +11,8 @@ import {
 } from '@hokusai/core';
 import {
   clearClaudeCodeLocalState,
+  declineRecommendation,
+  displayHandoff,
   displayTaskRecommendation,
   previewTaskPayload,
   reportTaskOutcome,
@@ -179,6 +182,7 @@ describe('routeTask', () => {
   });
 
   it('prefers the API recommendation when the route response includes one', async () => {
+    const configPath = await createTempDir('hokusai-claude-route-');
     const { transport } = createMockTransport([
       createResponse(200, {
         routeId: 'route-1',
@@ -226,6 +230,7 @@ describe('routeTask', () => {
       },
       {
         apiClient: client,
+        configPath,
         registry,
       },
     );
@@ -252,6 +257,131 @@ describe('routeTask', () => {
       ],
     });
     expect(result.value.route?.requestId).toBe('req-1');
+    expect(result.value.correlationId).toBeTruthy();
+    expect(result.value.routingDecisionId).toBe(result.value.correlationId);
+    expect(result.value.handoff.slashCommand).toBe('/model claude-opus-4-8');
+
+    const store = new FsLocalStore(configPath);
+    const persisted = await store.getCorrelation(
+      result.value.correlationId.replace(/[:.]/g, '_'),
+    );
+
+    expect(persisted?.metadata).toMatchObject({
+      recommendedModelId: 'claude-opus-4-8',
+      status: 'pending',
+    });
+    expect(
+      JSON.parse(persisted?.metadata?.recommendedAlternativeIds ?? '[]'),
+    ).toEqual(['claude-sonnet-4-6']);
+    expect(persisted?.metadata?.reasonHash).toBeTruthy();
+  });
+
+  it('returns a no-op handoff when the current model already matches', async () => {
+    const result = await routeTask(
+      {
+        taskText: 'Keep the current model.',
+        modelId: 'claude-sonnet-4-6',
+      },
+      {
+        registry: new InMemoryModelRegistry([
+          {
+            id: 'claude-sonnet-4-6',
+            provider: 'anthropic',
+            family: 'claude',
+            capabilities: ['reasoning', 'streaming', 'tool-use'],
+            default: true,
+          },
+        ]),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.value.handoff.instructions).toEqual([]);
+    expect(displayHandoff(result.value.handoff)).toEqual([
+      'Switch in Claude Code: no switch needed.',
+    ]);
+  });
+});
+
+describe('declineRecommendation', () => {
+  it('updates the persisted routing decision to declined with a redacted reason', async () => {
+    const configPath = await createTempDir('hokusai-claude-decline-');
+    const routed = await routeTask(
+      {
+        taskId: 'task-decline',
+        taskText: 'Email alice@example.com about the routing choice.',
+        modelId: 'claude-sonnet-4-6',
+      },
+      {
+        configPath,
+        registry: new InMemoryModelRegistry([
+          {
+            id: 'claude-sonnet-4-6',
+            provider: 'anthropic',
+            family: 'claude',
+            capabilities: ['reasoning', 'streaming', 'tool-use'],
+            default: true,
+          },
+        ]),
+      },
+    );
+
+    expect(routed.ok).toBe(true);
+    if (!routed.ok) {
+      return;
+    }
+
+    const declined = await declineRecommendation(
+      {
+        correlationId: routed.value.correlationId,
+        reason:
+          'Prefer email alice@example.com follow-up on a faster model because the task is small.',
+      },
+      {
+        configPath,
+      },
+    );
+
+    expect(declined).toEqual({
+      ok: true,
+      value: {
+        correlationId: routed.value.correlationId,
+        status: 'declined',
+      },
+    });
+
+    const store = new FsLocalStore(configPath);
+    const persisted = await store.getCorrelation(
+      routed.value.correlationId.replace(/[:.]/g, '_'),
+    );
+
+    expect(persisted?.metadata?.status).toBe('declined');
+    expect(persisted?.metadata?.declinedAt).toBeTruthy();
+    expect(persisted?.metadata?.declineReason).not.toContain('alice@example.com');
+  });
+
+  it('returns an error for an unknown correlation id', async () => {
+    await expect(
+      declineRecommendation(
+        {
+          correlationId: 'missing-correlation',
+        },
+        {
+          configPath: await createTempDir('hokusai-claude-missing-'),
+        },
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'UNKNOWN_CORRELATION',
+        message:
+          'No stored routing decision matches correlation id missing-correlation.',
+      },
+    });
   });
 });
 
