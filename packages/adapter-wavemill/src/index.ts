@@ -58,7 +58,7 @@ export interface ReportWavemillOutcomeOptions {
   requestOptions?: HokusaiRequestOptions;
 }
 
-const DEFAULT_WAVEMILL_MODEL: ModelDefinition = {
+export const DEFAULT_WAVEMILL_MODEL: ModelDefinition = {
   id: 'wavemill/default',
   provider: 'wavemill',
   family: 'wavemill',

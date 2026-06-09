@@ -199,3 +199,10 @@ export {
   type SubmissionAuditKind,
   type SubmissionAuditStatus,
 } from './storage.js';
+export {
+  conformanceChecks,
+  conformanceFixtures,
+  runAdapterConformance,
+  type ConformanceCheck,
+  type ConformanceSubject,
+} from './conformance.js';
