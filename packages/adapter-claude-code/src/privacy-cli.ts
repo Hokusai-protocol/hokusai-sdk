@@ -63,6 +63,22 @@ type ParsedArgs =
       configPath?: string;
     };
 
+const FLAG_VALUE_OPTIONS = new Set(['--config', '--limit']);
+
+function firstPositional(argv: string[]): string | undefined {
+  for (let i = 1; i < argv.length; i += 1) {
+    const prev = argv[i - 1];
+    if (prev && FLAG_VALUE_OPTIONS.has(prev)) {
+      continue;
+    }
+    const token = argv[i];
+    if (token && !token.startsWith('--')) {
+      return token;
+    }
+  }
+  return undefined;
+}
+
 function parseNumber(value: string | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
@@ -90,7 +106,7 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
   }
 
   if (subcommand === 'preview') {
-    const correlationId = argv[1];
+    const correlationId = firstPositional(argv);
     return {
       subcommand,
       debug: argv.includes('--debug'),
@@ -129,7 +145,11 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
   }
 
   if (subcommand === 'reporting') {
-    const action = argv[1] as 'on' | 'off' | 'status' | undefined;
+    const action = firstPositional(argv) as
+      | 'on'
+      | 'off'
+      | 'status'
+      | undefined;
     return {
       subcommand,
       json,
@@ -139,7 +159,7 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
   }
 
   if (subcommand === 'debug') {
-    const action = argv[1] as 'status' | 'off' | undefined;
+    const action = firstPositional(argv) as 'status' | 'off' | undefined;
     return {
       subcommand,
       json,
@@ -437,39 +457,48 @@ export async function runPrivacyCli(
     );
   }
 
-  if (!parsed.action) {
-    return fail(
-      'Specify debug status or off.',
-      PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
-      parsed.json,
-    );
-  }
+  if (parsed.subcommand === 'debug') {
+    if (!parsed.action) {
+      return fail(
+        'Specify debug status or off.',
+        PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
+        parsed.json,
+      );
+    }
 
-  if (parsed.action === 'off') {
+    if (parsed.action === 'off') {
+      return ok(
+        'Unset HOKUSAI_DEBUG to disable debug previews.\n',
+        parsed.json,
+        {
+          subcommand: 'debug',
+          result: {
+            enabled: false,
+            source: 'env',
+            message: 'Unset HOKUSAI_DEBUG to disable debug previews.',
+          },
+        },
+      );
+    }
+
+    const enabled = env.HOKUSAI_DEBUG === '1';
     return ok(
-      'Unset HOKUSAI_DEBUG to disable debug previews.\n',
+      `Debug previews are ${enabled ? 'enabled' : 'disabled'}.\n`,
       parsed.json,
       {
         subcommand: 'debug',
         result: {
-          enabled: false,
+          enabled,
           source: 'env',
-          message: 'Unset HOKUSAI_DEBUG to disable debug previews.',
         },
       },
     );
   }
 
-  const enabled = env.HOKUSAI_DEBUG === '1';
-  return ok(
-    `Debug previews are ${enabled ? 'enabled' : 'disabled'}.\n`,
-    parsed.json,
-    {
-      subcommand: 'debug',
-      result: {
-        enabled,
-        source: 'env',
-      },
-    },
+  void (parsed satisfies never);
+  return fail(
+    'Usage: hokusai-privacy list|preview|audit|clear|reporting|debug',
+    PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
+    argv.includes('--json'),
   );
 }
