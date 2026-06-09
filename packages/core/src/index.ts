@@ -115,10 +115,22 @@ export {
   type ValidateRecommendedModelResult,
 } from './model-registry.js';
 export {
+  checkApiKey,
+  checkApiReachability,
+  checkModelAllowlist,
+  checkNodeRuntime,
+  checkOutcomeConsent,
+  checkRoutingConsent,
+  checkStateDirWritable,
   renderDoctorReport,
   runDoctor,
+  runPluginDoctor,
+  type DoctorCheckResult,
+  type DoctorCheckStatus,
   type DoctorReport,
+  type PluginDoctorReport,
   type RunDoctorInput,
+  type RunPluginDoctorInput,
 } from './doctor.js';
 export {
   type HokusaiDispatchPayload,

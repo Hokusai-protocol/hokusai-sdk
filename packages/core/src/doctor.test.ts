@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { ANTHROPIC_MODELS, InMemoryModelRegistry } from './model-registry.js';
-import { renderDoctorReport, runDoctor } from './doctor.js';
+import {
+  checkApiKey,
+  checkApiReachability,
+  checkModelAllowlist,
+  checkNodeRuntime,
+  checkOutcomeConsent,
+  checkRoutingConsent,
+  checkStateDirWritable,
+  renderDoctorReport,
+  runDoctor,
+  runPluginDoctor,
+} from './doctor.js';
 import type { FetchTransport } from './client.js';
 
 function createTransport(
@@ -42,11 +53,12 @@ describe('runDoctor', () => {
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
       },
-      transport: () => Promise.resolve({
-        status: 200,
-        headers: { get: () => null },
-        text: () => Promise.resolve(''),
-      }),
+      transport: () =>
+        Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
     });
 
     expect(report.apiReachable).toBe('ok');
@@ -61,11 +73,12 @@ describe('runDoctor', () => {
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
       },
-      transport: () => Promise.resolve({
-        status: 401,
-        headers: { get: () => null },
-        text: () => Promise.resolve(''),
-      }),
+      transport: () =>
+        Promise.resolve({
+          status: 401,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
     });
 
     expect(report.apiReachable).toBe('unauthorized');
@@ -89,7 +102,7 @@ describe('runDoctor', () => {
   it('aborts slow reachability checks', async () => {
     let aborted = false;
     const transport = createTransport(async (_input, init) => {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((_resolve, reject) => {
         init.signal?.addEventListener('abort', () => {
           aborted = true;
           reject(new Error('aborted'));
@@ -144,15 +157,254 @@ describe('runDoctor', () => {
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
       },
-      transport: () => Promise.resolve({
-        status: 200,
-        headers: { get: () => null },
-        text: () => Promise.resolve(''),
-      }),
+      transport: () =>
+        Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
     });
 
     const rendered = renderDoctorReport(report);
     expect(rendered).toContain('apiKey: <set>');
     expect(rendered).not.toContain('hk_live_secret_abcd');
+  });
+});
+
+describe('plugin doctor checks', () => {
+  it('checks node runtime versions', () => {
+    expect(checkNodeRuntime('22.3.1', '18.0.0')).toMatchObject({
+      status: 'pass',
+    });
+    expect(checkNodeRuntime('16.9.0', '18.0.0')).toMatchObject({
+      status: 'fail',
+    });
+    expect(checkNodeRuntime('latest', '18.0.0')).toMatchObject({
+      status: 'warn',
+    });
+  });
+
+  it('checks API key presence without leaking the key', () => {
+    expect(checkApiKey({ apiKey: 'hk_live_secret' })).toMatchObject({
+      status: 'pass',
+    });
+    expect(checkApiKey({ apiKey: '   ' })).toMatchObject({
+      status: 'fail',
+      nextAction: expect.stringContaining('HOKUSAI_API_KEY'),
+    });
+  });
+
+  it('checks routing consent', () => {
+    expect(checkRoutingConsent({ routingConsentEnabled: true })).toMatchObject({
+      status: 'pass',
+    });
+    expect(checkRoutingConsent({ routingConsentEnabled: false })).toMatchObject(
+      {
+        status: 'fail',
+        nextAction: expect.stringContaining('HOKUSAI_ROUTING_CONSENT=1'),
+      },
+    );
+  });
+
+  it('checks outcome consent as a warning', () => {
+    expect(
+      checkOutcomeConsent({ outcomeSubmissionEnabled: true }),
+    ).toMatchObject({
+      status: 'pass',
+    });
+    expect(
+      checkOutcomeConsent({ outcomeSubmissionEnabled: false }),
+    ).toMatchObject({
+      status: 'warn',
+      nextAction: expect.stringContaining('HOKUSAI_OUTCOME_OPT_IN=1'),
+    });
+  });
+
+  it('checks the Anthropic model allowlist', () => {
+    const registry = new InMemoryModelRegistry(ANTHROPIC_MODELS);
+    expect(
+      checkModelAllowlist(
+        { modelAllowlist: ['claude-sonnet-4-6', 'claude-sonnet-4-6'] },
+        registry,
+      ),
+    ).toMatchObject({
+      status: 'pass',
+      summary: '1 Anthropic model configured in allowlist.',
+    });
+
+    expect(
+      checkModelAllowlist({ modelAllowlist: ['mystery-model'] }, registry),
+    ).toMatchObject({
+      status: 'fail',
+      summary: expect.stringContaining('mystery-model'),
+    });
+  });
+
+  it('checks state directory writability with sanitized failures', async () => {
+    const passResult = await checkStateDirWritable('/tmp/hokusai', () =>
+      Promise.resolve(),
+    );
+    expect(passResult).toMatchObject({ status: 'pass' });
+
+    const failResult = await checkStateDirWritable('/tmp/hokusai', () =>
+      Promise.reject(new Error('EACCES: denied /private/secret/path')),
+    );
+    expect(failResult).toMatchObject({ status: 'fail' });
+    expect(failResult.summary).not.toContain('/private/secret/path');
+  });
+
+  it('checks API reachability outcomes', async () => {
+    const config = {
+      apiKey: 'hk_live_secret',
+      apiBaseUrl: 'https://api.hokusai.app',
+      routingConsentEnabled: true,
+      outcomeSubmissionEnabled: false,
+      modelAllowlist: ['claude-sonnet-4-6'],
+    };
+
+    await expect(
+      checkApiReachability(config, () =>
+        Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 'pass' });
+
+    await expect(
+      checkApiReachability(config, () =>
+        Promise.resolve({
+          status: 401,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
+      ),
+    ).resolves.toMatchObject({
+      status: 'fail',
+      summary: expect.stringContaining('HTTP 401'),
+    });
+
+    await expect(
+      checkApiReachability(config, () =>
+        Promise.reject(new TypeError('offline')),
+      ),
+    ).resolves.toMatchObject({
+      status: 'fail',
+      summary: expect.stringContaining('TypeError'),
+    });
+
+    const abortingTransport = createTransport(async (_input, init) => {
+      await new Promise<void>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(new DOMException('timeout', 'AbortError'));
+        });
+      });
+
+      return {
+        status: 200,
+        headers: { get: () => null },
+        text: () => Promise.resolve(''),
+      };
+    });
+
+    await expect(
+      checkApiReachability(config, abortingTransport, { timeoutMs: 10 }),
+    ).resolves.toMatchObject({
+      status: 'fail',
+      summary: expect.stringContaining('timeout'),
+    });
+  });
+});
+
+describe('runPluginDoctor', () => {
+  const config = {
+    apiKey: 'hk_live_secret',
+    apiBaseUrl: 'https://api.hokusai.app',
+    routingConsentEnabled: true,
+    outcomeSubmissionEnabled: false,
+    modelAllowlist: ['claude-sonnet-4-6'],
+  };
+
+  it('defaults to offline mode when auth is incomplete', async () => {
+    const transportCalls: string[] = [];
+    const report = await runPluginDoctor({
+      config: {
+        ...config,
+        routingConsentEnabled: false,
+      },
+      transport: (input) => {
+        transportCalls.push(input);
+        return Promise.reject(new Error('should not be called'));
+      },
+      nodeVersion: '22.0.0',
+      stateDir: '/tmp/hokusai',
+      storageProber: () => Promise.resolve(),
+      clock: () => new Date('2026-06-08T12:00:00.000Z'),
+    });
+
+    expect(report.mode).toBe('offline');
+    expect(report.ok).toBe(false);
+    expect(
+      report.checks.find((check) => check.id === 'api-reachability'),
+    ).toMatchObject({
+      status: 'skipped',
+    });
+    expect(transportCalls).toEqual([]);
+  });
+
+  it('runs network mode when routing is configured and transport is available', async () => {
+    const report = await runPluginDoctor({
+      config,
+      transport: () =>
+        Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
+      nodeVersion: '22.0.0',
+      stateDir: '/tmp/hokusai',
+      storageProber: () => Promise.resolve(),
+      clock: () => new Date('2026-06-08T12:00:00.000Z'),
+    });
+
+    expect(report.mode).toBe('network');
+    expect(report.ok).toBe(true);
+    expect(
+      report.checks.find((check) => check.id === 'api-reachability'),
+    ).toMatchObject({
+      status: 'pass',
+    });
+  });
+
+  it('stays safe when network mode is requested without transport', async () => {
+    const report = await runPluginDoctor({
+      config,
+      mode: 'network',
+      nodeVersion: '22.0.0',
+      stateDir: '/tmp/hokusai',
+      storageProber: () => Promise.resolve(),
+    });
+
+    expect(report.mode).toBe('network');
+    expect(
+      report.checks.find((check) => check.id === 'api-reachability'),
+    ).toMatchObject({
+      status: 'skipped',
+    });
+  });
+
+  it('never includes raw secrets in summaries or next actions', async () => {
+    const report = await runPluginDoctor({
+      config,
+      nodeVersion: '22.0.0',
+      stateDir: '/tmp/hokusai',
+      storageProber: () => Promise.resolve(),
+    });
+
+    const renderedChecks = report.checks
+      .flatMap((check) => [check.summary, check.nextAction ?? ''])
+      .join('\n');
+    expect(renderedChecks).not.toContain('hk_live_secret');
   });
 });

@@ -32,14 +32,22 @@ describe('core public surface', () => {
     expect(core.InvalidStoreIdError).toBeDefined();
     expect(core.InMemoryModelRegistry).toBeDefined();
     expect(core.ModelMappingError).toBeDefined();
-    expect(new core.ModelMappingError('UNKNOWN_MODEL', 'message', [])).toBeInstanceOf(
-      Error,
-    );
+    expect(
+      new core.ModelMappingError('UNKNOWN_MODEL', 'message', []),
+    ).toBeInstanceOf(Error);
     expect(core.mapRecommendation).toBeDefined();
     expect(core.validateRecommendedModel).toBeDefined();
     expect(Array.isArray(core.ANTHROPIC_MODELS)).toBe(true);
     expect(core.runDoctor).toBeDefined();
+    expect(core.runPluginDoctor).toBeDefined();
     expect(core.renderDoctorReport).toBeDefined();
+    expect(core.checkNodeRuntime).toBeDefined();
+    expect(core.checkApiKey).toBeDefined();
+    expect(core.checkRoutingConsent).toBeDefined();
+    expect(core.checkOutcomeConsent).toBeDefined();
+    expect(core.checkModelAllowlist).toBeDefined();
+    expect(core.checkStateDirWritable).toBeDefined();
+    expect(core.checkApiReachability).toBeDefined();
     expect(core.anonymizeText).toBeDefined();
     expect(core.redact).toBeDefined();
     expect(core.preview).toBeDefined();
