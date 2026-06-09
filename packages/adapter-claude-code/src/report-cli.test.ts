@@ -376,6 +376,113 @@ describe('runReportCli', () => {
     expect(occurrences).toBe(1);
   });
 
+  it('uses the latest local routing decision when --use-latest is passed', async () => {
+    const findLatestRoutingDecisionImpl = vi.fn(() =>
+      Promise.resolve({
+        correlationId: 'route-latest',
+        taskId: 'task-latest',
+        createdAt: '2026-06-08T00:00:00.000Z',
+      }),
+    );
+    const previewReportOutcomeImpl = vi.fn((input: { correlationId: string; taskId: string }) =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          report: {
+            schemaVersion: '1' as const,
+            correlationId: input.correlationId,
+            recommendedModel: 'claude-sonnet-4-6',
+            actualModel: 'claude-sonnet-4-6',
+            recommendationAccepted: true,
+            completionStatus: 'succeeded' as const,
+            latencyBucket: 'medium' as const,
+            costBucket: 'medium' as const,
+            tokenBucket: 'medium' as const,
+          },
+          preview: {
+            lines: [`Outcome report preview for ${input.correlationId}.`],
+            payload: {
+              schemaVersion: '1' as const,
+              correlationId: input.correlationId,
+              recommendedModel: 'claude-sonnet-4-6',
+              actualModel: 'claude-sonnet-4-6',
+              recommendationAccepted: true,
+              completionStatus: 'succeeded' as const,
+              latencyBucket: 'medium' as const,
+              costBucket: 'medium' as const,
+              tokenBucket: 'medium' as const,
+            },
+          },
+        },
+      }),
+    );
+
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--use-latest',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokusai.app',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        findLatestRoutingDecisionImpl,
+        previewReportOutcomeImpl,
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+    expect(findLatestRoutingDecisionImpl).toHaveBeenCalledOnce();
+    expect(previewReportOutcomeImpl).toHaveBeenCalledOnce();
+    expect(result.stdout).toContain('route-latest');
+  });
+
+  it('returns a clear error when --use-latest finds no record on disk', async () => {
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--use-latest',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokusai.app',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        findLatestRoutingDecisionImpl: () => Promise.resolve(undefined),
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR);
+    expect(result.stderr).toContain('--correlation-id');
+  });
+
   it('surfaces a clear error when reading local routing decisions fails', async () => {
     const result = await runReportCli(
       [

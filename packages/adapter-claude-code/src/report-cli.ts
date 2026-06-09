@@ -456,7 +456,11 @@ function renderSuccess(
   const lines =
     'preview' in result ? [...result.preview.lines] : [...buildHumanSendLines(result)];
   if (!parsed.send) {
-    lines.push('Preview only. Re-run with --send to submit this report.');
+    lines.push(
+      parsed.dryRun
+        ? 'Dry run: no outcome was submitted.'
+        : 'Preview only. Re-run with --send to submit this report.',
+    );
   }
 
   return {
