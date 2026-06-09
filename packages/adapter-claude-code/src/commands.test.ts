@@ -810,6 +810,7 @@ describe('privacy commands', () => {
   it('lists routing decisions newest-first with limit and payload hashes', async () => {
     const configPath = await createTempDir('hokusai-claude-privacy-list-');
     const store = new FsLocalStore(configPath);
+    const newerCreatedAt = Date.now();
     await store.putPayloadHash({
       hash: 'hash-1',
       algorithm: 'sha-256-hmac',
@@ -823,7 +824,7 @@ describe('privacy commands', () => {
     await store.putCorrelation({
       correlationId: 'corr-1',
       packetHash: 'task-1',
-      createdAt: Date.now(),
+      createdAt: newerCreatedAt - 1,
       metadata: {
         taskId: 'task-1',
         originalCorrelationId: 'route:1',
@@ -838,7 +839,7 @@ describe('privacy commands', () => {
     await store.putCorrelation({
       correlationId: 'corr-2',
       packetHash: 'task-2',
-      createdAt: Date.now(),
+      createdAt: newerCreatedAt,
       metadata: {
         taskId: 'task-2',
         originalCorrelationId: 'route:2',
