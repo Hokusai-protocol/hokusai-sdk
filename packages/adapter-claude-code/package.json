@@ -7,7 +7,8 @@
   "types": "./dist/index.d.ts",
   "bin": {
     "hokusai-route": "./plugin/bin/hokusai-route",
-    "hokusai-report": "./plugin/bin/hokusai-report"
+    "hokusai-report": "./plugin/bin/hokusai-report",
+    "hokusai-privacy": "./plugin/bin/hokusai-privacy"
   },
   "exports": {
     ".": {
