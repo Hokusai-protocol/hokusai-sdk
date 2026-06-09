@@ -155,12 +155,17 @@ For a source-based Claude Code install, see [packages/adapter-claude-code/README
 - `packages/adapter-wavemill`: Wavemill reference adapter boundary
 - `examples/reference-harness`: minimal offline composition template
 
-## More Docs
+## Documentation
 
-- [packages/adapter-claude-code/README.md](packages/adapter-claude-code/README.md)
-- [docs/integration-guide.md](docs/integration-guide.md)
-- [docs/reference-pattern.md](docs/reference-pattern.md)
-- [docs/privacy-model.md](docs/privacy-model.md)
-- [docs/payload-schemas.md](docs/payload-schemas.md)
-- [docs/release-notes.md](docs/release-notes.md)
-- [examples/reference-harness/README.md](examples/reference-harness/README.md)
+Install `@hokusai/core` for every integration and add an adapter package only for the harness you are targeting. See [SDK Overview](docs/sdk-overview.md) for package install commands and the full public API surface.
+
+- [SDK Overview](docs/sdk-overview.md) - package installation, public interfaces, core vs adapter APIs, schemas, model mapping, and adapter lifecycle
+- [Versioning Policy](docs/versioning-policy.md) - semver rules, schema-version relationship, breaking-change taxonomy, and deprecation policy
+- [Release Checklist](docs/release-checklist.md) - pre-release gating, conformance tests, fixture updates, and release channels
+- [Privacy Model](docs/privacy-model.md) - consent settings, redaction, local data retention
+- [Integration Guide](docs/integration-guide.md) - recommended integration flow and adapter reuse
+- [Reference Pattern](docs/reference-pattern.md) - the 5-step route/report loop with code examples
+- [Payload Schemas](docs/payload-schemas.md) - wire schema reference for route request and outcome report
+- [Release Notes](docs/release-notes.md) - version history and release commands
+- [packages/adapter-claude-code/README.md](packages/adapter-claude-code/README.md) - Claude Code adapter package reference
+- [examples/reference-harness/README.md](examples/reference-harness/README.md) - minimal offline harness composition example
