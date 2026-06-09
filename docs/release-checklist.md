@@ -40,4 +40,5 @@ Use this checklist before publishing SDK package or adapter changes.
 
 - [ ] Confirm the published package versions are visible on npm.
 - [ ] Reinstall the published packages in `examples/reference-harness` and rerun its tests.
+- [ ] Run the [Claude Code Plugin Launch Smoke Checklist](plugin-launch-checklist.md) against the published plugin zip.
 - [ ] Update [Release Notes](release-notes.md) with the release summary.
