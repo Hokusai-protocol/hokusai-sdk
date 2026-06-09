@@ -208,6 +208,11 @@ function main() {
   cpSync(zipFile, latestZipFile);
   createChecksumFile(latestZipFile, latestChecksumFile, path.basename(latestZipFile));
 
+  const signingKeyConfigured = Boolean(process.env.HOKUSAI_SIGNING_KEY || process.env.GPG_SIGNING_KEY);
+  if (!signingKeyConfigured) {
+    console.log('Signing skipped: no signing material detected');
+  }
+
   console.log(`Created ${zipFile}`);
   console.log(`Created ${checksumFile}`);
   console.log(`Created ${latestZipFile}`);
