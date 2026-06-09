@@ -18,6 +18,19 @@ Standalone monorepo scaffold for the public Hokusai SDK. The repository separate
 
 Run `pnpm check:boundaries` to enforce the core dependency direction.
 
+## Documentation
+
+Install `@hokusai/core` for every integration and add an adapter package only for the harness you are targeting. See [SDK Overview](docs/sdk-overview.md) for package install commands and the full public API surface.
+
+- [SDK Overview](docs/sdk-overview.md) - package installation, public interfaces, core vs adapter APIs, schemas, model mapping, and adapter lifecycle
+- [Versioning Policy](docs/versioning-policy.md) - semver rules, schema-version relationship, breaking-change taxonomy, and deprecation policy
+- [Release Checklist](docs/release-checklist.md) - pre-release gating, conformance tests, fixture updates, and release channels
+- [Privacy Model](docs/privacy-model.md) - consent settings, redaction, local data retention
+- [Integration Guide](docs/integration-guide.md) - recommended integration flow and adapter reuse
+- [Reference Pattern](docs/reference-pattern.md) - the 5-step route/report loop with code examples
+- [Payload Schemas](docs/payload-schemas.md) - wire schema reference for route request and outcome report
+- [Release Notes](docs/release-notes.md) - version history and release commands
+
 ## Development
 
 ```sh
