@@ -58,6 +58,9 @@ describe('core public surface', () => {
     expect(core.buildTaskPacket).toBeDefined();
     expect(core.buildOutcomeReport).toBeDefined();
     expect(core.previewOutcomePayload).toBeDefined();
+    expect(core.conformanceChecks).toBeDefined();
+    expect(core.conformanceFixtures).toBeDefined();
+    expect(core.runAdapterConformance).toBeDefined();
     expect(core.validateTaskPacket).toBeDefined();
     expect(core.classifyTaskFamily).toBeDefined();
     expect(core.inferReasoningDepth).toBeDefined();
