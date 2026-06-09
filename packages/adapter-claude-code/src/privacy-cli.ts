@@ -467,13 +467,14 @@ export async function runPrivacyCli(
     }
 
     if (parsed.action === 'off') {
+      const currentlyEnabled = env.HOKUSAI_DEBUG === '1';
       return ok(
         'Unset HOKUSAI_DEBUG to disable debug previews.\n',
         parsed.json,
         {
           subcommand: 'debug',
           result: {
-            enabled: false,
+            enabled: currentlyEnabled,
             source: 'env',
             message: 'Unset HOKUSAI_DEBUG to disable debug previews.',
           },
