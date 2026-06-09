@@ -11,7 +11,7 @@ pnpm -r build
 claude --plugin-dir /path/to/repo/packages/adapter-claude-code/plugin
 ```
 
-After install, Claude Code should show `/hokusai:route` in the slash-command menu. The task description may also refer to this as `/hokusai-route`, but `/hokusai:route` is the canonical Claude Code command path.
+After install, Claude Code should show `/hokusai:route` and `/hokusai:report` in the slash-command menu. The task description may also refer to these as `/hokusai-route` and `/hokusai-report`, but the `hokusai:*` paths are the canonical Claude Code command paths.
 
 ## Configure auth and consent
 
@@ -53,10 +53,19 @@ const models = createClaudeCodeModelProvider({
 
 The command sends a normalized Hokusai task packet only after both auth and routing consent are configured. On success it returns the recommended Anthropic model, concise reasoning, confidence, and alternatives when the API provides them.
 
+To preview and optionally submit an anonymized outcome report for a prior routing decision:
+
+```text
+/hokusai:report --use-latest --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
+```
+
+The report command previews the exact anonymized payload first, then only submits after explicit approval. `hokusai-report --send` requires the same routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
+
 ## Failure behavior
 
 - Missing `HOKUSAI_API_KEY`: `Hokusai routing needs an API key. Set HOKUSAI_API_KEY and re-run.`
 - Missing `HOKUSAI_ROUTING_CONSENT=true`: `Routing consent is required. Run export HOKUSAI_ROUTING_CONSENT=true to opt in.`
+- Missing `HOKUSAI_OUTCOME_OPT_IN=true`: outcome preview/send refuses with an explicit opt-in remediation.
 - Network failure: `Could not reach Hokusai (...)`. Retry after checking connectivity, or use `/hokusai:doctor`.
 - Unsupported recommendation: prints the unsupported model id and suggested Anthropic fallbacks.
 - Empty input: prompts for a task description example.
@@ -65,6 +74,8 @@ The command sends a normalized Hokusai task packet only after both auth and rout
 
 - Local discovery and setup help work without network calls.
 - Routing requires both `HOKUSAI_API_KEY` and `HOKUSAI_ROUTING_CONSENT=true`.
-- Outcome submission requires the routing gate plus `HOKUSAI_OUTCOME_OPT_IN=true`.
+- Outcome preview and submission require routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
+- Outcome previews and submissions exclude raw code, raw prompts, terminal logs, and customer data by default.
+- Outcome notes are redacted before preview and before submission.
 - The plugin config store never persists `apiKey`.
 - Model recommendations are limited to Anthropic models in the configured allowlist.

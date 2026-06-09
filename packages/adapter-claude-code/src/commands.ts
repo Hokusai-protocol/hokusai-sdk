@@ -75,10 +75,26 @@ export interface ReportOutcomeInput extends OutcomeReportInput {
   taskId: string;
 }
 
+export interface LatestRoutingDecision {
+  correlationId: string;
+  taskId: string;
+  createdAt: string;
+}
+
 export interface ReportOutcomeResult {
   report: OutcomeReport;
   response?: OutcomeResponse;
   submitted: boolean;
+}
+
+export interface OutcomeReportPreview {
+  lines: string[];
+  payload: OutcomeReport;
+}
+
+export interface PreviewReportOutcomeResult {
+  report: OutcomeReport;
+  preview: OutcomeReportPreview;
 }
 
 export interface RecommendationDisplay {
@@ -95,6 +111,7 @@ export interface ClaudeCodeCommandOptions {
   registry?: ModelRegistry;
   settings?: Partial<ConsentSettings>;
   clock?: () => Date;
+  dryRun?: boolean;
 }
 
 const DEFAULT_CONSENT: ConsentConfig = {
@@ -260,6 +277,64 @@ function buildPreview(payload: HokusaiDispatchPayload): HarnessPayloadPreview {
     promptPreview: payload.prompt,
     redactionCount: payload.redactions.length,
   };
+}
+
+function summarizeCount(
+  label: string,
+  value: { status: string; failures?: number } | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const suffix =
+    value.failures === undefined ? '' : ` (${value.failures} failures)`;
+  return `${label}: ${value.status}${suffix}`;
+}
+
+function buildOutcomePreviewLines(report: OutcomeReport): string[] {
+  const lines = [
+    'Outcome report preview:',
+    `Schema version: ${report.schemaVersion}`,
+    `Correlation id: ${report.correlationId}`,
+    `Recommended model: ${report.recommendedModel}`,
+    `Actual model: ${report.actualModel}`,
+    `Recommendation accepted: ${report.recommendationAccepted ? 'yes' : 'no'}`,
+    `Completion status: ${report.completionStatus}`,
+    `Latency bucket: ${report.latencyBucket}`,
+    `Cost bucket: ${report.costBucket}`,
+    `Token bucket: ${report.tokenBucket}`,
+  ];
+
+  if (report.userRating !== undefined) {
+    lines.push(`User rating: ${report.userRating}/5`);
+  }
+
+  const buildSummary = summarizeCount('Build summary', report.build);
+  if (buildSummary) {
+    lines.push(buildSummary);
+  }
+
+  const testSummary = summarizeCount('Test summary', report.test);
+  if (testSummary) {
+    lines.push(testSummary);
+  }
+
+  if (report.notes) {
+    lines.push(`Notes: ${report.notes}`);
+  }
+
+  if (report.extensions) {
+    lines.push(
+      `Extensions: ${report.extensions.version} (${Object.keys(report.extensions.data).length} fields)`,
+    );
+  }
+
+  lines.push(
+    'Excluded by default: raw code, raw prompts, terminal logs, and customer data.',
+  );
+
+  return lines;
 }
 
 export async function routeTask(
@@ -449,10 +524,37 @@ export function previewTaskPayload(
   };
 }
 
-export async function reportTaskOutcome(
+export async function findLatestRoutingDecision(input: {
+  configDir: string;
+}): Promise<LatestRoutingDecision | undefined> {
+  const store = new FsLocalStore(input.configDir);
+  const records = await store.listCorrelations();
+  const latest = records.reduce<typeof records[number] | undefined>(
+    (currentLatest, record) => {
+      if (!currentLatest || record.createdAt > currentLatest.createdAt) {
+        return record;
+      }
+
+      return currentLatest;
+    },
+    undefined,
+  );
+
+  if (!latest) {
+    return undefined;
+  }
+
+  return {
+    correlationId: latest.metadata?.originalCorrelationId ?? latest.correlationId,
+    taskId: latest.metadata?.taskId ?? latest.packetHash,
+    createdAt: new Date(latest.createdAt).toISOString(),
+  };
+}
+
+export function previewReportOutcome(
   input: ReportOutcomeInput,
   options?: ClaudeCodeCommandOptions,
-): Promise<AdapterResult<ReportOutcomeResult>> {
+): AdapterResult<PreviewReportOutcomeResult> {
   const context = resolveCommandContext(options);
   if (!canReportOutcome(context.settings)) {
     return fail(
@@ -479,13 +581,31 @@ export async function reportTaskOutcome(
     throw error;
   }
 
+  return ok({
+    report,
+    preview: {
+      lines: buildOutcomePreviewLines(report),
+      payload: report,
+    },
+  });
+}
+
+export async function reportTaskOutcome(
+  input: ReportOutcomeInput,
+  options?: ClaudeCodeCommandOptions,
+): Promise<AdapterResult<ReportOutcomeResult>> {
+  const preview = previewReportOutcome(input, options);
+  if (!preview.ok) {
+    return preview;
+  }
+
   let response: OutcomeResponse | undefined;
-  if (options?.apiClient) {
-    response = (await options.apiClient.reportOutcome(report)) as OutcomeResponse;
+  if (options?.apiClient && !options.dryRun) {
+    response = (await options.apiClient.reportOutcome(preview.value.report)) as OutcomeResponse;
   }
 
   return ok({
-    report,
+    report: preview.value.report,
     ...(response ? { response } : {}),
     submitted: Boolean(response),
   });

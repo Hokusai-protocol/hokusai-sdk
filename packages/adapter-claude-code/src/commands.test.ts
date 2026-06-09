@@ -11,6 +11,8 @@ import {
 import {
   clearClaudeCodeLocalState,
   displayTaskRecommendation,
+  findLatestRoutingDecision,
+  previewReportOutcome,
   previewTaskPayload,
   reportTaskOutcome,
   routeTask,
@@ -256,6 +258,56 @@ describe('routeTask', () => {
 });
 
 describe('reportTaskOutcome', () => {
+  it('builds a preview with redacted notes and explicit exclusions', () => {
+    const result = previewReportOutcome({
+      taskId: 'task-preview',
+      ...claudeCodeSuccessOutcomeFixture,
+      notes: 'Email alice@example.com and see https://db-prod.internal/logs',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.value.preview.payload.notes).not.toContain('alice@example.com');
+    expect(result.value.preview.payload.notes).not.toContain('db-prod.internal');
+    expect(result.value.preview.lines.join('\n')).toContain('Recommended model: claude-3-7-sonnet');
+    expect(result.value.preview.lines.join('\n')).toContain('Excluded by default: raw code, raw prompts, terminal logs, and customer data.');
+  });
+
+  it('supports dry-run mode without calling the network', async () => {
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        taskId: 'task-1',
+        status: 'accepted',
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    const result = await reportTaskOutcome(
+      {
+        taskId: 'task-1',
+        ...claudeCodeSuccessOutcomeFixture,
+      },
+      {
+        apiClient: client,
+        dryRun: true,
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        submitted: false,
+      },
+    });
+    expect(calls).toHaveLength(0);
+  });
+
   it('submits a valid outcome once', async () => {
     const { calls, transport } = createMockTransport([
       createResponse(200, {
@@ -321,6 +373,76 @@ describe('reportTaskOutcome', () => {
 
     expect(result.error.code).toBe('OUTCOME_VALIDATION_FAILED');
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('findLatestRoutingDecision', () => {
+  it('returns undefined when there are no stored correlations', async () => {
+    const configDir = await createTempDir('hokusai-claude-latest-empty-');
+
+    await expect(findLatestRoutingDecision({ configDir })).resolves.toBeUndefined();
+  });
+
+  it('returns the only stored correlation', async () => {
+    const configDir = await createTempDir('hokusai-claude-latest-one-');
+    await mkdir(path.join(configDir, 'correlations'), { recursive: true });
+    await writeFile(
+      path.join(configDir, 'correlations', 'corr_1.json'),
+      JSON.stringify({
+        correlationId: 'corr_1',
+        packetHash: 'task-1',
+        createdAt: 100,
+        metadata: {
+          taskId: 'task-1',
+          originalCorrelationId: 'route:1',
+        },
+      }),
+      'utf8',
+    );
+
+    await expect(findLatestRoutingDecision({ configDir })).resolves.toEqual({
+      correlationId: 'route:1',
+      taskId: 'task-1',
+      createdAt: new Date(100).toISOString(),
+    });
+  });
+
+  it('returns the most recent stored correlation', async () => {
+    const configDir = await createTempDir('hokusai-claude-latest-many-');
+    await mkdir(path.join(configDir, 'correlations'), { recursive: true });
+    await Promise.all([
+      writeFile(
+        path.join(configDir, 'correlations', 'corr_1.json'),
+        JSON.stringify({
+          correlationId: 'corr_1',
+          packetHash: 'task-1',
+          createdAt: 100,
+          metadata: {
+            taskId: 'task-1',
+          },
+        }),
+        'utf8',
+      ),
+      writeFile(
+        path.join(configDir, 'correlations', 'corr_2.json'),
+        JSON.stringify({
+          correlationId: 'corr_2',
+          packetHash: 'task-2',
+          createdAt: 200,
+          metadata: {
+            taskId: 'task-2',
+            originalCorrelationId: 'route:2',
+          },
+        }),
+        'utf8',
+      ),
+    ]);
+
+    await expect(findLatestRoutingDecision({ configDir })).resolves.toEqual({
+      correlationId: 'route:2',
+      taskId: 'task-2',
+      createdAt: new Date(200).toISOString(),
+    });
   });
 });
 
