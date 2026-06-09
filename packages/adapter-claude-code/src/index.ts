@@ -53,6 +53,11 @@ export {
 export { CLI_EXIT_CODES, type CliExitCode, type CliRunResult } from './cli.js';
 export { runCli } from './cli.js';
 export {
+  renderPluginDoctorReport,
+  runBootstrapDoctor,
+  type BootstrapDoctorOptions,
+} from './doctor-command.js';
+export {
   CLAUDE_CODE_STATE_FILE,
   getClaudeCodeStateFilePath,
   resolveClaudeCodeConfigPath,
@@ -116,7 +121,9 @@ function toDiscoveredModel(model: ModelDefinition): HarnessDiscoveredModel {
   };
 }
 
-async function readStateFile(filePath: string): Promise<Record<string, string>> {
+async function readStateFile(
+  filePath: string,
+): Promise<Record<string, string>> {
   try {
     const raw = await readFile(filePath, 'utf8');
     const parsed = JSON.parse(raw) as unknown;
@@ -128,8 +135,8 @@ async function readStateFile(filePath: string): Promise<Record<string, string>> 
     return Object.fromEntries(
       Object.entries(parsed as Record<string, unknown>).filter(
         (entry): entry is [string, string] => {
-        const [, value] = entry;
-        return typeof value === 'string';
+          const [, value] = entry;
+          return typeof value === 'string';
         },
       ),
     );
@@ -163,7 +170,8 @@ export function createClaudeCodeAdapter(
       },
       {
         name: 'hokusai.doctor',
-        description: 'Inspect Hokusai auth, consent, reachability, and allowlist state.',
+        description:
+          'Inspect Hokusai auth, consent, reachability, and allowlist state.',
       },
     ],
     manifest: {
@@ -181,7 +189,8 @@ export function createClaudeCodeModelProvider(options?: {
   registry?: ModelRegistry;
   allowlist?: string[];
 }): HarnessModelProvider {
-  const registry = options?.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
+  const registry =
+    options?.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
   const allowlist =
     options?.allowlist ?? ANTHROPIC_MODELS.map((model) => model.id);
 
@@ -192,11 +201,12 @@ export function createClaudeCodeModelProvider(options?: {
         value: registry
           .listAvailable()
           .filter((model) => model.provider === 'anthropic')
-          .filter((model) =>
-            validateRecommendedModel(model.id, {
-              allowlist,
-              registry,
-            }).ok,
+          .filter(
+            (model) =>
+              validateRecommendedModel(model.id, {
+                allowlist,
+                registry,
+              }).ok,
           )
           .map(toDiscoveredModel),
       });
@@ -262,9 +272,7 @@ export async function loadClaudeCodePluginConfig(
   } = {},
 ): Promise<HokusaiPluginConfig> {
   const { configPath, ...loadOptions } = options;
-  const store = configPath
-    ? new FilePluginConfigStore(configPath)
-    : undefined;
+  const store = configPath ? new FilePluginConfigStore(configPath) : undefined;
 
   return loadPluginConfig({
     registry: options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS),
@@ -276,7 +284,10 @@ export async function loadClaudeCodePluginConfig(
 export function createClaudeCodeDoctor(
   options: Omit<RunDoctorInput, 'registry'>,
 ): {
-  run(): Promise<{ report: Awaited<ReturnType<typeof runDoctor>>; rendered: string }>;
+  run(): Promise<{
+    report: Awaited<ReturnType<typeof runDoctor>>;
+    rendered: string;
+  }>;
 } {
   return {
     async run() {
