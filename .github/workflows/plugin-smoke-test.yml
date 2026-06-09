@@ -1,0 +1,84 @@
+name: Plugin Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'packages/adapter-claude-code/plugin/**'
+      - 'packages/adapter-claude-code/src/**'
+      - 'packages/core/**'
+      - 'scripts/build-plugin-zip.mjs'
+      - 'scripts/smoke-test-plugin.mjs'
+      - 'examples/reference-harness/**'
+  push:
+    branches:
+      - main
+      - task/**
+    paths:
+      - 'packages/adapter-claude-code/plugin/**'
+      - 'packages/adapter-claude-code/src/**'
+      - 'packages/core/**'
+      - 'scripts/build-plugin-zip.mjs'
+      - 'scripts/smoke-test-plugin.mjs'
+      - 'examples/reference-harness/**'
+
+jobs:
+  plugin-smoke:
+    name: Validate packaged Claude Code plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -r build
+
+      - name: Bundle plugin
+        run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
+
+      - name: Package plugin zip
+        run: node scripts/build-plugin-zip.mjs
+
+      - name: Smoke test packaged plugin
+        run: node scripts/smoke-test-plugin.mjs
+
+  smoke-live-api:
+    name: Validate packaged plugin against live API
+    if: ${{ secrets.HOKUSAI_SMOKE_API_KEY != '' }}
+    needs: plugin-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -r build
+
+      - name: Bundle plugin
+        run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
+
+      - name: Package plugin zip
+        run: node scripts/build-plugin-zip.mjs
+
+      - name: Route once against live API
+        run: node scripts/smoke-test-plugin.mjs --live
+        env:
+          HOKUSAI_API_KEY: ${{ secrets.HOKUSAI_SMOKE_API_KEY }}
+          HOKUSAI_ROUTING_CONSENT: 'true'
