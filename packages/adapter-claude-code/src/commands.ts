@@ -302,15 +302,15 @@ export async function routeTask(
     storage: {
       async get(taskId) {
         const records = await store.listCorrelations();
-        return records.find((record) => record.metadata?.taskId === taskId)
-          ? {
-              taskId,
-              correlationId: records.find((record) => record.metadata?.taskId === taskId)?.correlationId ?? '',
-              createdAt: new Date(
-                records.find((record) => record.metadata?.taskId === taskId)?.createdAt ?? Date.now(),
-              ).toISOString(),
-            }
-          : undefined;
+        const found = records.find((record) => record.metadata?.taskId === taskId);
+        if (!found) {
+          return undefined;
+        }
+        return {
+          taskId,
+          correlationId: found.metadata?.originalCorrelationId ?? found.correlationId,
+          createdAt: new Date(found.createdAt).toISOString(),
+        };
       },
       async set(record) {
         await store.putCorrelation({
@@ -319,6 +319,7 @@ export async function routeTask(
           createdAt: Date.parse(record.createdAt),
           metadata: {
             taskId: record.taskId,
+            originalCorrelationId: record.correlationId,
           },
         });
       },
