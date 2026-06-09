@@ -53,6 +53,14 @@ const models = createClaudeCodeModelProvider({
 
 The command sends a normalized Hokusai task packet only after both auth and routing consent are configured. On success it returns the recommended Anthropic model, concise reasoning, confidence, and alternatives when the API provides them.
 
+The route output also includes:
+
+- a local `correlationId` / routing decision id for later outcome reporting
+- a manual Claude Code handoff instruction, exposed as a copyable `/model <anthropic-model-id>` command
+- the API `requestId` and `routeId` when the router returns them
+
+If Claude Code is already on the recommended model, Hokusai reports that no switch is needed instead of inventing a programmatic handoff.
+
 To preview and optionally submit an anonymized outcome report for a prior routing decision:
 
 ```text
@@ -60,6 +68,16 @@ To preview and optionally submit an anonymized outcome report for a prior routin
 ```
 
 The report command previews the exact anonymized payload first, then only submits after explicit approval. `hokusai-report --send` requires the same routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
+
+## Decline a recommendation
+
+If the user chooses a different model, record that signal locally with the correlation id:
+
+```sh
+hokusai-route --decline --correlation-id <correlation-id> --reason "prefer faster model"
+```
+
+Decline reasons are redacted and length-capped before local persistence. The adapter stores routing-decision metadata in the existing local correlation record so later outcome reporting can link back to the recommendation without storing raw task text by default.
 
 ## Failure behavior
 

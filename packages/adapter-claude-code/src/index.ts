@@ -35,6 +35,8 @@ import {
 
 export {
   clearClaudeCodeLocalState,
+  declineRecommendation,
+  displayHandoff,
   displayTaskRecommendation,
   findLatestRoutingDecision,
   previewReportOutcome,
@@ -43,6 +45,8 @@ export {
   routeTask,
   runDoctor,
   type ClaudeCodeCommandOptions,
+  type DeclineRecommendationInput,
+  type DeclineRecommendationResult,
   type DoctorResult,
   type LatestRoutingDecision,
   type OutcomeReportPreview,
@@ -57,6 +61,7 @@ export {
 } from './commands.js';
 export { CLI_EXIT_CODES, type CliExitCode, type CliRunResult } from './cli.js';
 export { runCli } from './cli.js';
+export type { HandoffInstructions } from '@hokusai/core';
 export {
   REPORT_CLI_EXIT_CODES,
   type ReportCliExitCode,
