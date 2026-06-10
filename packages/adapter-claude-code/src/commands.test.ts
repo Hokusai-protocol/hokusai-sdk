@@ -108,7 +108,9 @@ async function createTempDir(prefix: string): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 });
 
 describe('runDoctor', () => {
@@ -138,13 +140,16 @@ describe('previewTaskPayload', () => {
   it('returns a redacted preview without calling the network', () => {
     const result = previewTaskPayload({
       taskId: 'task-preview',
-      taskText: 'Email alice@example.com and use sk-12345678 on db-prod.internal',
+      taskText:
+        'Email alice@example.com and use sk-12345678 on db-prod.internal',
       modelId: 'claude-sonnet-4-6',
     });
 
     expect(result.packet.userIntent).not.toContain('alice@example.com');
     expect(result.packet.userIntent).not.toContain('sk-12345678');
-    expect(result.preview.willSend.userIntent).not.toContain('alice@example.com');
+    expect(result.preview.willSend.userIntent).not.toContain(
+      'alice@example.com',
+    );
     expect(result.harnessPreview.redactionCount).toBeGreaterThan(0);
   });
 });
@@ -306,12 +311,14 @@ describe('routeTask', () => {
   });
 
   it('returns a no-op handoff when the current model already matches', async () => {
+    const configPath = await createTempDir('hokusai-claude-noop-');
     const result = await routeTask(
       {
         taskText: 'Keep the current model.',
         modelId: 'claude-sonnet-4-6',
       },
       {
+        configPath,
         registry: new InMemoryModelRegistry([
           {
             id: 'claude-sonnet-4-6',
@@ -425,7 +432,9 @@ describe('routeTask', () => {
     const persisted = await store.getCorrelation(
       debugResult.value.correlationId.replace(/[:.]/g, '_'),
     );
-    expect(persisted?.metadata?.debugRedactedPayloadPreview).toContain('EMAIL_');
+    expect(persisted?.metadata?.debugRedactedPayloadPreview).toContain(
+      'EMAIL_',
+    );
     expect(persisted?.metadata?.debugRedactedPayloadPreview).not.toContain(
       'alice@example.com',
     );
@@ -497,7 +506,9 @@ describe('declineRecommendation', () => {
 
     expect(persisted?.metadata?.status).toBe('declined');
     expect(persisted?.metadata?.declinedAt).toBeTruthy();
-    expect(persisted?.metadata?.declineReason).not.toContain('alice@example.com');
+    expect(persisted?.metadata?.declineReason).not.toContain(
+      'alice@example.com',
+    );
   });
 
   it('returns an error for an unknown correlation id', async () => {
@@ -534,10 +545,18 @@ describe('reportTaskOutcome', () => {
       return;
     }
 
-    expect(result.value.preview.payload.notes).not.toContain('alice@example.com');
-    expect(result.value.preview.payload.notes).not.toContain('db-prod.internal');
-    expect(result.value.preview.lines.join('\n')).toContain('Recommended model: claude-3-7-sonnet');
-    expect(result.value.preview.lines.join('\n')).toContain('Excluded by default: raw code, raw prompts, terminal logs, and customer data.');
+    expect(result.value.preview.payload.notes).not.toContain(
+      'alice@example.com',
+    );
+    expect(result.value.preview.payload.notes).not.toContain(
+      'db-prod.internal',
+    );
+    expect(result.value.preview.lines.join('\n')).toContain(
+      'Recommended model: claude-3-7-sonnet',
+    );
+    expect(result.value.preview.lines.join('\n')).toContain(
+      'Excluded by default: raw code, raw prompts, terminal logs, and customer data.',
+    );
   });
 
   it('supports dry-run mode without calling the network', async () => {
@@ -740,7 +759,9 @@ describe('findLatestRoutingDecision', () => {
   it('returns undefined when there are no stored correlations', async () => {
     const configDir = await createTempDir('hokusai-claude-latest-empty-');
 
-    await expect(findLatestRoutingDecision({ configDir })).resolves.toBeUndefined();
+    await expect(
+      findLatestRoutingDecision({ configDir }),
+    ).resolves.toBeUndefined();
   });
 
   it('returns the only stored correlation', async () => {
@@ -1014,9 +1035,7 @@ describe('privacy commands', () => {
 
   it('persists and resolves reporting status sources', async () => {
     const configPath = await createTempDir('hokusai-claude-reporting-');
-    await expect(
-      getReportingStatus({ configPath, env: {} }),
-    ).resolves.toEqual({
+    await expect(getReportingStatus({ configPath, env: {} })).resolves.toEqual({
       ok: true,
       value: {
         enabled: false,
@@ -1042,9 +1061,7 @@ describe('privacy commands', () => {
     });
     expect('apiKey' in (persisted ?? {})).toBe(false);
 
-    await expect(
-      getReportingStatus({ configPath, env: {} }),
-    ).resolves.toEqual({
+    await expect(getReportingStatus({ configPath, env: {} })).resolves.toEqual({
       ok: true,
       value: {
         enabled: true,
@@ -1111,14 +1128,20 @@ describe('privacy commands', () => {
       process.stderr.write = originalWrite;
     }
 
-    expect(stderrChunks.join('')).toContain('Ignoring invalid HOKUSAI_RETENTION_DAYS');
+    expect(stderrChunks.join('')).toContain(
+      'Ignoring invalid HOKUSAI_RETENTION_DAYS',
+    );
   });
 });
 
 describe('clearClaudeCodeLocalState', () => {
   it('clears persisted state and leaves doctor in setup-needed state', async () => {
     const configPath = await createTempDir('hokusai-claude-clear-');
-    await writeFile(path.join(configPath, 'state.json'), '{"key":"value"}', 'utf8');
+    await writeFile(
+      path.join(configPath, 'state.json'),
+      '{"key":"value"}',
+      'utf8',
+    );
     await mkdir(path.join(configPath, 'correlations'), { recursive: true });
     await writeFile(
       path.join(configPath, 'correlations', 'task_1.json'),
@@ -1170,9 +1193,13 @@ describe('displayTaskRecommendation', () => {
       confidence: 0.82,
     });
 
-    expect(result.lines.join('\n')).toContain('Recommended model: claude-sonnet-4-6');
+    expect(result.lines.join('\n')).toContain(
+      'Recommended model: claude-sonnet-4-6',
+    );
     expect(result.lines.join('\n')).toContain('Provider: anthropic');
-    expect(result.lines.join('\n')).toContain('Reason: Best balanced Claude model.');
+    expect(result.lines.join('\n')).toContain(
+      'Reason: Best balanced Claude model.',
+    );
     expect(result.lines.join('\n')).toContain('Confidence: 82%');
     expect(result.lines.join('\n')).toContain('Alternatives: claude-opus-4-8');
   });
@@ -1224,10 +1251,14 @@ describe('route/report smoke path', () => {
     if (!routed.ok) {
       return;
     }
-    const requestBody = calls[0]?.init.body ? JSON.parse(calls[0].init.body) : {};
+    const requestBody = (
+      calls[0]?.init.body ? JSON.parse(calls[0].init.body) : {}
+    ) as { inputs?: Record<string, unknown> };
+    expect(Object.keys(requestBody.inputs ?? {})).toHaveLength(51);
     expect(requestBody).toMatchObject({
-      task: {
-        id: 'task-smoke',
+      inputs: {
+        coder_model: 'claude-sonnet-4-6',
+        task_type: 'bugfix',
       },
     });
 
@@ -1238,6 +1269,7 @@ describe('route/report smoke path', () => {
       },
       {
         apiClient: client,
+        configPath,
       },
     );
 

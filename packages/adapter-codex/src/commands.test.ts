@@ -90,12 +90,12 @@ describe('requestRecommendation', () => {
         status: 'accepted',
       },
     });
-    expect(JSON.parse(seenBody)).toMatchObject({
-      task: {
-        id: 'task-1',
-      },
-      model: {
-        id: 'gpt-5-codex',
+    const body = JSON.parse(seenBody) as { inputs: Record<string, unknown> };
+    expect(Object.keys(body.inputs)).toHaveLength(51);
+    expect(body).toMatchObject({
+      inputs: {
+        coder_model: 'gpt-5-codex',
+        task_type: 'chore',
       },
     });
   });

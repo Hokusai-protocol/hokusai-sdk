@@ -105,6 +105,10 @@ function getRequestIdHeader(call: MockCall): string {
   return typeof requestId === 'string' ? requestId : '';
 }
 
+function parseRequestBody(call: MockCall): unknown {
+  return JSON.parse(String(call.init.body));
+}
+
 async function createRouteRequest(): Promise<RouteRequest> {
   const builder = new HokusaiDispatchBuilder({
     consent: {
@@ -257,6 +261,60 @@ describe('HokusaiClient', () => {
     );
   });
 
+  it('sends route requests using the Technical Task Router prediction schema', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: {
+          coder_model: 'gpt-5-codex',
+          confidence: '0.82',
+          reason: 'Best fit for a TypeScript SDK task.',
+          route_id: 'prediction-1',
+        },
+        completed_successfully: 'true',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(client.route(routeRequest)).resolves.toEqual({
+      routeId: 'prediction-1',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+      requestId: expect.any(String),
+      recommendation: {
+        model: 'gpt-5-codex',
+        confidence: 0.82,
+        reason: 'Best fit for a TypeScript SDK task.',
+      },
+    });
+
+    const body = parseRequestBody(calls[0] as MockCall) as {
+      inputs: Record<string, unknown>;
+    };
+
+    expect(Object.keys(body.inputs)).toHaveLength(51);
+    expect(
+      Object.values(body.inputs).every((value) => typeof value === 'string'),
+    ).toBe(true);
+    expect(body).toMatchObject({
+      inputs: {
+        available_coder_models: 'gpt-5-codex',
+        coder_model: 'gpt-5-codex',
+        description_length_bucket: 'short',
+        domain: 'hokusai-sdk',
+        requires_tests: '',
+        route_source: 'hokusai-sdk',
+        router_mode: 'recommendation',
+        routing_mode: 'model-selection',
+        task_type: 'chore',
+      },
+    });
+  });
+
   it('uses the default base URL when none is provided', async () => {
     const routeRequest = await createRouteRequest();
     const { calls, transport } = createMockTransport([
@@ -274,7 +332,9 @@ describe('HokusaiClient', () => {
 
     await client.route(routeRequest);
 
-    expect(calls[0]?.input).toBe(`${DEFAULT_HOKUSAI_BASE_URL}/v1/route`);
+    expect(calls[0]?.input).toBe(
+      `${DEFAULT_HOKUSAI_BASE_URL}/api/v1/models/30/predict`,
+    );
   });
 
   it('uses a normalized custom base URL without double slashes', async () => {
@@ -295,7 +355,9 @@ describe('HokusaiClient', () => {
 
     await client.route(routeRequest);
 
-    expect(calls[0]?.input).toBe('https://example.test/custom-root/v1/route');
+    expect(calls[0]?.input).toBe(
+      'https://example.test/custom-root/api/v1/models/30/predict',
+    );
   });
 
   it('supports overriding the SDK version header', async () => {
@@ -546,11 +608,9 @@ describe('HokusaiClient', () => {
       status: 'accepted',
     });
     expect(calls).toHaveLength(3);
-    expect(
-      new Set(
-        calls.map((call) => getRequestIdHeader(call)),
-      ),
-    ).toEqual(new Set(['req-retry-1']));
+    expect(new Set(calls.map((call) => getRequestIdHeader(call)))).toEqual(
+      new Set(['req-retry-1']),
+    );
   });
 
   it('throws a network error after exhausting transport retries', async () => {
@@ -659,7 +719,12 @@ describe('HokusaiClient', () => {
     await expect(client.route(routeRequest, { dryRun: true })).resolves.toEqual(
       {
         ok: true,
-        request: routeRequest,
+        request: expect.objectContaining({
+          inputs: expect.objectContaining({
+            coder_model: 'gpt-5-codex',
+            task_type: 'chore',
+          }),
+        }),
       },
     );
     await expect(
@@ -746,7 +811,7 @@ describe('createGatedClient', () => {
     ]);
     const client = createGatedClient({
       config: {
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: false,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -771,7 +836,7 @@ describe('createGatedClient', () => {
     const client = createGatedClient({
       config: {
         apiKey: 'hk_live',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -800,7 +865,7 @@ describe('createGatedClient', () => {
     const client = createGatedClient({
       config: {
         apiKey: 'hk_live',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: true,
         modelAllowlist: ['claude-sonnet-4-6'],

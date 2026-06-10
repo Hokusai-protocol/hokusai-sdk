@@ -21,6 +21,7 @@ import {
   type OutcomeResponse,
   type RouteRequest,
   type RouteResponse,
+  type TechnicalTaskRouterRequest,
   validateOutcomeReport,
   validateOutcomeResponse,
   validateRouteRequest,
@@ -41,11 +42,64 @@ import {
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RETRY_AFTER_MS = 5_000;
-const ROUTE_PATH = '/v1/route';
+const ROUTE_PATH = '/api/v1/models/30/predict';
 const OUTCOME_PATH = '/v1/outcomes';
 const SDK_VERSION = '0.1.0';
+const TECHNICAL_TASK_ROUTER_INPUT_KEYS = [
+  'task_type',
+  'language',
+  'domain',
+  'complexity',
+  'repo_size_bucket',
+  'files_touched_bucket',
+  'description_length_bucket',
+  'is_greenfield',
+  'is_migration',
+  'requires_tests',
+  'cross_service',
+  'ui_heavy',
+  'risk_level',
+  'max_cost_usd',
+  'available_planner_models',
+  'available_coder_models',
+  'available_reviewer_models',
+  'planner_model',
+  'planner_agent',
+  'coder_model',
+  'coder_agent',
+  'reviewer_model',
+  'reviewer_agent',
+  'plan_depth',
+  'code_depth',
+  'review_mode',
+  'route_source',
+  'router_mode',
+  'routing_mode',
+  'expected_success_probability',
+  'expected_cost_usd',
+  'confidence',
+  'risk_score',
+  'score',
+  'score_band',
+  'under_budget',
+  'actual_cost_usd',
+  'actual_time_seconds',
+  'intervention_count',
+  'workflow_cost_status',
+  'budget_violation',
+  'rubric_version',
+  'rubric_criterion_count',
+  'rubric_mean_score',
+  'rubric_completeness',
+  'rubric_correctness',
+  'rubric_code_quality',
+  'rubric_intervention_impact',
+  'rubric_autonomy',
+  'rubric_determinative_boundary',
+  'rubric_provenance',
+] as const;
 
-export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokusai.app';
+export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
 export interface FetchTransportResponse {
   headers: {
@@ -95,8 +149,10 @@ export interface HokusaiDispatchBuilderOptions {
   clock?: () => Date;
 }
 
-export interface HokusaiPluginClientOptions
-  extends Omit<HokusaiClientOptions, 'apiKey' | 'baseUrl'> {
+export interface HokusaiPluginClientOptions extends Omit<
+  HokusaiClientOptions,
+  'apiKey' | 'baseUrl'
+> {
   config: HokusaiPluginConfig;
 }
 
@@ -105,7 +161,9 @@ export interface GatedClient {
   route(
     request: RouteRequest,
     options?: HokusaiRequestOptions,
-  ): Promise<RouteResponse | HokusaiValidationSuccess<RouteRequest>>;
+  ): Promise<
+    RouteResponse | HokusaiValidationSuccess<TechnicalTaskRouterRequest>
+  >;
   reportOutcome(
     request: OutcomeReport,
     options?: HokusaiRequestOptions,
@@ -250,10 +308,12 @@ export class HokusaiDispatchBuilder {
       },
       model: this.#toModelSelection(model),
       correlation: correlationRecord,
-      prompt: 'output' in promptPayload ? promptPayload.output : promptPayload.text,
-      redactions: 'output' in promptPayload
-        ? promptPayload.redactions
-        : promptPayload.redactions.map(({ label }) => ({ label })),
+      prompt:
+        'output' in promptPayload ? promptPayload.output : promptPayload.text,
+      redactions:
+        'output' in promptPayload
+          ? promptPayload.redactions
+          : promptPayload.redactions.map(({ label }) => ({ label })),
       createdAt: this.#clock().toISOString(),
     };
   }
@@ -321,7 +381,9 @@ export class HokusaiClient {
   async route(
     request: RouteRequest,
     options: HokusaiRequestOptions = {},
-  ): Promise<RouteResponse | HokusaiValidationSuccess<RouteRequest>> {
+  ): Promise<
+    RouteResponse | HokusaiValidationSuccess<TechnicalTaskRouterRequest>
+  > {
     const requestId = options.requestId ?? this.#requestIdFactory();
     const fieldErrors = validateRouteRequest(request);
     if (fieldErrors.length > 0) {
@@ -331,18 +393,26 @@ export class HokusaiClient {
       });
     }
 
+    const technicalTaskRouterRequest = buildTechnicalTaskRouterRequest(request);
+
     if (options.dryRun) {
       return {
         ok: true,
-        request,
+        request: technicalTaskRouterRequest,
       };
     }
 
-    return this.#send<RouteRequest, RouteResponse>({
+    return this.#send<TechnicalTaskRouterRequest, RouteResponse>({
       path: ROUTE_PATH,
-      request,
+      request: technicalTaskRouterRequest,
       requestId,
       requestOptions: options,
+      responseMapper: (response, responseRequestId) =>
+        normalizeTechnicalTaskRouterResponse(
+          response,
+          request,
+          responseRequestId,
+        ),
       responseValidator: validateRouteResponse,
       responseErrorMessage: 'Hokusai API returned an invalid route response.',
     });
@@ -395,6 +465,7 @@ export class HokusaiClient {
     requestId: string;
     requestOptions: HokusaiRequestOptions;
     responseErrorMessage: string;
+    responseMapper?: (value: unknown, requestId: string) => TResponse;
     responseValidator: (value: unknown) => HokusaiFieldError[];
   }): Promise<TResponse> {
     const transport = this.#transport;
@@ -442,7 +513,10 @@ export class HokusaiClient {
           }
 
           const body = await readJsonBody(response, options.requestId);
-          const fieldErrors = options.responseValidator(body);
+          const responseObject = options.responseMapper
+            ? options.responseMapper(body, headerRequestId)
+            : (body as TResponse);
+          const fieldErrors = options.responseValidator(responseObject);
           if (fieldErrors.length > 0) {
             throw new HokusaiApiError(options.responseErrorMessage, {
               requestId: headerRequestId,
@@ -450,7 +524,6 @@ export class HokusaiClient {
             });
           }
 
-          const responseObject = body as TResponse;
           if (responseObject.requestId === undefined) {
             responseObject.requestId = headerRequestId;
           }
@@ -718,6 +791,186 @@ function getTaskId(request: unknown): string {
   return '';
 }
 
+function buildTechnicalTaskRouterRequest(
+  request: RouteRequest,
+): TechnicalTaskRouterRequest {
+  const metadata = request.task.metadata ?? {};
+  const inputs = Object.fromEntries(
+    TECHNICAL_TASK_ROUTER_INPUT_KEYS.map((key) => [key, metadata[key] ?? '']),
+  ) as unknown as TechnicalTaskRouterRequest['inputs'];
+
+  inputs.task_type ||=
+    metadata.taskFamily ??
+    metadata.task_family ??
+    inferTaskType(request.prompt);
+  inputs.language ||= metadata.primaryLanguage ?? metadata.language ?? '';
+  inputs.domain ||= metadata.domain ?? metadata.repo ?? '';
+  inputs.complexity ||= metadata.complexity ?? metadata.reasoningDepth ?? '';
+  inputs.repo_size_bucket ||= metadata.repositoryScale ?? '';
+  inputs.description_length_bucket ||= bucketDescriptionLength(request.prompt);
+  inputs.requires_tests ||= inferRequiresTests(request.prompt);
+  inputs.available_planner_models ||= request.model.id;
+  inputs.available_coder_models ||= request.model.id;
+  inputs.available_reviewer_models ||= request.model.id;
+  inputs.coder_model ||= request.model.id;
+  inputs.code_depth ||= metadata.reasoningDepth ?? '';
+  inputs.route_source ||= 'hokusai-sdk';
+  inputs.router_mode ||= 'recommendation';
+  inputs.routing_mode ||= 'model-selection';
+
+  return { inputs };
+}
+
+function normalizeTechnicalTaskRouterResponse(
+  response: unknown,
+  request: RouteRequest,
+  requestId: string,
+): RouteResponse {
+  if (validateRouteResponse(response).length === 0) {
+    return response as RouteResponse;
+  }
+
+  const responseRecord = isPlainRecord(response) ? response : {};
+  if (
+    !('metadata' in responseRecord) &&
+    !('completed_successfully' in responseRecord)
+  ) {
+    return response as RouteResponse;
+  }
+
+  const metadata = isPlainRecord(responseRecord.metadata)
+    ? responseRecord.metadata
+    : {};
+  const model = firstString(
+    metadata.coder_model,
+    metadata.recommended_model,
+    metadata.recommendedModel,
+    metadata.model,
+    metadata.planner_model,
+    metadata.reviewer_model,
+  );
+  const confidence = firstNumber(metadata.confidence, metadata.score);
+  const reason = firstString(metadata.reason, metadata.explanation);
+  const routeId =
+    firstString(
+      metadata.routeId,
+      metadata.route_id,
+      metadata.predictionId,
+      metadata.prediction_id,
+      metadata.requestId,
+      metadata.request_id,
+    ) ?? request.correlation.correlationId;
+
+  const normalized: RouteResponse = {
+    routeId,
+    taskId: request.task.id,
+    status: 'accepted',
+    requestId,
+  };
+
+  if (model) {
+    normalized.recommendation = {
+      model,
+      ...(reason ? { reason } : {}),
+      ...(confidence !== undefined ? { confidence } : {}),
+    };
+  }
+
+  return normalized;
+}
+
+function bucketDescriptionLength(prompt: string): string {
+  const length = prompt.trim().length;
+  if (length < 200) {
+    return 'short';
+  }
+
+  if (length < 1000) {
+    return 'medium';
+  }
+
+  return 'long';
+}
+
+function inferRequiresTests(prompt: string): string {
+  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(
+    prompt,
+  )
+    ? 'true'
+    : '';
+}
+
+function inferTaskType(prompt: string): string {
+  if (/\b(migrat(?:e|ion|ing)|backfill)\b/i.test(prompt)) {
+    return 'migration';
+  }
+
+  if (/\b(refactor|rename|cleanup|restructure)\b/i.test(prompt)) {
+    return 'refactor';
+  }
+
+  if (/\b(test|tests|spec|coverage)\b/i.test(prompt)) {
+    return 'test';
+  }
+
+  if (/\b(docs?|readme|documentation)\b/i.test(prompt)) {
+    return 'docs';
+  }
+
+  if (/\b(bug|regression|failure|crash|timeout|fix)\b/i.test(prompt)) {
+    return 'bugfix';
+  }
+
+  if (/\b(feature|implement|add support|enable)\b/i.test(prompt)) {
+    return 'feature';
+  }
+
+  return 'chore';
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return clampConfidence(value);
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return clampConfidence(parsed);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function clampConfidence(value: number): number {
+  if (value < 0) {
+    return 0;
+  }
+
+  if (value > 1) {
+    return 1;
+  }
+
+  return value;
+}
+
 function isRetryableApiError(error: HokusaiApiError): boolean {
   if (error instanceof HokusaiRateLimitError) {
     return true;
@@ -874,7 +1127,7 @@ function parseBaseUrl(input: string): URL {
     return new URL(url.toString().replace(/\/+$/, ''));
   } catch {
     throw new HokusaiApiError(
-      `Invalid Hokusai base URL "${input}". Pass a full URL such as https://api.hokusai.app.`,
+      `Invalid Hokusai base URL "${input}". Pass a full URL such as https://api.hokus.ai.`,
       {
         requestId: 'configuration',
       },

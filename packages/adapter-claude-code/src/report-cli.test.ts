@@ -23,7 +23,7 @@ describe('runReportCli', () => {
       {
         loadConfig: () =>
           Promise.resolve({
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -54,7 +54,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: false,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -83,7 +83,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -151,7 +151,7 @@ describe('runReportCli', () => {
       {
         loadConfig: () =>
           Promise.resolve({
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -211,7 +211,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -246,7 +246,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -313,7 +313,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -361,7 +361,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -434,7 +434,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -469,7 +469,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -500,7 +500,7 @@ describe('runReportCli', () => {
         loadConfig: () =>
           Promise.resolve({
             apiKey: 'hk_live_test',
-            apiBaseUrl: 'https://api.hokusai.app',
+            apiBaseUrl: 'https://api.hokus.ai',
             routingConsentEnabled: true,
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
@@ -536,7 +536,7 @@ describe('runReportCli', () => {
           loadConfig: () =>
             Promise.resolve({
               apiKey: 'hk_live_test',
-              apiBaseUrl: 'https://api.hokusai.app',
+              apiBaseUrl: 'https://api.hokus.ai',
               routingConsentEnabled: true,
               outcomeSubmissionEnabled: true,
               modelAllowlist: ['claude-sonnet-4-6'],

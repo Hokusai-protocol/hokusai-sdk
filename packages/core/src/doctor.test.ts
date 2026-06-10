@@ -27,7 +27,7 @@ describe('runDoctor', () => {
     const transportCalls: string[] = [];
     const report = await runDoctor({
       config: {
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: false,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -48,7 +48,7 @@ describe('runDoctor', () => {
     const report = await runDoctor({
       config: {
         apiKey: 'hk_live_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -68,7 +68,7 @@ describe('runDoctor', () => {
     const report = await runDoctor({
       config: {
         apiKey: 'hk_live_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -88,7 +88,7 @@ describe('runDoctor', () => {
     const report = await runDoctor({
       config: {
         apiKey: 'hk_live_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -119,7 +119,7 @@ describe('runDoctor', () => {
     const report = await runDoctor({
       config: {
         apiKey: 'hk_live_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -136,7 +136,7 @@ describe('runDoctor', () => {
     const report = await runDoctor({
       config: {
         apiKey: 'hk_live_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6', 'mystery-model'],
@@ -152,7 +152,7 @@ describe('runDoctor', () => {
     const report = await runDoctor({
       config: {
         apiKey: 'hk_live_secret_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -256,7 +256,7 @@ describe('plugin doctor checks', () => {
   it('checks API reachability outcomes', async () => {
     const config = {
       apiKey: 'hk_live_secret',
-      apiBaseUrl: 'https://api.hokusai.app',
+      apiBaseUrl: 'https://api.hokus.ai',
       routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist: ['claude-sonnet-4-6'],
@@ -320,7 +320,7 @@ describe('plugin doctor checks', () => {
 describe('runPluginDoctor', () => {
   const config = {
     apiKey: 'hk_live_secret',
-    apiBaseUrl: 'https://api.hokusai.app',
+    apiBaseUrl: 'https://api.hokus.ai',
     routingConsentEnabled: true,
     outcomeSubmissionEnabled: false,
     modelAllowlist: ['claude-sonnet-4-6'],

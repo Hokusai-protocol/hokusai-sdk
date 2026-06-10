@@ -42,7 +42,8 @@ export const CODEX_COMMAND_MANIFEST: readonly CodexCommandDescriptor[] = [
   {
     name: 'hokusai:recommend',
     consentScope: 'task-execution',
-    description: 'Request a Hokusai route recommendation for the current Codex task.',
+    description:
+      'Request a Hokusai route recommendation for the current Codex task.',
   },
   {
     name: 'hokusai:preview',
@@ -84,7 +85,10 @@ export async function requestRecommendation(
   args: RequestRecommendationArgs,
 ): Promise<AdapterResult<RouteResponse>> {
   if (!args.client) {
-    return fail('client_unavailable', 'A Hokusai client is required to request a recommendation.');
+    return fail(
+      'client_unavailable',
+      'A Hokusai client is required to request a recommendation.',
+    );
   }
 
   try {
@@ -95,7 +99,10 @@ export async function requestRecommendation(
     );
     const response = await args.client.route(payload);
     if (!isRouteResponse(response)) {
-      return fail('invalid_route_response', 'Hokusai client returned an unexpected route response shape.');
+      return fail(
+        'invalid_route_response',
+        'Hokusai client returned an unexpected route response shape.',
+      );
     }
     return ok(response);
   } catch (error) {
@@ -120,7 +127,9 @@ export async function previewRoutePayload(
 
 export async function submitOutcome(
   args: SubmitOutcomeArgs,
-): Promise<AdapterResult<OutcomeResponse | HokusaiValidationSuccess<OutcomeReport>>> {
+): Promise<
+  AdapterResult<OutcomeResponse | HokusaiValidationSuccess<OutcomeReport>>
+> {
   const timestamp = (args.clock ?? (() => new Date()))().getTime();
 
   if (!isConsentGranted(args.consent, 'telemetry')) {
@@ -148,7 +157,10 @@ export async function submitOutcome(
       timestamp,
       error: 'A Hokusai client is required to submit an outcome.',
     });
-    return fail('client_unavailable', 'A Hokusai client is required to submit an outcome.');
+    return fail(
+      'client_unavailable',
+      'A Hokusai client is required to submit an outcome.',
+    );
   }
 
   try {
@@ -211,9 +223,7 @@ function failFromError(error: unknown): AdapterResult<never> {
   };
 }
 
-function isRouteResponse(
-  response: RouteResponse | HokusaiValidationSuccess<HokusaiDispatchPayload>,
-): response is RouteResponse {
+function isRouteResponse(response: unknown): response is RouteResponse {
   return (
     typeof (response as RouteResponse).routeId === 'string' &&
     typeof (response as RouteResponse).status === 'string'
@@ -237,7 +247,10 @@ function normalizeError(error: unknown): AdapterError {
       );
     }
 
-    if (error instanceof HokusaiRateLimitError && error.retryAfter !== undefined) {
+    if (
+      error instanceof HokusaiRateLimitError &&
+      error.retryAfter !== undefined
+    ) {
       details.retryAfter = String(error.retryAfter);
     }
 
