@@ -26,12 +26,6 @@ mkdir -p "$HOKUSAI_CONFIG_DIR"
 export HOKUSAI_API_KEY="<test-api-key>"
 ```
 
-- Optional: point to a non-default API base only when testing a staging environment:
-
-```sh
-export HOKUSAI_API_BASE_URL="https://api.hokusai.app"
-```
-
 ## Step 1. Download and install the released plugin zip
 
 Download the published release asset and checksum:
@@ -220,4 +214,4 @@ This step proves test submission either succeeds or fails with a clear API error
 - The plugin zip must come from a tagged GitHub Release asset. Building from source requires a repo checkout and is out of scope for this smoke test.
 - `hokusai-privacy` inspection commands work against local state and do not require an API call.
 - A real test `HOKUSAI_API_KEY` must be supplied at runtime and must never be committed.
-- The test environment must be able to reach `https://api.hokusai.app` unless `HOKUSAI_API_BASE_URL` is intentionally overridden.
+- The test environment must be able to reach the Hokusai API configured by the released plugin.

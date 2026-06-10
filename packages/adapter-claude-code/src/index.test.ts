@@ -179,7 +179,7 @@ describe('createClaudeCodeAdapter', () => {
     const doctor = createClaudeCodeDoctor({
       config: {
         apiKey: 'hk_live_abcd',
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],

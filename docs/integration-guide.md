@@ -15,13 +15,13 @@ import { HokusaiClient } from '@hokusai/core';
 
 const client = new HokusaiClient({
   apiKey: 'k_prod_xxx',
-  baseUrl: 'https://api.hokusai.app',
 });
 ```
 
 The client:
 
 - sends `Authorization`, request ID, and SDK version headers
+- routes tasks to the Technical Task Router prediction endpoint at `https://api.hokus.ai/api/v1/models/30/predict`
 - validates route and outcome payloads before any network call
 - supports dry-run validation via `{ dryRun: true }`
 - retries network failures, `429`, and `5xx` responses with backoff

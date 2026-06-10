@@ -1,10 +1,10 @@
 # Payload Schemas
 
-`@hokusai/core` now exposes two shared wire payloads for the Hokusai API client.
+`@hokusai/core` exposes the SDK payloads adapters use locally and the wire payload sent to the Hokusai Technical Task Router.
 
 ## Route request
 
-`HokusaiClient.route()` accepts `RouteRequest`, which reuses the existing dispatch payload shape:
+`HokusaiClient.route()` accepts `RouteRequest`, which reuses the SDK dispatch payload shape:
 
 ```ts
 interface RouteRequest {
@@ -36,7 +36,75 @@ interface RouteRequest {
 }
 ```
 
-Example response:
+Before transport, the client converts that SDK payload into the published Technical Task Router prediction request:
+
+```ts
+interface TechnicalTaskRouterRequest {
+  inputs: {
+    task_type: string;
+    language: string;
+    domain: string;
+    complexity: string;
+    repo_size_bucket: string;
+    files_touched_bucket: string;
+    description_length_bucket: string;
+    is_greenfield: string;
+    is_migration: string;
+    requires_tests: string;
+    cross_service: string;
+    ui_heavy: string;
+    risk_level: string;
+    max_cost_usd: string;
+    available_planner_models: string;
+    available_coder_models: string;
+    available_reviewer_models: string;
+    planner_model: string;
+    planner_agent: string;
+    coder_model: string;
+    coder_agent: string;
+    reviewer_model: string;
+    reviewer_agent: string;
+    plan_depth: string;
+    code_depth: string;
+    review_mode: string;
+    route_source: string;
+    router_mode: string;
+    routing_mode: string;
+    expected_success_probability: string;
+    expected_cost_usd: string;
+    confidence: string;
+    risk_score: string;
+    score: string;
+    score_band: string;
+    under_budget: string;
+    actual_cost_usd: string;
+    actual_time_seconds: string;
+    intervention_count: string;
+    workflow_cost_status: string;
+    budget_violation: string;
+    rubric_version: string;
+    rubric_criterion_count: string;
+    rubric_mean_score: string;
+    rubric_completeness: string;
+    rubric_correctness: string;
+    rubric_code_quality: string;
+    rubric_intervention_impact: string;
+    rubric_autonomy: string;
+    rubric_determinative_boundary: string;
+    rubric_provenance: string;
+  };
+}
+```
+
+The wire endpoint is:
+
+```text
+POST https://api.hokus.ai/api/v1/models/30/predict
+```
+
+`HokusaiClient.route(..., { dryRun: true })` returns the converted `TechnicalTaskRouterRequest`.
+
+The client normalizes the prediction response back to the SDK `RouteResponse` shape:
 
 ```json
 {
@@ -58,7 +126,12 @@ interface OutcomeReport {
   recommendedModel: string;
   actualModel: string;
   recommendationAccepted: boolean;
-  completionStatus: 'succeeded' | 'failed' | 'abandoned' | 'overridden' | 'partial';
+  completionStatus:
+    | 'succeeded'
+    | 'failed'
+    | 'abandoned'
+    | 'overridden'
+    | 'partial';
   userRating?: 1 | 2 | 3 | 4 | 5;
   latencyBucket: 'low' | 'medium' | 'high';
   costBucket: 'low' | 'medium' | 'high';

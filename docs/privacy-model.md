@@ -14,7 +14,7 @@
 ## Plugin auth and allowlist
 
 - Plugin defaults are private: `routingConsentEnabled` and `outcomeSubmissionEnabled` both default to `false`.
-- Supported env vars are `HOKUSAI_API_KEY`, `HOKUSAI_API_BASE_URL`, `HOKUSAI_ROUTING_CONSENT`, `HOKUSAI_OUTCOME_OPT_IN`, and `HOKUSAI_MODEL_ALLOWLIST`.
+- Supported user-facing env vars are `HOKUSAI_API_KEY`, `HOKUSAI_ROUTING_CONSENT`, `HOKUSAI_OUTCOME_OPT_IN`, and `HOKUSAI_MODEL_ALLOWLIST`.
 - Truthy env values are `true`, `1`, and `yes`, case-insensitive. Any other value is treated as `false`.
 - Routing and outcome submission are independently controllable, but outcome transport still depends on routing auth and consent being enabled.
 - `redactPluginConfig()` reports only `<set>` or `<unset>` for the key plus an optional last-4 fingerprint.

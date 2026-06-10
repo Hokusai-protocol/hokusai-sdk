@@ -148,6 +148,8 @@ export {
   type OutcomeResponseStatus,
   type RouteRequest,
   type RouteResponse,
+  type TechnicalTaskRouterInputs,
+  type TechnicalTaskRouterRequest,
   validateOutcomeReport,
   validateOutcomeResponse,
   validateRouteRequest,

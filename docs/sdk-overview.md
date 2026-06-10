@@ -45,7 +45,7 @@ Dependency direction is one-way: `@hokusai/core` does not import adapters; adapt
 - `HokusaiClient`
 - `HokusaiDispatchBuilder`
 - `createGatedClient()`
-- `DEFAULT_HOKUSAI_BASE_URL`
+- `DEFAULT_HOKUSAI_BASE_URL` (`https://api.hokus.ai`)
 - `HokusaiApiError`
 - `HokusaiAuthError`
 - `HokusaiDispatchError`

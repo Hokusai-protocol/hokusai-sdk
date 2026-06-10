@@ -44,7 +44,6 @@ After install, Claude Code should show `/hokusai:route`, `/hokusai:report`, and 
 Use environment variables or a local config file loaded through `loadClaudeCodePluginConfig()`:
 
 - `HOKUSAI_API_KEY`: Hokusai API key. Required for routing and reachability checks.
-- `HOKUSAI_API_BASE_URL`: Optional API base URL. Defaults to `https://api.hokusai.app`.
 - `HOKUSAI_ROUTING_CONSENT`: Explicit opt-in for routing. Truthy values are `true`, `1`, and `yes`.
 - `HOKUSAI_OUTCOME_OPT_IN`: Separate explicit opt-in for outcome submission. Defaults to off.
 - `HOKUSAI_MODEL_ALLOWLIST`: Comma-separated Anthropic model ids or aliases.

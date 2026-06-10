@@ -44,6 +44,64 @@ export interface HokusaiDispatchPayload {
 
 export type RouteRequest = HokusaiDispatchPayload;
 
+export interface TechnicalTaskRouterInputs {
+  task_type: string;
+  language: string;
+  domain: string;
+  complexity: string;
+  repo_size_bucket: string;
+  files_touched_bucket: string;
+  description_length_bucket: string;
+  is_greenfield: string;
+  is_migration: string;
+  requires_tests: string;
+  cross_service: string;
+  ui_heavy: string;
+  risk_level: string;
+  max_cost_usd: string;
+  available_planner_models: string;
+  available_coder_models: string;
+  available_reviewer_models: string;
+  planner_model: string;
+  planner_agent: string;
+  coder_model: string;
+  coder_agent: string;
+  reviewer_model: string;
+  reviewer_agent: string;
+  plan_depth: string;
+  code_depth: string;
+  review_mode: string;
+  route_source: string;
+  router_mode: string;
+  routing_mode: string;
+  expected_success_probability: string;
+  expected_cost_usd: string;
+  confidence: string;
+  risk_score: string;
+  score: string;
+  score_band: string;
+  under_budget: string;
+  actual_cost_usd: string;
+  actual_time_seconds: string;
+  intervention_count: string;
+  workflow_cost_status: string;
+  budget_violation: string;
+  rubric_version: string;
+  rubric_criterion_count: string;
+  rubric_mean_score: string;
+  rubric_completeness: string;
+  rubric_correctness: string;
+  rubric_code_quality: string;
+  rubric_intervention_impact: string;
+  rubric_autonomy: string;
+  rubric_determinative_boundary: string;
+  rubric_provenance: string;
+}
+
+export interface TechnicalTaskRouterRequest {
+  inputs: TechnicalTaskRouterInputs;
+}
+
 export interface RouteRecommendationAlternative {
   model: string;
   reason?: string | undefined;

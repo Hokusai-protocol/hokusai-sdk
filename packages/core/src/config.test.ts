@@ -86,7 +86,7 @@ describe('loadPluginConfig', () => {
     const config = await loadPluginConfig({});
 
     expect(config.apiKey).toBeUndefined();
-    expect(config.apiBaseUrl).toBe('https://api.hokusai.app');
+    expect(config.apiBaseUrl).toBe('https://api.hokus.ai');
     expect(config.routingConsentEnabled).toBe(false);
     expect(config.outcomeSubmissionEnabled).toBe(false);
     expect(config.modelAllowlist).toEqual(
@@ -129,7 +129,7 @@ describe('redactPluginConfig', () => {
   it('never includes the raw API key in the redacted shape or JSON', () => {
     const redacted = redactPluginConfig({
       apiKey: 'hk_live_secret_abcd',
-      apiBaseUrl: 'https://api.hokusai.app',
+      apiBaseUrl: 'https://api.hokus.ai',
       routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist: ['claude-sonnet-4-6'],
@@ -147,7 +147,7 @@ describe('plugin config stores', () => {
 
     await expect(
       store.write({
-        apiBaseUrl: 'https://api.hokusai.app',
+        apiBaseUrl: 'https://api.hokus.ai',
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
         modelAllowlist: ['claude-sonnet-4-6'],
@@ -163,7 +163,7 @@ describe('plugin config stores', () => {
     const store = new FilePluginConfigStore(filePath);
 
     await store.write({
-      apiBaseUrl: 'https://api.hokusai.app',
+      apiBaseUrl: 'https://api.hokus.ai',
       routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist: ['claude-sonnet-4-6'],

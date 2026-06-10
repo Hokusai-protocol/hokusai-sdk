@@ -1,18 +1,19 @@
-import { buildOutcomeReport, type OutcomeReport, type OutcomeReportInput } from './outcome.js';
+import {
+  buildOutcomeReport,
+  type OutcomeReport,
+  type OutcomeReportInput,
+} from './outcome.js';
 import { type RedactionCategory } from './anonymization.js';
 import { createGatedClient, type FetchTransport } from './client.js';
 import type { AdapterResult, HarnessPayloadPreview } from './adapter.js';
 import type { ConsentScope } from './consent.js';
-import { validateOutcomeReport, type HokusaiDispatchPayload } from './schemas.js';
 import {
-  type ModelCapability,
-  type ModelSelection,
-} from './model-registry.js';
+  validateOutcomeReport,
+  type HokusaiDispatchPayload,
+} from './schemas.js';
+import { type ModelCapability, type ModelSelection } from './model-registry.js';
 import { validateTaskPacket, type TaskPacket } from './task-packet.js';
-import {
-  type CorrelationRecord,
-  type CorrelationStorage,
-} from './storage.js';
+import { type CorrelationRecord, type CorrelationStorage } from './storage.js';
 
 export const conformanceFixtures = {
   privateTaskText: `Fix regression for jane.doe@example-corp.internal.
@@ -92,7 +93,9 @@ export const conformanceChecks: ConformanceCheck[] = [
   {
     name: 'task-packet-schema',
     run(subject) {
-      const packet = subject.buildTaskPacket(conformanceFixtures.privateTaskText);
+      const packet = subject.buildTaskPacket(
+        conformanceFixtures.privateTaskText,
+      );
       const result = validateTaskPacket(packet);
 
       if (!result.ok) {
@@ -105,7 +108,9 @@ export const conformanceChecks: ConformanceCheck[] = [
   {
     name: 'outcome-report-schema',
     run(subject) {
-      const report = subject.buildOutcomeReport(conformanceFixtures.outcomeInput);
+      const report = subject.buildOutcomeReport(
+        conformanceFixtures.outcomeInput,
+      );
       const errors = validateOutcomeReport(report);
 
       if (errors.length > 0) {
@@ -118,7 +123,9 @@ export const conformanceChecks: ConformanceCheck[] = [
   {
     name: 'redaction',
     run(subject) {
-      const packet = subject.buildTaskPacket(conformanceFixtures.privateTaskText);
+      const packet = subject.buildTaskPacket(
+        conformanceFixtures.privateTaskText,
+      );
       const serializedPacket = JSON.stringify(packet);
       const leakedValue = conformanceFixtures.privateValues.find((value) =>
         serializedPacket.includes(value),
@@ -132,9 +139,14 @@ export const conformanceChecks: ConformanceCheck[] = [
   {
     name: 'payload-preview',
     async run(subject) {
-      const preview = await subject.previewPayload(conformanceFixtures.samplePayload);
+      const preview = await subject.previewPayload(
+        conformanceFixtures.samplePayload,
+      );
 
-      if (typeof preview.summary !== 'string' || preview.summary.trim().length === 0) {
+      if (
+        typeof preview.summary !== 'string' ||
+        preview.summary.trim().length === 0
+      ) {
         throw new Error('Payload preview must include a non-empty summary.');
       }
 
@@ -142,7 +154,9 @@ export const conformanceChecks: ConformanceCheck[] = [
         typeof preview.promptPreview !== 'string' ||
         preview.promptPreview.trim().length === 0
       ) {
-        throw new Error('Payload preview must include a non-empty promptPreview.');
+        throw new Error(
+          'Payload preview must include a non-empty promptPreview.',
+        );
       }
 
       if (preview.redactionCount < 1) {
@@ -154,7 +168,9 @@ export const conformanceChecks: ConformanceCheck[] = [
     name: 'consent-gate',
     async run() {
       const routeRequest = conformanceFixtures.samplePayload;
-      const outcomeRequest = buildOutcomeReport(conformanceFixtures.outcomeInput);
+      const outcomeRequest = buildOutcomeReport(
+        conformanceFixtures.outcomeInput,
+      );
       const noAuthClient = createConformanceGatedClient({
         routingConsentEnabled: true,
         outcomeSubmissionEnabled: true,
@@ -216,7 +232,9 @@ export const conformanceChecks: ConformanceCheck[] = [
         stored.correlationId !== record.correlationId ||
         stored.createdAt !== record.createdAt
       ) {
-        throw new Error('Correlation storage did not return the original record.');
+        throw new Error(
+          'Correlation storage did not return the original record.',
+        );
       }
     },
   },
@@ -241,7 +259,9 @@ export const conformanceChecks: ConformanceCheck[] = [
         typeof unsupportedResult.error.code !== 'string' ||
         unsupportedResult.error.code.trim().length === 0
       ) {
-        throw new Error('Unsupported model error must include a non-empty code.');
+        throw new Error(
+          'Unsupported model error must include a non-empty code.',
+        );
       }
     },
   },
@@ -274,7 +294,7 @@ function createConformanceGatedClient(config: {
 }) {
   return createGatedClient({
     config: {
-      apiBaseUrl: 'https://api.hokusai.app',
+      apiBaseUrl: 'https://api.hokus.ai',
       modelAllowlist: ['conformance-model'],
       ...config,
     },
@@ -284,7 +304,7 @@ function createConformanceGatedClient(config: {
 
 function createMockTransport(): FetchTransport {
   return (input) => {
-    if (input.endsWith('/v1/route')) {
+    if (input.endsWith('/api/v1/models/30/predict')) {
       return Promise.resolve({
         status: 200,
         headers: {
@@ -346,7 +366,9 @@ async function expectConsentError(
     );
   }
 
-  throw new Error(`Expected ${scope}/${reason} consent error, but request succeeded.`);
+  throw new Error(
+    `Expected ${scope}/${reason} consent error, but request succeeded.`,
+  );
 }
 
 function formatMessages(messages: string[]): string {
