@@ -1251,9 +1251,9 @@ describe('route/report smoke path', () => {
     if (!routed.ok) {
       return;
     }
-    const requestBody = calls[0]?.init.body
-      ? JSON.parse(calls[0].init.body)
-      : {};
+    const requestBody = (
+      calls[0]?.init.body ? JSON.parse(calls[0].init.body) : {}
+    ) as { inputs?: Record<string, unknown> };
     expect(Object.keys(requestBody.inputs ?? {})).toHaveLength(51);
     expect(requestBody).toMatchObject({
       inputs: {
