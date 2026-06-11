@@ -317,7 +317,7 @@ function toValidationFailure(
     return fail(
       'E_UNSUPPORTED_MODEL',
       error.message,
-      'Use one of the supported OpenAI models returned in the suggestions list.',
+      'Use one of the supported models returned in the suggestions list.',
       { suggestions: error.suggestions },
     );
   }

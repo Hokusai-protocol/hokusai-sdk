@@ -19,13 +19,15 @@ export function resolveCodexConfigDir(
 export function hasRoutingConsent(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.HOKUSAI_ROUTING_CONSENT?.trim().toLowerCase() === 'true';
+  const v = env.HOKUSAI_ROUTING_CONSENT?.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
 }
 
 export function hasOutcomeOptIn(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.HOKUSAI_OUTCOME_OPT_IN?.trim().toLowerCase() === 'true';
+  const v = env.HOKUSAI_OUTCOME_OPT_IN?.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
 }
 
 export function getApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {

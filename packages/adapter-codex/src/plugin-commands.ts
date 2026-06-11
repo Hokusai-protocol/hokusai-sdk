@@ -85,10 +85,12 @@ export async function routeTaskWithCodex(
 ): Promise<HarnessCommandResult<RouteCommandValue>> {
   const store = createFsStore(resolveCodexConfigDir(options.env));
   const profile = createCodexHarnessProfile();
+  const apiKey = getApiKey(options.env);
+  const client = createClient(options);
 
   return executeRouteCommand({
-    ...(getApiKey(options.env) ? { apiKey: getApiKey(options.env) } : {}),
-    ...(createClient(options) ? { client: createClient(options) } : {}),
+    ...(apiKey ? { apiKey } : {}),
+    ...(client ? { client } : {}),
     consentGranted: hasRoutingConsent(options.env),
     ...(input.currentModel ? { currentModelId: input.currentModel } : {}),
     taskId: createTaskId(input.taskId, options.clock),
@@ -147,9 +149,11 @@ export async function submitOutcomeWithCodex(
   input: CodexOutcomeInput,
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<SubmitOutcomeCommandValue>> {
+  const apiKey = getApiKey(options.env);
+  const client = createClient(options);
   return submitOutcomeCommand({
-    ...(getApiKey(options.env) ? { apiKey: getApiKey(options.env) } : {}),
-    ...(createClient(options) ? { client: createClient(options) } : {}),
+    ...(apiKey ? { apiKey } : {}),
+    ...(client ? { client } : {}),
     outcomeOptIn: hasOutcomeOptIn(options.env),
     ...(input.approve === undefined ? {} : { approve: input.approve }),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
