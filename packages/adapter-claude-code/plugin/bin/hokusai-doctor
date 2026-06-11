@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+
+import { runBootstrapDoctor } from '../../dist/index.js';
+
+const usage = 'Usage: hokusai-doctor [--config <dir>] [--help]\n';
+
+function printUsage(stream = process.stderr) {
+  stream.write(usage);
+}
+
+function parseArgs(argv) {
+  let configPath;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === '--help') {
+      return { help: true };
+    }
+
+    if (arg === '--config') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('--')) {
+        return {
+          error: 'hokusai-doctor: missing value for --config\n',
+          exitCode: 2,
+        };
+      }
+
+      configPath = value;
+      index += 1;
+      continue;
+    }
+
+    return {
+      error: `hokusai-doctor: unknown argument: ${arg}\n`,
+      exitCode: 2,
+    };
+  }
+
+  return { configPath, help: false };
+}
+
+try {
+  const parsed = parseArgs(process.argv.slice(2));
+
+  if (parsed.help) {
+    printUsage(process.stdout);
+    process.exit(0);
+  }
+
+  if ('error' in parsed) {
+    process.stderr.write(parsed.error);
+    printUsage();
+    process.exit(parsed.exitCode);
+  }
+
+  const options = {
+    env: process.env,
+    ...(parsed.configPath ? { configPath: parsed.configPath } : {}),
+    ...(typeof globalThis.fetch === 'function'
+      ? { transport: globalThis.fetch }
+      : {}),
+  };
+
+  const result = await runBootstrapDoctor(options);
+  const rendered = result.rendered.endsWith('\n')
+    ? result.rendered
+    : `${result.rendered}\n`;
+  process.stdout.write(rendered);
+  process.exit(result.report.ok ? 0 : 1);
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`hokusai-doctor: ${message}\n`);
+  process.exit(1);
+}
