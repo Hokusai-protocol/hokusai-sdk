@@ -105,14 +105,12 @@ It prints the full nine-step route/report flow using fake data and a mock client
 
 ## Example: Claude Code
 
-Claude Code is the most complete end-user plugin surface in this repository. Install the latest plugin from GitHub Releases:
+Claude Code is the most complete end-user plugin surface in this repository. Install Hokusai from the repository marketplace:
 
 ```sh
-curl -L -o hokusai-claude-code-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip && \
-curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256 && \
-sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256 && \
-unzip hokusai-claude-code-plugin-latest.zip && \
-claude --plugin-dir ./hokusai-claude-code-plugin/plugin
+/plugin marketplace add Hokusai-protocol/hokusai-sdk
+/plugin install hokusai@hokusai
+/reload-plugins
 ```
 
 Set your API key and opt in to routing:
@@ -120,6 +118,28 @@ Set your API key and opt in to routing:
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
 export HOKUSAI_ROUTING_CONSENT=true
+```
+
+The intended eventual public path is the Claude Code community marketplace. Until that listing is accepted, use the repository marketplace as the default self-hosted install path.
+
+If you host a standalone marketplace catalog, the same install flow works with a direct `marketplace.json` URL:
+
+```sh
+/plugin marketplace add https://.../marketplace.json
+/plugin install hokusai@hokusai
+/reload-plugins
+```
+
+### Manual install / release smoke test
+
+Use the release zip flow when you want to verify the published artifact directly:
+
+```sh
+curl -L -o hokusai-claude-code-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip && \
+curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256 && \
+sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256 && \
+unzip hokusai-claude-code-plugin-latest.zip && \
+claude --plugin-dir ./hokusai-claude-code-plugin/plugin
 ```
 
 Route a task in Claude Code:

@@ -4,33 +4,43 @@ For the harness-agnostic integration pattern that this plugin implements, see [d
 
 `@hokusai/adapter-claude-code` includes an installable Claude Code plugin surface for Hokusai task routing and opt-in outcome reporting.
 
-## Download and install (stable release)
+## Install from the marketplace
 
-Download the latest plugin zip from GitHub Releases:
+Use the repository marketplace as the default install path:
+
+```sh
+/plugin marketplace add Hokusai-protocol/hokusai-sdk
+/plugin install hokusai@hokusai
+/reload-plugins
+```
+
+The intended eventual public path is the Claude Code community marketplace. Until that listing is accepted, use the repository marketplace as the normal self-hosted install path.
+
+If you host a standalone marketplace catalog, install from its `marketplace.json` URL:
+
+```sh
+/plugin marketplace add https://.../marketplace.json
+/plugin install hokusai@hokusai
+/reload-plugins
+```
+
+## Manual install / release smoke test
+
+Use the release zip flow when you want to verify the published artifact directly:
 
 ```sh
 curl -L -o hokusai-claude-code-plugin-latest.zip \
   https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip
-```
-
-Verify the checksum:
-
-```sh
 curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 \
   https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256
 sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256
-```
-
-Unzip and install into Claude Code:
-
-```sh
 unzip hokusai-claude-code-plugin-latest.zip
 claude --plugin-dir ./hokusai-claude-code-plugin/plugin
 ```
 
 ## Install the plugin from source
 
-Build the package first so the plugin bin can import `dist/`:
+This path is for local development after building the package so the plugin bin can import `dist/`:
 
 ```sh
 pnpm -r build
