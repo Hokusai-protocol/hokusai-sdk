@@ -1,28 +1,36 @@
-import { InMemoryModelRegistry, type ModelDefinition } from '@hokusai/core';
+import {
+  InMemoryModelRegistry,
+  OPENAI_MODELS,
+  type ModelDefinition,
+} from '@hokusai/core';
 
-export const OPENAI_MODELS: ModelDefinition[] = [
-  {
-    id: 'gpt-5-codex',
-    provider: 'openai',
-    family: 'gpt-5',
-    capabilities: ['reasoning', 'tool-use'],
-    aliases: ['codex'],
-    default: true,
-  },
-  {
-    id: 'gpt-5',
-    provider: 'openai',
-    family: 'gpt-5',
-    capabilities: ['reasoning', 'tool-use'],
-  },
-  {
-    id: 'gpt-5-mini',
-    provider: 'openai',
-    family: 'gpt-5',
-    capabilities: ['reasoning', 'tool-use'],
-  },
-];
+export { OPENAI_MODELS } from '@hokusai/core';
 
-export function createOpenAiRegistry() {
-  return new InMemoryModelRegistry(OPENAI_MODELS);
+export function createOpenAiRegistry(
+  models: ModelDefinition[] = OPENAI_MODELS,
+): InMemoryModelRegistry {
+  return new InMemoryModelRegistry(models);
+}
+
+export function createAllowlistedOpenAiRegistry(
+  allowlist: readonly string[],
+): InMemoryModelRegistry {
+  const registry = createOpenAiRegistry();
+  const allowlistedModelIds = new Set(
+    allowlist
+      .map((entry) => registry.resolve(entry))
+      .filter(
+        (model): model is ModelDefinition =>
+          model !== undefined && model.provider === 'openai',
+      )
+      .map((model) => model.id),
+  );
+
+  if (allowlistedModelIds.size === 0) {
+    return createOpenAiRegistry([]);
+  }
+
+  return createOpenAiRegistry(
+    OPENAI_MODELS.filter((model) => allowlistedModelIds.has(model.id)),
+  );
 }

@@ -23,6 +23,8 @@ export interface HarnessRoutingProfile {
     taskId: string;
     metadata?: Record<string, string> | undefined;
     currentModelId?: string | undefined;
+    modelConstraints?: string[] | undefined;
+    providerConstraints?: string[] | undefined;
   }): HokusaiTaskInput;
   buildPreview(payload: HokusaiDispatchPayload): HarnessPayloadPreview;
   buildOutcomeReport(input: OutcomeReportInput): OutcomeReport;

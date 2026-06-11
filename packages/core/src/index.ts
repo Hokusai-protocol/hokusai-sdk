@@ -104,6 +104,8 @@ export {
   ANTHROPIC_MODELS,
   InMemoryModelRegistry,
   ModelMappingError,
+  OPENAI_MODELS,
+  listSupportedModelIds,
   mapRecommendation,
   validateRecommendedModel,
   type MapRecommendationOptions,

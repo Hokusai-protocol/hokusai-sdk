@@ -12,6 +12,7 @@ import {
   defaultPluginConfigPath,
   hashPayload,
   isConsentGranted,
+  listSupportedModelIds,
   loadPluginConfig,
   mapRecommendation,
   preview,
@@ -301,13 +302,22 @@ function buildOutcomePreviewLines(report: OutcomeReport): string[] {
 function applyProfileConstraints(
   packet: TaskPacket,
   profile: HarnessProfile<RouteInputBase, unknown, unknown, SharedCommandOptions>,
+  registry: ModelRegistry,
 ): TaskPacket {
   const providerConstraints =
     profile.modelCatalog.providerConstraintLabels ??
     profile.modelCatalog.allowedProviders;
   const modelConstraints =
     profile.modelCatalog.modelConstraintLabels ??
-    profile.modelCatalog.allowedModels;
+    profile.modelCatalog.allowedModels ??
+    listSupportedModelIds(registry, {
+      ...(profile.modelCatalog.allowedProviders
+        ? { allowedProviders: profile.modelCatalog.allowedProviders }
+        : {}),
+      ...(profile.modelCatalog.requireAvailable === undefined
+        ? {}
+        : { requireAvailable: profile.modelCatalog.requireAvailable }),
+    });
 
   return {
     ...packet,
@@ -323,13 +333,14 @@ function applyProfileConstraints(
 function buildRecommendationFromRoute(
   route: RouteResponse,
   profile: HarnessProfile<RouteInputBase, unknown, unknown, SharedCommandOptions>,
+  registry: ModelRegistry,
 ): HarnessRecommendation | undefined {
   if (!route.recommendation) {
     return undefined;
   }
 
   const mapped = mapRecommendation(route.recommendation, {
-    registry: profile.modelCatalog.registry,
+    registry,
     ...(profile.modelCatalog.allowedProviders
       ? { allowedProviders: profile.modelCatalog.allowedProviders }
       : {}),
@@ -348,7 +359,7 @@ function buildRecommendationFromRoute(
           alternatives: route.recommendation.alternatives.map((alternative) => ({
             model: toModelSelection(
               mapRecommendation(alternative, {
-                registry: profile.modelCatalog.registry,
+                registry,
                 ...(profile.modelCatalog.allowedProviders
                   ? { allowedProviders: profile.modelCatalog.allowedProviders }
                   : {}),
@@ -451,7 +462,7 @@ export function createRouteTask<
           requireAvailable: profile.modelCatalog.requireAvailable ?? true,
         },
       );
-      recommendation = buildDefaultRecommendation(profile, mapped);
+      recommendation = buildDefaultRecommendation(profile, mapped, context.registry);
     } catch (error) {
       if (error instanceof ModelMappingError) {
         return fail(error.code, error.message, {
@@ -465,6 +476,7 @@ export function createRouteTask<
     packetResult.packet = applyProfileConstraints(
       packetResult.packet,
       profile,
+      context.registry,
     );
 
     const store = new FsLocalStore(context.configDir);
@@ -536,7 +548,11 @@ export function createRouteTask<
     if (options?.apiClient) {
       try {
         route = (await options.apiClient.route(payload)) as RouteResponse;
-        const routeRecommendation = buildRecommendationFromRoute(route, profile);
+        const routeRecommendation = buildRecommendationFromRoute(
+          route,
+          profile,
+          context.registry,
+        );
         if (routeRecommendation) {
           recommendation = routeRecommendation;
         }
@@ -748,6 +764,7 @@ export function createPreviewTaskPayload<
     const packet = applyProfileConstraints(
       profile.buildTaskPacket(input, context.builderOptions).packet,
       profile,
+      context.registry,
     );
     const previewResult = profile.previewTaskPacket(input, context.builderOptions);
     const taskId = profile.toTaskId(input, options?.clock);

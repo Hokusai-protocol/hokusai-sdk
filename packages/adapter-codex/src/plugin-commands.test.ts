@@ -41,7 +41,32 @@ describe('previewRoutePayloadWithCodex', () => {
       return;
     }
     expect(result.value.payload.task.prompt).toContain('Inspect the failing CI workflow.');
+    expect(JSON.parse(result.value.payload.task.prompt)).toMatchObject({
+      providerConstraints: ['openai'],
+      modelConstraints: ['gpt-5-codex', 'gpt-5', 'gpt-5-mini'],
+    });
     expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('narrows preview constraints to the Codex allowlist', async () => {
+    const env = await createEnv({
+      HOKUSAI_MODEL_ALLOWLIST: 'gpt-5, claude-sonnet-4-6',
+    });
+
+    const result = await previewRoutePayloadWithCodex(
+      { task: 'Inspect the failing CI workflow.' },
+      { env },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(JSON.parse(result.value.payload.task.prompt)).toMatchObject({
+      providerConstraints: ['openai'],
+      modelConstraints: ['gpt-5'],
+    });
   });
 });
 
@@ -189,6 +214,50 @@ describe('routeTaskWithCodex', () => {
       return;
     }
     expect(rejected.error.code).toBe('E_UNSUPPORTED_MODEL');
+  });
+
+  it('sends only allowlisted OpenAI models to the router', async () => {
+    const env = await createEnv({
+      HOKUSAI_API_KEY: 'hk_test',
+      HOKUSAI_ROUTING_CONSENT: 'true',
+      HOKUSAI_MODEL_ALLOWLIST: 'gpt-5, claude-sonnet-4-6',
+    });
+    let capturedPrompt = '';
+
+    const result = await routeTaskWithCodex(
+      { task: 'Route this task again.' },
+      {
+        env,
+        transport: (_url, init) => {
+          capturedPrompt = init?.body ? String(init.body) : '';
+
+          return Promise.resolve({
+            status: 200,
+            headers: { get: () => null },
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  routeId: 'route-allowlist',
+                  taskId: 'task-allowlist',
+                  status: 'accepted',
+                }),
+              ),
+          });
+        },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    const request = JSON.parse(capturedPrompt) as {
+      inputs: Record<string, string>;
+    };
+
+    expect(request.inputs).toMatchObject({
+      available_coder_models: 'gpt-5',
+      available_planner_models: 'gpt-5',
+      available_reviewer_models: 'gpt-5',
+      coder_model: 'gpt-5',
+    });
   });
 });
 

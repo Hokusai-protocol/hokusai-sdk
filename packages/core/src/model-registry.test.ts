@@ -3,6 +3,7 @@ import {
   ANTHROPIC_MODELS,
   InMemoryModelRegistry,
   ModelMappingError,
+  OPENAI_MODELS,
   mapRecommendation,
   type ModelDefinition,
   validateRecommendedModel,
@@ -302,5 +303,22 @@ describe('validateRecommendedModel', () => {
       reason: 'unknown',
       suggestions: ['claude-sonnet-4-6'],
     });
+  });
+});
+
+describe('OPENAI_MODELS', () => {
+  it('contains only OpenAI models', () => {
+    expect(OPENAI_MODELS.every((model) => model.provider === 'openai')).toBe(true);
+  });
+
+  it('resolves every available model and exposes a default', () => {
+    const registry = new InMemoryModelRegistry(OPENAI_MODELS);
+
+    expect(
+      registry.listAvailable().map((model) => registry.resolve(model.id)?.id),
+    ).toEqual(registry.listAvailable().map((model) => model.id));
+    expect(OPENAI_MODELS).toContainEqual(
+      expect.objectContaining({ id: registry.getDefault()?.id }),
+    );
   });
 });
