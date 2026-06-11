@@ -20,20 +20,27 @@
 - `redactPluginConfig()` reports only `<set>` or `<unset>` for the key plus an optional last-4 fingerprint.
 - Plugin config stores must not persist `apiKey`, and the doctor output never includes the raw key.
 - The allowlist is Anthropic-only. Unsupported or non-Anthropic recommendations are rejected with allowlisted suggestions when available.
+- The Codex plugin is stricter: it reads `HOKUSAI_API_KEY` from the environment only, never persists it, and allows only OpenAI recommendations.
 
 ## Local store
 
 - `LocalStore` defines the shared interface for correlation records, payload hashes, and submission audit logs.
 - `FsLocalStore` is the default filesystem-backed implementation for harnesses that do not have their own config or state system.
 - Stored files contain hashes, ids, metadata, and timestamps only. Raw task text, raw code, and raw logs are intentionally excluded.
-- `RawPayloadRejectedError` is thrown if a caller attempts to persist known raw-data fields such as `rawTaskText`, `rawCode`, or `rawLog`.
+- `RawPayloadRejectedError` is thrown if a caller attempts to persist known raw-data fields such as `rawTaskText`, `rawCode`, `rawLog`, raw prompts, raw content, or customer-identifying fields.
 
 ## Retention and deletion
 
 - `pruneExpired(now, policy)` enforces `maxAgeMs` and `maxRecords` independently for correlations, payload hashes, and audit entries.
 - `listCorrelations()`, `listAudit()`, and `clear()` provide the primitives adapters need to implement inspect-and-purge commands for local Hokusai state.
-- The Claude Code adapter defaults retention to 7 days and 200 records, with `HOKUSAI_RETENTION_DAYS` available as a positive integer override.
+- The Claude Code and Codex adapters default retention to 7 days and 200 records, with `HOKUSAI_RETENTION_DAYS` available as a positive integer override.
 - The Claude Code privacy CLI prunes lazily on `list`, `preview`, and `audit`, so expired local state disappears during normal inspection.
+
+## Codex plugin posture
+
+- Codex exposes routing and outcome reporting through an MCP stdio server plus four skills: `$hokusai-route`, `$hokusai-report`, `$hokusai-privacy`, and `$hokusai-doctor`.
+- `hokusai_preview_route_payload` and outcome preview flows do not require network access or consent.
+- `hokusai_submit_outcome` requires both `HOKUSAI_OUTCOME_OPT_IN=true` and an explicit approval flag before transport.
 
 ## Claude Code local state
 

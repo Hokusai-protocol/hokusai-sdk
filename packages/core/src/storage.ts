@@ -112,6 +112,15 @@ const RAW_FIELD_NAMES = new Set([
   'rawPrompt',
   'rawContent',
 ]);
+const RAW_FIELD_PATTERNS = [
+  /^customer/i,
+  /^rawCustomer/i,
+  /^prompt$/i,
+  /^rawPrompt$/i,
+  /^rawContent$/i,
+  /^rawCode$/i,
+  /^rawLog$/i,
+];
 
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -121,11 +130,31 @@ function assertSafeStoreId(id: string): void {
   }
 }
 
-function assertNoRawPayloadFields(record: object): void {
-  for (const key of Object.keys(record)) {
-    if (RAW_FIELD_NAMES.has(key)) {
-      throw new RawPayloadRejectedError(key);
+function isRawFieldName(key: string): boolean {
+  return (
+    RAW_FIELD_NAMES.has(key) ||
+    RAW_FIELD_PATTERNS.some((pattern) => pattern.test(key))
+  );
+}
+
+function assertNoRawPayloadFields(record: unknown, path = ''): void {
+  if (Array.isArray(record)) {
+    for (const [index, value] of record.entries()) {
+      assertNoRawPayloadFields(value, `${path}[${index}]`);
     }
+    return;
+  }
+
+  if (!record || typeof record !== 'object') {
+    return;
+  }
+
+  for (const [key, value] of Object.entries(record)) {
+    const fieldPath = path ? `${path}.${key}` : key;
+    if (isRawFieldName(key)) {
+      throw new RawPayloadRejectedError(fieldPath);
+    }
+    assertNoRawPayloadFields(value, fieldPath);
   }
 }
 

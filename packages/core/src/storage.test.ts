@@ -272,6 +272,23 @@ describe('local store implementations', () => {
     }
   });
 
+  it('rejects nested customer data fields and does not persist them', async () => {
+    const memoryStore = new InMemoryLocalStore();
+    const { store: fsStore } = await createFsStore();
+
+    for (const store of [memoryStore, fsStore]) {
+      await expect(
+        store.putConfigRecord('config-1', {
+          safe: true,
+          nested: {
+            customerEmail: 'secret@example.com',
+          },
+        }),
+      ).rejects.toBeInstanceOf(RawPayloadRejectedError);
+      await expect(store.getConfigRecord('config-1')).resolves.toBeUndefined();
+    }
+  });
+
   it('reports corrupt filesystem json with file path context', async () => {
     const { baseDir, store } = await createFsStore();
     const correlationsDir = join(baseDir, 'correlations');

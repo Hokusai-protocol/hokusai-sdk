@@ -5,6 +5,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "hokusai-codex-mcp": "./plugin/bin/hokusai-codex-mcp"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,15 +15,20 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "plugin"
   ],
   "dependencies": {
     "@hokusai/core": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",
+    "bundle:plugin": "esbuild src/mcp-server.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist-bundle/index.js",
     "lint": "eslint src --max-warnings=0",
-    "test": "vitest run",
+    "test": "vitest run --root ../.. packages/adapter-codex/src",
     "typecheck": "tsc -b tsconfig.json --pretty false"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }

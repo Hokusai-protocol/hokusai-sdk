@@ -31,7 +31,7 @@ Current published package versions in this repository are `0.1.0` for `@hokusai/
 
 - `@hokusai/core`: shared client, schemas, validation, model mapping, consent, anonymization, storage, fixtures, and conformance helpers.
 - `@hokusai/adapter-claude-code`: Claude Code plugin-facing adapter, CLI commands, config loading, and doctor helpers built on `@hokusai/core`.
-- `@hokusai/adapter-codex`: Codex command/manifest adapter and task/outcome builders built on `@hokusai/core`.
+- `@hokusai/adapter-codex`: Codex plugin, MCP server, task/outcome builders, and OpenAI-only routing helpers built on `@hokusai/core`.
 - `@hokusai/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers built on `@hokusai/core`.
 
 Dependency direction is one-way: `@hokusai/core` does not import adapters; adapters depend on core.

@@ -38,6 +38,28 @@ import {
   previewCodexOutcomeReport,
 } from './outcome.js';
 import {
+  createCodexHarnessProfile,
+  getApiBaseUrl,
+  getApiKey,
+  getRetentionDays,
+  hasOutcomeOptIn,
+  hasRoutingConsent,
+  resolveCodexConfigDir,
+} from './config.js';
+import {
+  latestRouteWithCodex,
+  previewOutcomeWithCodex,
+  previewRoutePayloadWithCodex,
+  privacyStatusWithCodex,
+  routeTaskWithCodex,
+  submitOutcomeWithCodex,
+  type CodexOutcomeInput,
+  type CodexPluginCommandOptions,
+  type CodexRouteInput,
+} from './plugin-commands.js';
+import { runMcpServer } from './mcp-server.js';
+import { createOpenAiRegistry, OPENAI_MODELS } from './registry.js';
+import {
   buildCodexHarnessTaskContext,
   buildCodexTaskPacket,
   previewCodexTaskPacket,
@@ -50,15 +72,34 @@ import {
 
 export {
   CODEX_COMMAND_MANIFEST,
+  OPENAI_MODELS,
   buildCodexOutcomeReport,
+  createCodexHarnessProfile,
+  createOpenAiRegistry,
+  getApiBaseUrl,
+  getApiKey,
+  getRetentionDays,
+  hasOutcomeOptIn,
+  hasRoutingConsent,
+  latestRouteWithCodex,
   buildCodexTaskPacket,
   previewCodexOutcomeReport,
+  previewOutcomeWithCodex,
   previewCodexTaskPacket,
+  previewRoutePayloadWithCodex,
+  privacyStatusWithCodex,
   previewRoutePayload,
   requestRecommendation,
+  resolveCodexConfigDir,
+  routeTaskWithCodex,
+  runMcpServer,
   submitOutcome,
+  submitOutcomeWithCodex,
   type CodexCommandDescriptor,
+  type CodexOutcomeInput,
+  type CodexPluginCommandOptions,
   type CodexRepositorySignals,
+  type CodexRouteInput,
   type CodexSessionTelemetry,
   type CodexTaskContextBuilderOptions,
   type CodexTaskPacketBuildResult,

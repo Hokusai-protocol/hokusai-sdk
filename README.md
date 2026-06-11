@@ -6,7 +6,7 @@ This repository currently includes:
 
 - `@hokusai/core` for the harness-agnostic SDK contracts and API client
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
-- `@hokusai/adapter-codex` for Codex command metadata, task context, model mapping, and outcome builders
+- `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
 - `examples/reference-harness` for the smallest complete generic integration flow
 
@@ -142,7 +142,18 @@ See [packages/adapter-claude-code/README.md](packages/adapter-claude-code/README
 
 ## Example: Codex
 
-The Codex adapter exposes typed command descriptors, task packet builders, outcome builders, model mapping, and a `HarnessAdapter` implementation:
+The Codex adapter now ships an installable plugin that bundles skills plus an MCP stdio server:
+
+```sh
+curl -L -o hokusai-codex-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-codex-plugin-latest.zip && \
+curl -L -o hokusai-codex-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-codex-plugin-latest.zip.sha256 && \
+sha256sum -c hokusai-codex-plugin-latest.zip.sha256 && \
+unzip hokusai-codex-plugin-latest.zip && \
+codex plugin marketplace add ./hokusai-codex-plugin && \
+codex plugin add hokusai
+```
+
+Codex-facing library consumers can still use the typed adapter surface directly:
 
 ```ts
 import { createCodexAdapter } from '@hokusai/adapter-codex';
@@ -159,7 +170,7 @@ const codex = createCodexAdapter({
 console.log(codex.commands.map((command) => command.name));
 ```
 
-Use `createCodexHarnessAdapter()`, `buildCodexTaskPacket()`, `previewCodexTaskPacket()`, `buildCodexOutcomeReport()`, and `submitOutcome()` when embedding Hokusai into a Codex-facing harness.
+Use `routeTaskWithCodex()`, `previewRoutePayloadWithCodex()`, `submitOutcomeWithCodex()`, and `runMcpServer()` when embedding or testing the Codex plugin surface directly.
 
 ## Example: Wavemill
 

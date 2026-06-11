@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   package-plugin:
-    name: Build and publish Claude Code plugin
+    name: Build and publish plugin zips
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +31,16 @@ jobs:
       - name: Bundle plugin
         run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
 
-      - name: Package plugin zip
+      - name: Bundle Codex plugin
+        run: pnpm --filter @hokusai/adapter-codex bundle:plugin
+
+      - name: Package Claude plugin zip
         run: node scripts/build-plugin-zip.mjs
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Package Codex plugin zip
+        run: node scripts/build-codex-plugin-zip.mjs
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
 
@@ -49,6 +57,7 @@ jobs:
         run: |
           cd dist-zip
           sha256sum -c hokusai-claude-code-plugin-*.zip.sha256
+          sha256sum -c hokusai-codex-plugin-*.zip.sha256
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -56,3 +65,5 @@ jobs:
           files: |
             dist-zip/hokusai-claude-code-plugin-*.zip
             dist-zip/hokusai-claude-code-plugin-*.zip.sha256
+            dist-zip/hokusai-codex-plugin-*.zip
+            dist-zip/hokusai-codex-plugin-*.zip.sha256

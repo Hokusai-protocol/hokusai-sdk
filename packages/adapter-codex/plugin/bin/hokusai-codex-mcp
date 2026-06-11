@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+
+const candidates = ['../../dist-bundle/index.js', '../dist/index.js'];
+
+async function main() {
+  let lastError;
+
+  for (const candidate of candidates) {
+    try {
+      const imported = await import(new URL(candidate, import.meta.url).href);
+      if (typeof imported.runMcpServer === 'function') {
+        await imported.runMcpServer();
+        return;
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  process.stderr.write(
+    `hokusai-codex-mcp failed to start: ${lastError instanceof Error ? lastError.stack ?? lastError.message : String(lastError)}\n`,
+  );
+  process.exitCode = 1;
+}
+
+void main();

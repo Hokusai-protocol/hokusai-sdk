@@ -1,4 +1,15 @@
-# Claude Code Plugin Launch Smoke Checklist
+# Plugin Launch Smoke Checklist
+
+## Codex plugin quick path
+
+- Download `hokusai-codex-plugin-latest.zip` and its `.sha256` companion from the GitHub release.
+- Verify the checksum, unzip the archive, and run `codex plugin marketplace add <unzipped-dir>`.
+- Run `codex plugin add hokusai`.
+- Confirm the installed plugin exposes `$hokusai-route`, `$hokusai-report`, `$hokusai-privacy`, and `$hokusai-doctor`.
+- Confirm `hokusai_preview_route_payload` works without `HOKUSAI_API_KEY` or consent.
+- Confirm routing fails with a structured `E_MISSING_API_KEY` or `E_MISSING_CONSENT` response until the corresponding env var is set.
+
+## Claude Code plugin checklist
 
 Use this checklist to validate the released Claude Code plugin from a fresh environment before launch. It exercises the exact user path from plugin install through routing, local-state inspection, outcome preview, and outcome submission.
 

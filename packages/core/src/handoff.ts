@@ -10,12 +10,29 @@ export interface HandoffInstructions {
 export interface BuildHandoffInstructionsInput {
   recommendation: HarnessRecommendation;
   currentModelId?: string;
-  harness: 'claude-code';
+  harness: 'claude-code' | 'codex';
 }
 
 export function buildHandoffInstructions(
   input: BuildHandoffInstructionsInput,
 ): HandoffInstructions {
+  if (input.harness === 'codex') {
+    const recommendedModelId = input.recommendation.model.id.trim();
+    const currentModelId = input.currentModelId?.trim();
+
+    return {
+      mechanism: 'manual',
+      slashCommand: recommendedModelId,
+      copyableCommand: recommendedModelId,
+      instructions:
+        currentModelId && currentModelId === recommendedModelId
+          ? []
+          : [
+              `Switch Codex to ${recommendedModelId} before continuing this task.`,
+            ],
+    };
+  }
+
   const slashCommand = `/model ${input.recommendation.model.id}`;
   const currentModelId = input.currentModelId?.trim();
   const recommendedModelId = input.recommendation.model.id.trim();

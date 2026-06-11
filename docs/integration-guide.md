@@ -74,6 +74,8 @@ createWavemillAdapter({ integrationId: 'wavemill', apiClient });
 
 Wavemill also exposes `buildWavemillTaskPacket`, `previewWavemillTaskPacket`, `buildWavemillOutcomeReport`, `wavemillConformanceFixtures`, and thin `routeWithWavemill` / `reportWavemillOutcome` helpers for harnesses that want a public reference implementation of replay-aware dispatch plus typed harness telemetry.
 
+For Codex specifically, the installable surface is an MCP stdio server with the tools `hokusai_route`, `hokusai_preview_route_payload`, `hokusai_submit_outcome`, `hokusai_latest_route`, and `hokusai_privacy_status`. The bundled skills should call those tools instead of generating routing advice locally.
+
 ## Scope
 
 - Adapters still expose typed factories and metadata only.
