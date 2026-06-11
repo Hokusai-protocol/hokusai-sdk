@@ -707,15 +707,6 @@ export async function latestRouteCommand(
     );
   }
 
-  const record = await resolveCorrelationRecord(store, resolved.correlationId);
-  if (!record) {
-    return fail(
-      'E_NOT_FOUND',
-      'No stored route was found.',
-      'Route a task first before requesting the latest route.',
-    );
-  }
-
   const records = await store.listCorrelations();
   const match = records.find(
     (entry) =>
