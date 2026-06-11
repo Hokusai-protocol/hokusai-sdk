@@ -1,0 +1,27 @@
+{
+  "name": "hokusai",
+  "owner": {
+    "name": "Hokusai"
+  },
+  "description": "Claude Code plugin marketplace for Hokusai task routing and opt-in outcome reporting.",
+  "plugins": [
+    {
+      "name": "hokusai",
+      "displayName": "Hokusai",
+      "description": "Hokusai task routing for Claude Code - get an Anthropic model recommendation before you spend inference budget.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Hokusai"
+      },
+      "homepage": "https://hokusai.app",
+      "repository": "https://github.com/Hokusai-protocol/hokusai-sdk",
+      "tags": ["routing", "model-routing", "claude-code"],
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "Hokusai-protocol/hokusai-sdk",
+        "path": "packages/adapter-claude-code/plugin"
+      }
+    }
+  ]
+}
