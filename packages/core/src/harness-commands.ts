@@ -284,25 +284,33 @@ function mapRouteRecommendation(
       ? {}
       : { confidence: route.recommendation.confidence }),
     alternatives: (route.recommendation.alternatives ?? [])
-      .map((alternative) => {
-        const mappedAlternative = mapRecommendation(alternative, {
-          registry: profile.registry,
-          allowedProviders: profile.allowedProviders,
-          requireAvailable: true,
-        });
-        return {
-          model: {
-            id: mappedAlternative.id,
-            provider: mappedAlternative.provider,
-            capabilities: mappedAlternative.capabilities,
-          },
-          ...(alternative.reason ? { reason: alternative.reason } : {}),
-          ...(alternative.confidence === undefined
-            ? {}
-            : { confidence: alternative.confidence }),
-        };
-      })
-      .filter((alternative) => alternative.model.id !== mapped.id),
+      .flatMap((alternative) => {
+        try {
+          const mappedAlternative = mapRecommendation(alternative, {
+            registry: profile.registry,
+            allowedProviders: profile.allowedProviders,
+            requireAvailable: true,
+          });
+          if (mappedAlternative.id === mapped.id) {
+            return [];
+          }
+          return [
+            {
+              model: {
+                id: mappedAlternative.id,
+                provider: mappedAlternative.provider,
+                capabilities: mappedAlternative.capabilities,
+              },
+              ...(alternative.reason ? { reason: alternative.reason } : {}),
+              ...(alternative.confidence === undefined
+                ? {}
+                : { confidence: alternative.confidence }),
+            },
+          ];
+        } catch {
+          return [];
+        }
+      }),
   };
 
   return profile.mapRouteResponse
