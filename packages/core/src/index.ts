@@ -140,7 +140,7 @@ export {
 export type {
   HarnessCommandError,
   HarnessCommandResult,
-  HarnessProfile,
+  HarnessRoutingProfile,
 } from './harness-profile.js';
 export {
   checkApiKey,
@@ -249,3 +249,4 @@ export {
   type ConformanceCheck,
   type ConformanceSubject,
 } from './conformance.js';
+export * from './plugin-commands/index.js';

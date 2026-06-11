@@ -62,12 +62,15 @@ import { createOpenAiRegistry, OPENAI_MODELS } from './registry.js';
 import {
   buildCodexHarnessTaskContext,
   buildCodexTaskPacket,
+  buildCodexTaskPacketFromText,
   previewCodexTaskPacket,
+  previewCodexTaskPacketFromText,
   type CodexRepositorySignals,
   type CodexSessionTelemetry,
   type CodexTaskContextBuilderOptions,
   type CodexTaskPacketBuildResult,
   type CodexTaskPacketPreview,
+  type CodexTaskTextBuilderOptions,
 } from './task-context.js';
 
 export {
@@ -83,9 +86,11 @@ export {
   hasRoutingConsent,
   latestRouteWithCodex,
   buildCodexTaskPacket,
+  buildCodexTaskPacketFromText,
   previewCodexOutcomeReport,
   previewOutcomeWithCodex,
   previewCodexTaskPacket,
+  previewCodexTaskPacketFromText,
   previewRoutePayloadWithCodex,
   privacyStatusWithCodex,
   previewRoutePayload,
@@ -104,6 +109,7 @@ export {
   type CodexTaskContextBuilderOptions,
   type CodexTaskPacketBuildResult,
   type CodexTaskPacketPreview,
+  type CodexTaskTextBuilderOptions,
   type PreviewRoutePayloadArgs,
   type RequestRecommendationArgs,
   type SubmitOutcomeArgs,

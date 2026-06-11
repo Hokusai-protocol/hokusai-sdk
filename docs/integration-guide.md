@@ -74,7 +74,15 @@ createWavemillAdapter({ integrationId: 'wavemill', apiClient });
 
 Wavemill also exposes `buildWavemillTaskPacket`, `previewWavemillTaskPacket`, `buildWavemillOutcomeReport`, `wavemillConformanceFixtures`, and thin `routeWithWavemill` / `reportWavemillOutcome` helpers for harnesses that want a public reference implementation of replay-aware dispatch plus typed harness telemetry.
 
-For Codex specifically, the installable surface is an MCP stdio server with the tools `hokusai_route`, `hokusai_preview_route_payload`, `hokusai_submit_outcome`, `hokusai_latest_route`, and `hokusai_privacy_status`. The bundled skills should call those tools instead of generating routing advice locally.
+### Codex integration surface
+
+The Codex adapter ships an installable plugin with an MCP stdio server. The available tools are `hokusai_route`, `hokusai_preview_route_payload`, `hokusai_submit_outcome`, `hokusai_latest_route`, and `hokusai_privacy_status`. Bundled skills call those tools rather than generating routing advice locally.
+
+For a Codex-facing integration:
+
+- Use `hokusai_preview_route_payload` before route submission so the user can inspect the redacted task payload.
+- Use the `preview` field from `hokusai_submit_outcome` before confirming, so the user can inspect the anonymized outcome report.
+- Apply the shared consent and storage rules from [privacy-model.md](privacy-model.md), especially the split between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
 
 ## Scope
 

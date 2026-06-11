@@ -12,7 +12,7 @@ import type {
   HarnessRecommendation,
 } from './adapter.js';
 
-export interface HarnessProfile {
+export interface HarnessRoutingProfile {
   harnessName: string;
   subjectId: string;
   registry: ModelRegistry;

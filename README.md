@@ -105,14 +105,12 @@ It prints the full nine-step route/report flow using fake data and a mock client
 
 ## Example: Claude Code
 
-Claude Code is the most complete end-user plugin surface in this repository. Install the latest plugin from GitHub Releases:
+Claude Code is the most complete end-user plugin surface in this repository. Install Hokusai from the repository marketplace:
 
 ```sh
-curl -L -o hokusai-claude-code-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip && \
-curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256 && \
-sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256 && \
-unzip hokusai-claude-code-plugin-latest.zip && \
-claude --plugin-dir ./hokusai-claude-code-plugin/plugin
+/plugin marketplace add Hokusai-protocol/hokusai-sdk
+/plugin install hokusai@hokusai
+/reload-plugins
 ```
 
 Set your API key and opt in to routing:
@@ -120,6 +118,28 @@ Set your API key and opt in to routing:
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
 export HOKUSAI_ROUTING_CONSENT=true
+```
+
+The intended eventual public path is the Claude Code community marketplace. Until that listing is accepted, use the repository marketplace as the default self-hosted install path.
+
+If you host a standalone marketplace catalog, the same install flow works with a direct `marketplace.json` URL:
+
+```sh
+/plugin marketplace add https://.../marketplace.json
+/plugin install hokusai@hokusai
+/reload-plugins
+```
+
+### Manual install / release smoke test
+
+Use the release zip flow when you want to verify the published artifact directly:
+
+```sh
+curl -L -o hokusai-claude-code-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip && \
+curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256 && \
+sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256 && \
+unzip hokusai-claude-code-plugin-latest.zip && \
+claude --plugin-dir ./hokusai-claude-code-plugin/plugin
 ```
 
 Route a task in Claude Code:
@@ -171,6 +191,8 @@ console.log(codex.commands.map((command) => command.name));
 ```
 
 Use `routeTaskWithCodex()`, `previewRoutePayloadWithCodex()`, `submitOutcomeWithCodex()`, and `runMcpServer()` when embedding or testing the Codex plugin surface directly.
+
+See [packages/adapter-codex/README.md](packages/adapter-codex/README.md) for the package surface and [docs/privacy-model.md](docs/privacy-model.md) for the shared privacy and consent model.
 
 ## Example: Wavemill
 
@@ -239,8 +261,11 @@ Routing and outcome reporting are consent-gated. Harnesses should collect explic
 
 - Routing requires an API key and task-execution consent.
 - Outcome reporting requires separate telemetry consent.
+- Shared adapters split end-user consent between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
 - Raw task text, raw code, raw prompts, terminal logs, and customer data should not be stored in local correlation records.
 - Adapter previews expose redacted payloads before submission.
+
+See [docs/privacy-model.md](docs/privacy-model.md) for the full shared policy, including local storage denylist and retention behavior.
 
 Claude Code exposes these controls through environment variables and the `hokusai-privacy` CLI:
 

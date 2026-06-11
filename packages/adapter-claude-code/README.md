@@ -4,33 +4,43 @@ For the harness-agnostic integration pattern that this plugin implements, see [d
 
 `@hokusai/adapter-claude-code` includes an installable Claude Code plugin surface for Hokusai task routing and opt-in outcome reporting.
 
-## Download and install (stable release)
+## Install from the marketplace
 
-Download the latest plugin zip from GitHub Releases:
+Use the repository marketplace as the default install path:
+
+```sh
+/plugin marketplace add Hokusai-protocol/hokusai-sdk
+/plugin install hokusai@hokusai
+/reload-plugins
+```
+
+The intended eventual public path is the Claude Code community marketplace. Until that listing is accepted, use the repository marketplace as the normal self-hosted install path.
+
+If you host a standalone marketplace catalog, install from its `marketplace.json` URL:
+
+```sh
+/plugin marketplace add https://.../marketplace.json
+/plugin install hokusai@hokusai
+/reload-plugins
+```
+
+## Manual install / release smoke test
+
+Use the release zip flow when you want to verify the published artifact directly:
 
 ```sh
 curl -L -o hokusai-claude-code-plugin-latest.zip \
   https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip
-```
-
-Verify the checksum:
-
-```sh
 curl -L -o hokusai-claude-code-plugin-latest.zip.sha256 \
   https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-claude-code-plugin-latest.zip.sha256
 sha256sum -c hokusai-claude-code-plugin-latest.zip.sha256
-```
-
-Unzip and install into Claude Code:
-
-```sh
 unzip hokusai-claude-code-plugin-latest.zip
 claude --plugin-dir ./hokusai-claude-code-plugin/plugin
 ```
 
 ## Install the plugin from source
 
-Build the package first so the plugin bin can import `dist/`:
+This path is for local development after building the package so the plugin bin can import `dist/`:
 
 ```sh
 pnpm -r build
@@ -134,39 +144,22 @@ Decline reasons are redacted and length-capped before local persistence. The ada
 - Local discovery and setup help work without network calls.
 - Routing requires both `HOKUSAI_API_KEY` and `HOKUSAI_ROUTING_CONSENT=true`.
 - Outcome preview and submission require routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
-- Outcome previews and submissions exclude raw code, raw prompts, terminal logs, and customer data by default.
-- Outcome notes are redacted before preview and before submission.
-- The plugin config store never persists `apiKey`.
 - Model recommendations are limited to Anthropic models in the configured allowlist.
-- Outcome reporting remains opt-in by default.
+- Shared storage, preview, retention, and consent rules are documented in [docs/privacy-model.md](../../docs/privacy-model.md).
 
 ## Data & Privacy
 
 - Local state lives under `~/.claude/hokusai/` by default, or `HOKUSAI_CONFIG_DIR` when overridden.
-- Stored routing records include correlation ids, timestamps, model recommendation metadata, payload hashes, short redacted reason previews, and local decision status.
-- Stored audit entries include `kind`, `status`, `timestamp`, `correlationId`, and any redacted error string.
-- Default retention is 7 days with a bounded record count. Override with a positive integer in `HOKUSAI_RETENTION_DAYS`.
-- Raw task text, raw code, raw logs, and raw prompts are never stored locally. `RawPayloadRejectedError` enforces that at write time.
-- `HOKUSAI_DEBUG=1` opt-in stores one extra field: a truncated redacted preview of the routed payload. The original raw text still never touches disk.
-
-Inspect local state:
+- Use the shared [privacy model](../../docs/privacy-model.md) for the exact denylist, retention policy, and preview guarantees.
+- Claude Code-specific inspection and cleanup commands are:
 
 ```sh
 hokusai-privacy list
 hokusai-privacy preview <correlation-id>
 hokusai-privacy audit
-```
-
-Clear local state:
-
-```sh
 hokusai-privacy clear --all --yes
-```
-
-Disable outcome reporting persistently:
-
-```sh
 hokusai-privacy reporting off
+hokusai-privacy reporting status
 ```
 
 For one-shell overrides, use `HOKUSAI_OUTCOME_OPT_IN=false`.

@@ -28,8 +28,8 @@ import type { ConsentScope } from './consent.js';
 import type {
   HarnessCommandError,
   HarnessCommandResult,
-  HarnessProfile,
-} from './harness-profile.js';
+  HarnessRoutingProfile,
+} from "./harness-profile.js";
 import type { HokusaiClient } from './client.js';
 
 const DEFAULT_RETENTION_DAYS = 7;
@@ -61,7 +61,7 @@ export interface ExecuteRouteCommandInput {
   clock?: (() => Date) | undefined;
   previewOnly?: boolean | undefined;
   store: LocalStore;
-  profile: HarnessProfile;
+  profile: HarnessRoutingProfile;
 }
 
 export interface RouteCommandValue {
@@ -79,13 +79,13 @@ export interface PreviewOutcomeCommandInput {
   currentModelId?: string | undefined;
   input: Omit<OutcomeReportInput, 'correlationId' | 'recommendedModel'> &
     Partial<Pick<OutcomeReportInput, 'recommendedModel'>>;
-  profile: HarnessProfile;
+  profile: HarnessRoutingProfile;
   store: LocalStore;
 }
 
 export interface PreviewOutcomeCommandValue {
   correlationId: string;
-  report: ReturnType<HarnessProfile['buildOutcomeReport']>;
+  report: ReturnType<HarnessRoutingProfile['buildOutcomeReport']>;
   resolvedRecommendedModel: string;
   previewLines: string[];
 }
@@ -209,7 +209,7 @@ function appendAudit(
 }
 
 function resolveDefaultRecommendation(
-  profile: HarnessProfile,
+  profile: HarnessRoutingProfile,
   currentModelId?: string,
 ): HarnessRecommendation {
   const selectedModelId =
@@ -257,7 +257,7 @@ function resolveDefaultRecommendation(
 }
 
 function mapRouteRecommendation(
-  profile: HarnessProfile,
+  profile: HarnessRoutingProfile,
   route: RouteResponse,
   fallback: HarnessRecommendation,
 ): HarnessRecommendation {
@@ -384,7 +384,7 @@ export async function executeRouteCommand(
     throw error;
   }
 
-  const taskInput: Parameters<HarnessProfile['buildTask']>[0] = {
+  const taskInput: Parameters<HarnessRoutingProfile['buildTask']>[0] = {
     taskText,
     taskId: input.taskId,
   };
@@ -557,7 +557,7 @@ async function resolveCorrelationRecord(
 
 function buildOutcomePreviewLines(
   correlationId: string,
-  report: ReturnType<HarnessProfile['buildOutcomeReport']>,
+  report: ReturnType<HarnessRoutingProfile['buildOutcomeReport']>,
 ): string[] {
   return [
     `Correlation ID: ${correlationId}`,

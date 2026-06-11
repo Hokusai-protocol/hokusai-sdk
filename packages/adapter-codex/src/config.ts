@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { createDefaultHandoff, type HarnessProfile } from '@hokusai/core';
+import { createDefaultHandoff, type HarnessRoutingProfile } from '@hokusai/core';
 import { buildCodexOutcomeReport } from './outcome.js';
 import { buildCodexTaskPacket } from './task-context.js';
 import { createOpenAiRegistry } from './registry.js';
@@ -49,7 +49,7 @@ export function getRetentionDays(
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 7;
 }
 
-export function createCodexHarnessProfile(): HarnessProfile {
+export function createCodexHarnessProfile(): HarnessRoutingProfile {
   const registry = createOpenAiRegistry();
 
   return {
