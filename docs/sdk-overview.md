@@ -188,6 +188,17 @@ Public Codex adapter exports include:
 
 Its adapter layer owns Codex command descriptors, Codex-specific task context collection, and Codex outcome shaping on top of the shared core outcome schema.
 
+Current documented Codex command names are:
+
+- `hokusai:run`
+- `hokusai:recommend`
+- `hokusai:preview`
+- `hokusai:outcome`
+
+This branch documents the Codex adapter/library surface only. Codex plugin packaging, skills, marketplace metadata, and MCP tool definitions are not yet present here, so SDK consumers should treat those install surfaces as pending separate plugin work.
+
+Use [privacy-model.md](privacy-model.md) for the shared adapter privacy posture, including env-only API key handling, local write-time denylists, retention defaults, and preview-before-send behavior.
+
 ### `@hokusai/adapter-wavemill`
 
 Public Wavemill adapter exports include:

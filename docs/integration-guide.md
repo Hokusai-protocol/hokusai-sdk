@@ -74,6 +74,20 @@ createWavemillAdapter({ integrationId: 'wavemill', apiClient });
 
 Wavemill also exposes `buildWavemillTaskPacket`, `previewWavemillTaskPacket`, `buildWavemillOutcomeReport`, `wavemillConformanceFixtures`, and thin `routeWithWavemill` / `reportWavemillOutcome` helpers for harnesses that want a public reference implementation of replay-aware dispatch plus typed harness telemetry.
 
+### Codex integration surface
+
+`@hokusai/adapter-codex` currently exposes a typed adapter surface rather than a packaged plugin in this branch.
+
+- Install the package with `pnpm add @hokusai/adapter-codex @hokusai/core`.
+- `CODEX_COMMAND_MANIFEST` currently exports `hokusai:run`, `hokusai:recommend`, `hokusai:preview`, and `hokusai:outcome`.
+- Codex plugin packaging, skills, marketplace metadata, and MCP tool definitions are not yet present in this worktree, so integrations should not assume a zip artifact or installed tool names beyond that manifest.
+
+For a Codex-facing integration:
+
+- Use `previewCodexTaskPacket()` or `previewRoutePayload()` before route submission so the user can inspect the redacted task payload.
+- Use `previewCodexOutcomeReport()` before calling `submitOutcome()` so the user can inspect the anonymized outcome report.
+- Apply the shared consent and storage rules from [privacy-model.md](privacy-model.md), especially the split between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
+
 ## Scope
 
 - Adapters still expose typed factories and metadata only.

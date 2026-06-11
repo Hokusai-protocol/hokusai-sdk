@@ -162,7 +162,20 @@ See [packages/adapter-claude-code/README.md](packages/adapter-claude-code/README
 
 ## Example: Codex
 
-The Codex adapter exposes typed command descriptors, task packet builders, outcome builders, model mapping, and a `HarnessAdapter` implementation:
+The Codex package currently exposes the adapter/library surface for Codex-facing integrations. Install it with:
+
+```sh
+pnpm add @hokusai/adapter-codex @hokusai/core
+```
+
+The exported command manifest currently defines:
+
+- `hokusai:run`
+- `hokusai:recommend`
+- `hokusai:preview`
+- `hokusai:outcome`
+
+The branch does not yet contain Codex plugin packaging, skill files, or MCP tool definitions, so those install details remain pending the separate plugin-surface work. The verified surface here is the typed adapter, task packet builders, outcome builders, model mapping, and `HarnessAdapter` implementation:
 
 ```ts
 import { createCodexAdapter } from '@hokusai/adapter-codex';
@@ -180,6 +193,8 @@ console.log(codex.commands.map((command) => command.name));
 ```
 
 Use `createCodexHarnessAdapter()`, `buildCodexTaskPacket()`, `previewCodexTaskPacket()`, `buildCodexOutcomeReport()`, and `submitOutcome()` when embedding Hokusai into a Codex-facing harness.
+
+See [packages/adapter-codex/README.md](packages/adapter-codex/README.md) for the package surface and [docs/privacy-model.md](docs/privacy-model.md) for the shared privacy and consent model.
 
 ## Example: Wavemill
 
@@ -248,8 +263,11 @@ Routing and outcome reporting are consent-gated. Harnesses should collect explic
 
 - Routing requires an API key and task-execution consent.
 - Outcome reporting requires separate telemetry consent.
+- Shared adapters split end-user consent between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
 - Raw task text, raw code, raw prompts, terminal logs, and customer data should not be stored in local correlation records.
 - Adapter previews expose redacted payloads before submission.
+
+See [docs/privacy-model.md](docs/privacy-model.md) for the full shared policy, including local storage denylist and retention behavior.
 
 Claude Code exposes these controls through environment variables and the `hokusai-privacy` CLI:
 

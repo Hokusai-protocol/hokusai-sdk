@@ -35,6 +35,7 @@ Use this checklist before publishing SDK package or adapter changes.
 - [ ] Create and push a matching `v*` tag such as `git tag v0.x.y && git push origin v0.x.y`.
 - [ ] Confirm the GitHub Actions release workflow publishes the Claude Code plugin zip.
 - [ ] Verify the GitHub Release includes the expected zip asset and SHA-256 output.
+- [ ] Verify the GitHub Release includes the Codex plugin zip asset and SHA-256 output once Codex packaging lands.
 
 ## Post-release Verification
 
