@@ -5,9 +5,13 @@ on:
     paths:
       - 'packages/adapter-claude-code/plugin/**'
       - 'packages/adapter-claude-code/src/**'
+      - 'packages/adapter-codex/plugin/**'
+      - 'packages/adapter-codex/src/**'
       - 'packages/core/**'
       - 'scripts/build-plugin-zip.mjs'
+      - 'scripts/build-codex-plugin-zip.mjs'
       - 'scripts/smoke-test-plugin.mjs'
+      - 'scripts/smoke-test-codex-plugin.mjs'
       - 'examples/reference-harness/**'
   push:
     branches:
@@ -16,14 +20,18 @@ on:
     paths:
       - 'packages/adapter-claude-code/plugin/**'
       - 'packages/adapter-claude-code/src/**'
+      - 'packages/adapter-codex/plugin/**'
+      - 'packages/adapter-codex/src/**'
       - 'packages/core/**'
       - 'scripts/build-plugin-zip.mjs'
+      - 'scripts/build-codex-plugin-zip.mjs'
       - 'scripts/smoke-test-plugin.mjs'
+      - 'scripts/smoke-test-codex-plugin.mjs'
       - 'examples/reference-harness/**'
 
 jobs:
   plugin-smoke:
-    name: Validate packaged Claude Code plugin
+    name: Validate packaged plugins
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +52,31 @@ jobs:
       - name: Bundle plugin
         run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
 
-      - name: Package plugin zip
+      - name: Bundle Codex plugin
+        run: pnpm --filter @hokusai/adapter-codex bundle:plugin
+
+      - name: Package Claude plugin zip
         run: node scripts/build-plugin-zip.mjs
 
-      - name: Smoke test packaged plugin
+      - name: Package Codex plugin zip
+        run: node scripts/build-codex-plugin-zip.mjs
+
+      - name: Smoke test packaged Claude plugin
         run: node scripts/smoke-test-plugin.mjs
+
+      - name: Smoke test packaged Codex plugin
+        run: node scripts/smoke-test-codex-plugin.mjs
+
+      - name: Check deterministic plugin zips
+        run: |
+          first_claude="$(shasum -a 256 dist-zip/hokusai-claude-code-plugin-latest.zip | awk '{print $1}')"
+          first_codex="$(shasum -a 256 dist-zip/hokusai-codex-plugin-latest.zip | awk '{print $1}')"
+          node scripts/build-plugin-zip.mjs
+          node scripts/build-codex-plugin-zip.mjs
+          second_claude="$(shasum -a 256 dist-zip/hokusai-claude-code-plugin-latest.zip | awk '{print $1}')"
+          second_codex="$(shasum -a 256 dist-zip/hokusai-codex-plugin-latest.zip | awk '{print $1}')"
+          test "$first_claude" = "$second_claude"
+          test "$first_codex" = "$second_codex"
 
   smoke-live-api:
     name: Validate packaged plugin against live API
@@ -74,8 +102,12 @@ jobs:
       - name: Bundle plugin
         run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
 
-      - name: Package plugin zip
+      - name: Bundle Codex plugin
+        run: pnpm --filter @hokusai/adapter-codex bundle:plugin
+
+      - name: Package plugin zips
         run: node scripts/build-plugin-zip.mjs
+      - run: node scripts/build-codex-plugin-zip.mjs
 
       - name: Route once against live API
         run: node scripts/smoke-test-plugin.mjs --live

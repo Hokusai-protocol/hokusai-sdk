@@ -16,6 +16,9 @@ This document defines the shared privacy posture for Hokusai adapters, including
 - `canSubmitOutcomeWithAuth()` requires an API key, routing consent, and separate outcome opt-in.
 - Supported user-facing env vars are `HOKUSAI_API_KEY`, `HOKUSAI_ROUTING_CONSENT`, `HOKUSAI_OUTCOME_OPT_IN`, and `HOKUSAI_MODEL_ALLOWLIST`.
 - Truthy env values are `true`, `1`, and `yes`, case-insensitive. Any other value is treated as `false`.
+- Routing and outcome submission are independently controllable, but outcome transport still depends on routing auth and consent being enabled.
+- The allowlist is Anthropic-only. Unsupported or non-Anthropic recommendations are rejected with allowlisted suggestions when available.
+- The Codex plugin is stricter: it reads `HOKUSAI_API_KEY` from the environment only, never persists it, and allows only OpenAI recommendations.
 - For end-user plugin behavior, stored defaults can be overridden by env values. For embedding callers using `loadPluginConfig()`, explicit code-level overrides still win over env.
 
 ## API key handling
@@ -36,6 +39,12 @@ The local persistence layer enforces a write-time denylist for raw payload field
 - `rawContent`
 
 This denylist applies to persisted local records. It does not mean those fields can never exist in in-memory route or outcome payload builders before redaction.
+
+## Codex plugin posture
+
+- Codex exposes routing and outcome reporting through an MCP stdio server plus four skills: `$hokusai-route`, `$hokusai-report`, `$hokusai-privacy`, and `$hokusai-doctor`.
+- `hokusai_preview_route_payload` and outcome preview flows do not require network access or consent.
+- `hokusai_submit_outcome` requires both `HOKUSAI_OUTCOME_OPT_IN=true` and an explicit approval flag before transport.
 
 ## What local state keeps
 

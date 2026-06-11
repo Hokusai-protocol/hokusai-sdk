@@ -43,4 +43,26 @@ describe('buildHandoffInstructions', () => {
     expect(handoff.instructions).toEqual([]);
     expect(handoff.slashCommand).toBe('/model claude-sonnet-4-6');
   });
+
+  it('returns a Codex handoff without Claude slash commands', () => {
+    const handoff = buildHandoffInstructions({
+      recommendation: {
+        model: {
+          id: 'gpt-5-codex',
+          provider: 'openai',
+          capabilities: ['reasoning', 'tool-use'],
+        },
+        reason: 'Codex needs stronger tool-using reasoning.',
+      },
+      currentModelId: 'gpt-5',
+      harness: 'codex',
+    });
+
+    expect(handoff).toEqual({
+      mechanism: 'manual',
+      slashCommand: 'gpt-5-codex',
+      copyableCommand: 'gpt-5-codex',
+      instructions: ['Switch Codex to gpt-5-codex before continuing this task.'],
+    });
+  });
 });

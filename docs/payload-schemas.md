@@ -104,6 +104,8 @@ POST https://api.hokus.ai/api/v1/models/30/predict
 
 `HokusaiClient.route(..., { dryRun: true })` returns the converted `TechnicalTaskRouterRequest`.
 
+The Codex plugin exposes this route flow over MCP as `hokusai_route` and exposes the consent-free preview path as `hokusai_preview_route_payload`.
+
 The client normalizes the prediction response back to the SDK `RouteResponse` shape:
 
 ```json

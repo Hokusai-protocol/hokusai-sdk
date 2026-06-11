@@ -6,7 +6,7 @@ This repository currently includes:
 
 - `@hokusai/core` for the harness-agnostic SDK contracts and API client
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
-- `@hokusai/adapter-codex` for Codex command metadata, task context, model mapping, and outcome builders
+- `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
 - `examples/reference-harness` for the smallest complete generic integration flow
 
@@ -162,20 +162,18 @@ See [packages/adapter-claude-code/README.md](packages/adapter-claude-code/README
 
 ## Example: Codex
 
-The Codex package currently exposes the adapter/library surface for Codex-facing integrations. Install it with:
+The Codex adapter now ships an installable plugin that bundles skills plus an MCP stdio server:
 
 ```sh
-pnpm add @hokusai/adapter-codex @hokusai/core
+curl -L -o hokusai-codex-plugin-latest.zip https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-codex-plugin-latest.zip && \
+curl -L -o hokusai-codex-plugin-latest.zip.sha256 https://github.com/Hokusai-protocol/hokusai-sdk/releases/latest/download/hokusai-codex-plugin-latest.zip.sha256 && \
+sha256sum -c hokusai-codex-plugin-latest.zip.sha256 && \
+unzip hokusai-codex-plugin-latest.zip && \
+codex plugin marketplace add ./hokusai-codex-plugin && \
+codex plugin add hokusai
 ```
 
-The exported command manifest currently defines:
-
-- `hokusai:run`
-- `hokusai:recommend`
-- `hokusai:preview`
-- `hokusai:outcome`
-
-The branch does not yet contain Codex plugin packaging, skill files, or MCP tool definitions, so those install details remain pending the separate plugin-surface work. The verified surface here is the typed adapter, task packet builders, outcome builders, model mapping, and `HarnessAdapter` implementation:
+Codex-facing library consumers can still use the typed adapter surface directly:
 
 ```ts
 import { createCodexAdapter } from '@hokusai/adapter-codex';
@@ -192,7 +190,7 @@ const codex = createCodexAdapter({
 console.log(codex.commands.map((command) => command.name));
 ```
 
-Use `createCodexHarnessAdapter()`, `buildCodexTaskPacket()`, `previewCodexTaskPacket()`, `buildCodexOutcomeReport()`, and `submitOutcome()` when embedding Hokusai into a Codex-facing harness.
+Use `routeTaskWithCodex()`, `previewRoutePayloadWithCodex()`, `submitOutcomeWithCodex()`, and `runMcpServer()` when embedding or testing the Codex plugin surface directly.
 
 See [packages/adapter-codex/README.md](packages/adapter-codex/README.md) for the package surface and [docs/privacy-model.md](docs/privacy-model.md) for the shared privacy and consent model.
 

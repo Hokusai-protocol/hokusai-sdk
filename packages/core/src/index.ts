@@ -120,6 +120,29 @@ export {
   type HandoffInstructions,
 } from './handoff.js';
 export {
+  createDefaultHandoff,
+  createDefaultOutcomeReport,
+  createFsStore,
+  executeRouteCommand,
+  latestRouteCommand,
+  previewOutcomeCommand,
+  privacyStatusCommand,
+  submitOutcomeCommand,
+  type ExecuteRouteCommandInput,
+  type LatestRouteCommandValue,
+  type PreviewOutcomeCommandInput,
+  type PreviewOutcomeCommandValue,
+  type PrivacyStatusCommandValue,
+  type RouteCommandValue,
+  type SubmitOutcomeCommandInput,
+  type SubmitOutcomeCommandValue,
+} from './harness-commands.js';
+export type {
+  HarnessCommandError,
+  HarnessCommandResult,
+  HarnessRoutingProfile,
+} from './harness-profile.js';
+export {
   checkApiKey,
   checkApiReachability,
   checkModelAllowlist,

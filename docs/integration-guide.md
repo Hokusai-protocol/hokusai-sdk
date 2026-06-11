@@ -76,16 +76,12 @@ Wavemill also exposes `buildWavemillTaskPacket`, `previewWavemillTaskPacket`, `b
 
 ### Codex integration surface
 
-`@hokusai/adapter-codex` currently exposes a typed adapter surface rather than a packaged plugin in this branch.
-
-- Install the package with `pnpm add @hokusai/adapter-codex @hokusai/core`.
-- `CODEX_COMMAND_MANIFEST` currently exports `hokusai:run`, `hokusai:recommend`, `hokusai:preview`, and `hokusai:outcome`.
-- Codex plugin packaging, skills, marketplace metadata, and MCP tool definitions are not yet present in this worktree, so integrations should not assume a zip artifact or installed tool names beyond that manifest.
+The Codex adapter ships an installable plugin with an MCP stdio server. The available tools are `hokusai_route`, `hokusai_preview_route_payload`, `hokusai_submit_outcome`, `hokusai_latest_route`, and `hokusai_privacy_status`. Bundled skills call those tools rather than generating routing advice locally.
 
 For a Codex-facing integration:
 
-- Use `previewCodexTaskPacket()` or `previewRoutePayload()` before route submission so the user can inspect the redacted task payload.
-- Use `previewCodexOutcomeReport()` before calling `submitOutcome()` so the user can inspect the anonymized outcome report.
+- Use `hokusai_preview_route_payload` before route submission so the user can inspect the redacted task payload.
+- Use the `preview` field from `hokusai_submit_outcome` before confirming, so the user can inspect the anonymized outcome report.
 - Apply the shared consent and storage rules from [privacy-model.md](privacy-model.md), especially the split between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
 
 ## Scope
