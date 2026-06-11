@@ -1,6 +1,7 @@
 import {
   FilePluginConfigStore,
   HokusaiClient,
+  HokusaiNetworkError,
   defaultPluginConfigPath,
   loadPluginConfig,
   type BuildSummary,
@@ -513,7 +514,7 @@ export function createRunReportCli<
         parsed.recommendedModel ?? pipedInput.recommendedModel ?? '',
       actualModel: parsed.actualModel ?? pipedInput.actualModel ?? '',
       recommendationAccepted: recommendationAccepted ?? false,
-      completionStatus: parsed.status ?? pipedInput.completionStatus ?? 'succeeded',
+      completionStatus: (parsed.status ?? pipedInput.completionStatus ?? '') as CompletionStatus,
       latencyBucket: withDefaultBucket(
         parsed.latencyBucket ?? pipedInput.latencyBucket,
         'latency bucket',
@@ -553,33 +554,49 @@ export function createRunReportCli<
         : {}),
     };
 
-    const result = parsed.send
-      ? await reportTaskOutcomeImpl(reportInput, {
-          apiClient:
-            deps.createClient?.(config) ??
-            new HokusaiClient({
-              apiKey: config.apiKey!,
-              baseUrl: config.apiBaseUrl,
-            }),
-          registry,
-          ...(parsed.configPath ? { configPath: parsed.configPath } : {}),
-        } as TOptions)
-      : await previewReportOutcomeImpl(reportInput, {
-          registry,
-          dryRun: parsed.dryRun,
-          ...(parsed.configPath ? { configPath: parsed.configPath } : {}),
-        } as TOptions);
+    try {
+      const result = parsed.send
+        ? await reportTaskOutcomeImpl(reportInput, {
+            apiClient:
+              deps.createClient?.(config) ??
+              new HokusaiClient({
+                apiKey: config.apiKey!,
+                baseUrl: config.apiBaseUrl,
+              }),
+            registry,
+            ...(parsed.configPath ? { configPath: parsed.configPath } : {}),
+          } as TOptions)
+        : await previewReportOutcomeImpl(reportInput, {
+            registry,
+            dryRun: parsed.dryRun,
+            ...(parsed.configPath ? { configPath: parsed.configPath } : {}),
+          } as TOptions);
 
-    if (!result.ok) {
-      const code =
-        result.error.code === 'OUTCOME_VALIDATION_FAILED'
-          ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
-          : result.error.code === 'NETWORK_ERROR'
-            ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR
-            : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
-      return toMessage(parsed, result.error.message, code, result.error.details);
+      if (!result.ok) {
+        const code =
+          result.error.code === 'OUTCOME_VALIDATION_FAILED'
+            ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
+            : result.error.code === 'NETWORK_ERROR'
+              ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR
+              : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
+        return toMessage(parsed, result.error.message, code, result.error.details);
+      }
+
+      return renderSuccess(parsed, result.value, stderrNotes);
+    } catch (error) {
+      if (error instanceof HokusaiNetworkError) {
+        return toMessage(
+          parsed,
+          `Could not reach Hokusai (${config.apiBaseUrl}). Check connectivity and retry. Use /hokusai:doctor for details.`,
+          REPORT_CLI_EXIT_CODES.NETWORK_ERROR,
+        );
+      }
+
+      return toMessage(
+        parsed,
+        error instanceof Error ? error.message : 'Failed to process outcome report.',
+        REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR,
+      );
     }
-
-    return renderSuccess(parsed, result.value, stderrNotes);
   };
 }
