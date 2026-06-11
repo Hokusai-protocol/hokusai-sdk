@@ -68,6 +68,51 @@ describe('routeTaskWithCodex', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it('succeeds when primary is openai but alternatives include non-openai providers', async () => {
+    const env = await createEnv({
+      HOKUSAI_API_KEY: 'hk_test',
+      HOKUSAI_ROUTING_CONSENT: 'true',
+    });
+
+    const result = await routeTaskWithCodex(
+      { task: 'Route with mixed alternatives.' },
+      {
+        env,
+        transport: () =>
+          Promise.resolve({
+            status: 200,
+            headers: { get: () => null },
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  routeId: 'route-mixed',
+                  taskId: 'task-mixed',
+                  status: 'accepted',
+                  recommendation: {
+                    model: 'gpt-5-codex',
+                    reason: 'Primary is OpenAI.',
+                    confidence: 0.9,
+                    alternatives: [
+                      { model: 'claude-sonnet-4-6', reason: 'Non-OpenAI alternative.' },
+                      { model: 'gpt-5', reason: 'Also valid.' },
+                    ],
+                  },
+                }),
+              ),
+          }),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.recommendation.model.provider).toBe('openai');
+    const altIds = result.value.recommendation.alternatives?.map((a) => a.model.id) ?? [];
+    expect(altIds).not.toContain('claude-sonnet-4-6');
+    expect(altIds).toContain('gpt-5');
+  });
+
   it('stores the latest route and rejects non-openai recommendations', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
