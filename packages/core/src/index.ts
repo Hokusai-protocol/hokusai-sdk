@@ -226,3 +226,4 @@ export {
   type ConformanceCheck,
   type ConformanceSubject,
 } from './conformance.js';
+export * from './plugin-commands/index.js';
