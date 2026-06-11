@@ -30,10 +30,6 @@ function pass(message) {
   console.log(`[PASS] ${message}`);
 }
 
-function note(message) {
-  console.log(`[NOTE] ${message}`);
-}
-
 function assert(condition, message) {
   if (!condition) {
     fail(message);
@@ -61,6 +57,23 @@ function assertNonEmptyFile(filePath, description) {
     return assert(
       size > 0,
       `${description} is non-empty: ${path.relative(repoRoot, filePath)}`,
+    );
+  } catch (error) {
+    fail(`${description} stat failed: ${formatError(error)}`);
+    return false;
+  }
+}
+
+function assertExecutableFile(filePath, description) {
+  if (!assertNonEmptyFile(filePath, description)) {
+    return false;
+  }
+
+  try {
+    const mode = statSync(filePath).mode & 0o111;
+    return assert(
+      mode !== 0,
+      `${description} is executable: ${path.relative(repoRoot, filePath)}`,
     );
   } catch (error) {
     fail(`${description} stat failed: ${formatError(error)}`);
@@ -245,9 +258,62 @@ function assertOfflineCommands(extractedRoot) {
     );
   }
 
-  note(
-    'No packaged hokusai-doctor command exists; smoke test validates route/report/privacy only.',
+  const doctorResult = runCommand(
+    path.join(binDir, 'hokusai-doctor'),
+    ['--config', configDir],
+    { cwd: extractedRoot, env },
   );
+  if (doctorResult) {
+    assert(doctorResult.status === 1, 'hokusai-doctor exits with failed checks');
+    assert(
+      doctorResult.stdout.includes('Hokusai doctor'),
+      'hokusai-doctor prints doctor header',
+    );
+    assert(
+      doctorResult.stdout.includes('routing-consent'),
+      'hokusai-doctor reports routing consent status',
+    );
+    assert(
+      doctorResult.stdout.includes('api-reachability'),
+      'hokusai-doctor reports API reachability status',
+    );
+    assertNoImportFailure(
+      `${doctorResult.stdout}\n${doctorResult.stderr}`,
+      'hokusai-doctor',
+    );
+  }
+
+  const missingConfigValueResult = runCommand(
+    path.join(binDir, 'hokusai-doctor'),
+    ['--config'],
+    { cwd: extractedRoot, env },
+  );
+  if (missingConfigValueResult) {
+    assert(
+      missingConfigValueResult.status === 2,
+      'hokusai-doctor rejects missing --config values',
+    );
+    assert(
+      missingConfigValueResult.stderr.includes('Usage: hokusai-doctor'),
+      'hokusai-doctor prints usage for missing --config values',
+    );
+  }
+
+  const unknownArgResult = runCommand(
+    path.join(binDir, 'hokusai-doctor'),
+    ['--unknown'],
+    { cwd: extractedRoot, env },
+  );
+  if (unknownArgResult) {
+    assert(
+      unknownArgResult.status === 2,
+      'hokusai-doctor rejects unknown arguments',
+    );
+    assert(
+      unknownArgResult.stderr.includes('Usage: hokusai-doctor'),
+      'hokusai-doctor prints usage for unknown arguments',
+    );
+  }
 }
 
 function assertLiveRouteCommand(extractedRoot) {
@@ -347,6 +413,12 @@ function main() {
       'commands',
       'privacy.md',
     );
+    const doctorCommandPath = path.join(
+      extractedRoot,
+      'plugin',
+      'commands',
+      'doctor.md',
+    );
     const routeBinPath = path.join(
       extractedRoot,
       'plugin',
@@ -365,6 +437,12 @@ function main() {
       'bin',
       'hokusai-privacy',
     );
+    const doctorBinPath = path.join(
+      extractedRoot,
+      'plugin',
+      'bin',
+      'hokusai-doctor',
+    );
     const bundlePath = path.join(extractedRoot, 'dist', 'index.js');
     const readmePath = path.join(extractedRoot, 'README.md');
     const packageJsonPath = path.join(extractedRoot, 'package.json');
@@ -373,9 +451,11 @@ function main() {
     assertCommandMarkdown(routeCommandPath);
     assertCommandMarkdown(reportCommandPath);
     assertCommandMarkdown(privacyCommandPath);
+    assertCommandMarkdown(doctorCommandPath);
     assertNonEmptyFile(routeBinPath, 'route bin exists');
     assertNonEmptyFile(reportBinPath, 'report bin exists');
     assertNonEmptyFile(privacyBinPath, 'privacy bin exists');
+    assertExecutableFile(doctorBinPath, 'doctor bin exists');
     assertNonEmptyFile(bundlePath, 'bundled dist/index.js exists');
     assertNonEmptyFile(readmePath, 'README exists');
     assertNonEmptyFile(packageJsonPath, 'package.json exists');

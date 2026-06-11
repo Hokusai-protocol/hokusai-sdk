@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -173,6 +173,7 @@ function main() {
   const stagedDistDir = path.join(archiveRootDir, 'dist');
 
   cpSync(pluginSourceDir, stagedPluginDir, { recursive: true });
+  chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-doctor'), 0o755);
   mkdirSync(stagedDistDir, { recursive: true });
   cpSync(bundleSourceFile, path.join(stagedDistDir, 'index.js'));
   cpSync(readmeSourceFile, path.join(archiveRootDir, 'README.md'));
