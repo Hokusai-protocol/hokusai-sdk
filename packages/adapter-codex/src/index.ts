@@ -40,20 +40,25 @@ import {
 import {
   buildCodexHarnessTaskContext,
   buildCodexTaskPacket,
+  buildCodexTaskPacketFromText,
   previewCodexTaskPacket,
+  previewCodexTaskPacketFromText,
   type CodexRepositorySignals,
   type CodexSessionTelemetry,
   type CodexTaskContextBuilderOptions,
   type CodexTaskPacketBuildResult,
   type CodexTaskPacketPreview,
+  type CodexTaskTextBuilderOptions,
 } from './task-context.js';
 
 export {
   CODEX_COMMAND_MANIFEST,
   buildCodexOutcomeReport,
   buildCodexTaskPacket,
+  buildCodexTaskPacketFromText,
   previewCodexOutcomeReport,
   previewCodexTaskPacket,
+  previewCodexTaskPacketFromText,
   previewRoutePayload,
   requestRecommendation,
   submitOutcome,
@@ -63,6 +68,7 @@ export {
   type CodexTaskContextBuilderOptions,
   type CodexTaskPacketBuildResult,
   type CodexTaskPacketPreview,
+  type CodexTaskTextBuilderOptions,
   type PreviewRoutePayloadArgs,
   type RequestRecommendationArgs,
   type SubmitOutcomeArgs,

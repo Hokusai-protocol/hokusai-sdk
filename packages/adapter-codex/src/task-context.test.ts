@@ -6,7 +6,9 @@ import {
 import {
   buildCodexHarnessTaskContext,
   buildCodexTaskPacket,
+  buildCodexTaskPacketFromText,
   previewCodexTaskPacket,
+  previewCodexTaskPacketFromText,
 } from './task-context.js';
 
 const redactionConfig = {
@@ -198,6 +200,127 @@ console.log("debug");
     expect(previewResult.redactionSummary).toEqual(built.redactionSummary);
     expect(previewResult.hasRawCode).toBe(false);
     expect(previewResult.hasRawLogs).toBe(false);
+  });
+});
+
+describe('buildCodexTaskPacketFromText', () => {
+  it('builds a valid task packet from bare text', () => {
+    const result = buildCodexTaskPacketFromText(
+      'Implement a bulk export feature for the reporting dashboard.',
+      { redactionConfig },
+    );
+
+    expect(validateTaskPacket(result.packet)).toEqual({
+      ok: true,
+      packet: result.packet,
+    });
+    expect(result.packet.userIntent).toBe(
+      'Implement a bulk export feature for the reporting dashboard.',
+    );
+    expect(result.packet.taskFamily).toBe('feature');
+    expect(result.packet.reasoningDepth).toBe('standard');
+  });
+
+  it('infers shallow reasoning for short simple text', () => {
+    const result = buildCodexTaskPacketFromText('Fix typo', { redactionConfig });
+
+    expect(result.packet.reasoningDepth).toBe('shallow');
+  });
+
+  it('redacts private-looking content and does not leak raw values', () => {
+    const result = buildCodexTaskPacketFromText(
+      `Email ops@openai.example and use sk-1234567890abcdef.
+Reach https://codex-worker.internal/debug with tok-abcdef123456.
+\`\`\`ts
+const password = "super-secret";
+\`\`\`
+2026-06-08T10:00:00Z ERROR dispatch failed`,
+      { redactionConfig },
+    );
+
+    const serialized = JSON.stringify(result.packet);
+
+    for (const secret of [
+      'ops@openai.example',
+      'sk-1234567890abcdef',
+      'https://codex-worker.internal/debug',
+      'tok-abcdef123456',
+      'password = "super-secret"',
+      '2026-06-08T10:00:00Z ERROR dispatch failed',
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
+
+    expect(result.redactionSummary).toEqual(
+      expect.arrayContaining([
+        { category: 'email', count: 1 },
+        { category: 'log', count: 1 },
+        { category: 'secret', count: 1 },
+        { category: 'token', count: 1 },
+        { category: 'url', count: 1 },
+      ]),
+    );
+  });
+
+  it('keeps placeholder-only intents valid after redaction', () => {
+    const result = buildCodexTaskPacketFromText('sk-1234567890abcdef', {
+      redactionConfig,
+    });
+
+    expect(result.packet.userIntent).toMatch(/^SECRET_/);
+    expect(validateTaskPacket(result.packet)).toEqual({
+      ok: true,
+      packet: result.packet,
+    });
+  });
+
+  it('throws on empty or whitespace-only text', () => {
+    expect(() => buildCodexTaskPacketFromText('', { redactionConfig })).toThrow(
+      'Expected "taskText" to be a non-empty string.',
+    );
+    expect(() => buildCodexTaskPacketFromText('   ', { redactionConfig })).toThrow(
+      'Expected "taskText" to be a non-empty string.',
+    );
+  });
+
+  it('uses the default redaction config when options are omitted', () => {
+    const result = buildCodexTaskPacketFromText(
+      'Email ops@example.com and use sk-1234567890abcdef.',
+    );
+
+    const serialized = JSON.stringify(result.packet);
+    expect(serialized).not.toContain('ops@example.com');
+    expect(serialized).not.toContain('sk-1234567890abcdef');
+    expect(result.redactionSummary).toEqual(
+      expect.arrayContaining([
+        { category: 'email', count: 1 },
+        { category: 'secret', count: 1 },
+      ]),
+    );
+  });
+});
+
+describe('previewCodexTaskPacketFromText', () => {
+  it('matches build output and preview shape', () => {
+    const taskText = `Fix the OpenAI Codex regression.
+\`\`\`ts
+console.log("debug");
+\`\`\`
+2026-06-08T10:00:00Z ERROR sync failed`;
+
+    const built = buildCodexTaskPacketFromText(taskText, { redactionConfig });
+    const previewResult = previewCodexTaskPacketFromText(taskText, { redactionConfig });
+
+    expect(previewResult.willSend).toEqual(built.packet);
+    expect(previewResult.redactionSummary).toEqual(built.redactionSummary);
+    expect(previewResult.hasRawCode).toBe(false);
+    expect(previewResult.hasRawLogs).toBe(false);
+    expect(Object.keys(previewResult)).toEqual([
+      'willSend',
+      'redactionSummary',
+      'hasRawCode',
+      'hasRawLogs',
+    ]);
   });
 });
 

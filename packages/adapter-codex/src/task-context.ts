@@ -1,4 +1,5 @@
 import {
+  DEFAULT_REDACTION_CONFIG,
   buildTaskPacket,
   bucketRepositoryScale,
   classifyTaskFamily,
@@ -50,6 +51,10 @@ export interface CodexTaskContextBuilderOptions {
   clock?: () => Date;
 }
 
+export interface CodexTaskTextBuilderOptions {
+  redactionConfig?: RedactionConfig;
+}
+
 export interface CodexTaskPacketBuildResult {
   packet: TaskPacket;
   redactionSummary: PreviewResult['redactionSummary'];
@@ -88,6 +93,26 @@ export function previewCodexTaskPacket(
   };
 }
 
+export function buildCodexTaskPacketFromText(
+  taskText: string,
+  options?: CodexTaskTextBuilderOptions,
+): CodexTaskPacketBuildResult {
+  return buildCodexTaskPacket(
+    textToMinimalTelemetry(taskText),
+    toTextBuilderOptions(options),
+  );
+}
+
+export function previewCodexTaskPacketFromText(
+  taskText: string,
+  options?: CodexTaskTextBuilderOptions,
+): CodexTaskPacketPreview {
+  return previewCodexTaskPacket(
+    textToMinimalTelemetry(taskText),
+    toTextBuilderOptions(options),
+  );
+}
+
 export function buildCodexHarnessTaskContext(
   input: CodexSessionTelemetry,
   options: CodexTaskContextBuilderOptions,
@@ -123,6 +148,24 @@ export function buildCodexHarnessTaskContext(
     ...(input.command ? { command: input.command } : {}),
     ...(input.configPath ? { configPath: input.configPath } : {}),
     metadata,
+  };
+}
+
+function toTextBuilderOptions(
+  options?: CodexTaskTextBuilderOptions,
+): CodexTaskContextBuilderOptions {
+  return {
+    redactionConfig: options?.redactionConfig ?? DEFAULT_REDACTION_CONFIG,
+  };
+}
+
+function textToMinimalTelemetry(taskText: string): CodexSessionTelemetry {
+  if (typeof taskText !== 'string' || taskText.trim().length === 0) {
+    throw new Error('Expected "taskText" to be a non-empty string.');
+  }
+
+  return {
+    taskSummary: taskText.trim(),
   };
 }
 

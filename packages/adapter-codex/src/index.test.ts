@@ -9,9 +9,11 @@ import {
 } from '@hokusai/core';
 import {
   buildCodexTaskPacket,
+  buildCodexTaskPacketFromText,
   createCodexAdapter,
   createCodexHarnessAdapter,
   createCodexModelProvider,
+  previewCodexTaskPacketFromText,
 } from './index.js';
 
 const models: ModelDefinition[] = [
@@ -54,6 +56,8 @@ describe('createCodexAdapter', () => {
 
   it('re-exports the task packet builder', () => {
     expect(buildCodexTaskPacket).toBeTypeOf('function');
+    expect(buildCodexTaskPacketFromText).toBeTypeOf('function');
+    expect(previewCodexTaskPacketFromText).toBeTypeOf('function');
   });
 
   it('delegates command handlers through the configured client', async () => {
