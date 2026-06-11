@@ -69,5 +69,13 @@ describe('core public surface', () => {
     expect(core.summarizeLanguageSignals).toBeDefined();
     expect(core.summarizeFrameworkSignals).toBeDefined();
     expect(core.genericTaskPacketFixture).toBeDefined();
+    expect(core.createRouteTask).toBeDefined();
+    expect(core.createRunCli).toBeDefined();
+    expect(core.createRunReportCli).toBeDefined();
+    expect(core.createRunPrivacyCli).toBeDefined();
+    expect(core.createRunBootstrapDoctor).toBeDefined();
+    expect(core.CLI_EXIT_CODES).toBeDefined();
+    expect(core.REPORT_CLI_EXIT_CODES).toBeDefined();
+    expect(core.PRIVACY_CLI_EXIT_CODES).toBeDefined();
   });
 });
