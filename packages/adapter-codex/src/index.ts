@@ -266,18 +266,15 @@ export function createCodexModelProvider(
 export function createCodexHarnessAdapter(
   options: CodexHarnessAdapterOptions,
 ): HarnessAdapter {
+  const profile = createCodexHarnessProfile();
   const store = options.store ?? new InMemoryLocalStore();
   const clock = options.clock ?? (() => new Date());
   const storage = createHarnessStorage(store, clock);
-  const modelDefinitions = options.models ?? [
-    {
-      id: options.defaultModel,
-      provider: 'openai',
-      family: 'gpt',
-      capabilities: ['reasoning', 'tool-use'],
-      default: true,
-    },
-  ];
+  const modelDefinitions = options.models ?? profile.registry.list();
+  const defaultModelId =
+    modelDefinitions.find((model) => model.id === options.defaultModel)?.id ??
+    profile.defaultModelId ??
+    options.defaultModel;
   const models = createCodexModelProvider(modelDefinitions);
 
   return {
@@ -286,8 +283,8 @@ export function createCodexHarnessAdapter(
         const telemetry = await (options.telemetry?.(request) ??
           Promise.resolve({
             taskId: request.taskId ?? 'codex-task-1',
-            taskSummary: `Codex task for ${options.defaultModel}`,
-            model: options.defaultModel,
+            taskSummary: `Codex task for ${defaultModelId}`,
+            model: defaultModelId,
           }));
 
         return {

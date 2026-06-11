@@ -164,6 +164,60 @@ describe('createRouteTask', () => {
     expect(result.ok).toBe(true);
     expect(JSON.parse(capturedPrompt)).toMatchObject({
       providerConstraints: ['anthropic'],
+      modelConstraints: ['claude-sonnet-4-6'],
+    });
+  });
+
+  it('derives model constraints from the active registry override', async () => {
+    const configDir = await createTempDir('hokusai-core-plugin-models-');
+    const profile = createProfile(configDir, {
+      allowedProviders: ['anthropic'],
+      defaultModel: {
+        id: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+      },
+      additionalModels: [
+        {
+          id: 'claude-opus-4-8',
+          provider: 'anthropic',
+        },
+      ],
+    });
+    const routeTask = createRouteTask(profile);
+    let capturedPrompt = '';
+
+    const result = await routeTask(
+      {
+        taskId: 'task-allowlist',
+        taskText: 'Route this task',
+      },
+      {
+        registry: new InMemoryModelRegistry([
+          {
+            id: 'claude-opus-4-8',
+            provider: 'anthropic',
+            family: 'anthropic',
+            capabilities: [...DEFAULT_CAPABILITIES],
+            default: true,
+          },
+        ]),
+        apiClient: {
+          route: (payload: { prompt: string; task: { id: string } }) => {
+            capturedPrompt = payload.prompt;
+            return Promise.resolve({
+              routeId: 'route-allowlist',
+              taskId: payload.task.id,
+              status: 'accepted',
+            });
+          },
+        } as never,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(capturedPrompt)).toMatchObject({
+      providerConstraints: ['anthropic'],
+      modelConstraints: ['claude-opus-4-8'],
     });
   });
 

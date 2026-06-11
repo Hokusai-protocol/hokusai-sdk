@@ -135,6 +135,23 @@ export interface MapRecommendationOptions {
   requireAvailable?: boolean;
 }
 
+export function listSupportedModelIds(
+  registry: ModelRegistry,
+  options: {
+    allowedProviders?: string[];
+    requireAvailable?: boolean;
+  } = {},
+): string[] {
+  const models =
+    options.requireAvailable === false
+      ? registry.list()
+      : registry.listAvailable();
+
+  return models
+    .filter((model) => options.allowedProviders?.includes(model.provider) ?? true)
+    .map((model) => model.id);
+}
+
 export type ValidateRecommendedModelResult =
   | {
       ok: true;
@@ -294,6 +311,32 @@ export const ANTHROPIC_MODELS: ModelDefinition[] = [
     family: 'claude',
     aliases: ['haiku', 'claude-haiku'],
     capabilities: ['streaming', 'tool-use'],
+    available: true,
+  },
+];
+
+export const OPENAI_MODELS: ModelDefinition[] = [
+  {
+    provider: 'openai',
+    id: 'gpt-5-codex',
+    family: 'gpt-5',
+    aliases: ['codex'],
+    capabilities: ['reasoning', 'tool-use'],
+    available: true,
+    default: true,
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-5',
+    family: 'gpt-5',
+    capabilities: ['reasoning', 'tool-use'],
+    available: true,
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-5-mini',
+    family: 'gpt-5',
+    capabilities: ['reasoning', 'tool-use'],
     available: true,
   },
 ];

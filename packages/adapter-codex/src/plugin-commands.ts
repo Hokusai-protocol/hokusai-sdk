@@ -23,6 +23,7 @@ import {
   hasRoutingConsent,
   resolveCodexConfigDir,
 } from './config.js';
+import { createAllowlistedOpenAiRegistry } from './registry.js';
 
 export interface CodexPluginCommandOptions {
   client?: HokusaiClient | undefined;
@@ -79,12 +80,25 @@ function createTaskId(taskId: string | undefined, clock?: () => Date): string {
   return `codex-${(clock ?? (() => new Date()))().toISOString()}`;
 }
 
+function createProfileForEnv(env?: NodeJS.ProcessEnv) {
+  const allowlist = env?.HOKUSAI_MODEL_ALLOWLIST
+    ?.split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return createCodexHarnessProfile(
+    allowlist && allowlist.length > 0
+      ? { registry: createAllowlistedOpenAiRegistry(allowlist) }
+      : undefined,
+  );
+}
+
 export async function routeTaskWithCodex(
   input: CodexRouteInput,
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<RouteCommandValue>> {
   const store = createFsStore(resolveCodexConfigDir(options.env));
-  const profile = createCodexHarnessProfile();
+  const profile = createProfileForEnv(options.env);
   const apiKey = getApiKey(options.env);
   const client = createClient(options);
 
@@ -107,7 +121,7 @@ export async function previewRoutePayloadWithCodex(
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<RouteCommandValue>> {
   const store = createFsStore(resolveCodexConfigDir(options.env));
-  const profile = createCodexHarnessProfile();
+  const profile = createProfileForEnv(options.env);
 
   return executeRouteCommand({
     consentGranted: true,
@@ -140,7 +154,7 @@ export async function previewOutcomeWithCodex(
       ...(input.notes ? { notes: input.notes } : {}),
       ...(input.recommendedModel ? { recommendedModel: input.recommendedModel } : {}),
     },
-    profile: createCodexHarnessProfile(),
+    profile: createProfileForEnv(options.env),
     store: createFsStore(resolveCodexConfigDir(options.env)),
   });
 }
@@ -169,7 +183,7 @@ export async function submitOutcomeWithCodex(
       ...(input.notes ? { notes: input.notes } : {}),
       ...(input.recommendedModel ? { recommendedModel: input.recommendedModel } : {}),
     },
-    profile: createCodexHarnessProfile(),
+    profile: createProfileForEnv(options.env),
     store: createFsStore(resolveCodexConfigDir(options.env)),
     ...(options.clock ? { clock: options.clock } : {}),
   });

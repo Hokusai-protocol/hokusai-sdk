@@ -65,4 +65,26 @@ describe('buildHandoffInstructions', () => {
       instructions: ['Switch Codex to gpt-5-codex before continuing this task.'],
     });
   });
+
+  it('returns no Codex instructions when the current model already matches', () => {
+    const handoff = buildHandoffInstructions({
+      recommendation: {
+        model: {
+          id: 'gpt-5-codex',
+          provider: 'openai',
+          capabilities: ['reasoning', 'tool-use'],
+        },
+        reason: 'Already on the recommended model.',
+      },
+      currentModelId: 'gpt-5-codex',
+      harness: 'codex',
+    });
+
+    expect(handoff).toEqual({
+      mechanism: 'manual',
+      slashCommand: 'gpt-5-codex',
+      copyableCommand: 'gpt-5-codex',
+      instructions: [],
+    });
+  });
 });

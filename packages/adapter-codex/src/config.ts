@@ -1,6 +1,10 @@
-import os from 'node:os';
 import path from 'node:path';
-import { createDefaultHandoff, type HarnessRoutingProfile } from '@hokusai/core';
+import os from 'node:os';
+import {
+  createDefaultHandoff,
+  type HarnessRoutingProfile,
+  type ModelRegistry,
+} from '@hokusai/core';
 import { buildCodexOutcomeReport } from './outcome.js';
 import { buildCodexTaskPacket } from './task-context.js';
 import { createOpenAiRegistry } from './registry.js';
@@ -49,8 +53,10 @@ export function getRetentionDays(
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 7;
 }
 
-export function createCodexHarnessProfile(): HarnessRoutingProfile {
-  const registry = createOpenAiRegistry();
+export function createCodexHarnessProfile(options?: {
+  registry?: ModelRegistry;
+}): HarnessRoutingProfile {
+  const registry = options?.registry ?? createOpenAiRegistry();
 
   return {
     harnessName: 'codex',
@@ -58,12 +64,21 @@ export function createCodexHarnessProfile(): HarnessRoutingProfile {
     registry,
     allowedProviders: ['openai'],
     defaultModelId: registry.getDefault()?.id,
-    buildTask({ taskText, taskId, metadata, currentModelId }) {
+    buildTask({
+      taskText,
+      taskId,
+      metadata,
+      currentModelId,
+      modelConstraints,
+      providerConstraints,
+    }) {
       const packet = buildCodexTaskPacket(
         {
           taskId,
           taskSummary: taskText,
           ...(currentModelId ? { model: currentModelId } : {}),
+          ...(modelConstraints ? { modelConstraints } : {}),
+          ...(providerConstraints ? { providerConstraints } : {}),
         },
         {
           redactionConfig: {

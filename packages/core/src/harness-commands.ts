@@ -5,7 +5,11 @@ import {
 } from './client.js';
 import { DEFAULT_REDACTION_CONFIG, hashPayload } from './anonymization.js';
 import { buildHandoffInstructions } from './handoff.js';
-import { mapRecommendation, ModelMappingError } from './model-registry.js';
+import {
+  listSupportedModelIds,
+  mapRecommendation,
+  ModelMappingError,
+} from './model-registry.js';
 import { buildOutcomeReport } from './outcome.js';
 import {
   validateRouteRequest,
@@ -387,6 +391,11 @@ export async function executeRouteCommand(
   const taskInput: Parameters<HarnessRoutingProfile['buildTask']>[0] = {
     taskText,
     taskId: input.taskId,
+    providerConstraints: [...input.profile.allowedProviders],
+    modelConstraints: listSupportedModelIds(input.profile.registry, {
+      allowedProviders: input.profile.allowedProviders,
+      requireAvailable: true,
+    }),
   };
   if (input.metadata) {
     taskInput.metadata = input.metadata;
@@ -691,15 +700,6 @@ export async function latestRouteCommand(
 ): Promise<HarnessCommandResult<LatestRouteCommandValue>> {
   const resolved = await resolveCorrelationRecord(store);
   if (!resolved) {
-    return fail(
-      'E_NOT_FOUND',
-      'No stored route was found.',
-      'Route a task first before requesting the latest route.',
-    );
-  }
-
-  const record = await resolveCorrelationRecord(store, resolved.correlationId);
-  if (!record) {
     return fail(
       'E_NOT_FOUND',
       'No stored route was found.',

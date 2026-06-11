@@ -4,6 +4,7 @@ import {
   HokusaiDispatchBuilder,
   InMemoryLocalStore,
   InMemoryModelRegistry,
+  OPENAI_MODELS,
   type HarnessAdapter,
   type ModelDefinition,
 } from '@hokusai/core';
@@ -11,6 +12,7 @@ import {
   buildCodexTaskPacket,
   buildCodexTaskPacketFromText,
   createCodexAdapter,
+  createCodexHarnessProfile,
   createCodexHarnessAdapter,
   createCodexModelProvider,
   previewCodexTaskPacketFromText,
@@ -276,4 +278,49 @@ describe('createCodexHarnessAdapter', () => {
       },
     });
   });
+
+  it('defaults to the shared OpenAI registry when no model list is provided', async () => {
+    const adapter = createCodexHarnessAdapter({
+      defaultModel: 'missing-model',
+      redactionConfig,
+    });
+    const discovered = await adapter.models.discoverModels({
+      task: {
+        id: 'task-1',
+        prompt: 'Route this task.',
+      },
+    });
+
+    expect(discovered.ok).toBe(true);
+    if (!discovered.ok) {
+      return;
+    }
+
+    expect(discovered.value.map((model) => model.id)).toEqual(
+      OPENAI_MODELS.map((model) => model.id),
+    );
+    expect(
+      discovered.value.every((model) => model.metadata?.provider === 'openai'),
+    ).toBe(true);
+  });
+
+  it('keeps the default model aligned with the Codex harness profile', async () => {
+    const profile = createCodexHarnessProfile();
+    const adapter = createHarnessAdapterForTest(profile.defaultModelId);
+    const context = await adapter.context.collectTaskContext({});
+
+    expect(context.ok).toBe(true);
+    if (!context.ok) {
+      return;
+    }
+
+    expect(context.value.task.metadata?.model).toBe(profile.defaultModelId);
+  });
 });
+
+function createHarnessAdapterForTest(defaultModel?: string) {
+  return createCodexHarnessAdapter({
+    defaultModel: defaultModel ?? 'gpt-5-codex',
+    redactionConfig,
+  });
+}

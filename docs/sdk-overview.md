@@ -195,7 +195,7 @@ Current documented Codex command names are:
 - `hokusai:preview`
 - `hokusai:outcome`
 
-This branch documents the Codex adapter/library surface only. Codex plugin packaging, skills, marketplace metadata, and MCP tool definitions are not yet present here, so SDK consumers should treat those install surfaces as pending separate plugin work.
+The Codex adapter ships both a library surface (documented above) and an installable plugin bundle (`packages/adapter-codex/plugin/`). The plugin includes MCP server definitions, skills (hokusai-route, hokusai-report, hokusai-doctor, hokusai-privacy), marketplace metadata, and a binary entrypoint — see the plugin README for install instructions.
 
 Use [privacy-model.md](privacy-model.md) for the shared adapter privacy posture, including env-only API key handling, local write-time denylists, retention defaults, and preview-before-send behavior.
 

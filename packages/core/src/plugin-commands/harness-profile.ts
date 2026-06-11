@@ -71,13 +71,14 @@ export function buildDefaultRecommendation(
     'defaultRecommendationReason' | 'modelCatalog'
   >,
   model: ModelDefinition,
+  registry: ModelCatalog['registry'] = profile.modelCatalog.registry,
 ): HarnessRecommendation {
   const allowedProviders = profile.modelCatalog.allowedProviders;
 
   return {
     model: toModelSelection(model),
     reason: profile.defaultRecommendationReason,
-    alternatives: profile.modelCatalog.registry
+    alternatives: registry
       .listAvailable()
       .filter((candidate) =>
         allowedProviders?.includes(candidate.provider) ?? true,
