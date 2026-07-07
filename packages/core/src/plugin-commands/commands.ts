@@ -201,18 +201,23 @@ function toRoutingDecisionSummary(
   );
 
   return {
-    correlationId: record.metadata?.originalCorrelationId ?? record.correlationId,
+    correlationId:
+      record.metadata?.originalCorrelationId ?? record.correlationId,
     taskId: record.metadata?.taskId ?? record.packetHash,
     createdAt: new Date(record.createdAt).toISOString(),
     ...(record.metadata?.recommendedModelId
       ? { recommendedModelId: record.metadata.recommendedModelId }
       : {}),
-    alternatives: parseAlternativeIds(record.metadata?.recommendedAlternativeIds),
+    alternatives: parseAlternativeIds(
+      record.metadata?.recommendedAlternativeIds,
+    ),
     ...(record.metadata?.reasonPreview
       ? { reasonPreview: record.metadata.reasonPreview }
       : {}),
     ...(record.metadata?.status ? { status: record.metadata.status } : {}),
-    ...(record.metadata?.reasonHash ? { reasonHash: record.metadata.reasonHash } : {}),
+    ...(record.metadata?.reasonHash
+      ? { reasonHash: record.metadata.reasonHash }
+      : {}),
     ...(payloadHashRecord ? { payloadHash: payloadHashRecord } : {}),
   };
 }
@@ -301,7 +306,12 @@ function buildOutcomePreviewLines(report: OutcomeReport): string[] {
 
 function applyProfileConstraints(
   packet: TaskPacket,
-  profile: HarnessProfile<RouteInputBase, unknown, unknown, SharedCommandOptions>,
+  profile: HarnessProfile<
+    RouteInputBase,
+    unknown,
+    unknown,
+    SharedCommandOptions
+  >,
   registry: ModelRegistry,
 ): TaskPacket {
   const providerConstraints =
@@ -332,7 +342,12 @@ function applyProfileConstraints(
 
 function buildRecommendationFromRoute(
   route: RouteResponse,
-  profile: HarnessProfile<RouteInputBase, unknown, unknown, SharedCommandOptions>,
+  profile: HarnessProfile<
+    RouteInputBase,
+    unknown,
+    unknown,
+    SharedCommandOptions
+  >,
   registry: ModelRegistry,
 ): HarnessRecommendation | undefined {
   if (!route.recommendation) {
@@ -349,30 +364,34 @@ function buildRecommendationFromRoute(
 
   return {
     model: toModelSelection(mapped),
-    reason:
-      route.recommendation.reason ?? profile.routeRecommendationReason,
+    reason: route.recommendation.reason ?? profile.routeRecommendationReason,
     ...(route.recommendation.confidence === undefined
       ? {}
       : { confidence: route.recommendation.confidence }),
     ...(route.recommendation.alternatives?.length
       ? {
-          alternatives: route.recommendation.alternatives.map((alternative) => ({
-            model: toModelSelection(
-              mapRecommendation(alternative, {
-                registry,
-                ...(profile.modelCatalog.allowedProviders
-                  ? { allowedProviders: profile.modelCatalog.allowedProviders }
-                  : {}),
-                requireAvailable: profile.modelCatalog.requireAvailable ?? true,
-              }),
-            ),
-            ...(alternative.reason === undefined
-              ? {}
-              : { reason: alternative.reason }),
-            ...(alternative.confidence === undefined
-              ? {}
-              : { confidence: alternative.confidence }),
-          })),
+          alternatives: route.recommendation.alternatives.map(
+            (alternative) => ({
+              model: toModelSelection(
+                mapRecommendation(alternative, {
+                  registry,
+                  ...(profile.modelCatalog.allowedProviders
+                    ? {
+                        allowedProviders: profile.modelCatalog.allowedProviders,
+                      }
+                    : {}),
+                  requireAvailable:
+                    profile.modelCatalog.requireAvailable ?? true,
+                }),
+              ),
+              ...(alternative.reason === undefined
+                ? {}
+                : { reason: alternative.reason }),
+              ...(alternative.confidence === undefined
+                ? {}
+                : { confidence: alternative.confidence }),
+            }),
+          ),
         }
       : {}),
   };
@@ -423,15 +442,19 @@ export function createRouteTask<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function routeTask(
     input: TRouteInput,
     options?: TOptions,
   ): Promise<RouteResult> {
-    if (typeof input.taskText !== 'string' || input.taskText.trim().length === 0) {
-      return fail('INVALID_TASK', 'Expected "taskText" to be a non-empty string.');
+    if (
+      typeof input.taskText !== 'string' ||
+      input.taskText.trim().length === 0
+    ) {
+      return fail(
+        'INVALID_TASK',
+        'Expected "taskText" to be a non-empty string.',
+      );
     }
 
     const context = resolveCommandContext(profile, options);
@@ -462,7 +485,11 @@ export function createRouteTask<
           requireAvailable: profile.modelCatalog.requireAvailable ?? true,
         },
       );
-      recommendation = buildDefaultRecommendation(profile, mapped, context.registry);
+      recommendation = buildDefaultRecommendation(
+        profile,
+        mapped,
+        context.registry,
+      );
     } catch (error) {
       if (error instanceof ModelMappingError) {
         return fail(error.code, error.message, {
@@ -524,19 +551,25 @@ export function createRouteTask<
 
     const validationErrors = validateRouteRequest(payload);
     if (validationErrors.length > 0) {
-      return fail('ROUTE_VALIDATION_FAILED', 'Route payload validation failed.', {
-        fieldErrors: validationErrors.map(
-          (fieldError) => `${fieldError.path}: ${fieldError.message}`,
-        ),
-      });
+      return fail(
+        'ROUTE_VALIDATION_FAILED',
+        'Route payload validation failed.',
+        {
+          fieldErrors: validationErrors.map(
+            (fieldError) => `${fieldError.path}: ${fieldError.message}`,
+          ),
+        },
+      );
     }
 
     const timestamp = (options?.clock ?? (() => new Date()))().getTime();
     const correlationId = payload.correlation.correlationId;
     const payloadHash = hashPayload(
       payload,
-      ((context.builderOptions as { redactionConfig?: { salt: string } })
-        .redactionConfig ?? DEFAULT_REDACTION_CONFIG).salt,
+      (
+        (context.builderOptions as { redactionConfig?: { salt: string } })
+          .redactionConfig ?? DEFAULT_REDACTION_CONFIG
+      ).salt,
     );
     await store.putPayloadHash({
       hash: payloadHash,
@@ -595,11 +628,14 @@ export function createRouteTask<
       recommendation,
       currentModelId,
     });
-    const storedCorrelation = await findStoredCorrelationRecord(store, correlationId);
+    const storedCorrelation = await findStoredCorrelationRecord(
+      store,
+      correlationId,
+    );
     if (storedCorrelation.record) {
       const redactionConfig =
-        ((context.builderOptions as { redactionConfig?: RedactionConfig })
-          .redactionConfig ?? DEFAULT_REDACTION_CONFIG);
+        (context.builderOptions as { redactionConfig?: RedactionConfig })
+          .redactionConfig ?? DEFAULT_REDACTION_CONFIG;
       await store.putCorrelation({
         ...storedCorrelation.record,
         metadata: {
@@ -609,11 +645,15 @@ export function createRouteTask<
             recommendation.alternatives?.map((entry) => entry.model.id) ?? [],
           ),
           reasonHash: hashPayload(recommendation.reason, redactionConfig.salt),
-          reasonPreview: redactForStorage(recommendation.reason, redactionConfig),
+          reasonPreview: redactForStorage(
+            recommendation.reason,
+            redactionConfig,
+          ),
           payloadHash,
           status: 'pending',
           decisionAt: (options?.clock ?? (() => new Date()))().toISOString(),
-          ...(options?.env?.HOKUSAI_DEBUG === '1' || process.env.HOKUSAI_DEBUG === '1'
+          ...(options?.env?.HOKUSAI_DEBUG === '1' ||
+          process.env.HOKUSAI_DEBUG === '1'
             ? {
                 debugRedactedPayloadPreview: buildDebugPreview(
                   payload.prompt,
@@ -652,9 +692,7 @@ export function createDeclineRecommendation<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function declineRecommendation(
     input: DeclineRecommendationInput,
     options?: TOptions,
@@ -684,8 +722,8 @@ export function createDeclineRecommendation<
     }
 
     const redactionConfig =
-      ((context.builderOptions as { redactionConfig?: RedactionConfig })
-        .redactionConfig ?? DEFAULT_REDACTION_CONFIG);
+      (context.builderOptions as { redactionConfig?: RedactionConfig })
+        .redactionConfig ?? DEFAULT_REDACTION_CONFIG;
     await store.putCorrelation({
       ...resolved.record,
       metadata: {
@@ -694,7 +732,10 @@ export function createDeclineRecommendation<
         declinedAt: (options?.clock ?? (() => new Date()))().toISOString(),
         ...(input.reason?.trim()
           ? {
-              declineReason: redactForStorage(input.reason.trim(), redactionConfig),
+              declineReason: redactForStorage(
+                input.reason.trim(),
+                redactionConfig,
+              ),
             }
           : {}),
       },
@@ -714,9 +755,7 @@ export function createRunDoctor<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return function runDoctor(options?: TOptions): DoctorResult {
     const config = profile.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : undefined,
@@ -753,9 +792,7 @@ export function createPreviewTaskPayload<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return function previewTaskPayload(
     input: TRouteInput,
     options?: TOptions,
@@ -766,7 +803,10 @@ export function createPreviewTaskPayload<
       profile,
       context.registry,
     );
-    const previewResult = profile.previewTaskPacket(input, context.builderOptions);
+    const previewResult = profile.previewTaskPacket(
+      input,
+      context.builderOptions,
+    );
     const taskId = profile.toTaskId(input, options?.clock);
     const harnessPreview = buildPayloadPreview({
       task: { id: taskId, prompt: profile.toPrompt(packet) },
@@ -776,29 +816,34 @@ export function createPreviewTaskPayload<
         grantedScopes: [...context.consent.grantedScopes],
       },
       model: {
-        id: input.modelId ?? context.registry.getDefault()?.id ?? 'unconfigured-model',
+        id:
+          input.modelId ??
+          context.registry.getDefault()?.id ??
+          'unconfigured-model',
         provider:
-          context.registry.get(input.modelId ?? context.registry.getDefault()?.id ?? '')
-            ?.provider ??
+          context.registry.get(
+            input.modelId ?? context.registry.getDefault()?.id ?? '',
+          )?.provider ??
           profile.modelCatalog.allowedProviders?.[0] ??
           'unknown',
         capabilities:
-          context.registry.get(input.modelId ?? context.registry.getDefault()?.id ?? '')
-            ?.capabilities ?? [],
+          context.registry.get(
+            input.modelId ?? context.registry.getDefault()?.id ?? '',
+          )?.capabilities ?? [],
       },
       correlation: {
         taskId,
         correlationId: 'preview-only',
         createdAt: new Date(0).toISOString(),
       },
-      redactions: profile.buildTaskPacket(input, context.builderOptions).redactionSummary.map(
-        (entry) => ({
+      redactions: profile
+        .buildTaskPacket(input, context.builderOptions)
+        .redactionSummary.map((entry) => ({
           label: entry.category,
           count: entry.count,
           category: entry.category,
           placeholder: `<redacted:${entry.category}>`,
-        }),
-      ),
+        })),
       createdAt: new Date(0).toISOString(),
     });
 
@@ -815,7 +860,7 @@ export async function findLatestRoutingDecision(input: {
 }): Promise<LatestRoutingDecision | undefined> {
   const store = new FsLocalStore(input.configDir);
   const records = await store.listCorrelations();
-  const latest = records.reduce<typeof records[number] | undefined>(
+  const latest = records.reduce<(typeof records)[number] | undefined>(
     (currentLatest, record) => {
       if (!currentLatest || record.createdAt > currentLatest.createdAt) {
         return record;
@@ -831,9 +876,13 @@ export async function findLatestRoutingDecision(input: {
   }
 
   return {
-    correlationId: latest.metadata?.originalCorrelationId ?? latest.correlationId,
+    correlationId:
+      latest.metadata?.originalCorrelationId ?? latest.correlationId,
     taskId: latest.metadata?.taskId ?? latest.packetHash,
     createdAt: new Date(latest.createdAt).toISOString(),
+    ...(latest.metadata?.recommendedModelId
+      ? { recommendedModelId: latest.metadata.recommendedModelId }
+      : {}),
   };
 }
 
@@ -842,9 +891,7 @@ export function createPreviewReportOutcome<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return function previewReportOutcome(
     input: ReportOutcomeInputWithTaskId,
     options?: TOptions,
@@ -865,7 +912,8 @@ export function createPreviewReportOutcome<
     } catch (error) {
       if (error instanceof Error && 'errors' in error) {
         const validationErrors =
-          (error as { errors?: Array<{ path: string; message: string }> }).errors ?? [];
+          (error as { errors?: Array<{ path: string; message: string }> })
+            .errors ?? [];
         return fail('OUTCOME_VALIDATION_FAILED', error.message, {
           fieldErrors: validationErrors.map(
             (validationError) =>
@@ -892,9 +940,7 @@ export function createReportTaskOutcome<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   const previewReportOutcome = createPreviewReportOutcome(profile);
 
   return async function reportTaskOutcome(
@@ -910,8 +956,8 @@ export function createReportTaskOutcome<
     const store = new FsLocalStore(context.configDir);
     const timestamp = (options?.clock ?? (() => new Date()))().getTime();
     const redactionConfig =
-      ((context.builderOptions as { redactionConfig?: RedactionConfig })
-        .redactionConfig ?? DEFAULT_REDACTION_CONFIG);
+      (context.builderOptions as { redactionConfig?: RedactionConfig })
+        .redactionConfig ?? DEFAULT_REDACTION_CONFIG;
     await store.putPayloadHash({
       hash: hashPayload(previewResult.value.report, redactionConfig.salt),
       algorithm: 'sha-256-hmac',
@@ -981,9 +1027,7 @@ export function createClearLocalState<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function clearLocalState(
     options?: TOptions,
   ): Promise<AdapterResult<{ ok: true }>> {
@@ -1007,14 +1051,14 @@ export function createListRoutingDecisions<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function listRoutingDecisions(
     input: { limit?: number } = {},
     options?: TOptions,
   ): Promise<
-    AdapterResult<{ decisions: RoutingDecisionSummary[] } & PrivacyResultWarnings>
+    AdapterResult<
+      { decisions: RoutingDecisionSummary[] } & PrivacyResultWarnings
+    >
   > {
     const context = resolveCommandContext(profile, options);
     const store = new FsLocalStore(context.configDir);
@@ -1046,9 +1090,7 @@ export function createPreviewStoredDecision<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function previewStoredDecision(
     input: { correlationId: string; debug?: boolean },
     options?: TOptions,
@@ -1106,13 +1148,13 @@ export function createListSubmissionAudit<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function listSubmissionAudit(
     input: { limit?: number } = {},
     options?: TOptions,
-  ): Promise<AdapterResult<{ entries: SubmissionAuditEntry[] } & PrivacyResultWarnings>> {
+  ): Promise<
+    AdapterResult<{ entries: SubmissionAuditEntry[] } & PrivacyResultWarnings>
+  > {
     const context = resolveCommandContext(profile, options);
     const store = new FsLocalStore(context.configDir);
     const { warnings = [] } = await pruneStoreForPrivacy(
@@ -1139,9 +1181,7 @@ export function createClearPrivacyState<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   const clearLocalState = createClearLocalState(profile);
 
   return async function clearPrivacyState(
@@ -1162,7 +1202,10 @@ export function createClearPrivacyState<
         store.listAudit(),
       ]);
 
-      await clearLocalState({ ...(options ?? {}), configPath: configDir } as TOptions);
+      await clearLocalState({
+        ...(options ?? {}),
+        configPath: configDir,
+      } as TOptions);
 
       return ok({
         scope: 'all',
@@ -1178,7 +1221,10 @@ export function createClearPrivacyState<
         store.listCorrelations(),
         store.listPayloadHashes(),
       ]);
-      await Promise.all([store.clearCorrelations(), store.clearPayloadHashes()]);
+      await Promise.all([
+        store.clearCorrelations(),
+        store.clearPayloadHashes(),
+      ]);
       return ok({
         scope: 'records',
         correlationsCleared: correlations.length,
@@ -1205,9 +1251,7 @@ export function createSetReportingEnabled<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function setReportingEnabled(
     input: { enabled: boolean; configPath?: string },
     options?: TOptions,
@@ -1215,7 +1259,8 @@ export function createSetReportingEnabled<
     const configDir = profile.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : undefined,
     ).dir;
-    const pluginConfigPath = input.configPath ?? defaultPluginConfigPath(configDir);
+    const pluginConfigPath =
+      input.configPath ?? defaultPluginConfigPath(configDir);
     const store = new FilePluginConfigStore(pluginConfigPath);
     const existing = (await store.read()) ?? {};
 
@@ -1233,9 +1278,7 @@ export function createGetReportingStatus<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function getReportingStatus(
     options?: TOptions,
   ): Promise<AdapterResult<ReportingStatusResult>> {

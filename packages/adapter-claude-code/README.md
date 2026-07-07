@@ -130,6 +130,14 @@ To preview and optionally submit an anonymized outcome report for a prior routin
 
 The report command previews the exact anonymized payload first, then only submits after explicit approval. `hokusai-report --send` requires the same routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
 
+The plugin also ships `hokusai-outcome-hook`, wired through post-run hooks. When a run appears successful, tests pass, a PR is merged, or an issue closes, the hook prompts:
+
+```text
+Looks like this task succeeded - contribute this outcome to improve routing?
+```
+
+The prompt uses the latest Hokusai route, assumes the recommendation was accepted, and opens the normal `/hokusai:report` preview flow. Without `HOKUSAI_OUTCOME_OPT_IN=true`, it prints opt-in remediation instead of a report command.
+
 ## Decline a recommendation
 
 If the user chooses a different model, record that signal locally with the correlation id:

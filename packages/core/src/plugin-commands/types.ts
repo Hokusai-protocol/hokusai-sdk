@@ -86,6 +86,7 @@ export interface LatestRoutingDecision {
   correlationId: string;
   taskId: string;
   createdAt: string;
+  recommendedModelId?: string;
 }
 
 export interface ReportOutcomeResult {
@@ -195,6 +196,8 @@ export type ResolveRetentionPolicy = (
   env?: NodeJS.ProcessEnv,
 ) => RetentionPolicy;
 
-export type ListSubmissionAuditResult = AdapterResult<{
-  entries: SubmissionAuditEntry[];
-} & PrivacyResultWarnings>;
+export type ListSubmissionAuditResult = AdapterResult<
+  {
+    entries: SubmissionAuditEntry[];
+  } & PrivacyResultWarnings
+>;

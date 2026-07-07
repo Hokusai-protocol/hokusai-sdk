@@ -277,6 +277,7 @@ Routing and outcome reporting are consent-gated. Harnesses should collect explic
 - Shared adapters split end-user consent between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
 - Raw task text, raw code, raw prompts, terminal logs, and customer data should not be stored in local correlation records.
 - Adapter previews expose redacted payloads before submission.
+- Claude Code and Codex plugins include post-run outcome prompt hooks. The hooks detect likely success, then prompt for a report tied to the latest Hokusai route; they never submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit user approval in the report flow.
 
 See [docs/privacy-model.md](docs/privacy-model.md) for the full shared policy, including local storage denylist and retention behavior.
 

@@ -4,11 +4,14 @@ import {
   previewOutcomeWithCodex,
   previewRoutePayloadWithCodex,
   privacyStatusWithCodex,
+  promptOutcomeContributionWithCodex,
   routeTaskWithCodex,
   submitOutcomeWithCodex,
   type CodexOutcomeInput,
   type CodexRouteInput,
 } from './plugin-commands.js';
+
+export { runCodexOutcomePromptHookCli } from './outcome-prompt-hook.js';
 
 type JsonRpcId = string | number | null;
 
@@ -108,6 +111,22 @@ export const TOOLS: ToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: 'hokusai_prompt_outcome_contribution',
+    description:
+      'Detect successful Codex completion events and return a consent-gated outcome contribution prompt.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        event: {
+          description:
+            'Hook event payload or text to inspect for task completion, passing tests, merged PRs, or closed issues.',
+        },
+        actualModel: { type: 'string' },
+      },
+    },
+  },
 ];
 
 function writeMessage(message: Record<string, unknown>) {
@@ -161,6 +180,8 @@ async function handleToolCall(name: string, args: Record<string, unknown>) {
       return latestRouteWithCodex();
     case 'hokusai_privacy_status':
       return privacyStatusWithCodex();
+    case 'hokusai_prompt_outcome_contribution':
+      return promptOutcomeContributionWithCodex(args);
     default:
       return {
         ok: false,
@@ -213,7 +234,10 @@ async function handleRequest(request: JsonRpcRequest) {
         : {};
     const result = await handleToolCall(name, args);
     if (result.ok) {
-      writeResult(id, asToolResult(result.value as unknown as Record<string, unknown>));
+      writeResult(
+        id,
+        asToolResult(result.value as unknown as Record<string, unknown>),
+      );
       return;
     }
     writeResult(

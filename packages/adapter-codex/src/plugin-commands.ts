@@ -1,5 +1,6 @@
 import {
   HokusaiClient,
+  buildOutcomeContributionPrompt,
   createFsStore,
   executeRouteCommand,
   latestRouteCommand,
@@ -8,6 +9,7 @@ import {
   submitOutcomeCommand,
   type FetchTransport,
   type HarnessCommandResult,
+  type OutcomeContributionPrompt,
   type LatestRouteCommandValue,
   type PreviewOutcomeCommandValue,
   type PrivacyStatusCommandValue,
@@ -44,7 +46,12 @@ export interface CodexOutcomeInput {
   recommendedModel?: string;
   actualModel: string;
   recommendationAccepted: boolean;
-  completionStatus: 'succeeded' | 'failed' | 'abandoned' | 'overridden' | 'partial';
+  completionStatus:
+    | 'succeeded'
+    | 'failed'
+    | 'abandoned'
+    | 'overridden'
+    | 'partial';
   latencyBucket: 'low' | 'medium' | 'high';
   costBucket: 'low' | 'medium' | 'high';
   tokenBucket: 'low' | 'medium' | 'high';
@@ -53,7 +60,14 @@ export interface CodexOutcomeInput {
   approve?: boolean;
 }
 
-function createClient(options: CodexPluginCommandOptions): HokusaiClient | undefined {
+export interface CodexOutcomePromptInput {
+  event?: unknown;
+  actualModel?: string;
+}
+
+function createClient(
+  options: CodexPluginCommandOptions,
+): HokusaiClient | undefined {
   if (options.client) {
     return options.client;
   }
@@ -81,8 +95,7 @@ function createTaskId(taskId: string | undefined, clock?: () => Date): string {
 }
 
 function createProfileForEnv(env?: NodeJS.ProcessEnv) {
-  const allowlist = env?.HOKUSAI_MODEL_ALLOWLIST
-    ?.split(',')
+  const allowlist = env?.HOKUSAI_MODEL_ALLOWLIST?.split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
 
@@ -150,9 +163,13 @@ export async function previewOutcomeWithCodex(
       latencyBucket: input.latencyBucket,
       costBucket: input.costBucket,
       tokenBucket: input.tokenBucket,
-      ...(input.userRating === undefined ? {} : { userRating: input.userRating }),
+      ...(input.userRating === undefined
+        ? {}
+        : { userRating: input.userRating }),
       ...(input.notes ? { notes: input.notes } : {}),
-      ...(input.recommendedModel ? { recommendedModel: input.recommendedModel } : {}),
+      ...(input.recommendedModel
+        ? { recommendedModel: input.recommendedModel }
+        : {}),
     },
     profile: createProfileForEnv(options.env),
     store: createFsStore(resolveCodexConfigDir(options.env)),
@@ -179,9 +196,13 @@ export async function submitOutcomeWithCodex(
       latencyBucket: input.latencyBucket,
       costBucket: input.costBucket,
       tokenBucket: input.tokenBucket,
-      ...(input.userRating === undefined ? {} : { userRating: input.userRating }),
+      ...(input.userRating === undefined
+        ? {}
+        : { userRating: input.userRating }),
       ...(input.notes ? { notes: input.notes } : {}),
-      ...(input.recommendedModel ? { recommendedModel: input.recommendedModel } : {}),
+      ...(input.recommendedModel
+        ? { recommendedModel: input.recommendedModel }
+        : {}),
     },
     profile: createProfileForEnv(options.env),
     store: createFsStore(resolveCodexConfigDir(options.env)),
@@ -193,6 +214,35 @@ export async function latestRouteWithCodex(
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<LatestRouteCommandValue>> {
   return latestRouteCommand(createFsStore(resolveCodexConfigDir(options.env)));
+}
+
+export async function promptOutcomeContributionWithCodex(
+  input: CodexOutcomePromptInput = {},
+  options: CodexPluginCommandOptions = {},
+): Promise<HarnessCommandResult<OutcomeContributionPrompt>> {
+  const latest = await latestRouteWithCodex(options);
+  const latestRoute = latest.ok
+    ? {
+        correlationId: latest.value.correlationId,
+        taskId: latest.value.taskId,
+        createdAt: latest.value.createdAt,
+        ...(latest.value.recommendedModel
+          ? { recommendedModelId: latest.value.recommendedModel }
+          : {}),
+      }
+    : undefined;
+  const actualModel = input.actualModel ?? options.env?.HOKUSAI_ACTUAL_MODEL;
+
+  return {
+    ok: true,
+    value: buildOutcomeContributionPrompt({
+      event: input.event,
+      ...(latestRoute ? { latestRoute } : {}),
+      outcomeOptIn: hasOutcomeOptIn(options.env),
+      reportCommand: '$hokusai-report',
+      ...(actualModel ? { actualModel } : {}),
+    }),
+  };
 }
 
 export async function privacyStatusWithCodex(

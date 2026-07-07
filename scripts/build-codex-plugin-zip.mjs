@@ -71,8 +71,8 @@ function listRelativeFiles(rootDir) {
   const entries = [];
 
   function walk(currentDir) {
-    const dirEntries = readdirSync(currentDir, { withFileTypes: true }).sort((left, right) =>
-      left.name.localeCompare(right.name),
+    const dirEntries = readdirSync(currentDir, { withFileTypes: true }).sort(
+      (left, right) => left.name.localeCompare(right.name),
     );
 
     for (const entry of dirEntries) {
@@ -97,17 +97,21 @@ function listRelativeFiles(rootDir) {
 function assertNoForbiddenPaths(rootDir) {
   for (const relativePath of listRelativeFiles(rootDir)) {
     const normalizedPath = relativePath.split(path.sep).join('/');
-    const blockedPattern = denylistPatterns.find((pattern) => pattern.test(normalizedPath));
+    const blockedPattern = denylistPatterns.find((pattern) =>
+      pattern.test(normalizedPath),
+    );
     if (blockedPattern) {
-      throw new Error(`forbidden path in plugin zip staging: ${normalizedPath}`);
+      throw new Error(
+        `forbidden path in plugin zip staging: ${normalizedPath}`,
+      );
     }
   }
 }
 
 function normalizeTimestamps(rootDir) {
   function walk(currentDir) {
-    const dirEntries = readdirSync(currentDir, { withFileTypes: true }).sort((left, right) =>
-      left.name.localeCompare(right.name),
+    const dirEntries = readdirSync(currentDir, { withFileTypes: true }).sort(
+      (left, right) => left.name.localeCompare(right.name),
     );
 
     for (const entry of dirEntries) {
@@ -124,14 +128,22 @@ function normalizeTimestamps(rootDir) {
   utimesSync(rootDir, fixedTimeSeconds, fixedTimeSeconds);
 }
 
-function createChecksumFile(zipFile, checksumFile, checksumTargetName = path.basename(zipFile)) {
+function createChecksumFile(
+  zipFile,
+  checksumFile,
+  checksumTargetName = path.basename(zipFile),
+) {
   const hash = createHash('sha256');
   hash.update(readFileSync(zipFile));
   writeFileSync(checksumFile, `${hash.digest('hex')}  ${checksumTargetName}\n`);
 }
 
 function readManifestVersion() {
-  const manifestPath = path.join(pluginSourceDir, '.codex-plugin', 'plugin.json');
+  const manifestPath = path.join(
+    pluginSourceDir,
+    '.codex-plugin',
+    'plugin.json',
+  );
   assertExists(manifestPath, `missing plugin manifest at ${manifestPath}`);
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   if (!manifest.version) {
@@ -175,10 +187,16 @@ function main() {
 
   mkdirSync(distZipDir, { recursive: true });
 
-  const stagingParentDir = path.join(os.tmpdir(), 'hokusai-codex-plugin-staging');
+  const stagingParentDir = path.join(
+    os.tmpdir(),
+    'hokusai-codex-plugin-staging',
+  );
   mkdirSync(stagingParentDir, { recursive: true });
   const archiveRootName = 'hokusai-codex-plugin';
-  const stagingDir = path.join(stagingParentDir, `hokusai-codex-plugin-${process.pid}`);
+  const stagingDir = path.join(
+    stagingParentDir,
+    `hokusai-codex-plugin-${process.pid}`,
+  );
   rmSync(stagingDir, { recursive: true, force: true });
   mkdirSync(stagingDir, { recursive: true });
   const archiveRootDir = path.join(stagingDir, archiveRootName);
@@ -198,6 +216,10 @@ function main() {
   );
   writeMinimalPackageJson(version, path.join(archiveRootDir, 'package.json'));
   chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-codex-mcp'), 0o755);
+  chmodSync(
+    path.join(stagedPluginDir, 'bin', 'hokusai-codex-outcome-hook'),
+    0o755,
+  );
 
   assertExists(
     path.join(stagedPluginDir, '.codex-plugin', 'plugin.json'),
@@ -215,7 +237,10 @@ function main() {
   const outputBaseName = `hokusai-codex-plugin-${version}`;
   const zipFile = path.join(distZipDir, `${outputBaseName}.zip`);
   const checksumFile = `${zipFile}.sha256`;
-  const latestZipFile = path.join(distZipDir, 'hokusai-codex-plugin-latest.zip');
+  const latestZipFile = path.join(
+    distZipDir,
+    'hokusai-codex-plugin-latest.zip',
+  );
   const latestChecksumFile = `${latestZipFile}.sha256`;
 
   execFileSync('zip', ['-rX', '--filesync', zipFile, archiveRootName], {
@@ -225,7 +250,11 @@ function main() {
 
   createChecksumFile(zipFile, checksumFile);
   cpSync(zipFile, latestZipFile);
-  createChecksumFile(latestZipFile, latestChecksumFile, path.basename(latestZipFile));
+  createChecksumFile(
+    latestZipFile,
+    latestChecksumFile,
+    path.basename(latestZipFile),
+  );
 
   console.log(`Created ${zipFile}`);
   console.log(`Created ${checksumFile}`);

@@ -24,13 +24,26 @@ export {
   type BuildTaskPacketResult,
   type HarnessProfile,
 } from './harness-profile.js';
-export { CLI_EXIT_CODES, createRunCli, type CliExitCode, type CliRunResult } from './cli.js';
+export {
+  CLI_EXIT_CODES,
+  createRunCli,
+  type CliExitCode,
+  type CliRunResult,
+} from './cli.js';
 export {
   REPORT_CLI_EXIT_CODES,
   createRunReportCli,
   type ReportCliExitCode,
   type ReportCliRunResult,
 } from './report-cli.js';
+export {
+  buildOutcomeContributionPrompt,
+  detectOutcomeCompletionSignal,
+  type BuildOutcomeContributionPromptInput,
+  type OutcomeCompletionSignal,
+  type OutcomeContributionPrompt,
+  type OutcomePromptDetection,
+} from './outcome-prompt.js';
 export {
   PRIVACY_CLI_EXIT_CODES,
   createRunPrivacyCli,

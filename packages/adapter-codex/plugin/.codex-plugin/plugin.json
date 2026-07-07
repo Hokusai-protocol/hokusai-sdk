@@ -9,24 +9,17 @@
   "homepage": "https://github.com/Hokusai-protocol/hokusai-sdk",
   "repository": "https://github.com/Hokusai-protocol/hokusai-sdk",
   "license": "MIT",
-  "keywords": [
-    "codex",
-    "mcp",
-    "routing",
-    "privacy"
-  ],
+  "keywords": ["codex", "mcp", "routing", "privacy"],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Hokusai",
     "shortDescription": "Route Codex tasks to the right OpenAI model.",
     "longDescription": "Hokusai routes Codex tasks, previews anonymized payloads, and reports outcomes with explicit consent controls.",
     "developerName": "Hokusai",
     "category": "Productivity",
-    "capabilities": [
-      "Interactive",
-      "Write"
-    ],
+    "capabilities": ["Interactive", "Write"],
     "websiteURL": "https://github.com/Hokusai-protocol/hokusai-sdk",
     "privacyPolicyURL": "https://github.com/Hokusai-protocol/hokusai-sdk/blob/main/docs/privacy-model.md",
     "termsOfServiceURL": "https://github.com/Hokusai-protocol/hokusai-sdk/blob/main/README.md",
