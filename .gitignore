@@ -8,3 +8,5 @@ coverage
 .changeset/pre.json
 *.tsbuildinfo
 features/
+!packages/adapter-claude-code/plugin/dist/
+!packages/adapter-claude-code/plugin/dist/index.js

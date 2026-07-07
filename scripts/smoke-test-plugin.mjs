@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -177,6 +178,33 @@ function runCommand(commandPath, args, options = {}) {
   };
 }
 
+function assertCommandLoadsWithoutImportFailure(
+  rootDir,
+  commandName,
+  args,
+  expectedStatus,
+  env,
+) {
+  const commandPath = path.join(rootDir, 'plugin', 'bin', commandName);
+  const result = runCommand(commandPath, args, {
+    cwd: rootDir,
+    env,
+  });
+
+  if (!result) {
+    return;
+  }
+
+  assert(
+    result.status === expectedStatus,
+    `${commandName} exits with expected status ${expectedStatus}`,
+  );
+  assertNoImportFailure(
+    `${result.stdout}\n${result.stderr}`,
+    commandName,
+  );
+}
+
 function assertOfflineCommands(extractedRoot) {
   const configDir = path.join(extractedRoot, '.smoke-config');
   const env = {
@@ -316,6 +344,74 @@ function assertOfflineCommands(extractedRoot) {
   }
 }
 
+function assertPluginOnlyCopy(extractedRoot) {
+  const pluginOnlyRoot = path.join(path.dirname(extractedRoot), 'plugin-only');
+  const pluginOnlyDir = path.join(pluginOnlyRoot, 'plugin');
+  cpSync(path.join(extractedRoot, 'plugin'), pluginOnlyDir, { recursive: true });
+  assertNonEmptyFile(
+    path.join(pluginOnlyDir, 'dist', 'index.js'),
+    'plugin-only bundled dist/index.js exists',
+  );
+
+  const configDir = path.join(pluginOnlyRoot, '.smoke-config');
+  const env = {
+    ...process.env,
+    HOKUSAI_API_KEY: 'hk_live_smoke',
+    HOKUSAI_ROUTING_CONSENT: '',
+    HOKUSAI_OUTCOME_OPT_IN: '',
+    HOKUSAI_CONFIG_DIR: configDir,
+  };
+
+  assertCommandLoadsWithoutImportFailure(
+    pluginOnlyRoot,
+    'hokusai-route',
+    ['--task', 'smoke test', '--config', configDir],
+    3,
+    env,
+  );
+  assertCommandLoadsWithoutImportFailure(
+    pluginOnlyRoot,
+    'hokusai-report',
+    [
+      '--preview',
+      '--correlation-id',
+      'c1',
+      '--recommended-model',
+      'claude-sonnet-4-6',
+      '--actual-model',
+      'claude-sonnet-4-6',
+      '--accepted',
+      '--status',
+      'succeeded',
+      '--config',
+      configDir,
+    ],
+    3,
+    env,
+  );
+  assertCommandLoadsWithoutImportFailure(
+    pluginOnlyRoot,
+    'hokusai-privacy',
+    ['list', '--config', configDir],
+    0,
+    env,
+  );
+  assertCommandLoadsWithoutImportFailure(
+    pluginOnlyRoot,
+    'hokusai-doctor',
+    ['--config', configDir],
+    1,
+    env,
+  );
+  assertCommandLoadsWithoutImportFailure(
+    pluginOnlyRoot,
+    'hokusai-outcome-hook',
+    [],
+    0,
+    env,
+  );
+}
+
 function assertLiveRouteCommand(extractedRoot) {
   if (!process.argv.includes('--live')) {
     return;
@@ -443,7 +539,7 @@ function main() {
       'bin',
       'hokusai-doctor',
     );
-    const bundlePath = path.join(extractedRoot, 'dist', 'index.js');
+    const bundlePath = path.join(extractedRoot, 'plugin', 'dist', 'index.js');
     const readmePath = path.join(extractedRoot, 'README.md');
     const packageJsonPath = path.join(extractedRoot, 'package.json');
 
@@ -461,6 +557,7 @@ function main() {
     assertNonEmptyFile(packageJsonPath, 'package.json exists');
 
     assertOfflineCommands(extractedRoot);
+    assertPluginOnlyCopy(extractedRoot);
     assertLiveRouteCommand(extractedRoot);
   } catch (error) {
     fail(`smoke test crashed: ${formatError(error)}`);

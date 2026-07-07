@@ -14,7 +14,7 @@ const coreRestrictedImports = [
 export default tseslint.config(
   {
     ignores: [
-      'dist/**',
+      '**/dist/**',
       '**/dist-bundle/**',
       '.typecheck/**',
       'coverage/**',

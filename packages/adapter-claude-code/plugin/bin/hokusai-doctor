@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { runBootstrapDoctor } from '../../dist/index.js';
+import { runBootstrapDoctor } from '../dist/index.js';
 
 const usage = 'Usage: hokusai-doctor [--config <dir>] [--help]\n';
 

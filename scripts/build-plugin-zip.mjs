@@ -21,6 +21,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const adapterRoot = path.join(repoRoot, 'packages', 'adapter-claude-code');
 const pluginSourceDir = path.join(adapterRoot, 'plugin');
 const bundleSourceFile = path.join(adapterRoot, 'dist-bundle', 'index.js');
+const pluginBundleFile = path.join(pluginSourceDir, 'dist', 'index.js');
 const readmeSourceFile = path.join(adapterRoot, 'README.md');
 const distZipDir = path.join(repoRoot, 'dist-zip');
 const fixedDate = new Date('1970-01-01T00:00:00.000Z');
@@ -176,6 +177,21 @@ function assertManifestVersionMatches(resolvedVersion) {
   }
 }
 
+function assertPluginBundleMatches() {
+  assertExists(
+    pluginBundleFile,
+    'plugin bundle not found; run pnpm --filter @hokusai/adapter-claude-code sync:plugin-bundle after bundle:plugin',
+  );
+
+  const bundledContents = readFileSync(bundleSourceFile, 'utf8');
+  const pluginContents = readFileSync(pluginBundleFile, 'utf8');
+  if (bundledContents !== pluginContents) {
+    throw new Error(
+      'plugin/dist/index.js is stale; run pnpm --filter @hokusai/adapter-claude-code sync:plugin-bundle',
+    );
+  }
+}
+
 function main() {
   const version = resolveVersion();
   assertExists(pluginSourceDir, 'plugin source directory missing');
@@ -183,6 +199,7 @@ function main() {
     bundleSourceFile,
     'bundle not found; run pnpm --filter @hokusai/adapter-claude-code bundle:plugin first',
   );
+  assertPluginBundleMatches();
   assertExists(readmeSourceFile, 'adapter README missing');
   assertManifestVersionMatches(version);
 
@@ -202,13 +219,10 @@ function main() {
   mkdirSync(archiveRootDir, { recursive: true });
 
   const stagedPluginDir = path.join(archiveRootDir, 'plugin');
-  const stagedDistDir = path.join(archiveRootDir, 'dist');
 
   cpSync(pluginSourceDir, stagedPluginDir, { recursive: true });
   chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-doctor'), 0o755);
   chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-outcome-hook'), 0o755);
-  mkdirSync(stagedDistDir, { recursive: true });
-  cpSync(bundleSourceFile, path.join(stagedDistDir, 'index.js'));
   cpSync(readmeSourceFile, path.join(archiveRootDir, 'README.md'));
   writeMinimalPackageJson(version, path.join(archiveRootDir, 'package.json'));
 
