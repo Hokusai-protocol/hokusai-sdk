@@ -40,10 +40,11 @@ claude --plugin-dir ./hokusai-claude-code-plugin/plugin
 
 ## Install the plugin from source
 
-This path is for local development after building the package so the plugin bin can import `dist/`:
+This path is for local development after building the package and the self-contained plugin bundle:
 
 ```sh
 pnpm -r build
+pnpm --filter @hokusai/adapter-claude-code bundle:plugin
 claude --plugin-dir /path/to/repo/packages/adapter-claude-code/plugin
 ```
 

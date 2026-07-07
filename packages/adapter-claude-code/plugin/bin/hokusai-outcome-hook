@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { runOutcomePromptHookCli } from '../../dist/index.js';
+import { runOutcomePromptHookCli } from '../dist/index.js';
 
 const result = await runOutcomePromptHookCli(
   process.argv.slice(2),

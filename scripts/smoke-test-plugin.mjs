@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -190,8 +191,28 @@ function runCommand(commandPath, args, options = {}) {
   };
 }
 
-function assertOfflineCommands(extractedRoot) {
-  const configDir = path.join(extractedRoot, '.smoke-config');
+function assertOutcomeHookCommand(installRoot, env) {
+  const outcomeHookResult = runCommand(
+    path.join(installRoot, 'plugin', 'bin', 'hokusai-outcome-hook'),
+    [],
+    { cwd: installRoot, env },
+  );
+  if (!outcomeHookResult) {
+    return;
+  }
+
+  assert(
+    outcomeHookResult.status === 0,
+    'hokusai-outcome-hook accepts an empty invocation',
+  );
+  assertNoImportFailure(
+    `${outcomeHookResult.stdout}\n${outcomeHookResult.stderr}`,
+    'hokusai-outcome-hook',
+  );
+}
+
+function assertOfflineCommands(installRoot) {
+  const configDir = path.join(installRoot, '.smoke-config');
   const env = {
     ...process.env,
     HOKUSAI_API_KEY: 'hk_live_smoke',
@@ -199,12 +220,12 @@ function assertOfflineCommands(extractedRoot) {
     HOKUSAI_OUTCOME_OPT_IN: '',
     HOKUSAI_CONFIG_DIR: configDir,
   };
-  const binDir = path.join(extractedRoot, 'plugin', 'bin');
+  const binDir = path.join(installRoot, 'plugin', 'bin');
 
   const routeResult = runCommand(
     path.join(binDir, 'hokusai-route'),
     ['--task', 'smoke test', '--config', configDir],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
   if (routeResult) {
     assert(
@@ -237,7 +258,7 @@ function assertOfflineCommands(extractedRoot) {
       '--config',
       configDir,
     ],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
   if (reportResult) {
     assert(
@@ -257,7 +278,7 @@ function assertOfflineCommands(extractedRoot) {
   const privacyResult = runCommand(
     path.join(binDir, 'hokusai-privacy'),
     ['list', '--config', configDir],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
   if (privacyResult) {
     assert(privacyResult.status === 0, 'hokusai-privacy exits successfully');
@@ -274,7 +295,7 @@ function assertOfflineCommands(extractedRoot) {
   const doctorResult = runCommand(
     path.join(binDir, 'hokusai-doctor'),
     ['--config', configDir],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
   if (doctorResult) {
     assert(doctorResult.status === 1, 'hokusai-doctor exits with failed checks');
@@ -299,7 +320,7 @@ function assertOfflineCommands(extractedRoot) {
   const missingConfigValueResult = runCommand(
     path.join(binDir, 'hokusai-doctor'),
     ['--config'],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
   if (missingConfigValueResult) {
     assert(
@@ -315,7 +336,7 @@ function assertOfflineCommands(extractedRoot) {
   const unknownArgResult = runCommand(
     path.join(binDir, 'hokusai-doctor'),
     ['--unknown'],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
   if (unknownArgResult) {
     assert(
@@ -327,9 +348,11 @@ function assertOfflineCommands(extractedRoot) {
       'hokusai-doctor prints usage for unknown arguments',
     );
   }
+
+  assertOutcomeHookCommand(installRoot, env);
 }
 
-function assertLiveRouteCommand(extractedRoot) {
+function assertLiveRouteCommand(installRoot) {
   if (!process.argv.includes('--live')) {
     return;
   }
@@ -340,7 +363,7 @@ function assertLiveRouteCommand(extractedRoot) {
     return;
   }
 
-  const configDir = path.join(extractedRoot, '.smoke-config-live');
+  const configDir = path.join(installRoot, '.smoke-config-live');
   const env = {
     ...process.env,
     HOKUSAI_API_KEY: apiKey,
@@ -349,9 +372,9 @@ function assertLiveRouteCommand(extractedRoot) {
   };
 
   const routeResult = runCommand(
-    path.join(extractedRoot, 'plugin', 'bin', 'hokusai-route'),
+    path.join(installRoot, 'plugin', 'bin', 'hokusai-route'),
     ['--json', '--task', 'CI smoke test routing recommendation'],
-    { cwd: extractedRoot, env },
+    { cwd: installRoot, env },
   );
 
   if (!routeResult) {
@@ -380,6 +403,16 @@ function assertLiveRouteCommand(extractedRoot) {
   }
 }
 
+function createPluginOnlyInstall(extractedRoot) {
+  const installRoot = mkdtempSync(
+    path.join(os.tmpdir(), 'hokusai-plugin-installed-'),
+  );
+  cpSync(path.join(extractedRoot, 'plugin'), path.join(installRoot, 'plugin'), {
+    recursive: true,
+  });
+  return installRoot;
+}
+
 function main() {
   assertZipToolAvailable();
 
@@ -389,6 +422,7 @@ function main() {
 
   const tempDir = mkdtempSync(path.join(os.tmpdir(), 'hokusai-plugin-smoke-'));
   const extractDir = path.join(tempDir, 'unzipped');
+  let pluginOnlyRoot;
 
   try {
     execFileSync('unzip', ['-q', zipFile, '-d', extractDir], {
@@ -456,7 +490,13 @@ function main() {
       'bin',
       'hokusai-doctor',
     );
-    const bundlePath = path.join(extractedRoot, 'dist', 'index.js');
+    const outcomeHookBinPath = path.join(
+      extractedRoot,
+      'plugin',
+      'bin',
+      'hokusai-outcome-hook',
+    );
+    const bundlePath = path.join(extractedRoot, 'plugin', 'dist', 'index.js');
     const readmePath = path.join(extractedRoot, 'README.md');
     const packageJsonPath = path.join(extractedRoot, 'package.json');
 
@@ -465,19 +505,28 @@ function main() {
     assertCommandMarkdown(reportCommandPath);
     assertCommandMarkdown(privacyCommandPath);
     assertCommandMarkdown(doctorCommandPath);
-    assertNonEmptyFile(routeBinPath, 'route bin exists');
-    assertNonEmptyFile(reportBinPath, 'report bin exists');
-    assertNonEmptyFile(privacyBinPath, 'privacy bin exists');
+    assertExecutableFile(routeBinPath, 'route bin exists');
+    assertExecutableFile(reportBinPath, 'report bin exists');
+    assertExecutableFile(privacyBinPath, 'privacy bin exists');
     assertExecutableFile(doctorBinPath, 'doctor bin exists');
-    assertNonEmptyFile(bundlePath, 'bundled dist/index.js exists');
+    assertExecutableFile(outcomeHookBinPath, 'outcome hook bin exists');
+    assertNonEmptyFile(bundlePath, 'bundled plugin/dist/index.js exists');
     assertNonEmptyFile(readmePath, 'README exists');
     assertNonEmptyFile(packageJsonPath, 'package.json exists');
 
-    assertOfflineCommands(extractedRoot);
-    assertLiveRouteCommand(extractedRoot);
+    pluginOnlyRoot = createPluginOnlyInstall(extractedRoot);
+    assert(
+      !existsSync(path.join(pluginOnlyRoot, 'dist')),
+      'plugin-only install has no sibling dist directory',
+    );
+    assertOfflineCommands(pluginOnlyRoot);
+    assertLiveRouteCommand(pluginOnlyRoot);
   } catch (error) {
     fail(`smoke test crashed: ${formatError(error)}`);
   } finally {
+    if (pluginOnlyRoot) {
+      rmSync(pluginOnlyRoot, { recursive: true, force: true });
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 

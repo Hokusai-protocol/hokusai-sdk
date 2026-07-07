@@ -36,7 +36,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",
-    "bundle:plugin": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist-bundle/index.js",
+    "bundle:plugin": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=plugin/dist/index.js",
     "lint": "eslint src --max-warnings=0",
     "test": "vitest run",
     "typecheck": "tsc -b tsconfig.json --pretty false"

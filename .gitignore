@@ -2,6 +2,8 @@ node_modules
 dist
 dist-bundle
 dist-zip
+!packages/adapter-claude-code/plugin/dist/
+!packages/adapter-claude-code/plugin/dist/index.js
 coverage
 .turbo
 .typecheck
