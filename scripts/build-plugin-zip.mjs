@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const adapterRoot = path.join(repoRoot, 'packages', 'adapter-claude-code');
 const pluginSourceDir = path.join(adapterRoot, 'plugin');
-const bundleSourceFile = path.join(adapterRoot, 'dist-bundle', 'index.js');
+const bundleSourceFile = path.join(pluginSourceDir, 'dist', 'index.js');
 const readmeSourceFile = path.join(adapterRoot, 'README.md');
 const distZipDir = path.join(repoRoot, 'dist-zip');
 const fixedDate = new Date('1970-01-01T00:00:00.000Z');
@@ -202,19 +202,27 @@ function main() {
   mkdirSync(archiveRootDir, { recursive: true });
 
   const stagedPluginDir = path.join(archiveRootDir, 'plugin');
-  const stagedDistDir = path.join(archiveRootDir, 'dist');
 
   cpSync(pluginSourceDir, stagedPluginDir, { recursive: true });
-  chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-doctor'), 0o755);
-  chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-outcome-hook'), 0o755);
-  mkdirSync(stagedDistDir, { recursive: true });
-  cpSync(bundleSourceFile, path.join(stagedDistDir, 'index.js'));
+  for (const executable of [
+    'hokusai-doctor',
+    'hokusai-outcome-hook',
+    'hokusai-privacy',
+    'hokusai-report',
+    'hokusai-route',
+  ]) {
+    chmodSync(path.join(stagedPluginDir, 'bin', executable), 0o755);
+  }
   cpSync(readmeSourceFile, path.join(archiveRootDir, 'README.md'));
   writeMinimalPackageJson(version, path.join(archiveRootDir, 'package.json'));
 
   assertExists(
     path.join(stagedPluginDir, '.claude-plugin', 'plugin.json'),
     'missing plugin manifest at plugin/.claude-plugin/plugin.json',
+  );
+  assertExists(
+    path.join(stagedPluginDir, 'dist', 'index.js'),
+    'missing bundled runtime at plugin/dist/index.js',
   );
 
   const commandFiles = readdirSync(path.join(stagedPluginDir, 'commands'), {

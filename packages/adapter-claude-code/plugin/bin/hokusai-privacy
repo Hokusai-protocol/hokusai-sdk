@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runPrivacyCli } from '../../dist/index.js';
+import { runPrivacyCli } from '../dist/index.js';
 try {
   const result = await runPrivacyCli(process.argv.slice(2), process.env);
   if (result.stdout) process.stdout.write(result.stdout);

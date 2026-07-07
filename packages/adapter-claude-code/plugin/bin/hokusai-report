@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { runReportCli } from '../../dist/index.js';
+import { runReportCli } from '../dist/index.js';
 
 const result = await runReportCli(process.argv.slice(2), process.env);
 
