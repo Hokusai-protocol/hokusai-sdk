@@ -7,10 +7,11 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  package-plugin:
-    name: Build and publish plugin zips
+  release:
+    name: Publish packages and plugin zips
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,12 +22,25 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Check package boundaries
+        run: pnpm check:boundaries
+
       - name: Build packages
         run: pnpm -r build
+
+      - name: Test packages
+        run: pnpm -r test
 
       - name: Bundle plugin
         run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
@@ -59,11 +73,43 @@ jobs:
           sha256sum -c hokusai-claude-code-plugin-*.zip.sha256
           sha256sum -c hokusai-codex-plugin-*.zip.sha256
 
+      - name: Import release signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "GPG_PRIVATE_KEY is required to sign release plugin artifacts" >&2
+            exit 1
+          fi
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Sign plugin artifacts
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          for artifact in dist-zip/*.zip dist-zip/*.zip.sha256; do
+            gpg --batch --yes --armor --detach-sign \
+              --pinentry-mode loopback \
+              --passphrase "$GPG_PASSPHRASE" \
+              --output "${artifact}.asc" \
+              "$artifact"
+          done
+
+      - name: Publish npm packages
+        run: pnpm release --no-git-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm_config_provenance: true
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist-zip/hokusai-claude-code-plugin-*.zip
             dist-zip/hokusai-claude-code-plugin-*.zip.sha256
+            dist-zip/hokusai-claude-code-plugin-*.zip.asc
+            dist-zip/hokusai-claude-code-plugin-*.zip.sha256.asc
             dist-zip/hokusai-codex-plugin-*.zip
             dist-zip/hokusai-codex-plugin-*.zip.sha256
+            dist-zip/hokusai-codex-plugin-*.zip.asc
+            dist-zip/hokusai-codex-plugin-*.zip.sha256.asc

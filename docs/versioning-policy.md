@@ -87,7 +87,7 @@ Stable releases are the default release channel:
 
 - package versions are published via `pnpm release`
 - version numbers are computed from Changesets
-- GitHub `v*` tags trigger the release workflow that publishes the Claude Code plugin zip asset
+- GitHub `v*` tags trigger the release workflow that publishes npm packages and the Claude Code/Codex plugin zip assets with checksums and detached signatures
 
 ### Pre-release
 

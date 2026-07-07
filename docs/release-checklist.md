@@ -28,18 +28,19 @@ Use this checklist before publishing SDK package or adapter changes.
 - [ ] Run `pnpm changeset` and describe the public change.
 - [ ] Choose `major`, `minor`, or `patch` according to [Versioning Policy](versioning-policy.md).
 - [ ] Run `pnpm version-packages` to apply the release versions.
-- [ ] Run `pnpm release` to publish packages.
+- [ ] Ensure repository secrets are configured: `NPM_TOKEN`, `GPG_PRIVATE_KEY`, and `GPG_PASSPHRASE`.
+- [ ] Push a matching `v*` tag to publish npm packages and plugin artifacts through GitHub Actions.
 
 ## Claude Code Plugin Release
 
 - [ ] Create and push a matching `v*` tag such as `git tag v0.x.y && git push origin v0.x.y`.
-- [ ] Confirm the GitHub Actions release workflow publishes the Claude Code plugin zip.
-- [ ] Verify the GitHub Release includes the expected zip asset and SHA-256 output.
-- [ ] Verify the GitHub Release includes the Codex plugin zip asset and SHA-256 output once Codex packaging lands.
+- [ ] Confirm the GitHub Actions release workflow publishes the Claude Code and Codex plugin zips.
+- [ ] Verify the GitHub Release includes the expected zip assets, SHA-256 outputs, and detached `.asc` signatures.
 
 ## Post-release Verification
 
-- [ ] Confirm the published package versions are visible on npm.
+- [ ] Confirm `npm view @hokusai/core version` and each adapter package return the published version.
+- [ ] Confirm `npm install @hokusai/core @hokusai/adapter-claude-code @hokusai/adapter-codex @hokusai/adapter-wavemill` succeeds in a clean temporary project.
 - [ ] Reinstall the published packages in `examples/reference-harness` and rerun its tests.
 - [ ] Run the [Claude Code Plugin Launch Smoke Checklist](plugin-launch-checklist.md) against the published plugin zip.
 - [ ] Update [Release Notes](release-notes.md) with the release summary.
