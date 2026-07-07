@@ -38,7 +38,7 @@ describe('createCodexAdapter', () => {
     const adapter = createCodexAdapter({
       defaultModel: 'gpt-5-codex',
       pluginId: 'hokusai.codex',
-      version: '0.1.0',
+      version: '0.1.1',
     });
 
     expect(adapter.harness).toBe('codex');
@@ -52,7 +52,7 @@ describe('createCodexAdapter', () => {
     expect(adapter.manifest).toEqual({
       pluginId: 'hokusai.codex',
       defaultModel: 'gpt-5-codex',
-      version: '0.1.0',
+      version: '0.1.1',
     });
   });
 
@@ -165,14 +165,14 @@ describe('createCodexHarnessAdapter', () => {
       models,
       redactionConfig,
       store,
-      version: '0.1.0',
+      version: '0.1.1',
       telemetry: () => ({
         taskId: 'task-1',
         taskSummary: 'Add a feature and validate it with tests.',
         model: 'gpt-5-codex',
         cwd: '/repo',
         metadata: { sessionId: 'session-1' },
-        harnessVersion: '0.1.0',
+        harnessVersion: '0.1.1',
       }),
       recommendation: displayRecommendation,
     });

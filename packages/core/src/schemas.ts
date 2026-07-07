@@ -44,58 +44,64 @@ export interface HokusaiDispatchPayload {
 
 export type RouteRequest = HokusaiDispatchPayload;
 
+export type TechnicalTaskRouterTaskType =
+  | 'feature'
+  | 'bugfix'
+  | 'refactor'
+  | 'research'
+  | 'maintenance';
+
 export interface TechnicalTaskRouterInputs {
-  task_type: string;
-  language: string;
-  domain: string;
-  complexity: string;
-  repo_size_bucket: string;
-  files_touched_bucket: string;
-  description_length_bucket: string;
-  is_greenfield: string;
-  is_migration: string;
-  requires_tests: string;
-  cross_service: string;
-  ui_heavy: string;
-  risk_level: string;
-  max_cost_usd: string;
-  available_planner_models: string;
-  available_coder_models: string;
-  available_reviewer_models: string;
-  planner_model: string;
-  planner_agent: string;
-  coder_model: string;
-  coder_agent: string;
-  reviewer_model: string;
-  reviewer_agent: string;
-  plan_depth: string;
-  code_depth: string;
-  review_mode: string;
-  route_source: string;
-  router_mode: string;
-  routing_mode: string;
-  expected_success_probability: string;
-  expected_cost_usd: string;
-  confidence: string;
-  risk_score: string;
-  score: string;
-  score_band: string;
-  under_budget: string;
-  actual_cost_usd: string;
-  actual_time_seconds: string;
-  intervention_count: string;
-  workflow_cost_status: string;
-  budget_violation: string;
-  rubric_version: string;
-  rubric_criterion_count: string;
-  rubric_mean_score: string;
-  rubric_completeness: string;
-  rubric_correctness: string;
-  rubric_code_quality: string;
-  rubric_intervention_impact: string;
-  rubric_autonomy: string;
-  rubric_determinative_boundary: string;
-  rubric_provenance: string;
+  task: {
+    description: string;
+    task_type: TechnicalTaskRouterTaskType;
+    language?: string | undefined;
+    framework?: string | undefined;
+    repo_type?: string | undefined;
+  };
+  routing?: {
+    available_models?: string[] | undefined;
+    available_planner_models?: string[] | undefined;
+    available_coder_models?: string[] | undefined;
+    available_reviewer_models?: string[] | undefined;
+    preferred_models?: string[] | undefined;
+    max_cost_usd?: number | undefined;
+    max_latency_seconds?: number | undefined;
+    objective?:
+      | 'lowest_cost'
+      | 'fastest_completion'
+      | 'highest_reliability'
+      | undefined;
+    prioritize_quality?: boolean | undefined;
+    prioritize_speed?: boolean | undefined;
+  } | undefined;
+  context?: {
+    domain?: string | undefined;
+    repo_size_bucket?:
+      | 'tiny'
+      | 'small'
+      | 'medium'
+      | 'large'
+      | 'very_large'
+      | undefined;
+    requires_tests?: boolean | undefined;
+    risk_level?: 'low' | 'medium' | 'high' | 'critical' | undefined;
+    file_count?: number | undefined;
+    estimated_complexity?: 'low' | 'medium' | 'high' | undefined;
+    security_sensitive?: boolean | undefined;
+  } | undefined;
+  workflow?: {
+    surface?: string | undefined;
+    stages?: Array<'plan' | 'code' | 'review'> | undefined;
+    execution_environment?: 'local' | 'ci' | 'remote' | 'hybrid' | undefined;
+    human_review_required?: boolean | undefined;
+  } | undefined;
+  metadata?: {
+    external_task_id?: string | undefined;
+    run_id?: string | undefined;
+    integration_version?: string | undefined;
+    idempotency_key?: string | undefined;
+  } | undefined;
 }
 
 export interface TechnicalTaskRouterRequest {

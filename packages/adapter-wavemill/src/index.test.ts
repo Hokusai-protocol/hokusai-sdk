@@ -211,11 +211,14 @@ describe('createWavemillAdapter', () => {
       status: 'accepted',
     });
     const body = JSON.parse(requestBody) as { inputs: Record<string, unknown> };
-    expect(Object.keys(body.inputs)).toHaveLength(51);
     expect(body).toMatchObject({
       inputs: {
-        coder_model: 'wavemill/default',
-        task_type: 'chore',
+        routing: {
+          available_coder_models: ['wavemill/default'],
+        },
+        task: {
+          task_type: 'maintenance',
+        },
       },
     });
   });

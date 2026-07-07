@@ -258,14 +258,19 @@ describe('routeTaskWithCodex', () => {
 
     expect(result.ok).toBe(true);
     const request = JSON.parse(capturedPrompt) as {
-      inputs: Record<string, string>;
+      inputs: Record<string, unknown>;
     };
 
     expect(request.inputs).toMatchObject({
-      available_coder_models: 'gpt-5',
-      available_planner_models: 'gpt-5',
-      available_reviewer_models: 'gpt-5',
-      coder_model: 'gpt-5',
+      routing: {
+        available_coder_models: ['gpt-5'],
+        available_models: ['gpt-5'],
+        available_planner_models: ['gpt-5'],
+        available_reviewer_models: ['gpt-5'],
+      },
+      task: {
+        task_type: 'maintenance',
+      },
     });
   });
 });

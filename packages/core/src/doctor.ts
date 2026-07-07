@@ -14,7 +14,7 @@ import {
   type ModelRegistry,
 } from './model-registry.js';
 
-const DEFAULT_REACHABILITY_PATH = '/v1/health';
+const DEFAULT_REACHABILITY_PATH = '/api/health';
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_NODE_MIN_VERSION = '18.0.0';
 
@@ -365,20 +365,26 @@ export async function checkApiReachability(
     () => controller.abort(),
     options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   );
+  const path = options?.path ?? DEFAULT_REACHABILITY_PATH;
+  const requestId = options?.requestId ?? new Date().toISOString();
+  const isDefaultHealthProbe = path === DEFAULT_REACHABILITY_PATH;
+  const headers: Record<string, string> = {
+    'X-Request-ID': requestId,
+    'X-Hokusai-Request-Id': requestId,
+  };
+  if (!isDefaultHealthProbe) {
+    headers.Authorization = `Bearer ${config.apiKey ?? ''}`;
+  }
 
   try {
     const response = await transport(
       buildReachabilityUrl(
         config.apiBaseUrl,
-        options?.path ?? DEFAULT_REACHABILITY_PATH,
+        path,
       ),
       {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${config.apiKey ?? ''}`,
-          'X-Hokusai-Request-Id':
-            options?.requestId ?? new Date().toISOString(),
-        },
+        headers,
         signal: controller.signal,
       },
     );
@@ -393,6 +399,15 @@ export async function checkApiReachability(
     }
 
     if (response.status === 401 || response.status === 403) {
+      if (isDefaultHealthProbe) {
+        return {
+          id: 'api-reachability',
+          label: 'api-reachability',
+          status: 'pass',
+          summary: `API reachability check reached an auth-protected health endpoint (HTTP ${response.status}).`,
+        };
+      }
+
       return {
         id: 'api-reachability',
         label: 'api-reachability',
@@ -529,6 +544,7 @@ async function checkReachability(
         method: 'GET',
         headers: {
           Authorization: `Bearer ${input.config.apiKey}`,
+          'X-Request-ID': requestId,
           'X-Hokusai-Request-Id': requestId,
         },
         signal: controller.signal,

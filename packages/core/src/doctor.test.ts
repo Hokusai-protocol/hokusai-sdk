@@ -335,6 +335,22 @@ describe('plugin doctor checks', () => {
         }),
       ),
     ).resolves.toMatchObject({
+      status: 'pass',
+      summary: expect.stringContaining('HTTP 401'),
+    });
+
+    await expect(
+      checkApiReachability(
+        config,
+        () =>
+          Promise.resolve({
+            status: 401,
+            headers: { get: () => null },
+            text: () => Promise.resolve(''),
+          }),
+        { path: '/api/protected' },
+      ),
+    ).resolves.toMatchObject({
       status: 'fail',
       summary: expect.stringContaining('HTTP 401'),
     });

@@ -91,11 +91,14 @@ describe('requestRecommendation', () => {
       },
     });
     const body = JSON.parse(seenBody) as { inputs: Record<string, unknown> };
-    expect(Object.keys(body.inputs)).toHaveLength(51);
     expect(body).toMatchObject({
       inputs: {
-        coder_model: 'gpt-5-codex',
-        task_type: 'chore',
+        routing: {
+          available_coder_models: ['gpt-5-codex'],
+        },
+        task: {
+          task_type: 'maintenance',
+        },
       },
     });
   });

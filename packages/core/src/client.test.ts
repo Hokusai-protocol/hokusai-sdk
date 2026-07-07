@@ -329,24 +329,81 @@ describe('HokusaiClient', () => {
     });
 
     const body = parseRequestBody(calls[0] as MockCall) as {
-      inputs: Record<string, unknown>;
+      inputs: {
+        task: Record<string, unknown>;
+        routing: Record<string, unknown>;
+        context: Record<string, unknown>;
+        workflow: Record<string, unknown>;
+        metadata: Record<string, unknown>;
+      };
     };
 
-    expect(Object.keys(body.inputs)).toHaveLength(51);
-    expect(
-      Object.values(body.inputs).every((value) => typeof value === 'string'),
-    ).toBe(true);
     expect(body).toMatchObject({
       inputs: {
-        available_coder_models: 'gpt-5-codex',
-        coder_model: 'gpt-5-codex',
-        description_length_bucket: 'short',
-        domain: 'hokusai-sdk',
-        requires_tests: '',
-        route_source: 'hokusai-sdk',
-        router_mode: 'recommendation',
-        routing_mode: 'model-selection',
-        task_type: 'chore',
+        task: {
+          description: 'Email <redacted:email> before using <redacted:token>',
+          task_type: 'maintenance',
+        },
+        routing: {
+          available_coder_models: ['gpt-5-codex'],
+          available_models: ['gpt-5-codex'],
+          available_planner_models: ['gpt-5-codex'],
+          available_reviewer_models: ['gpt-5-codex'],
+        },
+        context: {
+          domain: 'hokusai-sdk',
+          requires_tests: false,
+        },
+        workflow: {
+          stages: ['plan', 'code', 'review'],
+          surface: 'hokusai-sdk',
+        },
+        metadata: {
+          external_task_id: routeRequest.task.id,
+          integration_version: '0.1.1',
+        },
+      },
+    });
+  });
+
+  it('normalizes live Model 30 strategy responses to route responses', async () => {
+    const routeRequest = await createRouteRequest();
+    const { transport } = createMockTransport([
+      createResponse(200, {
+        model_id: '30',
+        predictions: {
+          recommended_strategy: {
+            objective: 'highest_reliability',
+            planner_model: 'claude-sonnet-4-6',
+            coder_model: 'gpt-5-codex',
+            reviewer_model: 'claude-sonnet-4-6',
+            confidence: 0.71,
+            rationale: 'Best fit for the routed task.',
+          },
+        },
+        metadata: {
+          request_id: 'req-model-30',
+          schema: 'technical_task_router_inputs/v2',
+        },
+        timestamp: '2026-07-07T22:29:48.000Z',
+        inference_log_id: 'ilog-model-30',
+      }),
+    ]);
+
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(client.route(routeRequest)).resolves.toEqual({
+      routeId: 'ilog-model-30',
+      taskId: routeRequest.task.id,
+      status: 'accepted',
+      requestId: expect.any(String),
+      recommendation: {
+        model: 'gpt-5-codex',
+        confidence: 0.71,
+        reason: 'Best fit for the routed task.',
       },
     });
   });
@@ -757,8 +814,12 @@ describe('HokusaiClient', () => {
         ok: true,
         request: expect.objectContaining({
           inputs: expect.objectContaining({
-            coder_model: 'gpt-5-codex',
-            task_type: 'chore',
+            routing: expect.objectContaining({
+              available_coder_models: ['gpt-5-codex'],
+            }),
+            task: expect.objectContaining({
+              task_type: 'maintenance',
+            }),
           }),
         }),
       },

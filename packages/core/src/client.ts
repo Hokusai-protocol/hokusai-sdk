@@ -16,6 +16,7 @@ import {
   type HokusaiDispatchPayload,
   type HokusaiFieldError,
   type HokusaiTaskInput,
+  type TechnicalTaskRouterTaskType,
   type HokusaiValidationSuccess,
   type OutcomeReport,
   type OutcomeResponse,
@@ -45,60 +46,7 @@ const MAX_RETRY_AFTER_MS = 5_000;
 const ROUTE_PATH = '/api/v1/models/30/predict';
 const OUTCOME_PATH = '/v1/outcomes';
 const SIGNAL_PATH = '/v1/signals';
-const SDK_VERSION = '0.1.0';
-const TECHNICAL_TASK_ROUTER_INPUT_KEYS = [
-  'task_type',
-  'language',
-  'domain',
-  'complexity',
-  'repo_size_bucket',
-  'files_touched_bucket',
-  'description_length_bucket',
-  'is_greenfield',
-  'is_migration',
-  'requires_tests',
-  'cross_service',
-  'ui_heavy',
-  'risk_level',
-  'max_cost_usd',
-  'available_planner_models',
-  'available_coder_models',
-  'available_reviewer_models',
-  'planner_model',
-  'planner_agent',
-  'coder_model',
-  'coder_agent',
-  'reviewer_model',
-  'reviewer_agent',
-  'plan_depth',
-  'code_depth',
-  'review_mode',
-  'route_source',
-  'router_mode',
-  'routing_mode',
-  'expected_success_probability',
-  'expected_cost_usd',
-  'confidence',
-  'risk_score',
-  'score',
-  'score_band',
-  'under_budget',
-  'actual_cost_usd',
-  'actual_time_seconds',
-  'intervention_count',
-  'workflow_cost_status',
-  'budget_violation',
-  'rubric_version',
-  'rubric_criterion_count',
-  'rubric_mean_score',
-  'rubric_completeness',
-  'rubric_correctness',
-  'rubric_code_quality',
-  'rubric_intervention_impact',
-  'rubric_autonomy',
-  'rubric_determinative_boundary',
-  'rubric_provenance',
-] as const;
+const SDK_VERSION = '0.1.1';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
@@ -665,6 +613,7 @@ export class HokusaiClient {
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           'Content-Type': 'application/json',
+          'X-Request-ID': options.requestId,
           'X-Hokusai-Request-Id': options.requestId,
           'X-Hokusai-Sdk-Version': this.#sdkVersion,
         },
@@ -898,34 +847,260 @@ function validateSignalResponse(value: unknown): HokusaiFieldError[] {
   ];
 }
 
+function omitUndefined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as T;
+}
+
+function omitEmptySections(
+  inputs: TechnicalTaskRouterRequest['inputs'],
+): TechnicalTaskRouterRequest['inputs'] {
+  return Object.fromEntries(
+    Object.entries(inputs).filter(
+      ([key, value]) =>
+        key === 'task' ||
+        (isPlainRecord(value) && Object.keys(value).length > 0),
+    ),
+  ) as TechnicalTaskRouterRequest['inputs'];
+}
+
+function firstNonEmptyString(...values: Array<unknown>): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function readStringList(value: unknown): string[] | undefined {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return entries.length > 0 ? entries : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readInteger(value: unknown): number | undefined {
+  const parsed = readNumber(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no'].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+function normalizeTaskType(
+  value: unknown,
+  prompt: string,
+): TechnicalTaskRouterTaskType {
+  const normalized =
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (
+    ['feature', 'bugfix', 'refactor', 'research', 'maintenance'].includes(
+      normalized,
+    )
+  ) {
+    return normalized as TechnicalTaskRouterTaskType;
+  }
+  if (['bug', 'fix'].includes(normalized)) {
+    return 'bugfix';
+  }
+  if (['docs', 'doc', 'chore', 'infra', 'test', 'tests'].includes(normalized)) {
+    return 'maintenance';
+  }
+
+  return normalizeLegacyTaskType(inferTaskType(prompt));
+}
+
+function normalizeLegacyTaskType(value: string): TechnicalTaskRouterTaskType {
+  if (value === 'bugfix' || value === 'refactor') {
+    return value;
+  }
+  if (value === 'research') {
+    return 'research';
+  }
+  if (value === 'feature') {
+    return 'feature';
+  }
+
+  return 'maintenance';
+}
+
+function normalizeRepoSizeBucket(
+  value: unknown,
+): NonNullable<TechnicalTaskRouterRequest['inputs']['context']>['repo_size_bucket'] {
+  const normalized =
+    typeof value === 'string'
+      ? value.trim().toLowerCase().replace('-', '_')
+      : '';
+  if (['tiny', 'small', 'medium', 'large', 'very_large'].includes(normalized)) {
+    return normalized as NonNullable<
+      TechnicalTaskRouterRequest['inputs']['context']
+    >['repo_size_bucket'];
+  }
+
+  return undefined;
+}
+
+function normalizeRiskLevel(
+  value: unknown,
+): NonNullable<TechnicalTaskRouterRequest['inputs']['context']>['risk_level'] {
+  const normalized =
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (['low', 'medium', 'high', 'critical'].includes(normalized)) {
+    return normalized as NonNullable<
+      TechnicalTaskRouterRequest['inputs']['context']
+    >['risk_level'];
+  }
+
+  return undefined;
+}
+
+function normalizeComplexity(
+  value: unknown,
+): NonNullable<TechnicalTaskRouterRequest['inputs']['context']>['estimated_complexity'] {
+  const normalized =
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (['low', 'medium', 'high'].includes(normalized)) {
+    return normalized as NonNullable<
+      TechnicalTaskRouterRequest['inputs']['context']
+    >['estimated_complexity'];
+  }
+  if (['shallow', 'simple'].includes(normalized)) {
+    return 'low';
+  }
+  if (['deep', 'complex'].includes(normalized)) {
+    return 'high';
+  }
+
+  return undefined;
+}
+
+function normalizeRoutingObjective(
+  value: unknown,
+): NonNullable<TechnicalTaskRouterRequest['inputs']['routing']>['objective'] {
+  const normalized =
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (
+    ['lowest_cost', 'fastest_completion', 'highest_reliability'].includes(
+      normalized,
+    )
+  ) {
+    return normalized as NonNullable<
+      TechnicalTaskRouterRequest['inputs']['routing']
+    >['objective'];
+  }
+
+  return undefined;
+}
+
+function normalizeExecutionEnvironment(
+  value: unknown,
+): NonNullable<TechnicalTaskRouterRequest['inputs']['workflow']>['execution_environment'] {
+  const normalized =
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (['local', 'ci', 'remote', 'hybrid'].includes(normalized)) {
+    return normalized as NonNullable<
+      TechnicalTaskRouterRequest['inputs']['workflow']
+    >['execution_environment'];
+  }
+
+  return undefined;
+}
+
 function buildTechnicalTaskRouterRequest(
   request: RouteRequest,
 ): TechnicalTaskRouterRequest {
   const metadata = request.task.metadata ?? {};
-  const inputs = Object.fromEntries(
-    TECHNICAL_TASK_ROUTER_INPUT_KEYS.map((key) => [key, metadata[key] ?? '']),
-  ) as unknown as TechnicalTaskRouterRequest['inputs'];
+  const modelIds = readStringList(metadata.available_models) ?? [
+    request.model.id,
+  ];
+  const inputs: TechnicalTaskRouterRequest['inputs'] = {
+    task: omitUndefined({
+      description: request.prompt,
+      task_type: normalizeTaskType(
+        metadata.task_type ?? metadata.taskType ?? metadata.taskFamily,
+        request.prompt,
+      ),
+      language: firstNonEmptyString(metadata.primaryLanguage, metadata.language),
+      framework: firstNonEmptyString(metadata.framework, metadata.stack),
+      repo_type: firstNonEmptyString(metadata.repoType, metadata.repo_type),
+    }),
+    routing: omitUndefined({
+      available_models: modelIds,
+      available_planner_models:
+        readStringList(metadata.available_planner_models) ?? modelIds,
+      available_coder_models:
+        readStringList(metadata.available_coder_models) ?? modelIds,
+      available_reviewer_models:
+        readStringList(metadata.available_reviewer_models) ?? modelIds,
+      preferred_models: readStringList(metadata.preferred_models),
+      max_cost_usd: readNumber(metadata.max_cost_usd),
+      max_latency_seconds: readNumber(metadata.max_latency_seconds),
+      objective: normalizeRoutingObjective(metadata.objective),
+      prioritize_quality: readBoolean(metadata.prioritize_quality),
+      prioritize_speed: readBoolean(metadata.prioritize_speed),
+    }),
+    context: omitUndefined({
+      domain: firstNonEmptyString(metadata.domain, metadata.repo),
+      repo_size_bucket: normalizeRepoSizeBucket(metadata.repositoryScale),
+      requires_tests: readBoolean(metadata.requires_tests) ?? inferRequiresTests(request.prompt),
+      risk_level: normalizeRiskLevel(metadata.risk_level),
+      file_count: readInteger(metadata.file_count),
+      estimated_complexity: normalizeComplexity(
+        metadata.estimated_complexity ?? metadata.complexity ?? metadata.reasoningDepth,
+      ),
+      security_sensitive: readBoolean(metadata.security_sensitive),
+    }),
+    workflow: omitUndefined({
+      surface: firstNonEmptyString(metadata.surface) ?? 'hokusai-sdk',
+      stages: ['plan', 'code', 'review'] as Array<'plan' | 'code' | 'review'>,
+      execution_environment: normalizeExecutionEnvironment(
+        metadata.execution_environment,
+      ),
+      human_review_required: readBoolean(metadata.human_review_required),
+    }),
+    metadata: omitUndefined({
+      external_task_id: request.task.id,
+      run_id: request.correlation.correlationId,
+      integration_version: SDK_VERSION,
+      idempotency_key: request.correlation.correlationId,
+    }),
+  };
 
-  inputs.task_type ||=
-    metadata.taskFamily ??
-    metadata.task_family ??
-    inferTaskType(request.prompt);
-  inputs.language ||= metadata.primaryLanguage ?? metadata.language ?? '';
-  inputs.domain ||= metadata.domain ?? metadata.repo ?? '';
-  inputs.complexity ||= metadata.complexity ?? metadata.reasoningDepth ?? '';
-  inputs.repo_size_bucket ||= metadata.repositoryScale ?? '';
-  inputs.description_length_bucket ||= bucketDescriptionLength(request.prompt);
-  inputs.requires_tests ||= inferRequiresTests(request.prompt);
-  inputs.available_planner_models ||= request.model.id;
-  inputs.available_coder_models ||= request.model.id;
-  inputs.available_reviewer_models ||= request.model.id;
-  inputs.coder_model ||= request.model.id;
-  inputs.code_depth ||= metadata.reasoningDepth ?? '';
-  inputs.route_source ||= 'hokusai-sdk';
-  inputs.router_mode ||= 'recommendation';
-  inputs.routing_mode ||= 'model-selection';
-
-  return { inputs };
+  return { inputs: omitEmptySections(inputs) };
 }
 
 function normalizeTechnicalTaskRouterResponse(
@@ -938,6 +1113,48 @@ function normalizeTechnicalTaskRouterResponse(
   }
 
   const responseRecord = isPlainRecord(response) ? response : {};
+  const predictions = isPlainRecord(responseRecord.predictions)
+    ? responseRecord.predictions
+    : {};
+  const recommendedStrategy = isPlainRecord(predictions.recommended_strategy)
+    ? predictions.recommended_strategy
+    : undefined;
+  if (recommendedStrategy) {
+    const model = firstString(
+      recommendedStrategy.coder_model,
+      recommendedStrategy.planner_model,
+      recommendedStrategy.reviewer_model,
+    );
+    const confidence = firstNumber(recommendedStrategy.confidence);
+    const reason = firstString(recommendedStrategy.rationale);
+    const metadata = isPlainRecord(responseRecord.metadata)
+      ? responseRecord.metadata
+      : {};
+    const routeId =
+      firstString(
+        responseRecord.inference_log_id,
+        metadata.request_id,
+        metadata.requestId,
+      ) ?? request.correlation.correlationId;
+
+    const normalized: RouteResponse = {
+      routeId,
+      taskId: request.task.id,
+      status: 'accepted',
+      requestId,
+    };
+
+    if (model) {
+      normalized.recommendation = {
+        model,
+        ...(reason ? { reason } : {}),
+        ...(confidence !== undefined ? { confidence } : {}),
+      };
+    }
+
+    return normalized;
+  }
+
   if (
     !('metadata' in responseRecord) &&
     !('completed_successfully' in responseRecord)
@@ -986,25 +1203,8 @@ function normalizeTechnicalTaskRouterResponse(
   return normalized;
 }
 
-function bucketDescriptionLength(prompt: string): string {
-  const length = prompt.trim().length;
-  if (length < 200) {
-    return 'short';
-  }
-
-  if (length < 1000) {
-    return 'medium';
-  }
-
-  return 'long';
-}
-
-function inferRequiresTests(prompt: string): string {
-  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(
-    prompt,
-  )
-    ? 'true'
-    : '';
+function inferRequiresTests(prompt: string): boolean {
+  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(prompt);
 }
 
 function inferTaskType(prompt: string): string {

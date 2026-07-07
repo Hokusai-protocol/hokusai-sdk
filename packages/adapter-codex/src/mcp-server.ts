@@ -203,7 +203,7 @@ async function handleRequest(request: JsonRpcRequest) {
       protocolVersion: '2024-11-05',
       serverInfo: {
         name: 'hokusai-codex-mcp',
-        version: '0.1.0',
+        version: '0.1.1',
       },
       capabilities: {
         tools: {},

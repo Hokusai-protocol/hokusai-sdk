@@ -1266,60 +1266,7 @@ var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.0";
-var TECHNICAL_TASK_ROUTER_INPUT_KEYS = [
-  "task_type",
-  "language",
-  "domain",
-  "complexity",
-  "repo_size_bucket",
-  "files_touched_bucket",
-  "description_length_bucket",
-  "is_greenfield",
-  "is_migration",
-  "requires_tests",
-  "cross_service",
-  "ui_heavy",
-  "risk_level",
-  "max_cost_usd",
-  "available_planner_models",
-  "available_coder_models",
-  "available_reviewer_models",
-  "planner_model",
-  "planner_agent",
-  "coder_model",
-  "coder_agent",
-  "reviewer_model",
-  "reviewer_agent",
-  "plan_depth",
-  "code_depth",
-  "review_mode",
-  "route_source",
-  "router_mode",
-  "routing_mode",
-  "expected_success_probability",
-  "expected_cost_usd",
-  "confidence",
-  "risk_score",
-  "score",
-  "score_band",
-  "under_budget",
-  "actual_cost_usd",
-  "actual_time_seconds",
-  "intervention_count",
-  "workflow_cost_status",
-  "budget_violation",
-  "rubric_version",
-  "rubric_criterion_count",
-  "rubric_mean_score",
-  "rubric_completeness",
-  "rubric_correctness",
-  "rubric_code_quality",
-  "rubric_intervention_impact",
-  "rubric_autonomy",
-  "rubric_determinative_boundary",
-  "rubric_provenance"
-];
+var SDK_VERSION = "0.1.1";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -1676,6 +1623,7 @@ var HokusaiClient = class {
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           "Content-Type": "application/json",
+          "X-Request-ID": options.requestId,
           "X-Hokusai-Request-Id": options.requestId,
           "X-Hokusai-Sdk-Version": this.#sdkVersion
         },
@@ -1826,33 +1774,222 @@ function validateSignalResponse(value) {
     }
   ];
 }
+function omitUndefined(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== void 0)
+  );
+}
+function omitEmptySections(inputs) {
+  return Object.fromEntries(
+    Object.entries(inputs).filter(
+      ([key, value]) => key === "task" || isPlainRecord(value) && Object.keys(value).length > 0
+    )
+  );
+}
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return void 0;
+}
+function readStringList(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return void 0;
+  }
+  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  return entries.length > 0 ? entries : void 0;
+}
+function readNumber(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return void 0;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+function readInteger(value) {
+  const parsed = readNumber(value);
+  if (parsed === void 0) {
+    return void 0;
+  }
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : void 0;
+}
+function readBoolean(value) {
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no"].includes(normalized)) {
+    return false;
+  }
+  return void 0;
+}
+function normalizeTaskType(value, prompt) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["feature", "bugfix", "refactor", "research", "maintenance"].includes(
+    normalized
+  )) {
+    return normalized;
+  }
+  if (["bug", "fix"].includes(normalized)) {
+    return "bugfix";
+  }
+  if (["docs", "doc", "chore", "infra", "test", "tests"].includes(normalized)) {
+    return "maintenance";
+  }
+  return normalizeLegacyTaskType(inferTaskType(prompt));
+}
+function normalizeLegacyTaskType(value) {
+  if (value === "bugfix" || value === "refactor") {
+    return value;
+  }
+  if (value === "research") {
+    return "research";
+  }
+  if (value === "feature") {
+    return "feature";
+  }
+  return "maintenance";
+}
+function normalizeRepoSizeBucket(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase().replace("-", "_") : "";
+  if (["tiny", "small", "medium", "large", "very_large"].includes(normalized)) {
+    return normalized;
+  }
+  return void 0;
+}
+function normalizeRiskLevel(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["low", "medium", "high", "critical"].includes(normalized)) {
+    return normalized;
+  }
+  return void 0;
+}
+function normalizeComplexity(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["low", "medium", "high"].includes(normalized)) {
+    return normalized;
+  }
+  if (["shallow", "simple"].includes(normalized)) {
+    return "low";
+  }
+  if (["deep", "complex"].includes(normalized)) {
+    return "high";
+  }
+  return void 0;
+}
+function normalizeRoutingObjective(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["lowest_cost", "fastest_completion", "highest_reliability"].includes(
+    normalized
+  )) {
+    return normalized;
+  }
+  return void 0;
+}
+function normalizeExecutionEnvironment(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["local", "ci", "remote", "hybrid"].includes(normalized)) {
+    return normalized;
+  }
+  return void 0;
+}
 function buildTechnicalTaskRouterRequest(request) {
   const metadata = request.task.metadata ?? {};
-  const inputs = Object.fromEntries(
-    TECHNICAL_TASK_ROUTER_INPUT_KEYS.map((key) => [key, metadata[key] ?? ""])
-  );
-  inputs.task_type ||= metadata.taskFamily ?? metadata.task_family ?? inferTaskType(request.prompt);
-  inputs.language ||= metadata.primaryLanguage ?? metadata.language ?? "";
-  inputs.domain ||= metadata.domain ?? metadata.repo ?? "";
-  inputs.complexity ||= metadata.complexity ?? metadata.reasoningDepth ?? "";
-  inputs.repo_size_bucket ||= metadata.repositoryScale ?? "";
-  inputs.description_length_bucket ||= bucketDescriptionLength(request.prompt);
-  inputs.requires_tests ||= inferRequiresTests(request.prompt);
-  inputs.available_planner_models ||= request.model.id;
-  inputs.available_coder_models ||= request.model.id;
-  inputs.available_reviewer_models ||= request.model.id;
-  inputs.coder_model ||= request.model.id;
-  inputs.code_depth ||= metadata.reasoningDepth ?? "";
-  inputs.route_source ||= "hokusai-sdk";
-  inputs.router_mode ||= "recommendation";
-  inputs.routing_mode ||= "model-selection";
-  return { inputs };
+  const modelIds = readStringList(metadata.available_models) ?? [
+    request.model.id
+  ];
+  const inputs = {
+    task: omitUndefined({
+      description: request.prompt,
+      task_type: normalizeTaskType(
+        metadata.task_type ?? metadata.taskType ?? metadata.taskFamily,
+        request.prompt
+      ),
+      language: firstNonEmptyString(metadata.primaryLanguage, metadata.language),
+      framework: firstNonEmptyString(metadata.framework, metadata.stack),
+      repo_type: firstNonEmptyString(metadata.repoType, metadata.repo_type)
+    }),
+    routing: omitUndefined({
+      available_models: modelIds,
+      available_planner_models: readStringList(metadata.available_planner_models) ?? modelIds,
+      available_coder_models: readStringList(metadata.available_coder_models) ?? modelIds,
+      available_reviewer_models: readStringList(metadata.available_reviewer_models) ?? modelIds,
+      preferred_models: readStringList(metadata.preferred_models),
+      max_cost_usd: readNumber(metadata.max_cost_usd),
+      max_latency_seconds: readNumber(metadata.max_latency_seconds),
+      objective: normalizeRoutingObjective(metadata.objective),
+      prioritize_quality: readBoolean(metadata.prioritize_quality),
+      prioritize_speed: readBoolean(metadata.prioritize_speed)
+    }),
+    context: omitUndefined({
+      domain: firstNonEmptyString(metadata.domain, metadata.repo),
+      repo_size_bucket: normalizeRepoSizeBucket(metadata.repositoryScale),
+      requires_tests: readBoolean(metadata.requires_tests) ?? inferRequiresTests(request.prompt),
+      risk_level: normalizeRiskLevel(metadata.risk_level),
+      file_count: readInteger(metadata.file_count),
+      estimated_complexity: normalizeComplexity(
+        metadata.estimated_complexity ?? metadata.complexity ?? metadata.reasoningDepth
+      ),
+      security_sensitive: readBoolean(metadata.security_sensitive)
+    }),
+    workflow: omitUndefined({
+      surface: firstNonEmptyString(metadata.surface) ?? "hokusai-sdk",
+      stages: ["plan", "code", "review"],
+      execution_environment: normalizeExecutionEnvironment(
+        metadata.execution_environment
+      ),
+      human_review_required: readBoolean(metadata.human_review_required)
+    }),
+    metadata: omitUndefined({
+      external_task_id: request.task.id,
+      run_id: request.correlation.correlationId,
+      integration_version: SDK_VERSION,
+      idempotency_key: request.correlation.correlationId
+    })
+  };
+  return { inputs: omitEmptySections(inputs) };
 }
 function normalizeTechnicalTaskRouterResponse(response, request, requestId) {
   if (validateRouteResponse(response).length === 0) {
     return response;
   }
   const responseRecord = isPlainRecord(response) ? response : {};
+  const predictions = isPlainRecord(responseRecord.predictions) ? responseRecord.predictions : {};
+  const recommendedStrategy = isPlainRecord(predictions.recommended_strategy) ? predictions.recommended_strategy : void 0;
+  if (recommendedStrategy) {
+    const model2 = firstString(
+      recommendedStrategy.coder_model,
+      recommendedStrategy.planner_model,
+      recommendedStrategy.reviewer_model
+    );
+    const confidence2 = firstNumber(recommendedStrategy.confidence);
+    const reason2 = firstString(recommendedStrategy.rationale);
+    const metadata2 = isPlainRecord(responseRecord.metadata) ? responseRecord.metadata : {};
+    const routeId2 = firstString(
+      responseRecord.inference_log_id,
+      metadata2.request_id,
+      metadata2.requestId
+    ) ?? request.correlation.correlationId;
+    const normalized2 = {
+      routeId: routeId2,
+      taskId: request.task.id,
+      status: "accepted",
+      requestId
+    };
+    if (model2) {
+      normalized2.recommendation = {
+        model: model2,
+        ...reason2 ? { reason: reason2 } : {},
+        ...confidence2 !== void 0 ? { confidence: confidence2 } : {}
+      };
+    }
+    return normalized2;
+  }
   if (!("metadata" in responseRecord) && !("completed_successfully" in responseRecord)) {
     return response;
   }
@@ -1890,20 +2027,8 @@ function normalizeTechnicalTaskRouterResponse(response, request, requestId) {
   }
   return normalized;
 }
-function bucketDescriptionLength(prompt) {
-  const length = prompt.trim().length;
-  if (length < 200) {
-    return "short";
-  }
-  if (length < 1e3) {
-    return "medium";
-  }
-  return "long";
-}
 function inferRequiresTests(prompt) {
-  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(
-    prompt
-  ) ? "true" : "";
+  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(prompt);
 }
 function inferTaskType(prompt) {
   if (/\b(migrat(?:e|ion|ing)|backfill)\b/i.test(prompt)) {
@@ -2516,7 +2641,7 @@ function createInstallationId(now) {
 import { mkdir as mkdir3, rm as rm3, writeFile as writeFile3 } from "node:fs/promises";
 import { join as join3 } from "node:path";
 import { randomUUID } from "node:crypto";
-var DEFAULT_REACHABILITY_PATH = "/v1/health";
+var DEFAULT_REACHABILITY_PATH = "/api/health";
 var DEFAULT_TIMEOUT_MS2 = 5e3;
 var DEFAULT_NODE_MIN_VERSION = "18.0.0";
 async function runDoctor(input) {
@@ -2736,18 +2861,25 @@ async function checkApiReachability(config, transport, options) {
     () => controller.abort(),
     options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
   );
+  const path3 = options?.path ?? DEFAULT_REACHABILITY_PATH;
+  const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
+  const isDefaultHealthProbe = path3 === DEFAULT_REACHABILITY_PATH;
+  const headers = {
+    "X-Request-ID": requestId,
+    "X-Hokusai-Request-Id": requestId
+  };
+  if (!isDefaultHealthProbe) {
+    headers.Authorization = `Bearer ${config.apiKey ?? ""}`;
+  }
   try {
     const response = await transport(
       buildReachabilityUrl(
         config.apiBaseUrl,
-        options?.path ?? DEFAULT_REACHABILITY_PATH
+        path3
       ),
       {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${config.apiKey ?? ""}`,
-          "X-Hokusai-Request-Id": options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString()
-        },
+        headers,
         signal: controller.signal
       }
     );
@@ -2760,6 +2892,14 @@ async function checkApiReachability(config, transport, options) {
       };
     }
     if (response.status === 401 || response.status === 403) {
+      if (isDefaultHealthProbe) {
+        return {
+          id: "api-reachability",
+          label: "api-reachability",
+          status: "pass",
+          summary: `API reachability check reached an auth-protected health endpoint (HTTP ${response.status}).`
+        };
+      }
       return {
         id: "api-reachability",
         label: "api-reachability",
@@ -2862,6 +3002,7 @@ async function checkReachability(input, requestId) {
         method: "GET",
         headers: {
           Authorization: `Bearer ${input.config.apiKey}`,
+          "X-Request-ID": requestId,
           "X-Hokusai-Request-Id": requestId
         },
         signal: controller.signal

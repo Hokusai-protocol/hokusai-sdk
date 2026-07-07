@@ -1266,11 +1266,14 @@ describe('route/report smoke path', () => {
     const requestBody = (
       calls[0]?.init.body ? JSON.parse(calls[0].init.body) : {}
     ) as { inputs?: Record<string, unknown> };
-    expect(Object.keys(requestBody.inputs ?? {})).toHaveLength(51);
     expect(requestBody).toMatchObject({
       inputs: {
-        coder_model: 'claude-sonnet-4-6',
-        task_type: 'bugfix',
+        routing: {
+          available_coder_models: ['claude-sonnet-4-6'],
+        },
+        task: {
+          task_type: 'bugfix',
+        },
       },
     });
 
