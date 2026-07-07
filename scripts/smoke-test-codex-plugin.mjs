@@ -53,6 +53,21 @@ function readJson(filePath, description) {
   }
 }
 
+function assertNoStandardHooksRef(manifest) {
+  if (!manifest?.hooks) {
+    return;
+  }
+
+  const hooks = Array.isArray(manifest.hooks) ? manifest.hooks : [manifest.hooks];
+  const hasStandardHooksRef = hooks.some(
+    (hook) => hook === './hooks/hooks.json' || hook === 'hooks/hooks.json',
+  );
+  assert(
+    !hasStandardHooksRef,
+    'plugin manifest must not reference the standard hooks/hooks.json',
+  );
+}
+
 function assertFileExists(filePath, description) {
   return assert(
     existsSync(filePath),
@@ -155,6 +170,7 @@ async function main() {
         manifest.mcpServers === './.mcp.json',
         'manifest points at bundled mcp config',
       );
+      assertNoStandardHooksRef(manifest);
     }
     if (marketplace) {
       assert(

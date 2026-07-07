@@ -12,7 +12,6 @@
   "keywords": ["codex", "mcp", "routing", "privacy"],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Hokusai",
     "shortDescription": "Route Codex tasks to the right OpenAI model.",
