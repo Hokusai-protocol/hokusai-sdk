@@ -6,6 +6,7 @@ import {
   latestRouteCommand,
   previewOutcomeCommand,
   privacyStatusCommand,
+  recordOnboardingFunnelSignal,
   submitOutcomeCommand,
   type FetchTransport,
   type HarnessCommandResult,
@@ -106,6 +107,27 @@ function createProfileForEnv(env?: NodeJS.ProcessEnv) {
   );
 }
 
+async function recordCodexFunnelSignal(input: {
+  client?: HokusaiClient | undefined;
+  enabled: boolean;
+  env?: NodeJS.ProcessEnv | undefined;
+  clock?: (() => Date) | undefined;
+  stage: Parameters<typeof recordOnboardingFunnelSignal>[0]['stage'];
+}): Promise<void> {
+  try {
+    await recordOnboardingFunnelSignal({
+      client: input.client,
+      enabled: input.enabled,
+      harness: 'codex',
+      now: (input.clock ?? (() => new Date()))(),
+      stage: input.stage,
+      store: createFsStore(resolveCodexConfigDir(input.env)),
+    });
+  } catch {
+    // Funnel telemetry must never change command behavior.
+  }
+}
+
 export async function routeTaskWithCodex(
   input: CodexRouteInput,
   options: CodexPluginCommandOptions = {},
@@ -115,7 +137,7 @@ export async function routeTaskWithCodex(
   const apiKey = getApiKey(options.env);
   const client = createClient(options);
 
-  return executeRouteCommand({
+  const result = await executeRouteCommand({
     ...(apiKey ? { apiKey } : {}),
     ...(client ? { client } : {}),
     consentGranted: hasRoutingConsent(options.env),
@@ -127,6 +149,17 @@ export async function routeTaskWithCodex(
     profile,
     ...(options.clock ? { clock: options.clock } : {}),
   });
+  if (result.ok) {
+    await recordCodexFunnelSignal({
+      client,
+      enabled: hasOutcomeOptIn(options.env),
+      env: options.env,
+      clock: options.clock,
+      stage: 'first_route',
+    });
+  }
+
+  return result;
 }
 
 export async function previewRoutePayloadWithCodex(
@@ -182,7 +215,7 @@ export async function submitOutcomeWithCodex(
 ): Promise<HarnessCommandResult<SubmitOutcomeCommandValue>> {
   const apiKey = getApiKey(options.env);
   const client = createClient(options);
-  return submitOutcomeCommand({
+  const result = await submitOutcomeCommand({
     ...(apiKey ? { apiKey } : {}),
     ...(client ? { client } : {}),
     outcomeOptIn: hasOutcomeOptIn(options.env),
@@ -208,6 +241,17 @@ export async function submitOutcomeWithCodex(
     store: createFsStore(resolveCodexConfigDir(options.env)),
     ...(options.clock ? { clock: options.clock } : {}),
   });
+  if (result.ok && result.value.submitted) {
+    await recordCodexFunnelSignal({
+      client,
+      enabled: hasOutcomeOptIn(options.env),
+      env: options.env,
+      clock: options.clock,
+      stage: 'first_contribution',
+    });
+  }
+
+  return result;
 }
 
 export async function latestRouteWithCodex(
@@ -248,7 +292,7 @@ export async function promptOutcomeContributionWithCodex(
 export async function privacyStatusWithCodex(
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<PrivacyStatusCommandValue>> {
-  return privacyStatusCommand({
+  const result = await privacyStatusCommand({
     ...(getApiKey(options.env) ? { apiKey: getApiKey(options.env) } : {}),
     routingConsentGranted: hasRoutingConsent(options.env),
     outcomeOptInGranted: hasOutcomeOptIn(options.env),
@@ -256,4 +300,15 @@ export async function privacyStatusWithCodex(
     storageDir: resolveCodexConfigDir(options.env),
     retentionDays: getRetentionDays(options.env),
   });
+  if (result.ok && result.value.doctor.status === 'ok') {
+    await recordCodexFunnelSignal({
+      client: createClient(options),
+      enabled: hasOutcomeOptIn(options.env),
+      env: options.env,
+      clock: options.clock,
+      stage: 'doctor_pass',
+    });
+  }
+
+  return result;
 }

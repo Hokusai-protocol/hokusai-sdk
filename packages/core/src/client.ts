@@ -44,6 +44,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RETRY_AFTER_MS = 5_000;
 const ROUTE_PATH = '/api/v1/models/30/predict';
 const OUTCOME_PATH = '/v1/outcomes';
+const SIGNAL_PATH = '/v1/signals';
 const SDK_VERSION = '0.1.0';
 const TECHNICAL_TASK_ROUTER_INPUT_KEYS = [
   'task_type',
@@ -125,6 +126,21 @@ export interface HokusaiRequestOptions {
   dryRun?: boolean;
   requestId?: string;
   signal?: AbortSignal;
+}
+
+export interface HokusaiSignalRequest {
+  kind: string;
+  stage: string;
+  installationId: string;
+  occurredAt: string;
+  installedAt?: string | undefined;
+  harness?: string | undefined;
+  timeToFirstRouteMs?: number | undefined;
+}
+
+export interface HokusaiSignalResponse {
+  requestId?: string | undefined;
+  status: 'recorded';
 }
 
 export interface HokusaiClientOptions {
@@ -453,6 +469,37 @@ export class HokusaiClient {
     }
 
     return response;
+  }
+
+  async signal(
+    request: HokusaiSignalRequest,
+    options: HokusaiRequestOptions = {},
+  ): Promise<HokusaiSignalResponse | HokusaiValidationSuccess<HokusaiSignalRequest>> {
+    const requestId = options.requestId ?? this.#requestIdFactory();
+    const fieldErrors = validateSignalRequest(request);
+    if (fieldErrors.length > 0) {
+      throw new HokusaiValidationError('Signal request validation failed.', {
+        requestId,
+        fieldErrors,
+      });
+    }
+
+    if (options.dryRun) {
+      return {
+        ok: true,
+        request,
+      };
+    }
+
+    return this.#send<HokusaiSignalRequest, HokusaiSignalResponse>({
+      allowNoContent: true,
+      path: SIGNAL_PATH,
+      request,
+      requestId,
+      requestOptions: options,
+      responseValidator: validateSignalResponse,
+      responseErrorMessage: 'Hokusai API returned an invalid signal response.',
+    });
   }
 
   async #send<
@@ -789,6 +836,66 @@ function getTaskId(request: unknown): string {
   }
 
   return '';
+}
+
+function validateSignalRequest(
+  request: HokusaiSignalRequest,
+): HokusaiFieldError[] {
+  const errors: HokusaiFieldError[] = [];
+
+  for (const field of ['kind', 'stage', 'installationId', 'occurredAt'] as const) {
+    if (typeof request[field] !== 'string' || request[field].trim().length === 0) {
+      errors.push({
+        path: field,
+        message: 'Expected a non-empty string.',
+      });
+    }
+  }
+
+  if (Number.isNaN(Date.parse(request.occurredAt))) {
+    errors.push({
+      path: 'occurredAt',
+      message: 'Expected an ISO timestamp.',
+    });
+  }
+  if (
+    request.installedAt !== undefined &&
+    Number.isNaN(Date.parse(request.installedAt))
+  ) {
+    errors.push({
+      path: 'installedAt',
+      message: 'Expected an ISO timestamp.',
+    });
+  }
+  if (
+    request.timeToFirstRouteMs !== undefined &&
+    (!Number.isFinite(request.timeToFirstRouteMs) ||
+      request.timeToFirstRouteMs < 0)
+  ) {
+    errors.push({
+      path: 'timeToFirstRouteMs',
+      message: 'Expected a non-negative finite number.',
+    });
+  }
+
+  return errors;
+}
+
+function validateSignalResponse(value: unknown): HokusaiFieldError[] {
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    (!('status' in value) || value.status === 'recorded')
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      path: 'status',
+      message: 'Expected "recorded".',
+    },
+  ];
 }
 
 function buildTechnicalTaskRouterRequest(

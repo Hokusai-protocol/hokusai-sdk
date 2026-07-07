@@ -2,6 +2,8 @@ import {
   ConfigValidationError,
   DEFAULT_HOKUSAI_BASE_URL,
   FilePluginConfigStore,
+  FsLocalStore,
+  HokusaiClient,
   defaultPluginConfigPath,
   loadPluginConfig,
   runPluginDoctor,
@@ -14,6 +16,7 @@ import type {
   RouteInputBase,
   SharedCommandOptions,
 } from './types.js';
+import { recordOnboardingFunnelSignal } from '../onboarding-funnel.js';
 
 function buildFallbackAllowlist(
   profile: Pick<
@@ -136,6 +139,24 @@ export function createRunBootstrapDoctor<
           ok: false,
         }
       : baseReport;
+    if (report.ok && config.outcomeSubmissionEnabled && config.apiKey?.trim()) {
+      try {
+        await recordOnboardingFunnelSignal({
+          client: new HokusaiClient({
+            apiKey: config.apiKey,
+            baseUrl: config.apiBaseUrl,
+            ...(options.transport ? { transport: options.transport } : {}),
+          }),
+          enabled: true,
+          harness: profile.harness,
+          now: new Date(report.checkedAt),
+          stage: 'doctor_pass',
+          store: new FsLocalStore(configPath.dir),
+        });
+      } catch {
+        // Funnel telemetry must never change doctor behavior.
+      }
+    }
 
     return {
       report,
