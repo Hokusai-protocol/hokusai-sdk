@@ -1,4 +1,14 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -45,7 +55,9 @@ function resolveVersion() {
     return refName.replace(/^v/, '');
   }
 
-  const packageJson = JSON.parse(readFileSync(path.join(adapterRoot, 'package.json'), 'utf8'));
+  const packageJson = JSON.parse(
+    readFileSync(path.join(adapterRoot, 'package.json'), 'utf8'),
+  );
   return packageJson.version;
 }
 
@@ -59,8 +71,9 @@ function listRelativeFiles(rootDir) {
   const entries = [];
 
   function walk(currentDir) {
-    const dirEntries = readdirSync(currentDir, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name));
+    const dirEntries = readdirSync(currentDir, { withFileTypes: true }).sort(
+      (left, right) => left.name.localeCompare(right.name),
+    );
 
     for (const entry of dirEntries) {
       const absolutePath = path.join(currentDir, entry.name);
@@ -84,17 +97,22 @@ function listRelativeFiles(rootDir) {
 function assertNoForbiddenPaths(rootDir) {
   for (const relativePath of listRelativeFiles(rootDir)) {
     const normalizedPath = relativePath.split(path.sep).join('/');
-    const blockedPattern = denylistPatterns.find((pattern) => pattern.test(normalizedPath));
+    const blockedPattern = denylistPatterns.find((pattern) =>
+      pattern.test(normalizedPath),
+    );
     if (blockedPattern) {
-      throw new Error(`forbidden path in plugin zip staging: ${normalizedPath}`);
+      throw new Error(
+        `forbidden path in plugin zip staging: ${normalizedPath}`,
+      );
     }
   }
 }
 
 function normalizeTimestamps(rootDir) {
   function walk(currentDir) {
-    const dirEntries = readdirSync(currentDir, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name));
+    const dirEntries = readdirSync(currentDir, { withFileTypes: true }).sort(
+      (left, right) => left.name.localeCompare(right.name),
+    );
 
     for (const entry of dirEntries) {
       const absolutePath = path.join(currentDir, entry.name);
@@ -124,7 +142,11 @@ function writeMinimalPackageJson(version, targetFile) {
   writeFileSync(targetFile, contents);
 }
 
-function createChecksumFile(zipFile, checksumFile, checksumTargetName = path.basename(zipFile)) {
+function createChecksumFile(
+  zipFile,
+  checksumFile,
+  checksumTargetName = path.basename(zipFile),
+) {
   const hash = createHash('sha256');
   hash.update(readFileSync(zipFile));
   const digest = hash.digest('hex');
@@ -132,7 +154,11 @@ function createChecksumFile(zipFile, checksumFile, checksumTargetName = path.bas
 }
 
 function readManifestVersion() {
-  const manifestPath = path.join(pluginSourceDir, '.claude-plugin', 'plugin.json');
+  const manifestPath = path.join(
+    pluginSourceDir,
+    '.claude-plugin',
+    'plugin.json',
+  );
   assertExists(manifestPath, `missing plugin manifest at ${manifestPath}`);
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   if (!manifest.version) {
@@ -153,7 +179,10 @@ function assertManifestVersionMatches(resolvedVersion) {
 function main() {
   const version = resolveVersion();
   assertExists(pluginSourceDir, 'plugin source directory missing');
-  assertExists(bundleSourceFile, 'bundle not found; run pnpm --filter @hokusai/adapter-claude-code bundle:plugin first');
+  assertExists(
+    bundleSourceFile,
+    'bundle not found; run pnpm --filter @hokusai/adapter-claude-code bundle:plugin first',
+  );
   assertExists(readmeSourceFile, 'adapter README missing');
   assertManifestVersionMatches(version);
 
@@ -163,7 +192,10 @@ function main() {
   const stagingParentDir = path.join(os.tmpdir(), 'hokusai-plugin-staging');
   mkdirSync(stagingParentDir, { recursive: true });
   const archiveRootName = 'hokusai-claude-code-plugin';
-  const stagingDir = path.join(stagingParentDir, `hokusai-claude-code-plugin-${process.pid}`);
+  const stagingDir = path.join(
+    stagingParentDir,
+    `hokusai-claude-code-plugin-${process.pid}`,
+  );
   rmSync(stagingDir, { recursive: true, force: true });
   mkdirSync(stagingDir, { recursive: true });
   const archiveRootDir = path.join(stagingDir, archiveRootName);
@@ -174,6 +206,7 @@ function main() {
 
   cpSync(pluginSourceDir, stagedPluginDir, { recursive: true });
   chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-doctor'), 0o755);
+  chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-outcome-hook'), 0o755);
   mkdirSync(stagedDistDir, { recursive: true });
   cpSync(bundleSourceFile, path.join(stagedDistDir, 'index.js'));
   cpSync(readmeSourceFile, path.join(archiveRootDir, 'README.md'));
@@ -184,8 +217,9 @@ function main() {
     'missing plugin manifest at plugin/.claude-plugin/plugin.json',
   );
 
-  const commandFiles = readdirSync(path.join(stagedPluginDir, 'commands'), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'));
+  const commandFiles = readdirSync(path.join(stagedPluginDir, 'commands'), {
+    withFileTypes: true,
+  }).filter((entry) => entry.isFile() && entry.name.endsWith('.md'));
   if (commandFiles.length === 0) {
     throw new Error('no command .md files found in plugin/commands/');
   }
@@ -197,7 +231,10 @@ function main() {
   const outputBaseName = `hokusai-claude-code-plugin-${version}`;
   const zipFile = path.join(distZipDir, `${outputBaseName}.zip`);
   const checksumFile = `${zipFile}.sha256`;
-  const latestZipFile = path.join(distZipDir, 'hokusai-claude-code-plugin-latest.zip');
+  const latestZipFile = path.join(
+    distZipDir,
+    'hokusai-claude-code-plugin-latest.zip',
+  );
   const latestChecksumFile = `${latestZipFile}.sha256`;
 
   execFileSync('zip', ['-rX', '--filesync', zipFile, archiveRootName], {
@@ -207,9 +244,15 @@ function main() {
 
   createChecksumFile(zipFile, checksumFile);
   cpSync(zipFile, latestZipFile);
-  createChecksumFile(latestZipFile, latestChecksumFile, path.basename(latestZipFile));
+  createChecksumFile(
+    latestZipFile,
+    latestChecksumFile,
+    path.basename(latestZipFile),
+  );
 
-  const signingKeyConfigured = Boolean(process.env.HOKUSAI_SIGNING_KEY || process.env.GPG_SIGNING_KEY);
+  const signingKeyConfigured = Boolean(
+    process.env.HOKUSAI_SIGNING_KEY || process.env.GPG_SIGNING_KEY,
+  );
   if (!signingKeyConfigured) {
     console.log('Signing skipped: no signing material detected');
   }

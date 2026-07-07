@@ -74,11 +74,12 @@ export {
 export { CLI_EXIT_CODES, type CliExitCode, type CliRunResult } from './cli.js';
 export { runCli } from './cli.js';
 export type { HandoffInstructions } from '@hokusai/core';
-export {
-  REPORT_CLI_EXIT_CODES,
-  type ReportCliExitCode,
-} from './report-cli.js';
+export { REPORT_CLI_EXIT_CODES, type ReportCliExitCode } from './report-cli.js';
 export { runReportCli } from './report-cli.js';
+export {
+  runOutcomePromptHookCli,
+  type OutcomePromptHookCliRunResult,
+} from './outcome-prompt-hook.js';
 export {
   PRIVACY_CLI_EXIT_CODES,
   type PrivacyCliExitCode,

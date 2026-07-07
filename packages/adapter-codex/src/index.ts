@@ -51,13 +51,19 @@ import {
   previewOutcomeWithCodex,
   previewRoutePayloadWithCodex,
   privacyStatusWithCodex,
+  promptOutcomeContributionWithCodex,
   routeTaskWithCodex,
   submitOutcomeWithCodex,
+  type CodexOutcomePromptInput,
   type CodexOutcomeInput,
   type CodexPluginCommandOptions,
   type CodexRouteInput,
 } from './plugin-commands.js';
 import { runMcpServer } from './mcp-server.js';
+import {
+  runCodexOutcomePromptHookCli,
+  type CodexOutcomePromptHookCliRunResult,
+} from './outcome-prompt-hook.js';
 import { createOpenAiRegistry, OPENAI_MODELS } from './registry.js';
 import {
   buildCodexHarnessTaskContext,
@@ -93,15 +99,19 @@ export {
   previewCodexTaskPacketFromText,
   previewRoutePayloadWithCodex,
   privacyStatusWithCodex,
+  promptOutcomeContributionWithCodex,
   previewRoutePayload,
   requestRecommendation,
   resolveCodexConfigDir,
   routeTaskWithCodex,
   runMcpServer,
+  runCodexOutcomePromptHookCli,
   submitOutcome,
   submitOutcomeWithCodex,
   type CodexCommandDescriptor,
   type CodexOutcomeInput,
+  type CodexOutcomePromptInput,
+  type CodexOutcomePromptHookCliRunResult,
   type CodexPluginCommandOptions,
   type CodexRepositorySignals,
   type CodexRouteInput,
@@ -132,7 +142,9 @@ export interface CodexAdapter {
     version?: string;
   };
   requestRecommendation(
-    args: Omit<RequestRecommendationArgs, 'client'> & { client?: HokusaiClient },
+    args: Omit<RequestRecommendationArgs, 'client'> & {
+      client?: HokusaiClient;
+    },
   ): ReturnType<typeof requestRecommendation>;
   previewRoutePayload(
     args: PreviewRoutePayloadArgs,
@@ -157,16 +169,18 @@ export interface CodexHarnessAdapterOptions {
   ) => AdapterResult<void> | Promise<AdapterResult<void>>;
   redactionConfig: CodexTaskContextBuilderOptions['redactionConfig'];
   store?: LocalStore;
-  telemetry?: (
-    request: { taskId?: string },
-  ) => CodexSessionTelemetry | Promise<CodexSessionTelemetry>;
+  telemetry?: (request: {
+    taskId?: string;
+  }) => CodexSessionTelemetry | Promise<CodexSessionTelemetry>;
   version?: string;
   outcomeCollector?: (
     request: HarnessOutcomeCollectionRequest,
   ) => AdapterResult<HokusaiOutcome> | Promise<AdapterResult<HokusaiOutcome>>;
   consentPrompter?: (
     request: HarnessConsentPromptRequest,
-  ) => AdapterResult<HarnessConsentDecision> | Promise<AdapterResult<HarnessConsentDecision>>;
+  ) =>
+    | AdapterResult<HarnessConsentDecision>
+    | Promise<AdapterResult<HarnessConsentDecision>>;
 }
 
 export function createCodexAdapter(options: CodexAdapterOptions): CodexAdapter {
@@ -182,7 +196,7 @@ export function createCodexAdapter(options: CodexAdapterOptions): CodexAdapter {
     requestRecommendation(args) {
       return requestRecommendation({
         ...args,
-        ...(args.client ?? options.apiClient
+        ...((args.client ?? options.apiClient)
           ? { client: args.client ?? options.apiClient }
           : {}),
       });
@@ -193,7 +207,7 @@ export function createCodexAdapter(options: CodexAdapterOptions): CodexAdapter {
     submitOutcome(args) {
       return submitOutcome({
         ...args,
-        ...(args.client ?? options.apiClient
+        ...((args.client ?? options.apiClient)
           ? { client: args.client ?? options.apiClient }
           : {}),
       });
@@ -345,7 +359,9 @@ function createOutcomeCollector(
   collector:
     | ((
         request: HarnessOutcomeCollectionRequest,
-      ) => AdapterResult<HokusaiOutcome> | Promise<AdapterResult<HokusaiOutcome>>)
+      ) =>
+        | AdapterResult<HokusaiOutcome>
+        | Promise<AdapterResult<HokusaiOutcome>>)
     | undefined,
 ): HarnessOutcomeCollector {
   return {

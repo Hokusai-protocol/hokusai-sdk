@@ -40,8 +40,9 @@ $hokusai-doctor
 - `requestRecommendation()`
 - `previewRoutePayload()`
 - `submitOutcome()`
+- `promptOutcomeContributionWithCodex()`
 
-The installable Codex plugin bundles skills and MCP tooling; use `$hokusai-doctor` as the final quickstart verification step before routing tasks.
+The installable Codex plugin bundles skills, MCP tooling, and optional outcome prompt hooks. Use `$hokusai-doctor` as the final quickstart verification step before routing tasks. After likely successful work, `hokusai-codex-outcome-hook` can prompt the user to run `$hokusai-report` against the latest route; it does not submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit approval in the report flow.
 
 ## Privacy and consent
 

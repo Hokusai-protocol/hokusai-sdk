@@ -45,6 +45,7 @@ This denylist applies to persisted local records. It does not mean those fields 
 - Codex exposes routing and outcome reporting through an MCP stdio server plus four skills: `$hokusai-route`, `$hokusai-report`, `$hokusai-privacy`, and `$hokusai-doctor`.
 - `hokusai_preview_route_payload` and outcome preview flows do not require network access or consent.
 - `hokusai_submit_outcome` requires both `HOKUSAI_OUTCOME_OPT_IN=true` and an explicit approval flag before transport.
+- Outcome prompt hooks may suggest a report after likely success, but they do not submit outcomes directly.
 
 ## What local state keeps
 

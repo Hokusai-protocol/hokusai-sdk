@@ -11,7 +11,8 @@
     "directory": "packages/adapter-codex"
   },
   "bin": {
-    "hokusai-codex-mcp": "./plugin/bin/hokusai-codex-mcp"
+    "hokusai-codex-mcp": "./plugin/bin/hokusai-codex-mcp",
+    "hokusai-codex-outcome-hook": "./plugin/bin/hokusai-codex-outcome-hook"
   },
   "exports": {
     ".": {

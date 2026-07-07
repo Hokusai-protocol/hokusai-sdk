@@ -14,7 +14,8 @@
     "hokusai-route": "./plugin/bin/hokusai-route",
     "hokusai-report": "./plugin/bin/hokusai-report",
     "hokusai-privacy": "./plugin/bin/hokusai-privacy",
-    "hokusai-doctor": "./plugin/bin/hokusai-doctor"
+    "hokusai-doctor": "./plugin/bin/hokusai-doctor",
+    "hokusai-outcome-hook": "./plugin/bin/hokusai-outcome-hook"
   },
   "exports": {
     ".": {

@@ -7,6 +7,7 @@ import {
   previewOutcomeWithCodex,
   previewRoutePayloadWithCodex,
   privacyStatusWithCodex,
+  promptOutcomeContributionWithCodex,
   routeTaskWithCodex,
   submitOutcomeWithCodex,
 } from './plugin-commands.js';
@@ -23,7 +24,9 @@ async function createEnv(extra: Record<string, string> = {}) {
 }
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 });
 
 describe('previewRoutePayloadWithCodex', () => {
@@ -40,7 +43,9 @@ describe('previewRoutePayloadWithCodex', () => {
     if (!result.ok) {
       return;
     }
-    expect(result.value.payload.task.prompt).toContain('Inspect the failing CI workflow.');
+    expect(result.value.payload.task.prompt).toContain(
+      'Inspect the failing CI workflow.',
+    );
     expect(JSON.parse(result.value.payload.task.prompt)).toMatchObject({
       providerConstraints: ['openai'],
       modelConstraints: ['gpt-5-codex', 'gpt-5', 'gpt-5-mini'],
@@ -118,7 +123,10 @@ describe('routeTaskWithCodex', () => {
                     reason: 'Primary is OpenAI.',
                     confidence: 0.9,
                     alternatives: [
-                      { model: 'claude-sonnet-4-6', reason: 'Non-OpenAI alternative.' },
+                      {
+                        model: 'claude-sonnet-4-6',
+                        reason: 'Non-OpenAI alternative.',
+                      },
                       { model: 'gpt-5', reason: 'Also valid.' },
                     ],
                   },
@@ -133,7 +141,8 @@ describe('routeTaskWithCodex', () => {
       return;
     }
     expect(result.value.recommendation.model.provider).toBe('openai');
-    const altIds = result.value.recommendation.alternatives?.map((a) => a.model.id) ?? [];
+    const altIds =
+      result.value.recommendation.alternatives?.map((a) => a.model.id) ?? [];
     expect(altIds).not.toContain('claude-sonnet-4-6');
     expect(altIds).toContain('gpt-5');
   });
@@ -341,6 +350,107 @@ describe('submitOutcomeWithCodex', () => {
       return;
     }
     expect(missingOptIn.error.code).toBe('E_MISSING_CONSENT');
+  });
+});
+
+describe('promptOutcomeContributionWithCodex', () => {
+  it('builds a consent-gated report prompt from the latest route', async () => {
+    const env = await createEnv({
+      HOKUSAI_API_KEY: 'hk_test',
+      HOKUSAI_ROUTING_CONSENT: 'true',
+      HOKUSAI_OUTCOME_OPT_IN: 'true',
+    });
+
+    const routed = await routeTaskWithCodex(
+      { task: 'Fix the flaky test.' },
+      {
+        env,
+        transport: () =>
+          Promise.resolve({
+            status: 200,
+            headers: { get: () => null },
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  routeId: 'route-prompt',
+                  taskId: 'task-prompt',
+                  status: 'accepted',
+                  recommendation: {
+                    model: 'gpt-5-codex',
+                    reason: 'Best fit.',
+                  },
+                }),
+              ),
+          }),
+      },
+    );
+    expect(routed.ok).toBe(true);
+
+    const prompt = await promptOutcomeContributionWithCodex(
+      {
+        event: {
+          status: 'success',
+          transcript: 'All tests passed.',
+        },
+      },
+      { env },
+    );
+
+    expect(prompt.ok).toBe(true);
+    if (!prompt.ok) {
+      return;
+    }
+    expect(prompt.value).toMatchObject({
+      shouldPrompt: true,
+      status: 'ready',
+      reportCommand:
+        '$hokusai-report --use-latest --recommended-model gpt-5-codex --actual-model gpt-5-codex --accepted --status succeeded --latency-bucket medium --cost-bucket medium --token-bucket medium --test-status passed',
+    });
+  });
+
+  it('does not provide a report command without outcome opt-in', async () => {
+    const env = await createEnv({
+      HOKUSAI_API_KEY: 'hk_test',
+      HOKUSAI_ROUTING_CONSENT: 'true',
+    });
+    await routeTaskWithCodex(
+      { task: 'Fix the flaky test.' },
+      {
+        env,
+        transport: () =>
+          Promise.resolve({
+            status: 200,
+            headers: { get: () => null },
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  routeId: 'route-no-opt-in',
+                  taskId: 'task-no-opt-in',
+                  status: 'accepted',
+                  recommendation: {
+                    model: 'gpt-5-codex',
+                    reason: 'Best fit.',
+                  },
+                }),
+              ),
+          }),
+      },
+    );
+
+    const prompt = await promptOutcomeContributionWithCodex(
+      { event: { status: 'success' } },
+      { env },
+    );
+
+    expect(prompt.ok).toBe(true);
+    if (!prompt.ok) {
+      return;
+    }
+    expect(prompt.value).toMatchObject({
+      shouldPrompt: true,
+      status: 'needs_outcome_opt_in',
+    });
+    expect(prompt.value).not.toHaveProperty('reportCommand');
   });
 });
 

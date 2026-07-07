@@ -13,7 +13,11 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const zipFile = path.join(repoRoot, 'dist-zip', 'hokusai-codex-plugin-latest.zip');
+const zipFile = path.join(
+  repoRoot,
+  'dist-zip',
+  'hokusai-codex-plugin-latest.zip',
+);
 const expectedRootName = 'hokusai-codex-plugin';
 const failures = [];
 
@@ -42,13 +46,18 @@ function readJson(filePath, description) {
     pass(`${description} parses as JSON`);
     return value;
   } catch (error) {
-    fail(`${description} parse failed: ${error instanceof Error ? error.message : String(error)}`);
+    fail(
+      `${description} parse failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return undefined;
   }
 }
 
 function assertFileExists(filePath, description) {
-  return assert(existsSync(filePath), `${description}: ${path.relative(repoRoot, filePath)}`);
+  return assert(
+    existsSync(filePath),
+    `${description}: ${path.relative(repoRoot, filePath)}`,
+  );
 }
 
 function collectFiles(rootDir) {
@@ -85,9 +94,15 @@ async function requestMcp(commandPath, env, method, params, id) {
     responses.push(...chunk.split('\n').filter(Boolean));
   });
 
-  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n`);
-  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
-  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+  child.stdin.write(
+    `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n`,
+  );
+  child.stdin.write(
+    `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
+  );
+  child.stdin.write(
+    `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`,
+  );
 
   await new Promise((resolve) => setTimeout(resolve, 1000));
   child.kill();
@@ -97,7 +112,10 @@ async function requestMcp(commandPath, env, method, params, id) {
 }
 
 async function main() {
-  assert(existsSync(zipFile), `plugin zip exists: ${path.relative(repoRoot, zipFile)}`);
+  assert(
+    existsSync(zipFile),
+    `plugin zip exists: ${path.relative(repoRoot, zipFile)}`,
+  );
   if (failures.length > 0) {
     return finish();
   }
@@ -106,7 +124,9 @@ async function main() {
   const extractDir = path.join(tempDir, 'unzipped');
 
   try {
-    execFileSync('unzip', ['-q', zipFile, '-d', extractDir], { stdio: 'inherit' });
+    execFileSync('unzip', ['-q', zipFile, '-d', extractDir], {
+      stdio: 'inherit',
+    });
     pass('zip extracted');
 
     const extractedRoot = path.join(extractDir, expectedRootName);
@@ -127,14 +147,26 @@ async function main() {
 
     if (manifest) {
       assert(manifest.name === 'hokusai', 'manifest uses expected plugin name');
-      assert(manifest.skills === './skills/', 'manifest points at bundled skills');
-      assert(manifest.mcpServers === './.mcp.json', 'manifest points at bundled mcp config');
+      assert(
+        manifest.skills === './skills/',
+        'manifest points at bundled skills',
+      );
+      assert(
+        manifest.mcpServers === './.mcp.json',
+        'manifest points at bundled mcp config',
+      );
     }
     if (marketplace) {
-      assert(Array.isArray(marketplace.plugins) && marketplace.plugins.length === 1, 'marketplace exposes exactly one plugin');
+      assert(
+        Array.isArray(marketplace.plugins) && marketplace.plugins.length === 1,
+        'marketplace exposes exactly one plugin',
+      );
     }
     if (mcpConfig) {
-      assert(Boolean(mcpConfig.hokusai), 'mcp config exposes the hokusai server');
+      assert(
+        Boolean(mcpConfig.hokusai),
+        'mcp config exposes the hokusai server',
+      );
     }
 
     const configDir = path.join(tempDir, 'config');
@@ -147,7 +179,9 @@ async function main() {
     };
 
     const listResult = await requestMcp(binPath, env, 'tools/list', {}, 10);
-    const toolNames = (listResult?.result?.tools ?? []).map((tool) => tool.name);
+    const toolNames = (listResult?.result?.tools ?? []).map(
+      (tool) => tool.name,
+    );
     assert(
       JSON.stringify(toolNames) ===
         JSON.stringify([
@@ -156,8 +190,9 @@ async function main() {
           'hokusai_submit_outcome',
           'hokusai_latest_route',
           'hokusai_privacy_status',
+          'hokusai_prompt_outcome_contribution',
         ]),
-      'mcp server exposes the expected five tools',
+      'mcp server exposes the expected tools',
     );
 
     const previewResult = await requestMcp(
@@ -171,7 +206,10 @@ async function main() {
       11,
     );
     const previewStructured = previewResult?.result?.structuredContent;
-    assert(Boolean(previewStructured?.payload), 'preview route returns a payload');
+    assert(
+      Boolean(previewStructured?.payload),
+      'preview route returns a payload',
+    );
 
     const routeError = await requestMcp(
       binPath,
@@ -184,7 +222,10 @@ async function main() {
       12,
     );
     const routeErrorPayload = routeError?.result?.structuredContent;
-    assert(routeErrorPayload?.code === 'E_MISSING_API_KEY', 'route returns missing-key error without env');
+    assert(
+      routeErrorPayload?.code === 'E_MISSING_API_KEY',
+      'route returns missing-key error without env',
+    );
 
     const outcomePreview = await requestMcp(
       binPath,
@@ -204,7 +245,10 @@ async function main() {
       13,
     );
     const outcomeErrorPayload = outcomePreview?.result?.structuredContent;
-    assert(outcomeErrorPayload?.code === 'E_NOT_FOUND', 'outcome preview fails clearly when no route exists');
+    assert(
+      outcomeErrorPayload?.code === 'E_NOT_FOUND',
+      'outcome preview fails clearly when no route exists',
+    );
 
     const leakedContent = collectFiles(configDir)
       .map((filePath) => readFileSync(filePath, 'utf8'))
