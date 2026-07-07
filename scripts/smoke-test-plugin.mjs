@@ -118,6 +118,22 @@ function extractFrontmatter(markdown, filePath) {
   return match[1];
 }
 
+function normalizeManifestHookEntries(hooks) {
+  if (typeof hooks === 'string') {
+    return [hooks];
+  }
+
+  if (Array.isArray(hooks)) {
+    return hooks.filter((entry) => typeof entry === 'string');
+  }
+
+  return [];
+}
+
+function normalizeManifestHookPath(hookPath) {
+  return hookPath.replaceAll('\\', '/').replace(/^\.\//, '');
+}
+
 function assertManifest(manifestPath) {
   const manifest = readJson(manifestPath, 'plugin manifest');
   if (!manifest) {
@@ -130,6 +146,14 @@ function assertManifest(manifestPath) {
       `plugin manifest has ${field}`,
     );
   }
+
+  const hookEntries = normalizeManifestHookEntries(manifest.hooks);
+  assert(
+    hookEntries.every(
+      (entry) => normalizeManifestHookPath(entry) !== 'hooks/hooks.json',
+    ),
+    'plugin manifest must not reference auto-loaded hooks/hooks.json',
+  );
 }
 
 function assertCommandMarkdown(commandPath) {
