@@ -18,6 +18,9 @@
     "dist",
     "plugin"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@hokusai/core": "workspace:*"
   },

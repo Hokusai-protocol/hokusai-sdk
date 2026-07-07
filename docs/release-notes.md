@@ -12,11 +12,12 @@
 pnpm changeset
 pnpm changeset status
 pnpm version-packages
-pnpm release
+git tag v0.x.y
+git push origin v0.x.y
 ```
 
 ## Publishing expectations
 
 - Publishable artifacts come from `packages/*`.
 - The example app is private and never published.
-- CI validates install, lint, typecheck, boundary checks, build, and tests only.
+- `v*` tags publish public npm packages through Changesets and attach signed Claude Code/Codex plugin release artifacts.
