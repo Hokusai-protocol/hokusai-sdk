@@ -5,6 +5,11 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hokusai-protocol/hokusai-sdk",
+    "directory": "packages/adapter-codex"
+  },
   "bin": {
     "hokusai-codex-mcp": "./plugin/bin/hokusai-codex-mcp"
   },
