@@ -80,7 +80,6 @@ jobs:
 
   smoke-live-api:
     name: Validate packaged plugin against live API
-    if: ${{ secrets.HOKUSAI_SMOKE_API_KEY != '' }}
     needs: plugin-smoke
     runs-on: ubuntu-latest
     steps:
@@ -110,7 +109,12 @@ jobs:
       - run: node scripts/build-codex-plugin-zip.mjs
 
       - name: Route once against live API
-        run: node scripts/smoke-test-plugin.mjs --live
+        run: |
+          if [ -z "$HOKUSAI_API_KEY" ]; then
+            echo "HOKUSAI_SMOKE_API_KEY is not configured; skipping live API smoke."
+            exit 0
+          fi
+          node scripts/smoke-test-plugin.mjs --live
         env:
           HOKUSAI_API_KEY: ${{ secrets.HOKUSAI_SMOKE_API_KEY }}
           HOKUSAI_ROUTING_CONSENT: 'true'
