@@ -130,6 +130,19 @@ function assertManifest(manifestPath) {
       `plugin manifest has ${field}`,
     );
   }
+
+  if (manifest.hooks) {
+    const hooks = Array.isArray(manifest.hooks)
+      ? manifest.hooks
+      : [manifest.hooks];
+    const hasStandardHooksRef = hooks.some(
+      (hook) => hook === './hooks/hooks.json' || hook === 'hooks/hooks.json',
+    );
+    assert(
+      !hasStandardHooksRef,
+      'plugin manifest must not reference the standard hooks/hooks.json',
+    );
+  }
 }
 
 function assertCommandMarkdown(commandPath) {
