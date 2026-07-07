@@ -8,6 +8,17 @@
 pnpm add @hokusai/adapter-codex @hokusai/core
 ```
 
+For the installable Codex plugin, verify setup after configuring auth and routing consent:
+
+```sh
+export HOKUSAI_API_KEY=hk_live_your_key_here
+export HOKUSAI_ROUTING_CONSENT=true
+```
+
+```text
+$hokusai-doctor
+```
+
 ## Command manifest
 
 `CODEX_COMMAND_MANIFEST` exports four command descriptors for a Codex integration surface:
@@ -30,7 +41,7 @@ pnpm add @hokusai/adapter-codex @hokusai/core
 - `previewRoutePayload()`
 - `submitOutcome()`
 
-This package currently documents the adapter/library surface. Codex plugin packaging, skills, and MCP tooling are tracked separately and are not yet defined in this branch.
+The installable Codex plugin bundles skills and MCP tooling; use `$hokusai-doctor` as the final quickstart verification step before routing tasks.
 
 ## Privacy and consent
 

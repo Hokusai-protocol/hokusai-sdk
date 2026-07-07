@@ -58,7 +58,17 @@ Use environment variables or a local config file loaded through `loadClaudeCodeP
 - `HOKUSAI_OUTCOME_OPT_IN`: Separate explicit opt-in for outcome submission. Defaults to off.
 - `HOKUSAI_MODEL_ALLOWLIST`: Comma-separated Anthropic model ids or aliases.
 
-Example:
+Verify the install after setting auth and consent:
+
+```sh
+export HOKUSAI_API_KEY=hk_live_your_key_here
+export HOKUSAI_ROUTING_CONSENT=true
+hokusai-doctor
+```
+
+The doctor checks API-key presence, router reachability when network mode is available, dry-run route validation, outcome-reporting opt-in state, local state writability, and the model allowlist. It ends with `Ready to use: yes` only when blocking setup checks pass.
+
+Library example:
 
 ```ts
 import {

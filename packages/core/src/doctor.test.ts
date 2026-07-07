@@ -3,6 +3,7 @@ import { ANTHROPIC_MODELS, InMemoryModelRegistry } from './model-registry.js';
 import {
   checkApiKey,
   checkApiReachability,
+  checkDryRunRoute,
   checkModelAllowlist,
   checkNodeRuntime,
   checkOutcomeConsent,
@@ -240,6 +241,59 @@ describe('plugin doctor checks', () => {
     });
   });
 
+  it('checks dry-run route payload validation', async () => {
+    const registry = new InMemoryModelRegistry(ANTHROPIC_MODELS);
+    await expect(
+      checkDryRunRoute(
+        {
+          apiKey: 'hk_live_secret',
+          apiBaseUrl: 'https://api.hokus.ai',
+          routingConsentEnabled: true,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['claude-sonnet-4-6'],
+        },
+        registry,
+        {
+          clock: () => new Date('2026-06-08T12:00:00.000Z'),
+        },
+      ),
+    ).resolves.toMatchObject({
+      id: 'dry-run-route',
+      status: 'pass',
+    });
+
+    await expect(
+      checkDryRunRoute(
+        {
+          apiBaseUrl: 'https://api.hokus.ai',
+          routingConsentEnabled: false,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['claude-sonnet-4-6'],
+        },
+        registry,
+      ),
+    ).resolves.toMatchObject({
+      status: 'skipped',
+      nextAction: expect.stringContaining('HOKUSAI_API_KEY'),
+    });
+
+    await expect(
+      checkDryRunRoute(
+        {
+          apiKey: 'hk_live_secret',
+          apiBaseUrl: 'https://api.hokus.ai',
+          routingConsentEnabled: true,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['mystery-model'],
+        },
+        registry,
+      ),
+    ).resolves.toMatchObject({
+      status: 'fail',
+      summary: expect.stringContaining('no supported model'),
+    });
+  });
+
   it('checks state directory writability with sanitized failures', async () => {
     const passResult = await checkStateDirWritable('/tmp/hokusai', () =>
       Promise.resolve(),
@@ -346,6 +400,11 @@ describe('runPluginDoctor', () => {
     expect(report.mode).toBe('offline');
     expect(report.ok).toBe(false);
     expect(
+      report.checks.find((check) => check.id === 'dry-run-route'),
+    ).toMatchObject({
+      status: 'skipped',
+    });
+    expect(
       report.checks.find((check) => check.id === 'api-reachability'),
     ).toMatchObject({
       status: 'skipped',
@@ -371,6 +430,11 @@ describe('runPluginDoctor', () => {
     expect(report.mode).toBe('network');
     expect(report.ok).toBe(true);
     expect(
+      report.checks.find((check) => check.id === 'dry-run-route'),
+    ).toMatchObject({
+      status: 'pass',
+    });
+    expect(
       report.checks.find((check) => check.id === 'api-reachability'),
     ).toMatchObject({
       status: 'pass',
@@ -391,6 +455,26 @@ describe('runPluginDoctor', () => {
       report.checks.find((check) => check.id === 'api-reachability'),
     ).toMatchObject({
       status: 'skipped',
+    });
+  });
+
+  it('reports dry-run route failures', async () => {
+    const report = await runPluginDoctor({
+      config,
+      nodeVersion: '22.0.0',
+      stateDir: '/tmp/hokusai',
+      storageProber: () => Promise.resolve(),
+      routeDryRunClient: {
+        route: () => Promise.reject(new Error('bad hk_live_secret')),
+      },
+    });
+
+    expect(report.ok).toBe(false);
+    expect(
+      report.checks.find((check) => check.id === 'dry-run-route'),
+    ).toMatchObject({
+      status: 'fail',
+      summary: expect.stringContaining('<api-key>'),
     });
   });
 

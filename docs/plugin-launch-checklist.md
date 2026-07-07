@@ -60,30 +60,29 @@ Expected result:
 
 - Checksum verification reports `OK`.
 - Claude Code installs the plugin without requiring a repo checkout.
-- Claude Code shows `/hokusai:route`, `/hokusai:report`, and `/hokusai:privacy` in the slash-command menu.
+- Claude Code shows `/hokusai:route`, `/hokusai:report`, `/hokusai:privacy`, and `/hokusai:doctor` in the slash-command menu.
 
 ## Step 2. Configure auth and consent
-
-The released plugin zip does not expose a standalone doctor command. For this launch smoke path, "setup" means configuring the required environment variables and confirming the route command no longer fails on consent.
 
 Routing and outcome reporting are off by default. Enable them explicitly:
 
 ```sh
+export HOKUSAI_API_KEY=<test-key>
 export HOKUSAI_ROUTING_CONSENT=true
 export HOKUSAI_OUTCOME_OPT_IN=true
 ```
 
-Run a quick consent check:
+Run the canonical post-install verification:
 
 ```sh
-hokusai-route --task "test"
+hokusai-doctor
 ```
 
 Expected result:
 
-- Output does not tell you to set `HOKUSAI_ROUTING_CONSENT=true`.
-- With a valid test key, the command may return a recommendation.
-- With an invalid or missing test key, the command fails with a clear auth or network error instead of a consent error.
+- API key, routing consent, dry-run route, local state, allowlist, and outcome opt-in checks are reported with pass/fail/warn status.
+- Router reachability passes with a valid test key and network access, or reports an actionable auth/network fix.
+- The final line is `Ready to use: yes`.
 
 ## Step 3. Inspect local state before routing
 
@@ -218,9 +217,8 @@ This step proves test submission either succeeds or fails with a clear API error
 
 ## Plugin-Context Assumptions To Confirm Before Launch
 
-- The released plugin zip exposes `/hokusai:route`, `/hokusai:report`, and `/hokusai:privacy`.
-- There is no standalone `hokusai-doctor` binary in the plugin zip.
-- There is no released slash command for doctor in the plugin zip, even though some runtime messaging may refer to doctor functionality. For launch validation, use the route and report setup errors as the operator-visible setup path.
+- The released plugin zip exposes `/hokusai:route`, `/hokusai:report`, `/hokusai:privacy`, and `/hokusai:doctor`.
+- The released plugin zip exposes the standalone `hokusai-doctor` binary used by the doctor slash command.
 - Setup is environment-variable based. There is no interactive setup wizard in the released plugin.
 - The plugin zip must come from a tagged GitHub Release asset. Building from source requires a repo checkout and is out of scope for this smoke test.
 - `hokusai-privacy` inspection commands work against local state and do not require an API call.
