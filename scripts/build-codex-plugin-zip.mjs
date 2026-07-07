@@ -51,7 +51,7 @@ function resolveVersion() {
   }
 
   const refName = process.env.GITHUB_REF_NAME?.trim();
-  if (refName) {
+  if (refName && /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(refName)) {
     return refName.replace(/^v/, '');
   }
 
