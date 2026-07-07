@@ -18,6 +18,14 @@ const zipFile = path.join(
   'dist-zip',
   'hokusai-claude-code-plugin-latest.zip',
 );
+const codexManifestPath = path.join(
+  repoRoot,
+  'packages',
+  'adapter-codex',
+  'plugin',
+  '.codex-plugin',
+  'plugin.json',
+);
 const expectedRootName = 'hokusai-claude-code-plugin';
 const failures = [];
 
@@ -153,6 +161,21 @@ function assertManifest(manifestPath) {
       (entry) => normalizeManifestHookPath(entry) !== 'hooks/hooks.json',
     ),
     'plugin manifest must not reference auto-loaded hooks/hooks.json',
+  );
+}
+
+function assertCodexManifestAudit() {
+  const manifest = readJson(codexManifestPath, 'Codex plugin manifest');
+  if (!manifest) {
+    return;
+  }
+
+  const hookEntries = normalizeManifestHookEntries(manifest.hooks).map(
+    normalizeManifestHookPath,
+  );
+  assert(
+    hookEntries.includes('hooks/hooks.json'),
+    'Codex plugin manifest intentionally references hooks/hooks.json',
   );
 }
 
@@ -393,6 +416,7 @@ function assertLiveRouteCommand(extractedRoot) {
 
 function main() {
   assertZipToolAvailable();
+  assertCodexManifestAudit();
 
   if (!assertNonEmptyFile(zipFile, 'plugin zip exists')) {
     return finish();

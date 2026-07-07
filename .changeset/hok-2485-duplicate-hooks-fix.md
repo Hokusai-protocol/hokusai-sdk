@@ -1,3 +1,4 @@
+---
 "@hokusai/adapter-claude-code": patch
 ---
 
