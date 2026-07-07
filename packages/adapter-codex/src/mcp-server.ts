@@ -8,7 +8,6 @@ import {
   routeTaskWithCodex,
   submitOutcomeWithCodex,
   type CodexOutcomeInput,
-  type CodexOutcomePromptInput,
   type CodexRouteInput,
 } from './plugin-commands.js';
 
@@ -182,9 +181,7 @@ async function handleToolCall(name: string, args: Record<string, unknown>) {
     case 'hokusai_privacy_status':
       return privacyStatusWithCodex();
     case 'hokusai_prompt_outcome_contribution':
-      return promptOutcomeContributionWithCodex(
-        args as unknown as CodexOutcomePromptInput,
-      );
+      return promptOutcomeContributionWithCodex(args);
     default:
       return {
         ok: false,
