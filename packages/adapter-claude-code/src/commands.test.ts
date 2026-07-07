@@ -101,6 +101,10 @@ function createMockTransport(
   };
 }
 
+function callsForPath(calls: MockCall[], pathname: string): MockCall[] {
+  return calls.filter((call) => new URL(call.input).pathname === pathname);
+}
+
 async function createTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
   tempDirs.push(dir);
@@ -566,6 +570,8 @@ describe('reportTaskOutcome', () => {
         taskId: 'task-1',
         status: 'accepted',
       }),
+      createResponse(204),
+      createResponse(204),
     ]);
     const client = new HokusaiClient({
       apiKey: 'k_test',
@@ -610,6 +616,8 @@ describe('reportTaskOutcome', () => {
         taskId: 'task-1',
         status: 'accepted',
       }),
+      createResponse(204),
+      createResponse(204),
     ]);
     const client = new HokusaiClient({
       apiKey: 'k_test',
@@ -637,7 +645,8 @@ describe('reportTaskOutcome', () => {
         },
       },
     });
-    expect(calls).toHaveLength(1);
+    expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
+    expect(callsForPath(calls, '/v1/signals')).toHaveLength(2);
 
     const store = new FsLocalStore(configPath);
     expect(await store.listAudit()).toEqual([
@@ -1216,10 +1225,13 @@ describe('route/report smoke path', () => {
         taskId: 'task-smoke',
         status: 'accepted',
       }),
+      createResponse(204),
+      createResponse(204),
       createResponse(200, {
         taskId: 'task-smoke',
         status: 'accepted',
       }),
+      createResponse(204),
     ]);
     const client = new HokusaiClient({
       apiKey: 'k_test',
@@ -1279,7 +1291,9 @@ describe('route/report smoke path', () => {
         submitted: true,
       },
     });
-    expect(calls).toHaveLength(2);
+    expect(callsForPath(calls, '/api/v1/models/30/predict')).toHaveLength(1);
+    expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
+    expect(callsForPath(calls, '/v1/signals')).toHaveLength(3);
     expect(runDoctor({ configPath, apiClient: client })).toMatchObject({
       configPresent: true,
       needsSetup: false,

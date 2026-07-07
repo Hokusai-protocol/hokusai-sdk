@@ -17,6 +17,8 @@ export {
   type HokusaiDispatchBuilderOptions,
   type HokusaiPluginClientOptions,
   type HokusaiRequestOptions,
+  type HokusaiSignalRequest,
+  type HokusaiSignalResponse,
 } from './client.js';
 export {
   ConfigValidationError,
@@ -139,6 +141,12 @@ export {
   type SubmitOutcomeCommandInput,
   type SubmitOutcomeCommandValue,
 } from './harness-commands.js';
+export {
+  recordOnboardingFunnelSignal,
+  type OnboardingFunnelSignal,
+  type OnboardingFunnelStage,
+  type RecordOnboardingFunnelSignalInput,
+} from './onboarding-funnel.js';
 export type {
   HarnessCommandError,
   HarnessCommandResult,

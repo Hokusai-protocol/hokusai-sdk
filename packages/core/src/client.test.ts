@@ -261,6 +261,42 @@ describe('HokusaiClient', () => {
     );
   });
 
+  it('sends onboarding signals to the signal endpoint', async () => {
+    const { calls, transport } = createMockTransport([
+      createResponse(204, undefined, {
+        'x-hokusai-request-id': 'signal-request-1',
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+    });
+
+    await expect(
+      client.signal({
+        kind: 'onboarding_funnel',
+        stage: 'first_route',
+        installationId: 'install-1',
+        installedAt: '2026-01-01T00:00:00.000Z',
+        occurredAt: '2026-01-01T00:05:00.000Z',
+        harness: 'codex',
+        timeToFirstRouteMs: 300_000,
+      }),
+    ).resolves.toEqual({
+      requestId: 'signal-request-1',
+      status: 'recorded',
+      taskId: '',
+    });
+
+    expect(calls[0]?.input).toBe('https://api.hokus.ai/v1/signals');
+    expect(parseRequestBody(calls[0] as MockCall)).toMatchObject({
+      kind: 'onboarding_funnel',
+      stage: 'first_route',
+      installationId: 'install-1',
+      timeToFirstRouteMs: 300_000,
+    });
+  });
+
   it('sends route requests using the Technical Task Router prediction schema', async () => {
     const routeRequest = await createRouteRequest();
     const { calls, transport } = createMockTransport([

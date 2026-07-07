@@ -40,6 +40,7 @@ import {
   toModelSelection,
   type HarnessProfile,
 } from './harness-profile.js';
+import { recordOnboardingFunnelSignal } from '../onboarding-funnel.js';
 import type {
   ClearResult,
   DecisionPreview,
@@ -63,6 +64,27 @@ const ROUTING_REASON_LIMIT = 120;
 const DEBUG_PREVIEW_LIMIT = 1000;
 const DEFAULT_RETENTION_DAYS = 7;
 const DEFAULT_RETENTION_MAX_RECORDS = 200;
+
+async function recordCommandFunnelSignal(input: {
+  enabled: boolean;
+  options?: SharedCommandOptions | undefined;
+  stage: Parameters<typeof recordOnboardingFunnelSignal>[0]['stage'];
+  store: FsLocalStore;
+  harness: string;
+}): Promise<void> {
+  try {
+    await recordOnboardingFunnelSignal({
+      client: input.options?.apiClient,
+      enabled: input.enabled,
+      harness: input.harness,
+      now: (input.options?.clock ?? (() => new Date()))(),
+      stage: input.stage,
+      store: input.store,
+    });
+  } catch {
+    // Funnel telemetry must never change command behavior.
+  }
+}
 
 function ok<T>(value: T): AdapterResult<T> {
   return { ok: true, value };
@@ -673,6 +695,13 @@ export function createRouteTask<
         status: 'submitted',
         timestamp,
       });
+      await recordCommandFunnelSignal({
+        enabled: canReportOutcome(context.settings),
+        options,
+        stage: 'first_route',
+        store,
+        harness: profile.harness,
+      });
     }
 
     return ok({
@@ -985,6 +1014,13 @@ export function createReportTaskOutcome<
           correlationId: input.correlationId,
           status: 'submitted',
           timestamp,
+        });
+        await recordCommandFunnelSignal({
+          enabled: canReportOutcome(context.settings),
+          options,
+          stage: 'first_contribution',
+          store,
+          harness: profile.harness,
         });
       } catch (error) {
         await store.appendAudit({
