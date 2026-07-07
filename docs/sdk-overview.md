@@ -27,6 +27,20 @@ npm install @hokusai/adapter-wavemill
 
 Current published package versions in this repository are `0.1.0` for `@hokusai/core`, `@hokusai/adapter-claude-code`, `@hokusai/adapter-codex`, and `@hokusai/adapter-wavemill`.
 
+For plugin quickstarts, the final verification step is always the Hokusai doctor after auth and routing consent are configured:
+
+```sh
+export HOKUSAI_API_KEY=hk_live_your_key_here
+export HOKUSAI_ROUTING_CONSENT=true
+hokusai-doctor
+```
+
+Codex plugin users run the same verification through the bundled skill:
+
+```text
+$hokusai-doctor
+```
+
 ## Package Overview
 
 - `@hokusai/core`: shared client, schemas, validation, model mapping, consent, anonymization, storage, fixtures, and conformance helpers.

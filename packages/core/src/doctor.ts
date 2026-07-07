@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HokusaiPluginConfig, RedactedPluginConfig } from './config.js';
 import { redactPluginConfig, summarizeAllowlist } from './config.js';
-import type { FetchTransport, FetchTransportResponse } from './client.js';
+import {
+  HokusaiClient,
+  type FetchTransport,
+  type FetchTransportResponse,
+} from './client.js';
 import {
   ANTHROPIC_MODELS,
   InMemoryModelRegistry,
@@ -64,6 +68,7 @@ export interface RunPluginDoctorInput {
   reachabilityPath?: string;
   reachabilityTimeoutMs?: number;
   clock?: () => Date;
+  routeDryRunClient?: Pick<HokusaiClient, 'route'>;
 }
 
 export async function runDoctor(input: RunDoctorInput): Promise<DoctorReport> {
@@ -229,6 +234,99 @@ export function checkModelAllowlist(
   };
 }
 
+export async function checkDryRunRoute(
+  config: HokusaiPluginConfig,
+  registry: ModelRegistry,
+  options?: {
+    client?: Pick<HokusaiClient, 'route'>;
+    clock?: () => Date;
+  },
+): Promise<DoctorCheckResult> {
+  if (!config.apiKey?.trim() || !config.routingConsentEnabled) {
+    return {
+      id: 'dry-run-route',
+      label: 'dry-run-route',
+      status: 'skipped',
+      summary:
+        'Skipped dry-run route because API key or routing consent is not configured.',
+      nextAction:
+        'Configure HOKUSAI_API_KEY and HOKUSAI_ROUTING_CONSENT=1, then rerun the doctor.',
+    };
+  }
+
+  const allowlistSummary = summarizeAllowlist(config, registry);
+  const modelId = allowlistSummary.validModelIds[0];
+  const model = modelId ? registry.get(modelId) : undefined;
+
+  if (!model) {
+    return {
+      id: 'dry-run-route',
+      label: 'dry-run-route',
+      status: 'fail',
+      summary: 'Dry-run route failed because no supported model is configured.',
+      nextAction:
+        'Configure at least one supported model in the Hokusai allowlist.',
+    };
+  }
+
+  const checkedAt = (options?.clock ?? (() => new Date()))().toISOString();
+  const client =
+    options?.client ??
+    new HokusaiClient({
+      apiKey: config.apiKey,
+      baseUrl: config.apiBaseUrl,
+      transport: () =>
+        Promise.reject(
+          new Error('dry-run route must not use network transport'),
+        ),
+    });
+
+  try {
+    await client.route(
+      {
+        task: {
+          id: 'hokusai-doctor-dry-run',
+          prompt: 'Hokusai doctor dry-run route verification.',
+        },
+        prompt: 'Hokusai doctor dry-run route verification.',
+        consent: {
+          subjectId: 'hokusai-doctor',
+          grantedScopes: ['task-execution'],
+        },
+        model: {
+          id: model.id,
+          provider: model.provider,
+          capabilities: [...model.capabilities],
+        },
+        correlation: {
+          taskId: 'hokusai-doctor-dry-run',
+          correlationId: `hokusai-doctor-dry-run:${checkedAt}`,
+          createdAt: checkedAt,
+        },
+        redactions: [],
+        createdAt: checkedAt,
+      },
+      { dryRun: true, requestId: checkedAt },
+    );
+
+    return {
+      id: 'dry-run-route',
+      label: 'dry-run-route',
+      status: 'pass',
+      summary: 'Dry-run route payload validated successfully.',
+    };
+  } catch (error) {
+    return {
+      id: 'dry-run-route',
+      label: 'dry-run-route',
+      status: 'fail',
+      summary: `Dry-run route failed (${sanitizeDryRunError(error)}).`,
+      nextAction:
+        'Fix the routing configuration and rerun the doctor before sending tasks.',
+    };
+  }
+}
+
 export async function checkStateDirWritable(
   stateDir: string,
   probe: (dir: string) => Promise<void>,
@@ -355,6 +453,10 @@ export async function runPluginDoctor(
     checkRoutingConsent(input.config),
     checkOutcomeConsent(input.config),
     checkModelAllowlist(input.config, registry),
+    await checkDryRunRoute(input.config, registry, {
+      ...(input.routeDryRunClient ? { client: input.routeDryRunClient } : {}),
+      ...(input.clock ? { clock: input.clock } : {}),
+    }),
     await checkStateDirWritable(
       input.stateDir ?? '.',
       input.storageProber ?? probeStateDirWritable,
@@ -520,6 +622,17 @@ function sanitizeStateDirError(error: unknown, stateDir: string): string {
   );
 
   return withoutAbsolutePaths.trim() || 'unknown error';
+}
+
+function sanitizeDryRunError(error: unknown): string {
+  const raw =
+    error instanceof Error
+      ? error.message || error.name
+      : typeof error === 'string'
+        ? error
+        : 'unknown error';
+
+  return raw.replace(/hk_[A-Za-z0-9_/-]+/g, '<api-key>');
 }
 
 function escapeRegExp(value: string): string {

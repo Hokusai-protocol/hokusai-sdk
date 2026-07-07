@@ -118,6 +118,7 @@ Set your API key and opt in to routing:
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
 export HOKUSAI_ROUTING_CONSENT=true
+hokusai-doctor
 ```
 
 The intended eventual public path is the Claude Code community marketplace. Until that listing is accepted, use the repository marketplace as the default self-hosted install path.
@@ -152,6 +153,7 @@ Optionally opt in to anonymized outcome reporting:
 
 ```sh
 export HOKUSAI_OUTCOME_OPT_IN=true
+hokusai-doctor
 ```
 
 ```text
@@ -171,6 +173,17 @@ sha256sum -c hokusai-codex-plugin-latest.zip.sha256 && \
 unzip hokusai-codex-plugin-latest.zip && \
 codex plugin marketplace add ./hokusai-codex-plugin && \
 codex plugin add hokusai
+```
+
+Configure Hokusai and verify the install from Codex:
+
+```sh
+export HOKUSAI_API_KEY=hk_live_your_key_here
+export HOKUSAI_ROUTING_CONSENT=true
+```
+
+```text
+$hokusai-doctor
 ```
 
 Codex-facing library consumers can still use the typed adapter surface directly:

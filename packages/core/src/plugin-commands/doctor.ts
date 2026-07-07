@@ -36,9 +36,11 @@ function renderCheck(check: DoctorCheckResult): string[] {
 }
 
 function buildOverallLine(report: PluginDoctorReport): string {
-  const failingChecks = report.checks.filter((check) => check.status === 'fail');
+  const failingChecks = report.checks.filter(
+    (check) => check.status === 'fail',
+  );
   if (failingChecks.length === 0) {
-    return 'Overall: all checks passed.';
+    return 'Overall: ready to use.';
   }
 
   const routingBlocked = report.checks.some(
@@ -62,6 +64,7 @@ export function renderPluginDoctorReport(report: PluginDoctorReport): string {
     ...report.checks.flatMap((check) => renderCheck(check)),
     '',
     buildOverallLine(report),
+    `Ready to use: ${report.ok ? 'yes' : 'no'}`,
   ].join('\n');
 }
 
@@ -70,9 +73,7 @@ export function createRunBootstrapDoctor<
   TBuilderOptions,
   TPreview,
   TOptions extends SharedCommandOptions,
->(
-  profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
-) {
+>(profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>) {
   return async function runBootstrapDoctor(
     options: BootstrapDoctorOptions = {},
   ): Promise<{ report: PluginDoctorReport; rendered: string }> {
@@ -83,16 +84,15 @@ export function createRunBootstrapDoctor<
       options.pluginConfigPath ?? defaultPluginConfigPath(configPath.dir);
 
     const modelAllowlist = buildFallbackAllowlist(profile);
-    let config =
-      profile.createFallbackConfig?.({
-        baseUrl: DEFAULT_HOKUSAI_BASE_URL,
-        modelAllowlist,
-      }) ?? {
-        apiBaseUrl: DEFAULT_HOKUSAI_BASE_URL,
-        routingConsentEnabled: false,
-        outcomeSubmissionEnabled: false,
-        modelAllowlist,
-      };
+    let config = profile.createFallbackConfig?.({
+      baseUrl: DEFAULT_HOKUSAI_BASE_URL,
+      modelAllowlist,
+    }) ?? {
+      apiBaseUrl: DEFAULT_HOKUSAI_BASE_URL,
+      routingConsentEnabled: false,
+      outcomeSubmissionEnabled: false,
+      modelAllowlist,
+    };
     let validationCheck: DoctorCheckResult | undefined;
 
     try {
@@ -125,15 +125,23 @@ export function createRunBootstrapDoctor<
       mode,
       stateDir: configPath.dir,
       registry: profile.modelCatalog.registry,
-      ...(options.transport !== undefined ? { transport: options.transport } : {}),
+      ...(options.transport !== undefined
+        ? { transport: options.transport }
+        : {}),
     });
     const report = validationCheck
-      ? { ...baseReport, checks: [validationCheck, ...baseReport.checks], ok: false }
+      ? {
+          ...baseReport,
+          checks: [validationCheck, ...baseReport.checks],
+          ok: false,
+        }
       : baseReport;
 
     return {
       report,
-      rendered: (profile.renderDoctorReport ?? renderPluginDoctorReport)(report),
+      rendered: (profile.renderDoctorReport ?? renderPluginDoctorReport)(
+        report,
+      ),
     };
   };
 }

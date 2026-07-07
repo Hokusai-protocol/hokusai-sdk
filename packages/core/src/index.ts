@@ -147,6 +147,7 @@ export type {
 export {
   checkApiKey,
   checkApiReachability,
+  checkDryRunRoute,
   checkModelAllowlist,
   checkNodeRuntime,
   checkOutcomeConsent,

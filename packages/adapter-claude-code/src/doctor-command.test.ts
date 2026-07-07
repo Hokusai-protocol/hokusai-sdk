@@ -67,6 +67,7 @@ describe('renderPluginDoctorReport', () => {
     expect(rendered).toContain(
       'Hokusai routing is unavailable until configured',
     );
+    expect(rendered).toContain('Ready to use: no');
     expect(rendered).not.toContain('hk_live_secret');
   });
 });
