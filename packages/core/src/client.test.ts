@@ -360,7 +360,7 @@ describe('HokusaiClient', () => {
         },
         metadata: {
           external_task_id: routeRequest.task.id,
-          integration_version: '0.1.3',
+          integration_version: '0.1.4',
         },
       },
     });

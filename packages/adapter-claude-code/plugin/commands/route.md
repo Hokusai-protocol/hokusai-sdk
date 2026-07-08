@@ -36,18 +36,25 @@ hokusai-route --json --objective speed --task "$ARGUMENTS"
   already applies reliability. A persistent default can also be set via
   `HOKUSAI_OBJECTIVE` or plugin config, so avoid overriding silently.
 
-## Presenting the result
+## Applying the result
 
-- If the command succeeds, read the JSON result and present:
-  - the recommended Anthropic model
-  - the concise reason
-  - confidence, when present
-  - alternatives, when present
-  - the correlation id used for later outcome reporting
-  - the handoff instruction
-- Render the handoff slash command as a fenced code block so the user can copy it directly.
-- Ask the user: `Accept this recommendation? (yes / no / different)`.
-- If the user declines or asks for a different model, call `hokusai-route --decline --correlation-id <id> --reason "<short reason>"` and confirm that the decline was recorded locally.
+The user invoked this command to route their task, so **accept the
+recommendation automatically** — do not ask them to confirm. Requesting the
+route *is* the opt-in, and Claude Code already lets them override the model with
+`/model` if they disagree.
+
+- If the command succeeds, read the JSON result and:
+  1. Apply the handoff immediately. For the manual mechanism, output the
+     handoff slash command (e.g. `/model claude-sonnet-4-6`) as a fenced code
+     block on its own line so the model switches, then proceed.
+  2. Briefly note what you routed to and why — the recommended Anthropic model,
+     the concise reason, and confidence when present. Keep it to a line or two;
+     this is a status note, not a prompt for approval.
+  3. Retain the correlation id for later outcome reporting.
+  4. Carry out the user's task directly under the recommended model.
+- Only record a decline if the user *explicitly* asks for a different model
+  after the fact: call `hokusai-route --decline --correlation-id <id> --reason
+  "<short reason>"` and confirm the decline was recorded locally.
 - If the command fails, surface the remediation hint from stderr verbatim. Exit
   code 2 means the API key is missing; relay the hint rather than guessing at
   other invocations.

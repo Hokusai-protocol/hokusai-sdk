@@ -1267,7 +1267,7 @@ var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.3";
+var SDK_VERSION = "0.1.4";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -2785,7 +2785,7 @@ function checkOutcomeConsent(config) {
     label: "outcome-consent",
     status: "warn",
     summary: "Outcome submission consent is not enabled.",
-    nextAction: "Set HOKUSAI_OUTCOME_OPT_IN=1 to opt into outcome submission."
+    nextAction: 'Run "hokusai-privacy reporting on" to opt into outcome submission persistently, or set HOKUSAI_OUTCOME_OPT_IN=1 for the current shell only.'
   };
 }
 function checkModelAllowlist(config, registry) {
