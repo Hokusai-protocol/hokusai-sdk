@@ -10,4 +10,13 @@ coverage
 .changeset/pre.json
 *.tsbuildinfo
 features/
+
+# Local secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local wavemill state and config
+.wavemill/
+.wavemill-config.json
 .wavemill-config.local.json
