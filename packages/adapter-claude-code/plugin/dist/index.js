@@ -1267,7 +1267,7 @@ var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.4";
+var SDK_VERSION = "0.1.5";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -4884,7 +4884,12 @@ function createRunReportCli(profile, impls) {
     const loadConfigImpl = deps.loadConfig ?? ((input) => loadPluginConfig({
       env: input.env,
       registry,
-      ...input.configPath ? { store: new FilePluginConfigStore(input.configPath) } : {}
+      // Always read the persisted plugin config so consent set via
+      // `hokusai-privacy reporting on` is honored, not just the
+      // HOKUSAI_OUTCOME_OPT_IN env var. Mirrors getReportingStatus.
+      store: new FilePluginConfigStore(
+        input.configPath ?? defaultPluginConfigPath(profile.resolveConfigPath().dir)
+      )
     }));
     const previewReportOutcomeImpl = deps.previewReportOutcomeImpl ?? impls.previewReportOutcome;
     const reportTaskOutcomeImpl = deps.reportTaskOutcomeImpl ?? impls.reportTaskOutcome;
@@ -4964,8 +4969,12 @@ function createRunReportCli(profile, impls) {
     const reportInput = {
       taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
-      recommendedModel: parsed.recommendedModel ?? pipedInput.recommendedModel ?? "",
-      actualModel: parsed.actualModel ?? pipedInput.actualModel ?? "",
+      recommendedModel: parsed.recommendedModel ?? pipedInput.recommendedModel ?? latest?.recommendedModelId ?? "",
+      // When the recommendation was accepted, the actual model is the
+      // recommended one, so --use-latest can fill it from the stored decision.
+      // If it was not accepted, leave it empty so validation forces the caller
+      // to state which model they actually ran.
+      actualModel: parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "",
       recommendationAccepted: recommendationAccepted ?? false,
       completionStatus: parsed.status ?? pipedInput.completionStatus ?? "",
       latencyBucket: withDefaultBucket(

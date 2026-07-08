@@ -1,10 +1,94 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   REPORT_CLI_EXIT_CODES,
   runReportCli,
 } from './report-cli.js';
 
 describe('runReportCli', () => {
+  const cleanups: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    while (cleanups.length > 0) {
+      await cleanups.pop()?.();
+    }
+  });
+
+  it('honors stored consent from hokusai-privacy reporting on (no env opt-in, no --config-path)', async () => {
+    // Regression: report-cli previously loaded config without a store unless
+    // --config-path was passed, so `hokusai-privacy reporting on` (which writes
+    // outcomeSubmissionEnabled to the default plugin config file) was ignored
+    // and only HOKUSAI_OUTCOME_OPT_IN was honored.
+    const configDir = await mkdtemp(join(tmpdir(), 'hokusai-report-cli-'));
+    cleanups.push(() => rm(configDir, { recursive: true, force: true }));
+    await writeFile(
+      join(configDir, 'hokusai-plugin-config.json'),
+      JSON.stringify({ outcomeSubmissionEnabled: true }),
+      'utf8',
+    );
+    vi.stubEnv('HOKUSAI_CONFIG_DIR', configDir);
+
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--correlation-id',
+        'route-1',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      // No HOKUSAI_OUTCOME_OPT_IN in env — consent must come from the file.
+      { HOKUSAI_CONFIG_DIR: configDir },
+      { readStdin: () => Promise.resolve('') },
+    );
+
+    expect(result.exitCode).not.toBe(REPORT_CLI_EXIT_CODES.CONSENT_REQUIRED);
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+  });
+
+  it('fills the model from --use-latest when --recommended-model is omitted', async () => {
+    // Regression: with --use-latest and no explicit model flags, the payload
+    // builder fell back to an empty recommendedModel/actualModel and failed
+    // validation, even though the stored routing decision carried the model.
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--use-latest',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokus.ai',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        findLatestRoutingDecisionImpl: () =>
+          Promise.resolve({
+            correlationId: 'route-latest',
+            taskId: 'task-latest',
+            createdAt: '2026-07-08T00:00:00.000Z',
+            recommendedModelId: 'claude-sonnet-4-6',
+          }),
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+    expect(result.stdout).toContain('claude-sonnet-4-6');
+  });
+
   it('requires an API key before submission', async () => {
     const result = await runReportCli(
       [

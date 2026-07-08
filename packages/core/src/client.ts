@@ -46,7 +46,7 @@ const MAX_RETRY_AFTER_MS = 5_000;
 const ROUTE_PATH = '/api/v1/models/30/predict';
 const OUTCOME_PATH = '/v1/outcomes';
 const SIGNAL_PATH = '/v1/signals';
-const SDK_VERSION = '0.1.4';
+const SDK_VERSION = '0.1.5';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
