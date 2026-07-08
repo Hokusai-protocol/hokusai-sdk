@@ -204,7 +204,7 @@ describe('plugin doctor checks', () => {
       checkOutcomeConsent({ outcomeSubmissionEnabled: false }),
     ).toMatchObject({
       status: 'warn',
-      nextAction: expect.stringContaining('HOKUSAI_OUTCOME_OPT_IN=1'),
+      nextAction: expect.stringContaining('hokusai-privacy reporting on'),
     });
   });
 

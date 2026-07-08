@@ -182,7 +182,7 @@ export function checkOutcomeConsent(
         status: 'warn',
         summary: 'Outcome submission consent is not enabled.',
         nextAction:
-          'Set HOKUSAI_OUTCOME_OPT_IN=1 to opt into outcome submission.',
+          'Run "hokusai-privacy reporting on" to opt into outcome submission persistently, or set HOKUSAI_OUTCOME_OPT_IN=1 for the current shell only.',
       };
 }
 
