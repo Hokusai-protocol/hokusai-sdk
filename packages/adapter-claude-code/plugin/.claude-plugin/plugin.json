@@ -1,7 +1,7 @@
 {
   "name": "hokusai",
   "description": "Hokusai task routing for Claude Code - get an Anthropic model recommendation before you spend inference budget.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": {
     "name": "Hokusai"
   },
