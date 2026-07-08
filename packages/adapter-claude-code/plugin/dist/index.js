@@ -1266,7 +1266,7 @@ var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.1";
+var SDK_VERSION = "0.1.2";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
