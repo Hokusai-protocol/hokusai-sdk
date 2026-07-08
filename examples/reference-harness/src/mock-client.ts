@@ -26,7 +26,7 @@ export function createMockHokusaiClient(): Pick<
     },
     reportOutcome(report: OutcomeReport): Promise<OutcomeResponse> {
       return Promise.resolve({
-        taskId: report.correlationId,
+        inferenceLogId: report.inferenceLogId ?? report.correlationId,
         status: 'recorded',
       });
     },

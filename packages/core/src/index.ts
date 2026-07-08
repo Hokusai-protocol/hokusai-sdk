@@ -198,15 +198,19 @@ export {
 } from './schemas.js';
 export {
   OUTCOME_REPORT_SCHEMA_VERSION,
+  OUTCOME_TYPE_TASK_COMPLETION,
   OutcomeReportBuildError,
   buildOutcomeReport,
+  deriveOutcomeScore,
   previewOutcomePayload,
+  toOutcomeSubmission,
   type BuildSummary,
   type CoarseBucket,
   type CompletionStatus,
   type OutcomeExtensions,
   type OutcomeReport,
   type OutcomeReportInput,
+  type OutcomeSubmission,
   type OutcomeValidationError,
   type TestSummary,
 } from './outcome.js';

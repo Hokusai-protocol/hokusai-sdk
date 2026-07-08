@@ -36,6 +36,7 @@ const secret = "do-not-ship";
   redactionSalt: 'conformance-test-salt-2026',
   outcomeInput: {
     correlationId: 'conformance-corr-001',
+    inferenceLogId: '00000000-0000-4000-8000-000000000001',
     recommendedModel: 'conformance-model',
     actualModel: 'conformance-model',
     recommendationAccepted: true,
@@ -330,8 +331,8 @@ function createMockTransport(): FetchTransport {
       text() {
         return Promise.resolve(
           JSON.stringify({
-            taskId: conformanceFixtures.outcomeInput.correlationId,
-            status: 'accepted',
+            inference_log_id: conformanceFixtures.outcomeInput.inferenceLogId,
+            status: 'recorded',
           }),
         );
       },

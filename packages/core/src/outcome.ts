@@ -34,6 +34,11 @@ export interface OutcomeExtensions {
 export interface OutcomeReport {
   schemaVersion: typeof OUTCOME_REPORT_SCHEMA_VERSION;
   correlationId: string;
+  /**
+   * Server-issued inference log id (UUID) returned as `routeId` at routing
+   * time. Required to submit an outcome; the API keys outcomes on it.
+   */
+  inferenceLogId?: string;
   recommendedModel: string;
   actualModel: string;
   recommendationAccepted: boolean;
@@ -66,6 +71,7 @@ type OutcomeCandidate = Partial<Record<OutcomeReportKey, unknown>>;
 const OUTCOME_REPORT_KEYS = [
   'schemaVersion',
   'correlationId',
+  'inferenceLogId',
   'recommendedModel',
   'actualModel',
   'recommendationAccepted',
@@ -141,6 +147,9 @@ export function validateOutcomeReport(
     errors,
   );
   validateNonEmptyString(input.correlationId, 'correlationId', errors);
+  if (input.inferenceLogId !== undefined) {
+    validateNonEmptyString(input.inferenceLogId, 'inferenceLogId', errors);
+  }
   validateNonEmptyString(input.recommendedModel, 'recommendedModel', errors);
   validateNonEmptyString(input.actualModel, 'actualModel', errors);
   validateBoolean(
@@ -274,6 +283,10 @@ function createOutcomeCandidate(input: OutcomeReportInput): OutcomeCandidate {
 
   if (input.userRating === undefined) {
     delete candidate.userRating;
+  }
+
+  if (input.inferenceLogId === undefined) {
+    delete candidate.inferenceLogId;
   }
 
   return candidate;
@@ -435,6 +448,74 @@ function validateNonNegativeInteger(
       message: `"${path}" must be a non-negative integer.`,
     });
   }
+}
+
+/**
+ * Wire payload accepted by the Hokusai API at `POST /api/v1/outcomes`. The API
+ * keys the outcome on `inference_log_id` and stores a single coarse score plus
+ * a free-form type; the richer local OutcomeReport is collapsed into this.
+ */
+export interface OutcomeSubmission {
+  inference_log_id: string;
+  outcome_score: number;
+  outcome_type: string;
+}
+
+export const OUTCOME_TYPE_TASK_COMPLETION = 'task_completion';
+
+const STATUS_BASE_SCORE: Record<CompletionStatus, number> = {
+  succeeded: 1,
+  partial: 0.5,
+  overridden: 0.5,
+  abandoned: 0.25,
+  failed: 0,
+};
+
+/**
+ * Blend completion status and the optional user rating into a single 0..1
+ * outcome score. Status gives an objective floor; when a 1-5 rating is present
+ * it is averaged in equally.
+ */
+export function deriveOutcomeScore(
+  completionStatus: CompletionStatus,
+  userRating?: number,
+): number {
+  const base = STATUS_BASE_SCORE[completionStatus];
+  if (userRating === undefined) {
+    return base;
+  }
+  const ratingNormalized = (userRating - 1) / 4;
+  return 0.5 * base + 0.5 * ratingNormalized;
+}
+
+/**
+ * Collapse a validated OutcomeReport into the API submission payload. Requires
+ * inferenceLogId (the routing-time UUID) — outcomes cannot be recorded without
+ * the inference log they attach to.
+ */
+export function toOutcomeSubmission(report: OutcomeReport): OutcomeSubmission {
+  const inferenceLogId = report.inferenceLogId?.trim();
+  if (!inferenceLogId) {
+    throw new OutcomeReportBuildError(
+      'Outcome submission requires an inference log id.',
+      [
+        {
+          path: 'inferenceLogId',
+          message:
+            '"inferenceLogId" is required to submit an outcome. Route a task first so the SDK captures it, or pass --inference-log-id.',
+        },
+      ],
+    );
+  }
+
+  return {
+    inference_log_id: inferenceLogId,
+    outcome_score: deriveOutcomeScore(
+      report.completionStatus,
+      report.userRating,
+    ),
+    outcome_type: OUTCOME_TYPE_TASK_COMPLETION,
+  };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

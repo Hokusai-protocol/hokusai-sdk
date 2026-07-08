@@ -235,8 +235,8 @@ describe('createWavemillAdapter', () => {
           text: () =>
             Promise.resolve(
               JSON.stringify({
-                taskId: 'task-1',
-                status: 'accepted',
+                inference_log_id: '00000000-0000-4000-8000-00000000ab01',
+                status: 'recorded',
               }),
             ),
         });
@@ -247,6 +247,7 @@ describe('createWavemillAdapter', () => {
       client,
       input: {
         correlationId: 'route-wavemill-001',
+        inferenceLogId: '00000000-0000-4000-8000-00000000ab01',
         recommendedModel: 'gpt-5-codex',
         actualModel: 'gpt-5-codex',
         recommendationAccepted: true,
@@ -261,19 +262,14 @@ describe('createWavemillAdapter', () => {
 
     expect(response).toEqual({
       requestId: expect.any(String),
-      status: 'accepted',
-      taskId: 'task-1',
+      status: 'recorded',
+      inferenceLogId: '00000000-0000-4000-8000-00000000ab01',
     });
-    expect(JSON.parse(requestBody)).toMatchObject({
-      correlationId: 'route-wavemill-001',
-      extensions: {
-        version: '2026-06',
-        data: {
-          harness: 'wavemill',
-          spendUsdBucket: '0.50-1.00',
-          wallClockMinutes: 18,
-        },
-      },
+    // The wire payload is the minimal API contract, not the rich local report.
+    expect(JSON.parse(requestBody)).toEqual({
+      inference_log_id: '00000000-0000-4000-8000-00000000ab01',
+      outcome_score: 1,
+      outcome_type: 'task_completion',
     });
   });
 });

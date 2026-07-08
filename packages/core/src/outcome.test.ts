@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   OUTCOME_REPORT_SCHEMA_VERSION,
+  OUTCOME_TYPE_TASK_COMPLETION,
   OutcomeReportBuildError,
   buildOutcomeReport,
+  deriveOutcomeScore,
   previewOutcomePayload,
+  toOutcomeSubmission,
   validateOutcomeReport,
   type CompletionStatus,
+  type OutcomeReport,
   type OutcomeReportInput,
 } from './outcome.js';
 import {
@@ -229,5 +233,55 @@ describe('outcome fixtures', () => {
 
     expect(validateOutcomeReport(report)).toEqual([]);
     expect(report.schemaVersion).toBe(OUTCOME_REPORT_SCHEMA_VERSION);
+  });
+});
+
+describe('deriveOutcomeScore', () => {
+  it('uses the status base when no rating is present', () => {
+    expect(deriveOutcomeScore('succeeded')).toBe(1);
+    expect(deriveOutcomeScore('failed')).toBe(0);
+    expect(deriveOutcomeScore('overridden')).toBe(0.5);
+    expect(deriveOutcomeScore('abandoned')).toBe(0.25);
+  });
+
+  it('blends the status base with the normalized rating', () => {
+    // succeeded (1.0) + 4/5 rating -> 0.5*1 + 0.5*0.75
+    expect(deriveOutcomeScore('succeeded', 4)).toBeCloseTo(0.875);
+    // failed (0.0) + 1/5 rating -> 0.5*0 + 0.5*0
+    expect(deriveOutcomeScore('failed', 1)).toBe(0);
+    // failed (0.0) + 5/5 rating -> 0.5*0 + 0.5*1
+    expect(deriveOutcomeScore('failed', 5)).toBe(0.5);
+  });
+});
+
+describe('toOutcomeSubmission', () => {
+  const baseReport: OutcomeReport = {
+    schemaVersion: OUTCOME_REPORT_SCHEMA_VERSION,
+    correlationId: 'route-1',
+    inferenceLogId: '00000000-0000-4000-8000-000000000abc',
+    recommendedModel: 'claude-sonnet-4-6',
+    actualModel: 'claude-sonnet-4-6',
+    recommendationAccepted: true,
+    completionStatus: 'succeeded',
+    userRating: 4,
+    latencyBucket: 'medium',
+    costBucket: 'medium',
+    tokenBucket: 'medium',
+  };
+
+  it('collapses a report into the minimal wire payload', () => {
+    expect(toOutcomeSubmission(baseReport)).toEqual({
+      inference_log_id: '00000000-0000-4000-8000-000000000abc',
+      outcome_score: 0.875,
+      outcome_type: OUTCOME_TYPE_TASK_COMPLETION,
+    });
+  });
+
+  it('throws a clear error when the inference log id is missing', () => {
+    const { inferenceLogId: _drop, ...withoutId } = baseReport;
+    void _drop;
+    expect(() => toOutcomeSubmission(withoutId as OutcomeReport)).toThrow(
+      OutcomeReportBuildError,
+    );
   });
 });

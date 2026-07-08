@@ -34,6 +34,7 @@ import {
   type ModelSelection,
   validateRecommendedModel,
 } from './model-registry.js';
+import { type OutcomeSubmission, toOutcomeSubmission } from './outcome.js';
 import {
   InMemoryCorrelationStorage,
   type CorrelationRecord,
@@ -44,9 +45,9 @@ const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RETRY_AFTER_MS = 5_000;
 const ROUTE_PATH = '/api/v1/models/30/predict';
-const OUTCOME_PATH = '/v1/outcomes';
+const OUTCOME_PATH = '/api/v1/outcomes';
 const SIGNAL_PATH = '/v1/signals';
-const SDK_VERSION = '0.1.5';
+const SDK_VERSION = '0.1.6';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
@@ -402,21 +403,21 @@ export class HokusaiClient {
       };
     }
 
-    const response = await this.#send<OutcomeReport, OutcomeResponse>({
-      allowNoContent: true,
+    // Collapse the rich local report into the API's minimal wire payload.
+    // Throws if inferenceLogId is missing — outcomes attach to a routing-time
+    // inference log, so they cannot be recorded without it.
+    const submission = toOutcomeSubmission(request);
+
+    return this.#send<OutcomeSubmission, OutcomeResponse>({
       path: OUTCOME_PATH,
-      request,
+      request: submission,
       requestId,
       requestOptions: options,
+      responseMapper: (value, responseRequestId) =>
+        normalizeOutcomeResponse(value, responseRequestId),
       responseValidator: validateOutcomeResponse,
       responseErrorMessage: 'Hokusai API returned an invalid outcome response.',
     });
-
-    if (response.status === 'recorded') {
-      return response;
-    }
-
-    return response;
   }
 
   async signal(
@@ -1101,6 +1102,24 @@ function buildTechnicalTaskRouterRequest(
   };
 
   return { inputs: omitEmptySections(inputs) };
+}
+
+function normalizeOutcomeResponse(
+  value: unknown,
+  requestId: string,
+): OutcomeResponse {
+  const record = isPlainRecord(value) ? value : {};
+  const inferenceLogId =
+    firstString(record.inference_log_id, record.inferenceLogId) ?? '';
+  const status =
+    record.status === 'accepted' || record.status === 'recorded'
+      ? record.status
+      : 'recorded';
+  return {
+    inferenceLogId,
+    status,
+    requestId,
+  };
 }
 
 function normalizeTechnicalTaskRouterResponse(

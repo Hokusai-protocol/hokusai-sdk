@@ -144,6 +144,7 @@ function createOutcomeReport(): OutcomeReport {
   return {
     schemaVersion: '1',
     correlationId: 'corr-123',
+    inferenceLogId: '00000000-0000-4000-8000-0000000000c1',
     recommendedModel: 'gpt-5-codex',
     actualModel: 'gpt-5-codex',
     recommendationAccepted: true,
@@ -360,7 +361,7 @@ describe('HokusaiClient', () => {
         },
         metadata: {
           external_task_id: routeRequest.task.id,
-          integration_version: '0.1.5',
+          integration_version: '0.1.6',
         },
       },
     });
@@ -530,9 +531,9 @@ describe('HokusaiClient', () => {
   it('returns a typed outcome response for JSON responses', async () => {
     const outcomeReport = createOutcomeReport();
     const { transport } = createMockTransport([
-      createResponse(202, {
-        taskId: outcomeReport.correlationId,
-        status: 'accepted',
+      createResponse(200, {
+        inference_log_id: outcomeReport.inferenceLogId,
+        status: 'recorded',
       }),
     ]);
 
@@ -542,30 +543,49 @@ describe('HokusaiClient', () => {
     });
 
     await expect(client.reportOutcome(outcomeReport)).resolves.toEqual({
-      taskId: outcomeReport.correlationId,
-      status: 'accepted',
+      inferenceLogId: outcomeReport.inferenceLogId,
+      status: 'recorded',
       requestId: expect.any(String),
     });
   });
 
-  it('handles 204 outcome responses without parsing JSON', async () => {
-    const outcomeReport = createOutcomeReport();
-    const { transport } = createMockTransport([
-      createResponse(204, undefined, {
-        'x-hokusai-request-id': 'server-204',
-      }),
-    ]);
-
+  it('submits the minimal API wire payload derived from the report', async () => {
+    const outcomeReport = { ...createOutcomeReport(), userRating: 4 };
+    let sentBody = '';
     const client = new HokusaiClient({
       apiKey: 'k_test',
-      transport,
+      transport: (input, init) => {
+        sentBody = (init as { body?: string }).body ?? '';
+        expect(input).toContain('/api/v1/outcomes');
+        return Promise.resolve(
+          createResponse(200, {
+            inference_log_id: outcomeReport.inferenceLogId,
+            status: 'recorded',
+          }),
+        );
+      },
     });
 
-    await expect(client.reportOutcome(outcomeReport)).resolves.toEqual({
-      taskId: '',
-      status: 'recorded',
-      requestId: 'server-204',
+    await client.reportOutcome(outcomeReport);
+
+    expect(JSON.parse(sentBody)).toEqual({
+      inference_log_id: outcomeReport.inferenceLogId,
+      outcome_score: 0.875,
+      outcome_type: 'task_completion',
     });
+  });
+
+  it('rejects an outcome submission without an inference log id', async () => {
+    const withoutId = createOutcomeReport();
+    delete withoutId.inferenceLogId;
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport: () => Promise.reject(new Error('should not be called')),
+    });
+
+    await expect(client.reportOutcome(withoutId)).rejects.toThrow(
+      /inference log id/i,
+    );
   });
 
   it('throws an auth error before any network call when the API key is missing', async () => {

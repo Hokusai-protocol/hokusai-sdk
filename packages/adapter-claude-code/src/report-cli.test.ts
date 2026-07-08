@@ -269,8 +269,8 @@ describe('runReportCli', () => {
             tokenBucket: 'medium' as const,
           },
           response: {
-            taskId: 'task-1',
-            status: 'accepted' as const,
+            inferenceLogId: '00000000-0000-4000-8000-0000000000d1',
+            status: 'recorded' as const,
           },
           submitted: true,
         },
@@ -282,6 +282,8 @@ describe('runReportCli', () => {
         '--send',
         '--correlation-id',
         'route-1',
+        '--inference-log-id',
+        '00000000-0000-4000-8000-0000000000d1',
         '--recommended-model',
         'claude-sonnet-4-6',
         '--actual-model',
@@ -308,7 +310,7 @@ describe('runReportCli', () => {
     expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
     expect(reportTaskOutcomeImpl).toHaveBeenCalledOnce();
     expect(result.stdout).toContain('Outcome report submitted.');
-    expect(result.stdout).toContain('Server status: accepted');
+    expect(result.stdout).toContain('Server status: recorded');
   });
 
   it('maps invalid status values to outcome validation errors', async () => {
@@ -633,4 +635,95 @@ describe('runReportCli', () => {
       expect(result.stdout).toContain(`Completion status: ${status}`);
     },
   );
+
+  it('refuses to submit without an inference log id', async () => {
+    const result = await runReportCli(
+      [
+        '--send',
+        '--correlation-id',
+        'route-1',
+        '--recommended-model',
+        'claude-sonnet-4-6',
+        '--actual-model',
+        'claude-sonnet-4-6',
+        '--accepted',
+        '--status',
+        'succeeded',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokus.ai',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR);
+    expect(result.stderr).toContain('inference log id');
+  });
+
+  it('fills the inference log id from --use-latest for submission', async () => {
+    const latestInferenceLogId = '00000000-0000-4000-8000-0000000000f1';
+    let capturedInput: { inferenceLogId?: string } | undefined;
+    const reportTaskOutcomeImpl = vi.fn((input: { inferenceLogId?: string }) => {
+      capturedInput = input;
+      return Promise.resolve({
+        ok: true as const,
+        value: {
+          report: {
+            schemaVersion: '1' as const,
+            correlationId: 'route-latest',
+            inferenceLogId: latestInferenceLogId,
+            recommendedModel: 'claude-sonnet-4-6',
+            actualModel: 'claude-sonnet-4-6',
+            recommendationAccepted: true,
+            completionStatus: 'succeeded' as const,
+            latencyBucket: 'medium' as const,
+            costBucket: 'medium' as const,
+            tokenBucket: 'medium' as const,
+          },
+          response: {
+            inferenceLogId: latestInferenceLogId,
+            status: 'recorded' as const,
+          },
+          submitted: true,
+        },
+      });
+    });
+
+    const result = await runReportCli(
+      ['--send', '--use-latest', '--accepted', '--status', 'succeeded'],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokus.ai',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        findLatestRoutingDecisionImpl: () =>
+          Promise.resolve({
+            correlationId: 'route-latest',
+            taskId: 'task-latest',
+            createdAt: '2026-07-08T00:00:00.000Z',
+            recommendedModelId: 'claude-sonnet-4-6',
+            inferenceLogId: latestInferenceLogId,
+          }),
+        reportTaskOutcomeImpl,
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+    expect(reportTaskOutcomeImpl).toHaveBeenCalledOnce();
+    expect(capturedInput?.inferenceLogId).toBe(latestInferenceLogId);
+  });
 });

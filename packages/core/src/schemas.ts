@@ -132,7 +132,7 @@ export interface RouteResponse {
 export type OutcomeResponseStatus = 'accepted' | 'recorded';
 
 export interface OutcomeResponse {
-  taskId: string;
+  inferenceLogId: string;
   status: OutcomeResponseStatus;
   requestId?: string | undefined;
 }
@@ -503,7 +503,7 @@ export function validateOutcomeResponse(
     ];
   }
 
-  validateNonEmptyString(response.taskId, 'taskId', errors);
+  validateNonEmptyString(response.inferenceLogId, 'inferenceLogId', errors);
 
   if (response.status !== 'accepted' && response.status !== 'recorded') {
     pushFieldError(

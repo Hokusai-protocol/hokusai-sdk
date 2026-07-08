@@ -613,8 +613,8 @@ describe('reportTaskOutcome', () => {
     const configPath = await createTempDir('hokusai-claude-outcome-success-');
     const { calls, transport } = createMockTransport([
       createResponse(200, {
-        taskId: 'task-1',
-        status: 'accepted',
+        inference_log_id: '00000000-0000-4000-8000-0000000000e1',
+        status: 'recorded',
       }),
       createResponse(204),
       createResponse(204),
@@ -627,6 +627,7 @@ describe('reportTaskOutcome', () => {
     const result = await reportTaskOutcome(
       {
         taskId: 'task-1',
+        inferenceLogId: '00000000-0000-4000-8000-0000000000e1',
         ...claudeCodeSuccessOutcomeFixture,
       },
       {
@@ -640,12 +641,12 @@ describe('reportTaskOutcome', () => {
       value: {
         submitted: true,
         response: {
-          taskId: 'task-1',
-          status: 'accepted',
+          inferenceLogId: '00000000-0000-4000-8000-0000000000e1',
+          status: 'recorded',
         },
       },
     });
-    expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
+    expect(callsForPath(calls, '/api/v1/outcomes')).toHaveLength(1);
     expect(callsForPath(calls, '/v1/signals')).toHaveLength(2);
 
     const store = new FsLocalStore(configPath);
@@ -734,6 +735,7 @@ describe('reportTaskOutcome', () => {
     const result = await reportTaskOutcome(
       {
         taskId: 'task-1',
+        inferenceLogId: '00000000-0000-4000-8000-0000000000e2',
         ...claudeCodeSuccessOutcomeFixture,
       },
       {
@@ -1228,8 +1230,8 @@ describe('route/report smoke path', () => {
       createResponse(204),
       createResponse(204),
       createResponse(200, {
-        taskId: 'task-smoke',
-        status: 'accepted',
+        inference_log_id: 'route-1',
+        status: 'recorded',
       }),
       createResponse(204),
     ]);
@@ -1280,6 +1282,7 @@ describe('route/report smoke path', () => {
     const reported = await reportTaskOutcome(
       {
         taskId: 'task-smoke',
+        inferenceLogId: 'route-1',
         ...claudeCodeSuccessOutcomeFixture,
       },
       {
@@ -1295,7 +1298,7 @@ describe('route/report smoke path', () => {
       },
     });
     expect(callsForPath(calls, '/api/v1/models/30/predict')).toHaveLength(1);
-    expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
+    expect(callsForPath(calls, '/api/v1/outcomes')).toHaveLength(1);
     expect(callsForPath(calls, '/v1/signals')).toHaveLength(3);
     expect(runDoctor({ configPath, apiClient: client })).toMatchObject({
       configPresent: true,

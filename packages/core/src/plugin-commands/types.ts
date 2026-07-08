@@ -87,6 +87,8 @@ export interface LatestRoutingDecision {
   taskId: string;
   createdAt: string;
   recommendedModelId?: string;
+  /** Server-issued inference log id (routeId), used to submit outcomes. */
+  inferenceLogId?: string;
 }
 
 export interface ReportOutcomeResult {

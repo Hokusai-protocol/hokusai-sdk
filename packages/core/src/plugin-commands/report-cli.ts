@@ -39,6 +39,7 @@ interface ParsedArgs {
   correlationId?: string;
   costBucket?: CoarseBucket;
   dryRun: boolean;
+  inferenceLogId?: string;
   json: boolean;
   latencyBucket?: CoarseBucket;
   notes?: string;
@@ -94,6 +95,7 @@ type PipedInput = Partial<
     | 'completionStatus'
     | 'correlationId'
     | 'costBucket'
+    | 'inferenceLogId'
     | 'latencyBucket'
     | 'notes'
     | 'recommendedModel'
@@ -128,6 +130,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       parsed.json = true;
     } else if (arg === '--correlation-id' && next !== undefined) {
       parsed.correlationId = next;
+      index += 1;
+    } else if (arg === '--inference-log-id' && next !== undefined) {
+      parsed.inferenceLogId = next;
       index += 1;
     } else if (arg === '--use-latest') {
       parsed.useLatest = true;
@@ -504,6 +509,10 @@ export function createRunReportCli<
 
     const stderrNotes: string[] = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
+    const inferenceLogId =
+      parsed.inferenceLogId ??
+      pipedInput.inferenceLogId ??
+      latest?.inferenceLogId;
     const reportInput: ReportOutcomeInputWithTaskId = {
       taskId:
         parsed.taskId ??
@@ -514,6 +523,7 @@ export function createRunReportCli<
         'outcome-report',
       correlationId:
         parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? '',
+      ...(inferenceLogId ? { inferenceLogId } : {}),
       recommendedModel:
         parsed.recommendedModel ??
         pipedInput.recommendedModel ??
@@ -568,6 +578,21 @@ export function createRunReportCli<
         ? { notes: parsed.notes ?? pipedInput.notes }
         : {}),
     };
+
+    // Outcomes attach to a routing-time inference log id. Preview works without
+    // it, but submission cannot proceed, so fail early with clear guidance.
+    if (parsed.send && !reportInput.inferenceLogId) {
+      return toMessage(
+        parsed,
+        'Cannot submit an outcome without an inference log id. Route a task first so the SDK captures it (then use --use-latest), or pass --inference-log-id.',
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+        {
+          fieldErrors: [
+            'inferenceLogId: Required to submit. Use --use-latest after routing, or pass --inference-log-id <uuid>.',
+          ],
+        },
+      );
+    }
 
     try {
       const result = parsed.send

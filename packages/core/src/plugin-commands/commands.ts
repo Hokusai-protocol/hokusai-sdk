@@ -663,6 +663,9 @@ export function createRouteTask<
         metadata: {
           ...storedCorrelation.record.metadata,
           recommendedModelId: recommendation.model.id,
+          // Persist the server inference log id (returned as routeId) so
+          // outcomes can be submitted against it later.
+          ...(route?.routeId ? { inferenceLogId: route.routeId } : {}),
           recommendedAlternativeIds: JSON.stringify(
             recommendation.alternatives?.map((entry) => entry.model.id) ?? [],
           ),
@@ -911,6 +914,9 @@ export async function findLatestRoutingDecision(input: {
     createdAt: new Date(latest.createdAt).toISOString(),
     ...(latest.metadata?.recommendedModelId
       ? { recommendedModelId: latest.metadata.recommendedModelId }
+      : {}),
+    ...(latest.metadata?.inferenceLogId
+      ? { inferenceLogId: latest.metadata.inferenceLogId }
       : {}),
   };
 }

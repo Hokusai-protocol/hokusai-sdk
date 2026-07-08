@@ -250,6 +250,7 @@ var BUILD_TEST_STATUSES = ["passed", "failed", "skipped"];
 var OUTCOME_REPORT_KEYS = [
   "schemaVersion",
   "correlationId",
+  "inferenceLogId",
   "recommendedModel",
   "actualModel",
   "recommendationAccepted",
@@ -313,6 +314,9 @@ function validateOutcomeReport(input) {
     errors
   );
   validateNonEmptyString(input.correlationId, "correlationId", errors);
+  if (input.inferenceLogId !== void 0) {
+    validateNonEmptyString(input.inferenceLogId, "inferenceLogId", errors);
+  }
   validateNonEmptyString(input.recommendedModel, "recommendedModel", errors);
   validateNonEmptyString(input.actualModel, "actualModel", errors);
   validateBoolean(
@@ -422,6 +426,9 @@ function createOutcomeCandidate(input) {
   if (input.userRating === void 0) {
     delete candidate.userRating;
   }
+  if (input.inferenceLogId === void 0) {
+    delete candidate.inferenceLogId;
+  }
   return candidate;
 }
 function validateSummary(value, path3, knownKeys, statuses, errors) {
@@ -523,6 +530,44 @@ function validateNonNegativeInteger(value, path3, errors) {
       message: `"${path3}" must be a non-negative integer.`
     });
   }
+}
+var OUTCOME_TYPE_TASK_COMPLETION = "task_completion";
+var STATUS_BASE_SCORE = {
+  succeeded: 1,
+  partial: 0.5,
+  overridden: 0.5,
+  abandoned: 0.25,
+  failed: 0
+};
+function deriveOutcomeScore(completionStatus, userRating) {
+  const base = STATUS_BASE_SCORE[completionStatus];
+  if (userRating === void 0) {
+    return base;
+  }
+  const ratingNormalized = (userRating - 1) / 4;
+  return 0.5 * base + 0.5 * ratingNormalized;
+}
+function toOutcomeSubmission(report) {
+  const inferenceLogId = report.inferenceLogId?.trim();
+  if (!inferenceLogId) {
+    throw new OutcomeReportBuildError(
+      "Outcome submission requires an inference log id.",
+      [
+        {
+          path: "inferenceLogId",
+          message: '"inferenceLogId" is required to submit an outcome. Route a task first so the SDK captures it, or pass --inference-log-id.'
+        }
+      ]
+    );
+  }
+  return {
+    inference_log_id: inferenceLogId,
+    outcome_score: deriveOutcomeScore(
+      report.completionStatus,
+      report.userRating
+    ),
+    outcome_type: OUTCOME_TYPE_TASK_COMPLETION
+  };
 }
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -785,7 +830,7 @@ function validateOutcomeResponse(response) {
       }
     ];
   }
-  validateNonEmptyString2(response.taskId, "taskId", errors);
+  validateNonEmptyString2(response.inferenceLogId, "inferenceLogId", errors);
   if (response.status !== "accepted" && response.status !== "recorded") {
     pushFieldError(
       errors,
@@ -1265,9 +1310,9 @@ var DEFAULT_MAX_RETRIES = 2;
 var DEFAULT_TIMEOUT_MS = 1e4;
 var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
-var OUTCOME_PATH = "/v1/outcomes";
+var OUTCOME_PATH = "/api/v1/outcomes";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.5";
+var SDK_VERSION = "0.1.6";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -1468,19 +1513,16 @@ var HokusaiClient = class {
         request
       };
     }
-    const response = await this.#send({
-      allowNoContent: true,
+    const submission = toOutcomeSubmission(request);
+    return this.#send({
       path: OUTCOME_PATH,
-      request,
+      request: submission,
       requestId,
       requestOptions: options,
+      responseMapper: (value, responseRequestId) => normalizeOutcomeResponse(value, responseRequestId),
       responseValidator: validateOutcomeResponse,
       responseErrorMessage: "Hokusai API returned an invalid outcome response."
     });
-    if (response.status === "recorded") {
-      return response;
-    }
-    return response;
   }
   async signal(request, options = {}) {
     const requestId = options.requestId ?? this.#requestIdFactory();
@@ -1954,6 +1996,16 @@ function buildTechnicalTaskRouterRequest(request) {
     })
   };
   return { inputs: omitEmptySections(inputs) };
+}
+function normalizeOutcomeResponse(value, requestId) {
+  const record = isPlainRecord(value) ? value : {};
+  const inferenceLogId = firstString(record.inference_log_id, record.inferenceLogId) ?? "";
+  const status = record.status === "accepted" || record.status === "recorded" ? record.status : "recorded";
+  return {
+    inferenceLogId,
+    status,
+    requestId
+  };
 }
 function normalizeTechnicalTaskRouterResponse(response, request, requestId) {
   if (validateRouteResponse(response).length === 0) {
@@ -3935,6 +3987,9 @@ function createRouteTask(profile) {
         metadata: {
           ...storedCorrelation.record.metadata,
           recommendedModelId: recommendation.model.id,
+          // Persist the server inference log id (returned as routeId) so
+          // outcomes can be submitted against it later.
+          ...route?.routeId ? { inferenceLogId: route.routeId } : {},
           recommendedAlternativeIds: JSON.stringify(
             recommendation.alternatives?.map((entry) => entry.model.id) ?? []
           ),
@@ -4117,7 +4172,8 @@ async function findLatestRoutingDecision(input) {
     correlationId: latest.metadata?.originalCorrelationId ?? latest.correlationId,
     taskId: latest.metadata?.taskId ?? latest.packetHash,
     createdAt: new Date(latest.createdAt).toISOString(),
-    ...latest.metadata?.recommendedModelId ? { recommendedModelId: latest.metadata.recommendedModelId } : {}
+    ...latest.metadata?.recommendedModelId ? { recommendedModelId: latest.metadata.recommendedModelId } : {},
+    ...latest.metadata?.inferenceLogId ? { inferenceLogId: latest.metadata.inferenceLogId } : {}
   };
 }
 function createPreviewReportOutcome(profile) {
@@ -4696,6 +4752,9 @@ function parseArgs2(argv) {
     } else if (arg === "--correlation-id" && next !== void 0) {
       parsed.correlationId = next;
       index += 1;
+    } else if (arg === "--inference-log-id" && next !== void 0) {
+      parsed.inferenceLogId = next;
+      index += 1;
     } else if (arg === "--use-latest") {
       parsed.useLatest = true;
     } else if (arg === "--recommended-model" && next !== void 0) {
@@ -4966,9 +5025,11 @@ function createRunReportCli(profile, impls) {
     }
     const stderrNotes = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
+    const inferenceLogId = parsed.inferenceLogId ?? pipedInput.inferenceLogId ?? latest?.inferenceLogId;
     const reportInput = {
       taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
+      ...inferenceLogId ? { inferenceLogId } : {},
       recommendedModel: parsed.recommendedModel ?? pipedInput.recommendedModel ?? latest?.recommendedModelId ?? "",
       // When the recommendation was accepted, the actual model is the
       // recommended one, so --use-latest can fill it from the stored decision.
@@ -5001,6 +5062,18 @@ function createRunReportCli(profile, impls) {
       } : {},
       ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {}
     };
+    if (parsed.send && !reportInput.inferenceLogId) {
+      return toMessage2(
+        parsed,
+        "Cannot submit an outcome without an inference log id. Route a task first so the SDK captures it (then use --use-latest), or pass --inference-log-id.",
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+        {
+          fieldErrors: [
+            "inferenceLogId: Required to submit. Use --use-latest after routing, or pass --inference-log-id <uuid>."
+          ]
+        }
+      );
+    }
     try {
       const result = parsed.send ? await reportTaskOutcomeImpl(reportInput, {
         apiClient: deps.createClient?.(config) ?? new HokusaiClient({
