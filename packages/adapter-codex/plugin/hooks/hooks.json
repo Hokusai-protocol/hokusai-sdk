@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hokusai-codex-outcome-hook"
+            "command": "${PLUGIN_ROOT}/bin/hokusai-codex-outcome-hook"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hokusai-codex-outcome-hook"
+            "command": "${PLUGIN_ROOT}/bin/hokusai-codex-outcome-hook"
           }
         ]
       }

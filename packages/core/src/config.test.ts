@@ -58,6 +58,7 @@ describe('loadPluginConfig', () => {
       routingConsentEnabled: true,
       outcomeSubmissionEnabled: true,
       modelAllowlist: ['claude-haiku-4-5-20251001'],
+      routingObjective: 'reliability',
     });
   });
 
@@ -79,6 +80,7 @@ describe('loadPluginConfig', () => {
       routingConsentEnabled: true,
       outcomeSubmissionEnabled: true,
       modelAllowlist: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      routingObjective: 'reliability',
     });
   });
 
@@ -92,6 +94,42 @@ describe('loadPluginConfig', () => {
     expect(config.modelAllowlist).toEqual(
       ANTHROPIC_MODELS.map((model) => model.id),
     );
+    expect(config.routingObjective).toBe('reliability');
+  });
+
+  it('reads the routing objective from HOKUSAI_OBJECTIVE', async () => {
+    const config = await loadPluginConfig({
+      env: { HOKUSAI_OBJECTIVE: 'speed' },
+    });
+
+    expect(config.routingObjective).toBe('speed');
+  });
+
+  it('applies flag/env/store precedence for the routing objective', async () => {
+    const store = new LocalStorePluginConfigStore(new InMemoryLocalStore());
+    await store.write({ routingObjective: 'cost' });
+
+    const stored = await loadPluginConfig({ store });
+    expect(stored.routingObjective).toBe('cost');
+
+    const envWins = await loadPluginConfig({
+      store,
+      env: { HOKUSAI_OBJECTIVE: 'speed' },
+    });
+    expect(envWins.routingObjective).toBe('speed');
+
+    const overrideWins = await loadPluginConfig({
+      store,
+      env: { HOKUSAI_OBJECTIVE: 'speed' },
+      overrides: { routingObjective: 'reliability' },
+    });
+    expect(overrideWins.routingObjective).toBe('reliability');
+  });
+
+  it('throws ConfigValidationError for an unknown routing objective', async () => {
+    await expect(
+      loadPluginConfig({ env: { HOKUSAI_OBJECTIVE: 'fastest-ever' } }),
+    ).rejects.toBeInstanceOf(ConfigValidationError);
   });
 
   it('throws ConfigValidationError for invalid base URLs', async () => {

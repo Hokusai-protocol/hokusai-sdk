@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hokusai-outcome-hook"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/hokusai-outcome-hook"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "hokusai-outcome-hook"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/hokusai-outcome-hook"
           }
         ]
       }

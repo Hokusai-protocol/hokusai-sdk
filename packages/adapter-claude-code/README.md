@@ -50,20 +50,19 @@ claude --plugin-dir /path/to/repo/packages/adapter-claude-code/plugin
 
 After install, Claude Code should show `/hokusai:route`, `/hokusai:report`, and `/hokusai:privacy` in the slash-command menu. The task description may also refer to these as `/hokusai-route`, `/hokusai-report`, and `/hokusai-privacy`, but the `hokusai:*` paths are the canonical Claude Code command paths.
 
-## Configure auth and consent
+## Configure auth and contribution consent
 
 Use environment variables or a local config file loaded through `loadClaudeCodePluginConfig()`:
 
 - `HOKUSAI_API_KEY`: Hokusai API key. Required for routing and reachability checks.
-- `HOKUSAI_ROUTING_CONSENT`: Explicit opt-in for routing. Truthy values are `true`, `1`, and `yes`.
+- `HOKUSAI_ROUTING_CONSENT`: Optional routing override. Installing the Claude Code plugin provides routing consent by default; set this only when you need to force routing off or test alternate consent states.
 - `HOKUSAI_OUTCOME_OPT_IN`: Separate explicit opt-in for outcome submission. Defaults to off.
 - `HOKUSAI_MODEL_ALLOWLIST`: Comma-separated Anthropic model ids or aliases.
 
-Verify the install after setting auth and consent:
+Verify the install after setting auth:
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
-export HOKUSAI_ROUTING_CONSENT=true
 hokusai-doctor
 ```
 
@@ -97,7 +96,7 @@ const models = createClaudeCodeModelProvider({
 /hokusai:route refactor the auth middleware to use the new policy engine
 ```
 
-The command sends a normalized, redacted Hokusai task packet only after both auth and routing consent are configured. On success it returns the recommended Anthropic model, concise reasoning, confidence, and alternatives when the API provides them.
+The command sends a normalized, redacted Hokusai task packet after auth is configured. Routing consent is provided by installing the Claude Code plugin unless explicitly overridden. On success it returns the recommended Anthropic model, concise reasoning, confidence, and alternatives when the API provides them.
 
 The route output also includes:
 
@@ -123,13 +122,27 @@ hokusai-privacy preview <correlation-id> --debug
 
 ## Preview and submit an outcome report
 
-To preview and optionally submit an anonymized outcome report for a prior routing decision:
+To preview and optionally submit an anonymized outcome report for a prior routing decision, first opt in from Claude Code:
+
+```text
+/hokusai:privacy reporting on
+```
+
+Then send a report against a stored route:
 
 ```text
 /hokusai:report --use-latest --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
 ```
 
-The report command previews the exact anonymized payload first, then only submits after explicit approval. `hokusai-report --send` requires the same routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
+The report command previews the exact anonymized payload first, then only submits after explicit approval. `hokusai-report --send` requires outcome contribution to be enabled through `/hokusai:privacy reporting on` or `HOKUSAI_OUTCOME_OPT_IN=true`.
+
+Use the privacy command to inspect local contribution state:
+
+```text
+/hokusai:privacy list
+/hokusai:privacy preview <correlation-id>
+/hokusai:privacy audit
+```
 
 The plugin also ships `hokusai-outcome-hook`, wired through post-run hooks. When a run appears successful, tests pass, a PR is merged, or an issue closes, the hook prompts:
 
@@ -152,7 +165,7 @@ Decline reasons are redacted and length-capped before local persistence. The ada
 ## Failure behavior
 
 - Missing `HOKUSAI_API_KEY`: `Hokusai routing needs an API key. Set HOKUSAI_API_KEY and re-run.`
-- Missing `HOKUSAI_ROUTING_CONSENT=true`: `Routing consent is required. Run export HOKUSAI_ROUTING_CONSENT=true to opt in.`
+- Routing explicitly disabled: `Routing consent is required. Run export HOKUSAI_ROUTING_CONSENT=true to opt in.`
 - Missing `HOKUSAI_OUTCOME_OPT_IN=true`: outcome preview/send refuses with an explicit opt-in remediation.
 - Network failure: `Could not reach Hokusai (...)`. Retry after checking connectivity, then inspect local state with `hokusai-privacy audit` and `hokusai-privacy reporting status`.
 - Unsupported recommendation: prints the unsupported model id and suggested Anthropic fallbacks.
@@ -161,7 +174,7 @@ Decline reasons are redacted and length-capped before local persistence. The ada
 ## Privacy posture
 
 - Local discovery and setup help work without network calls.
-- Routing requires both `HOKUSAI_API_KEY` and `HOKUSAI_ROUTING_CONSENT=true`.
+- Routing requires `HOKUSAI_API_KEY`; installing the Claude Code plugin provides routing consent unless explicitly overridden.
 - Outcome preview and submission require routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
 - Model recommendations are limited to Anthropic models in the configured allowlist.
 - Shared storage, preview, retention, and consent rules are documented in [docs/privacy-model.md](../../docs/privacy-model.md).

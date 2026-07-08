@@ -5,7 +5,7 @@ This document defines the shared privacy posture for Hokusai adapters, including
 ## Shared guarantees
 
 - API keys are env-only by default. `HOKUSAI_API_KEY` is read from environment config, explicit embedding overrides can replace it at runtime, and local plugin config stores reject any attempt to persist `apiKey`.
-- Consent is split between routing and telemetry. `HOKUSAI_ROUTING_CONSENT` controls task routing, `HOKUSAI_OUTCOME_OPT_IN` controls outcome submission, both default to `false`, and normal adapter precedence is `env > stored > default`.
+- Consent is split between routing and telemetry. `HOKUSAI_ROUTING_CONSENT` controls task routing, `HOKUSAI_OUTCOME_OPT_IN` controls outcome submission, and normal adapter precedence is `env > stored > default`. Shared core defaults both to `false`; Claude Code treats plugin installation as routing consent and defaults routing to `true` unless explicitly overridden.
 - Local storage keeps correlation ids, timestamps, bounded metadata, submission audit entries, and HMAC hashes only. Raw prompts, code, logs, and outcome notes are not persisted.
 - Adapters expose redacted previews before network submission for both routing payloads and outcome reports.
 
@@ -14,7 +14,7 @@ This document defines the shared privacy posture for Hokusai adapters, including
 - `resolveConsent()` defaults both routing consent and outcome opt-in to `false`.
 - `canRouteWithAuth()` requires both an API key and routing consent.
 - `canSubmitOutcomeWithAuth()` requires an API key, routing consent, and separate outcome opt-in.
-- Supported user-facing env vars are `HOKUSAI_API_KEY`, `HOKUSAI_ROUTING_CONSENT`, `HOKUSAI_OUTCOME_OPT_IN`, and `HOKUSAI_MODEL_ALLOWLIST`.
+- Supported user-facing env vars are `HOKUSAI_API_KEY`, optional `HOKUSAI_ROUTING_CONSENT` overrides, `HOKUSAI_OUTCOME_OPT_IN`, and `HOKUSAI_MODEL_ALLOWLIST`.
 - Truthy env values are `true`, `1`, and `yes`, case-insensitive. Any other value is treated as `false`.
 - Routing and outcome submission are independently controllable, but outcome transport still depends on routing auth and consent being enabled.
 - The allowlist is Anthropic-only. Unsupported or non-Anthropic recommendations are rejected with allowlisted suggestions when available.

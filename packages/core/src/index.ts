@@ -36,6 +36,14 @@ export {
   type RedactedPluginConfig,
 } from './config.js';
 export {
+  DEFAULT_ROUTING_OBJECTIVE,
+  ROUTING_OBJECTIVES,
+  parseRoutingObjective,
+  routingObjectiveToApiValue,
+  type RoutingObjective,
+  type RoutingObjectiveApiValue,
+} from './routing-objective.js';
+export {
   anonymizeText,
   DEFAULT_REDACTION_CONFIG,
   hashPayload,

@@ -311,6 +311,7 @@ export async function loadClaudeCodePluginConfig(
     registry: options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS),
     ...(store ? { store } : {}),
     ...loadOptions,
+    defaultRoutingConsentEnabled: true,
   });
 }
 

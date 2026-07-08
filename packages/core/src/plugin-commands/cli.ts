@@ -6,6 +6,12 @@ import {
   type AdapterResult,
   type HokusaiPluginConfig,
 } from '../index.js';
+import {
+  DEFAULT_ROUTING_OBJECTIVE,
+  parseRoutingObjective,
+  routingObjectiveToApiValue,
+  type RoutingObjective,
+} from '../routing-objective.js';
 import { displayTaskRecommendation } from './commands.js';
 import type { HarnessProfile } from './harness-profile.js';
 import type {
@@ -40,6 +46,7 @@ interface ParsedArgs {
   configPath?: string;
   decline: boolean;
   json: boolean;
+  objective?: string;
   reason?: string;
   task?: string;
 }
@@ -70,8 +77,13 @@ function parseArgs(argv: string[]): ParsedArgs {
     json: false,
   };
 
+  const positional: string[] = [];
+
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === undefined) {
+      continue;
+    }
 
     if (arg === '--json') {
       parsed.json = true;
@@ -101,13 +113,28 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (arg === '--objective') {
+      parsed.objective = argv[index + 1] ?? '';
+      index += 1;
+      continue;
+    }
+
     if (arg === '--config') {
       const configPath = argv[index + 1];
       if (configPath !== undefined) {
         parsed.configPath = configPath;
       }
       index += 1;
+      continue;
     }
+
+    positional.push(arg);
+  }
+
+  // Fall back to a positional task so `hokusai-route "the task"` works even
+  // when the caller omits `--task`. An explicit `--task ""` is left untouched.
+  if (parsed.task === undefined && positional.length > 0) {
+    parsed.task = positional.join(' ');
   }
 
   return parsed;
@@ -198,6 +225,21 @@ export function createRunCli<
     deps: PluginCliDeps<TRouteInput, TOptions> = {},
   ): Promise<CliRunResult> {
     const parsed = parseArgs(argv);
+
+    // Resolve the routing objective flag early so a typo fails fast, before any
+    // stdin read or network call. Precedence: flag > env/config > default.
+    let flagObjective: RoutingObjective | undefined;
+    if (parsed.objective !== undefined) {
+      flagObjective = parseRoutingObjective(parsed.objective);
+      if (!flagObjective) {
+        return toMessage(
+          parsed,
+          `Unknown routing objective "${parsed.objective}". Choose speed, cost, or reliability.`,
+          CLI_EXIT_CODES.UNKNOWN_ERROR,
+        );
+      }
+    }
+
     const registry = profile.modelCatalog.registry;
     const loadConfigImpl =
       deps.loadConfig ??
@@ -294,7 +336,20 @@ export function createRunCli<
         baseUrl: config.apiBaseUrl,
       });
 
-    const result = await routeTaskImpl(impls.buildRouteInput(taskText), {
+    // Always send an objective; reliability is the default unless overridden by
+    // the --objective flag, HOKUSAI_OBJECTIVE, or persisted config.
+    const objective =
+      flagObjective ?? config.routingObjective ?? DEFAULT_ROUTING_OBJECTIVE;
+    const routeInput = impls.buildRouteInput(taskText);
+    const routeInputWithObjective = {
+      ...routeInput,
+      metadata: {
+        ...routeInput.metadata,
+        objective: routingObjectiveToApiValue(objective),
+      },
+    } as TRouteInput;
+
+    const result = await routeTaskImpl(routeInputWithObjective, {
       apiClient: client,
       registry,
       settings: {

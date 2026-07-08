@@ -206,7 +206,6 @@ describe('createClaudeCodeAdapter', () => {
     const config = await loadClaudeCodePluginConfig({
       env: {
         HOKUSAI_API_KEY: 'hk_live_abcd',
-        HOKUSAI_ROUTING_CONSENT: 'yes',
       },
     });
 
@@ -215,6 +214,17 @@ describe('createClaudeCodeAdapter', () => {
       routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
     });
+  });
+
+  it('allows explicit routing consent overrides', async () => {
+    const config = await loadClaudeCodePluginConfig({
+      env: {
+        HOKUSAI_API_KEY: 'hk_live_abcd',
+        HOKUSAI_ROUTING_CONSENT: 'false',
+      },
+    });
+
+    expect(config.routingConsentEnabled).toBe(false);
   });
 });
 
