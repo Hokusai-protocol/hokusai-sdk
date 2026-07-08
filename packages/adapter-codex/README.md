@@ -8,11 +8,10 @@
 pnpm add @hokusai/adapter-codex @hokusai/core
 ```
 
-For the installable Codex plugin, verify setup after configuring auth and routing consent:
+For the installable Codex plugin, verify setup after configuring auth:
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
-export HOKUSAI_ROUTING_CONSENT=true
 ```
 
 ```text
@@ -46,4 +45,4 @@ The installable Codex plugin bundles skills, MCP tooling, and optional outcome p
 
 ## Privacy and consent
 
-Use the shared [privacy model](../../docs/privacy-model.md) for env-only API key handling, local storage denylist behavior, retention, previews, and the `HOKUSAI_ROUTING_CONSENT` / `HOKUSAI_OUTCOME_OPT_IN` split.
+Use the shared [privacy model](../../docs/privacy-model.md) for env-only API key handling, local storage denylist behavior, retention, previews, and the `HOKUSAI_OUTCOME_OPT_IN` outcome submission opt-in.

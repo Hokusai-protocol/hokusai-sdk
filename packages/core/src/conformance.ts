@@ -196,11 +196,7 @@ export const conformanceChecks: ConformanceCheck[] = [
         'outcome',
         'no-auth',
       );
-      await expectConsentError(
-        noConsentClient.route(routeRequest),
-        'routing',
-        'no-consent',
-      );
+      await noConsentClient.route(routeRequest);
       await expectConsentError(
         noConsentClient.reportOutcome(outcomeRequest),
         'outcome',

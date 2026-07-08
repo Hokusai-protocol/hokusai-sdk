@@ -73,13 +73,34 @@ describe('renderPluginDoctorReport', () => {
 });
 
 describe('runBootstrapDoctor', () => {
+  it('does not require routing consent', async () => {
+    const configPath = await createTempDir('hokusai-doctor-default-consent-');
+    const result = await runBootstrapDoctor({
+      configPath,
+      env: {
+        HOKUSAI_API_KEY: 'hk_live_secret_abcd',
+      },
+      transport: () =>
+        Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }),
+    });
+
+    expect(result.report.mode).toBe('network');
+    expect(
+      result.report.checks.find((check) => check.id === 'routing-consent'),
+    ).toBeUndefined();
+    expect(result.rendered).not.toContain('HOKUSAI_ROUTING_CONSENT');
+  });
+
   it('loads config from env and checks the resolved state directory', async () => {
     const configPath = await createTempDir('hokusai-doctor-');
     const result = await runBootstrapDoctor({
       configPath,
       env: {
         HOKUSAI_API_KEY: 'hk_live_secret_abcd',
-        HOKUSAI_ROUTING_CONSENT: '1',
       },
       transport: () =>
         Promise.resolve({
@@ -108,7 +129,7 @@ describe('runBootstrapDoctor', () => {
     const configPath = await createTempDir('hokusai-doctor-invalid-');
     await writeFile(
       path.join(configPath, 'hokusai-plugin-config.json'),
-      JSON.stringify({ routingConsentEnabled: 'definitely' }),
+      JSON.stringify({ outcomeSubmissionEnabled: 'definitely' }),
       'utf8',
     );
     const result = await runBootstrapDoctor({
@@ -120,7 +141,7 @@ describe('runBootstrapDoctor', () => {
     expect(result.report.checks[0]).toMatchObject({
       id: 'config-validation',
       status: 'fail',
-      summary: expect.stringContaining('routingConsentEnabled'),
+      summary: expect.stringContaining('outcomeSubmissionEnabled'),
     });
     expect(result.rendered).toContain('config-validation');
   });

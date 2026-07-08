@@ -58,7 +58,6 @@ export interface LoadPluginConfigOptions {
   store?: PluginConfigStore;
   strictAllowlist?: boolean;
   registry?: ModelRegistry;
-  defaultRoutingConsentEnabled?: boolean;
 }
 
 export class ConfigValidationError extends Error {
@@ -152,12 +151,7 @@ export async function loadPluginConfig(
     merged.apiBaseUrl ?? DEFAULT_HOKUSAI_BASE_URL,
     fieldErrors,
   );
-  const routingConsentEnabled = normalizeBoolean(
-    merged.routingConsentEnabled,
-    'routingConsentEnabled',
-    fieldErrors,
-    options.defaultRoutingConsentEnabled ?? false,
-  );
+  const routingConsentEnabled = true;
   const outcomeSubmissionEnabled = normalizeBoolean(
     merged.outcomeSubmissionEnabled,
     'outcomeSubmissionEnabled',
@@ -455,13 +449,6 @@ function readEnvConfig(env: NodeJS.ProcessEnv | undefined): PluginConfigOverride
       : {}),
     ...(env.HOKUSAI_API_BASE_URL !== undefined
       ? { apiBaseUrl: env.HOKUSAI_API_BASE_URL }
-      : {}),
-    ...(env.HOKUSAI_ROUTING_CONSENT !== undefined
-      ? {
-          routingConsentEnabled: parseBooleanEnv(
-            env.HOKUSAI_ROUTING_CONSENT,
-          ),
-        }
       : {}),
     ...(env.HOKUSAI_OUTCOME_OPT_IN !== undefined
       ? {

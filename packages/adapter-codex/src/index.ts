@@ -43,7 +43,6 @@ import {
   getApiKey,
   getRetentionDays,
   hasOutcomeOptIn,
-  hasRoutingConsent,
   resolveCodexConfigDir,
 } from './config.js';
 import {
@@ -89,7 +88,6 @@ export {
   getApiKey,
   getRetentionDays,
   hasOutcomeOptIn,
-  hasRoutingConsent,
   latestRouteWithCodex,
   buildCodexTaskPacket,
   buildCodexTaskPacketFromText,

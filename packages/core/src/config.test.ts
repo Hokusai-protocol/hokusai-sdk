@@ -38,7 +38,6 @@ describe('loadPluginConfig', () => {
       env: {
         HOKUSAI_API_KEY: 'hk_env_1234',
         HOKUSAI_API_BASE_URL: 'https://env.example.test',
-        HOKUSAI_ROUTING_CONSENT: 'false',
         HOKUSAI_OUTCOME_OPT_IN: 'yes',
         HOKUSAI_MODEL_ALLOWLIST: 'sonnet',
       },
@@ -67,7 +66,6 @@ describe('loadPluginConfig', () => {
       env: {
         HOKUSAI_API_KEY: 'hk_env_abcd',
         HOKUSAI_API_BASE_URL: 'https://env.example.test/root/',
-        HOKUSAI_ROUTING_CONSENT: '1',
         HOKUSAI_OUTCOME_OPT_IN: 'true',
         HOKUSAI_MODEL_ALLOWLIST: 'sonnet,claude-opus-4-8',
       },
@@ -89,7 +87,7 @@ describe('loadPluginConfig', () => {
 
     expect(config.apiKey).toBeUndefined();
     expect(config.apiBaseUrl).toBe('https://api.hokus.ai');
-    expect(config.routingConsentEnabled).toBe(false);
+    expect(config.routingConsentEnabled).toBe(true);
     expect(config.outcomeSubmissionEnabled).toBe(false);
     expect(config.modelAllowlist).toEqual(
       ANTHROPIC_MODELS.map((model) => model.id),

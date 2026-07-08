@@ -223,14 +223,14 @@ function isConsentGranted(consent, scope) {
   return consent.grantedScopes.includes(scope);
 }
 function canRoute(settings) {
-  return settings.routingEnabled;
+  return true;
 }
 function canReportOutcome(settings) {
   return settings.outcomeReportingEnabled;
 }
 function resolveConsent(partial) {
   return {
-    routingEnabled: partial?.routingEnabled ?? false,
+    routingEnabled: true,
     outcomeReportingEnabled: partial?.outcomeReportingEnabled ?? false
   };
 }
@@ -2327,12 +2327,7 @@ async function loadPluginConfig(options = {}) {
     merged.apiBaseUrl ?? DEFAULT_HOKUSAI_BASE_URL,
     fieldErrors
   );
-  const routingConsentEnabled = normalizeBoolean(
-    merged.routingConsentEnabled,
-    "routingConsentEnabled",
-    fieldErrors,
-    options.defaultRoutingConsentEnabled ?? false
-  );
+  const routingConsentEnabled = true;
   const outcomeSubmissionEnabled = normalizeBoolean(
     merged.outcomeSubmissionEnabled,
     "outcomeSubmissionEnabled",
@@ -2558,11 +2553,6 @@ function readEnvConfig(env) {
   return {
     ...env.HOKUSAI_API_KEY !== void 0 ? { apiKey: env.HOKUSAI_API_KEY } : {},
     ...env.HOKUSAI_API_BASE_URL !== void 0 ? { apiBaseUrl: env.HOKUSAI_API_BASE_URL } : {},
-    ...env.HOKUSAI_ROUTING_CONSENT !== void 0 ? {
-      routingConsentEnabled: parseBooleanEnv(
-        env.HOKUSAI_ROUTING_CONSENT
-      )
-    } : {},
     ...env.HOKUSAI_OUTCOME_OPT_IN !== void 0 ? {
       outcomeSubmissionEnabled: parseBooleanEnv(
         env.HOKUSAI_OUTCOME_OPT_IN
@@ -2783,20 +2773,6 @@ function checkApiKey(config) {
     nextAction: "Set HOKUSAI_API_KEY=hk_live_... to enable routing."
   };
 }
-function checkRoutingConsent(config) {
-  return config.routingConsentEnabled ? {
-    id: "routing-consent",
-    label: "routing-consent",
-    status: "pass",
-    summary: "Routing consent is enabled."
-  } : {
-    id: "routing-consent",
-    label: "routing-consent",
-    status: "fail",
-    summary: "Routing consent is not enabled.",
-    nextAction: "Set HOKUSAI_ROUTING_CONSENT=1 to allow routing."
-  };
-}
 function checkOutcomeConsent(config) {
   return config.outcomeSubmissionEnabled ? {
     id: "outcome-consent",
@@ -2831,13 +2807,13 @@ function checkModelAllowlist(config, registry) {
   };
 }
 async function checkDryRunRoute(config, registry, options) {
-  if (!config.apiKey?.trim() || !config.routingConsentEnabled) {
+  if (!config.apiKey?.trim()) {
     return {
       id: "dry-run-route",
       label: "dry-run-route",
       status: "skipped",
-      summary: "Skipped dry-run route because API key or routing consent is not configured.",
-      nextAction: "Configure HOKUSAI_API_KEY and HOKUSAI_ROUTING_CONSENT=1, then rerun the doctor."
+      summary: "Skipped dry-run route because API key is not configured.",
+      nextAction: "Configure HOKUSAI_API_KEY, then rerun the doctor."
     };
   }
   const allowlistSummary = summarizeAllowlist(config, registry);
@@ -2998,14 +2974,13 @@ async function checkApiReachability(config, transport, options) {
 async function runPluginDoctor(input) {
   const registry = input.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
   const checkedAt = (input.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
-  const mode = input.mode ?? (input.config.apiKey?.trim() && input.config.routingConsentEnabled ? "network" : "offline");
+  const mode = input.mode ?? (input.config.apiKey?.trim() ? "network" : "offline");
   const checks = [
     checkNodeRuntime(
       input.nodeVersion ?? process.versions.node,
       input.nodeMinVersion ?? DEFAULT_NODE_MIN_VERSION
     ),
     checkApiKey(input.config),
-    checkRoutingConsent(input.config),
     checkOutcomeConsent(input.config),
     checkModelAllowlist(input.config, registry),
     await checkDryRunRoute(input.config, registry, {
@@ -4602,13 +4577,6 @@ function createRunCli(profile, impls) {
         CLI_EXIT_CODES.AUTH_REQUIRED
       );
     }
-    if (!config.routingConsentEnabled) {
-      return toMessage(
-        parsed,
-        "Routing consent is required. Run `export HOKUSAI_ROUTING_CONSENT=true` to opt in.",
-        CLI_EXIT_CODES.CONSENT_REQUIRED
-      );
-    }
     const taskText = (parsed.task ?? await (deps.readStdin?.() ?? readStdin())).trim();
     if (taskText.length === 0) {
       return toMessage(
@@ -4933,10 +4901,10 @@ function createRunReportCli(profile, impls) {
         REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR
       );
     }
-    if (!config.routingConsentEnabled || !config.outcomeSubmissionEnabled) {
+    if (!config.outcomeSubmissionEnabled) {
       return toMessage2(
         parsed,
-        "Outcome submission consent is required. Run `export HOKUSAI_ROUTING_CONSENT=true` and `export HOKUSAI_OUTCOME_OPT_IN=true` to opt in.",
+        "Outcome submission consent is required. Run `export HOKUSAI_OUTCOME_OPT_IN=true` to opt in.",
         REPORT_CLI_EXIT_CODES.CONSENT_REQUIRED
       );
     }
@@ -5563,7 +5531,7 @@ function buildOverallLine(report) {
     return "Overall: ready to use.";
   }
   const routingBlocked = report.checks.some(
-    (check) => (check.id === "api-key" || check.id === "routing-consent") && check.status === "fail"
+    (check) => check.id === "api-key" && check.status === "fail"
   );
   return routingBlocked ? `Overall: ${failingChecks.length} failing checks - Hokusai routing is unavailable until configured.` : `Overall: ${failingChecks.length} failing checks.`;
 }
@@ -5592,7 +5560,7 @@ function createRunBootstrapDoctor(profile) {
       modelAllowlist
     }) ?? {
       apiBaseUrl: DEFAULT_HOKUSAI_BASE_URL,
-      routingConsentEnabled: false,
+      routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist
     };
@@ -5615,7 +5583,7 @@ function createRunBootstrapDoctor(profile) {
         nextAction: "Fix the invalid Hokusai plugin configuration values and rerun the doctor."
       };
     }
-    const mode = config.apiKey?.trim() && config.routingConsentEnabled && options.transport ? "network" : "offline";
+    const mode = config.apiKey?.trim() && options.transport ? "network" : "offline";
     const baseReport = await runPluginDoctor({
       config,
       mode,
@@ -6156,8 +6124,7 @@ async function loadClaudeCodePluginConfig(options = {}) {
   return loadPluginConfig({
     registry: options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS),
     ...store ? { store } : {},
-    ...loadOptions,
-    defaultRoutingConsentEnabled: true
+    ...loadOptions
   });
 }
 function createClaudeCodeDoctor(options) {

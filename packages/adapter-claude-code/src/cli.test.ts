@@ -69,6 +69,42 @@ describe('runCli', () => {
     expect(routedTask).toBe('Find the performance bottleneck in this function');
   });
 
+  it('routes with an API key only', async () => {
+    const result = await runCli(
+      ['--task', 'refactor auth'],
+      { HOKUSAI_API_KEY: 'hk_live_test' },
+      {
+        routeTaskImpl: () =>
+          Promise.resolve({
+            ok: true,
+            value: {
+              recommendation: {
+                model: {
+                  id: 'claude-sonnet-4-6',
+                  provider: 'anthropic',
+                  capabilities: ['reasoning'],
+                },
+                reason: 'ok',
+              },
+              payload: {} as never,
+              preview: {} as never,
+              correlationId: 'corr-default-consent',
+              routingDecisionId: 'corr-default-consent',
+              handoff: {
+                mechanism: 'manual',
+                slashCommand: '/model claude-sonnet-4-6',
+                copyableCommand: '/model claude-sonnet-4-6',
+                instructions: [],
+              },
+            },
+          }),
+      },
+    );
+
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.OK);
+    expect(result.stderr).not.toContain('HOKUSAI_ROUTING_CONSENT');
+  });
+
   it.each([
     { argv: ['--task', 't'], expected: 'highest_reliability', label: 'default' },
     {
@@ -160,7 +196,7 @@ describe('runCli', () => {
     expect(result.stderr).toContain('HOKUSAI_API_KEY');
   });
 
-  it('requires explicit routing consent before routing', async () => {
+  it('ignores obsolete routing consent config before routing', async () => {
     const result = await runCli(['--task', 'refactor auth'], {}, {
       loadConfig: () =>
         Promise.resolve({
@@ -170,10 +206,34 @@ describe('runCli', () => {
           outcomeSubmissionEnabled: false,
           modelAllowlist: ['claude-sonnet-4-6'],
         }),
+      routeTaskImpl: () =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            recommendation: {
+              model: {
+                id: 'claude-sonnet-4-6',
+                provider: 'anthropic',
+                capabilities: ['reasoning'],
+              },
+              reason: 'ok',
+            },
+            payload: {} as never,
+            preview: {} as never,
+            correlationId: 'corr-obsolete-consent',
+            routingDecisionId: 'corr-obsolete-consent',
+            handoff: {
+              mechanism: 'manual',
+              slashCommand: '/model claude-sonnet-4-6',
+              copyableCommand: '/model claude-sonnet-4-6',
+              instructions: [],
+            },
+          },
+        }),
     });
 
-    expect(result.exitCode).toBe(CLI_EXIT_CODES.CONSENT_REQUIRED);
-    expect(result.stderr).toContain('HOKUSAI_ROUTING_CONSENT=true');
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.OK);
+    expect(result.stderr).not.toContain('HOKUSAI_ROUTING_CONSENT');
   });
 
   it('prints a JSON recommendation payload on success', async () => {

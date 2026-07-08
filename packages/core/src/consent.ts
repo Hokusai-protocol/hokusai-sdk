@@ -70,7 +70,8 @@ export function isConsentGranted(
 }
 
 export function canRoute(settings: ConsentSettings): boolean {
-  return settings.routingEnabled;
+  void settings;
+  return true;
 }
 
 export function canReportOutcome(settings: ConsentSettings): boolean {
@@ -78,7 +79,7 @@ export function canReportOutcome(settings: ConsentSettings): boolean {
 }
 
 export function canRouteWithAuth(settings: PluginConsentSettings): boolean {
-  return hasApiKey(settings.apiKey) && settings.routingConsentEnabled;
+  return hasApiKey(settings.apiKey);
 }
 
 export function canSubmitOutcomeWithAuth(
@@ -86,7 +87,6 @@ export function canSubmitOutcomeWithAuth(
 ): boolean {
   return (
     hasApiKey(settings.apiKey) &&
-    settings.routingConsentEnabled &&
     settings.outcomeSubmissionEnabled
   );
 }
@@ -96,9 +96,6 @@ export function assertCanRoute(settings: PluginConsentSettings): void {
     throw new ConsentRequiredError('routing', 'no-auth');
   }
 
-  if (!settings.routingConsentEnabled) {
-    throw new ConsentRequiredError('routing', 'no-consent');
-  }
 }
 
 export function assertCanSubmitOutcome(settings: PluginConsentSettings): void {
@@ -106,7 +103,7 @@ export function assertCanSubmitOutcome(settings: PluginConsentSettings): void {
     throw new ConsentRequiredError('outcome', 'no-auth');
   }
 
-  if (!settings.routingConsentEnabled || !settings.outcomeSubmissionEnabled) {
+  if (!settings.outcomeSubmissionEnabled) {
     throw new ConsentRequiredError('outcome', 'no-consent');
   }
 }
@@ -115,7 +112,7 @@ export function resolveConsent(
   partial?: Partial<ConsentSettings>,
 ): ConsentSettings {
   return {
-    routingEnabled: partial?.routingEnabled ?? false,
+    routingEnabled: true,
     outcomeReportingEnabled: partial?.outcomeReportingEnabled ?? false,
   };
 }

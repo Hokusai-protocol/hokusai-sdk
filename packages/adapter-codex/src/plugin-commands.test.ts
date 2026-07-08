@@ -78,7 +78,6 @@ describe('previewRoutePayloadWithCodex', () => {
 describe('routeTaskWithCodex', () => {
   it('fails with a structured missing-key error before network', async () => {
     const env = await createEnv({
-      HOKUSAI_ROUTING_CONSENT: 'true',
     });
     const transport = vi.fn();
 
@@ -101,7 +100,6 @@ describe('routeTaskWithCodex', () => {
   it('succeeds when primary is openai but alternatives include non-openai providers', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_ROUTING_CONSENT: 'true',
     });
 
     const result = await routeTaskWithCodex(
@@ -150,7 +148,6 @@ describe('routeTaskWithCodex', () => {
   it('stores the latest route and rejects non-openai recommendations', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_ROUTING_CONSENT: 'true',
     });
 
     const success = await routeTaskWithCodex(
@@ -228,7 +225,6 @@ describe('routeTaskWithCodex', () => {
   it('sends only allowlisted OpenAI models to the router', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_ROUTING_CONSENT: 'true',
       HOKUSAI_MODEL_ALLOWLIST: 'gpt-5, claude-sonnet-4-6',
     });
     let capturedPrompt = '';
@@ -279,7 +275,6 @@ describe('submitOutcomeWithCodex', () => {
   it('previews first and requires explicit approval plus opt-in to send', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_ROUTING_CONSENT: 'true',
     });
 
     const routed = await routeTaskWithCodex(
@@ -362,7 +357,6 @@ describe('promptOutcomeContributionWithCodex', () => {
   it('builds a consent-gated report prompt from the latest route', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_ROUTING_CONSENT: 'true',
       HOKUSAI_OUTCOME_OPT_IN: 'true',
     });
 
@@ -416,7 +410,6 @@ describe('promptOutcomeContributionWithCodex', () => {
   it('does not provide a report command without outcome opt-in', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_ROUTING_CONSENT: 'true',
     });
     await routeTaskWithCodex(
       { task: 'Fix the flaky test.' },
@@ -471,7 +464,7 @@ describe('privacyStatusWithCodex', () => {
       return;
     }
     expect(result.value.apiKeyConfigured).toBe(true);
-    expect(result.value.routingConsentGranted).toBe(false);
+    expect(result.value.routingConsentGranted).toBe(true);
     expect(result.value.doctor.status).toBe('action_required');
   });
 });

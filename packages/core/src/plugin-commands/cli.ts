@@ -312,14 +312,6 @@ export function createRunCli<
       );
     }
 
-    if (!config.routingConsentEnabled) {
-      return toMessage(
-        parsed,
-        'Routing consent is required. Run `export HOKUSAI_ROUTING_CONSENT=true` to opt in.',
-        CLI_EXIT_CODES.CONSENT_REQUIRED,
-      );
-    }
-
     const taskText = (parsed.task ?? (await (deps.readStdin?.() ?? readStdin()))).trim();
     if (taskText.length === 0) {
       return toMessage(

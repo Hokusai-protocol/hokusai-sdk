@@ -83,7 +83,7 @@ For a Codex-facing integration:
 - Use `hokusai_preview_route_payload` before route submission so the user can inspect the redacted task payload.
 - Use `hokusai_prompt_outcome_contribution` from optional completion hooks to prompt after likely success without submitting automatically.
 - Use the `preview` field from `hokusai_submit_outcome` before confirming, so the user can inspect the anonymized outcome report.
-- Apply the shared consent and storage rules from [privacy-model.md](privacy-model.md), especially the split between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
+- Apply the shared consent and storage rules from [privacy-model.md](privacy-model.md), especially `HOKUSAI_OUTCOME_OPT_IN` for outcome submission.
 
 ## Scope
 

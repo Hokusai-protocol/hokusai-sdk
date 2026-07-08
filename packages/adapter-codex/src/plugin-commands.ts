@@ -23,7 +23,6 @@ import {
   getApiKey,
   getRetentionDays,
   hasOutcomeOptIn,
-  hasRoutingConsent,
   resolveCodexConfigDir,
 } from './config.js';
 import { createAllowlistedOpenAiRegistry } from './registry.js';
@@ -140,7 +139,7 @@ export async function routeTaskWithCodex(
   const result = await executeRouteCommand({
     ...(apiKey ? { apiKey } : {}),
     ...(client ? { client } : {}),
-    consentGranted: hasRoutingConsent(options.env),
+    consentGranted: true,
     ...(input.currentModel ? { currentModelId: input.currentModel } : {}),
     taskId: createTaskId(input.taskId, options.clock),
     taskText: input.task,
@@ -294,7 +293,6 @@ export async function privacyStatusWithCodex(
 ): Promise<HarnessCommandResult<PrivacyStatusCommandValue>> {
   const result = await privacyStatusCommand({
     ...(getApiKey(options.env) ? { apiKey: getApiKey(options.env) } : {}),
-    routingConsentGranted: hasRoutingConsent(options.env),
     outcomeOptInGranted: hasOutcomeOptIn(options.env),
     store: createFsStore(resolveCodexConfigDir(options.env)),
     storageDir: resolveCodexConfigDir(options.env),

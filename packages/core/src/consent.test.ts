@@ -11,15 +11,15 @@ import {
 } from './consent.js';
 
 describe('consent helpers', () => {
-  it('defaults both consent flags to false', () => {
+  it('defaults routing to enabled and outcome reporting to disabled', () => {
     expect(resolveConsent({})).toEqual({
-      routingEnabled: false,
+      routingEnabled: true,
       outcomeReportingEnabled: false,
     });
   });
 
-  it('preserves routing consent independently', () => {
-    expect(resolveConsent({ routingEnabled: true })).toEqual({
+  it('keeps routing enabled for older callers that pass routingEnabled=false', () => {
+    expect(resolveConsent({ routingEnabled: false })).toEqual({
       routingEnabled: true,
       outcomeReportingEnabled: false,
     });
@@ -27,12 +27,12 @@ describe('consent helpers', () => {
 
   it('preserves outcome consent independently', () => {
     expect(resolveConsent({ outcomeReportingEnabled: true })).toEqual({
-      routingEnabled: false,
+      routingEnabled: true,
       outcomeReportingEnabled: true,
     });
   });
 
-  it('reads routing and outcome consent independently', () => {
+  it('does not gate routing on consent settings', () => {
     expect(
       canRoute({
         routingEnabled: true,
@@ -40,17 +40,11 @@ describe('consent helpers', () => {
       }),
     ).toBe(true);
     expect(
-      canReportOutcome({
-        routingEnabled: true,
-        outcomeReportingEnabled: false,
-      }),
-    ).toBe(false);
-    expect(
       canRoute({
         routingEnabled: false,
         outcomeReportingEnabled: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canReportOutcome({
         routingEnabled: false,
@@ -61,12 +55,12 @@ describe('consent helpers', () => {
 
   it('handles undefined consent input', () => {
     expect(resolveConsent(undefined)).toEqual({
-      routingEnabled: false,
+      routingEnabled: true,
       outcomeReportingEnabled: false,
     });
   });
 
-  it('evaluates route auth and consent together', () => {
+  it('evaluates route auth without routing consent', () => {
     expect(
       canRouteWithAuth({
         routingConsentEnabled: false,
@@ -77,32 +71,19 @@ describe('consent helpers', () => {
       canRouteWithAuth({
         apiKey: 'hk_live',
         routingConsentEnabled: false,
-        outcomeSubmissionEnabled: false,
-      }),
-    ).toBe(false);
-    expect(
-      canRouteWithAuth({
-        routingConsentEnabled: true,
-        outcomeSubmissionEnabled: false,
-      }),
-    ).toBe(false);
-    expect(
-      canRouteWithAuth({
-        apiKey: 'hk_live',
-        routingConsentEnabled: true,
         outcomeSubmissionEnabled: false,
       }),
     ).toBe(true);
   });
 
-  it('evaluates outcome auth and consent together', () => {
+  it('evaluates outcome auth and outcome opt-in together', () => {
     expect(
       canSubmitOutcomeWithAuth({
         apiKey: 'hk_live',
         routingConsentEnabled: false,
         outcomeSubmissionEnabled: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canSubmitOutcomeWithAuth({
         apiKey: 'hk_live',
@@ -116,13 +97,6 @@ describe('consent helpers', () => {
         outcomeSubmissionEnabled: true,
       }),
     ).toBe(false);
-    expect(
-      canSubmitOutcomeWithAuth({
-        apiKey: 'hk_live',
-        routingConsentEnabled: true,
-        outcomeSubmissionEnabled: true,
-      }),
-    ).toBe(true);
   });
 
   it('throws structured consent errors without leaking the API key', () => {
@@ -144,7 +118,7 @@ describe('consent helpers', () => {
       assertCanSubmitOutcome({
         apiKey: 'hk_live_secret',
         routingConsentEnabled: false,
-        outcomeSubmissionEnabled: true,
+        outcomeSubmissionEnabled: false,
       }),
     ).toThrowError(ConsentRequiredError);
   });

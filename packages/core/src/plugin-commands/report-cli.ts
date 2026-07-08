@@ -427,10 +427,10 @@ export function createRunReportCli<
       );
     }
 
-    if (!config.routingConsentEnabled || !config.outcomeSubmissionEnabled) {
+    if (!config.outcomeSubmissionEnabled) {
       return toMessage(
         parsed,
-        'Outcome submission consent is required. Run `export HOKUSAI_ROUTING_CONSENT=true` and `export HOKUSAI_OUTCOME_OPT_IN=true` to opt in.',
+        'Outcome submission consent is required. Run `export HOKUSAI_OUTCOME_OPT_IN=true` to opt in.',
         REPORT_CLI_EXIT_CODES.CONSENT_REQUIRED,
       );
     }

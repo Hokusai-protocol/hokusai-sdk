@@ -166,25 +166,6 @@ export function checkApiKey(
       };
 }
 
-export function checkRoutingConsent(
-  config: Pick<HokusaiPluginConfig, 'routingConsentEnabled'>,
-): DoctorCheckResult {
-  return config.routingConsentEnabled
-    ? {
-        id: 'routing-consent',
-        label: 'routing-consent',
-        status: 'pass',
-        summary: 'Routing consent is enabled.',
-      }
-    : {
-        id: 'routing-consent',
-        label: 'routing-consent',
-        status: 'fail',
-        summary: 'Routing consent is not enabled.',
-        nextAction: 'Set HOKUSAI_ROUTING_CONSENT=1 to allow routing.',
-      };
-}
-
 export function checkOutcomeConsent(
   config: Pick<HokusaiPluginConfig, 'outcomeSubmissionEnabled'>,
 ): DoctorCheckResult {
@@ -242,15 +223,13 @@ export async function checkDryRunRoute(
     clock?: () => Date;
   },
 ): Promise<DoctorCheckResult> {
-  if (!config.apiKey?.trim() || !config.routingConsentEnabled) {
+  if (!config.apiKey?.trim()) {
     return {
       id: 'dry-run-route',
       label: 'dry-run-route',
       status: 'skipped',
-      summary:
-        'Skipped dry-run route because API key or routing consent is not configured.',
-      nextAction:
-        'Configure HOKUSAI_API_KEY and HOKUSAI_ROUTING_CONSENT=1, then rerun the doctor.',
+      summary: 'Skipped dry-run route because API key is not configured.',
+      nextAction: 'Configure HOKUSAI_API_KEY, then rerun the doctor.',
     };
   }
 
@@ -455,9 +434,7 @@ export async function runPluginDoctor(
   const checkedAt = (input.clock ?? (() => new Date()))().toISOString();
   const mode =
     input.mode ??
-    (input.config.apiKey?.trim() && input.config.routingConsentEnabled
-      ? 'network'
-      : 'offline');
+    (input.config.apiKey?.trim() ? 'network' : 'offline');
 
   const checks: DoctorCheckResult[] = [
     checkNodeRuntime(
@@ -465,7 +442,6 @@ export async function runPluginDoctor(
       input.nodeMinVersion ?? DEFAULT_NODE_MIN_VERSION,
     ),
     checkApiKey(input.config),
-    checkRoutingConsent(input.config),
     checkOutcomeConsent(input.config),
     checkModelAllowlist(input.config, registry),
     await checkDryRunRoute(input.config, registry, {

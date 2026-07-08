@@ -366,13 +366,6 @@ export async function executeRouteCommand(
         'Set HOKUSAI_API_KEY in the environment before routing.',
       );
     }
-    if (!input.consentGranted) {
-      return fail(
-        'E_MISSING_CONSENT',
-        'HOKUSAI_ROUTING_CONSENT must be explicitly enabled before routing.',
-        'Set HOKUSAI_ROUTING_CONSENT=true to allow routing requests.',
-      );
-    }
   }
 
   let recommendation: HarnessRecommendation;
@@ -727,7 +720,6 @@ export async function latestRouteCommand(
 
 export async function privacyStatusCommand(input: {
   apiKey?: string | undefined;
-  routingConsentGranted: boolean;
   outcomeOptInGranted: boolean;
   store: LocalStore;
   storageDir?: string | undefined;
@@ -751,16 +743,6 @@ export async function privacyStatusCommand(input: {
         : 'Set HOKUSAI_API_KEY before routing or reporting.',
     },
     {
-      name: 'routingConsent',
-      status: input.routingConsentGranted ? 'ok' : 'action_required',
-      message: input.routingConsentGranted
-        ? 'Routing consent is enabled.'
-        : 'Routing consent is not enabled.',
-      remediation: input.routingConsentGranted
-        ? undefined
-        : 'Set HOKUSAI_ROUTING_CONSENT=true before routing.',
-    },
-    {
       name: 'outcomeOptIn',
       status: input.outcomeOptInGranted ? 'ok' : 'action_required',
       message: input.outcomeOptInGranted
@@ -774,7 +756,7 @@ export async function privacyStatusCommand(input: {
 
   return ok({
     apiKeyConfigured: Boolean(input.apiKey?.trim()),
-    routingConsentGranted: input.routingConsentGranted,
+    routingConsentGranted: true,
     outcomeOptInGranted: input.outcomeOptInGranted,
     retentionDays,
     maxRecords: DEFAULT_RETENTION_MAX_RECORDS,
