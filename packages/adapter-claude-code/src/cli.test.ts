@@ -22,6 +22,129 @@ describe('runCli', () => {
     expect(result.stderr).toContain('Provide a task description');
   });
 
+  it('routes a task passed positionally without --task', async () => {
+    let routedTask: string | undefined;
+    const result = await runCli(
+      ['--json', 'Find the performance bottleneck in this function'],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokus.ai',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: false,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        routeTaskImpl: (input) => {
+          routedTask = (input as { taskText: string }).taskText;
+          return Promise.resolve({
+            ok: true,
+            value: {
+              recommendation: {
+                model: {
+                  id: 'claude-sonnet-4-6',
+                  provider: 'anthropic',
+                  capabilities: ['reasoning'],
+                },
+                reason: 'Balanced for this task.',
+              },
+              payload: {} as never,
+              preview: {} as never,
+              correlationId: 'corr-pos',
+              routingDecisionId: 'corr-pos',
+              handoff: {
+                mechanism: 'manual',
+                slashCommand: '/model claude-sonnet-4-6',
+                copyableCommand: '/model claude-sonnet-4-6',
+                instructions: [],
+              },
+            },
+          });
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.OK);
+    expect(routedTask).toBe('Find the performance bottleneck in this function');
+  });
+
+  it.each([
+    { argv: ['--task', 't'], expected: 'highest_reliability', label: 'default' },
+    {
+      argv: ['--objective', 'speed', '--task', 't'],
+      expected: 'fastest_completion',
+      label: 'speed',
+    },
+    {
+      argv: ['--objective', 'cost', '--task', 't'],
+      expected: 'lowest_cost',
+      label: 'cost',
+    },
+    {
+      argv: ['--objective', 'reliability', '--task', 't'],
+      expected: 'highest_reliability',
+      label: 'reliability',
+    },
+  ])('sends objective=$expected to the router ($label)', async ({ argv, expected }) => {
+    let routedMetadata: Record<string, string> | undefined;
+    const result = await runCli(argv, {}, {
+      loadConfig: () =>
+        Promise.resolve({
+          apiKey: 'hk_live_test',
+          apiBaseUrl: 'https://api.hokus.ai',
+          routingConsentEnabled: true,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['claude-sonnet-4-6'],
+        }),
+      routeTaskImpl: (input) => {
+        routedMetadata = (input as { metadata?: Record<string, string> }).metadata;
+        return Promise.resolve({
+          ok: true,
+          value: {
+            recommendation: {
+              model: {
+                id: 'claude-sonnet-4-6',
+                provider: 'anthropic',
+                capabilities: ['reasoning'],
+              },
+              reason: 'ok',
+            },
+            payload: {} as never,
+            preview: {} as never,
+            correlationId: 'corr-obj',
+            routingDecisionId: 'corr-obj',
+            handoff: {
+              mechanism: 'manual',
+              slashCommand: '/model claude-sonnet-4-6',
+              copyableCommand: '/model claude-sonnet-4-6',
+              instructions: [],
+            },
+          },
+        });
+      },
+    });
+
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.OK);
+    expect(routedMetadata?.objective).toBe(expected);
+  });
+
+  it('rejects an unknown routing objective', async () => {
+    const result = await runCli(['--objective', 'turbo', '--task', 't'], {}, {
+      loadConfig: () =>
+        Promise.resolve({
+          apiKey: 'hk_live_test',
+          apiBaseUrl: 'https://api.hokus.ai',
+          routingConsentEnabled: true,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['claude-sonnet-4-6'],
+        }),
+    });
+
+    expect(result.exitCode).toBe(CLI_EXIT_CODES.UNKNOWN_ERROR);
+    expect(result.stderr).toContain('Unknown routing objective "turbo"');
+  });
+
   it('requires an API key before routing', async () => {
     const result = await runCli(['--task', 'refactor auth'], {}, {
       loadConfig: () =>

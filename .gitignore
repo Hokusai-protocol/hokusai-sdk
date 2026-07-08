@@ -10,3 +10,4 @@ coverage
 .changeset/pre.json
 *.tsbuildinfo
 features/
+.wavemill-config.local.json

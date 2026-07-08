@@ -27,11 +27,10 @@ npm install @hokusai/adapter-wavemill
 
 Current published package versions in this repository are `0.1.1` for `@hokusai/core`, `@hokusai/adapter-claude-code`, `@hokusai/adapter-codex`, and `@hokusai/adapter-wavemill`.
 
-For plugin quickstarts, the final verification step is always the Hokusai doctor after auth and routing consent are configured:
+For most plugin quickstarts, the final verification step is the Hokusai doctor after auth and routing consent are configured. Claude Code users only need the API key because installing the plugin provides routing consent by default:
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
-export HOKUSAI_ROUTING_CONSENT=true
 hokusai-doctor
 ```
 

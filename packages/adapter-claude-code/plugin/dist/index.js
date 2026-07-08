@@ -2241,6 +2241,41 @@ function shouldRetryResponse(status, attempt, maxRetries) {
 import { readFile as readFile2, rm as rm2, writeFile as writeFile2 } from "node:fs/promises";
 import { dirname as dirname2, join as join2 } from "node:path";
 import { mkdir as mkdir2 } from "node:fs/promises";
+
+// ../core/src/routing-objective.ts
+var DEFAULT_ROUTING_OBJECTIVE = "reliability";
+var ALIASES = {
+  speed: "speed",
+  fast: "speed",
+  fastest: "speed",
+  latency: "speed",
+  // backend enum, accepted for power users
+  fastest_completion: "speed",
+  cost: "cost",
+  cheap: "cost",
+  cheapest: "cost",
+  lowest_cost: "cost",
+  reliability: "reliability",
+  reliable: "reliability",
+  quality: "reliability",
+  highest_reliability: "reliability"
+};
+var API_VALUES = {
+  speed: "fastest_completion",
+  cost: "lowest_cost",
+  reliability: "highest_reliability"
+};
+function parseRoutingObjective(value) {
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  return ALIASES[value.trim().toLowerCase()];
+}
+function routingObjectiveToApiValue(objective) {
+  return API_VALUES[objective];
+}
+
+// ../core/src/config.ts
 var CONFIG_RECORD_ID = "hokusai-plugin-config";
 var DEFAULT_ALLOWLIST = ANTHROPIC_MODELS.map((model) => model.id);
 var ConfigValidationError = class extends Error {
@@ -2296,7 +2331,7 @@ async function loadPluginConfig(options = {}) {
     merged.routingConsentEnabled,
     "routingConsentEnabled",
     fieldErrors,
-    false
+    options.defaultRoutingConsentEnabled ?? false
   );
   const outcomeSubmissionEnabled = normalizeBoolean(
     merged.outcomeSubmissionEnabled,
@@ -2313,6 +2348,11 @@ async function loadPluginConfig(options = {}) {
     }
   );
   const apiKey = normalizeApiKey(merged.apiKey, fieldErrors);
+  const routingObjective = normalizeObjective(
+    merged.routingObjective,
+    fieldErrors,
+    DEFAULT_ROUTING_OBJECTIVE
+  );
   if (fieldErrors.length > 0) {
     throw new ConfigValidationError(
       "Plugin configuration validation failed.",
@@ -2324,7 +2364,8 @@ async function loadPluginConfig(options = {}) {
     apiBaseUrl,
     routingConsentEnabled,
     outcomeSubmissionEnabled,
-    modelAllowlist
+    modelAllowlist,
+    routingObjective
   };
 }
 function redactPluginConfig(config) {
@@ -2334,7 +2375,8 @@ function redactPluginConfig(config) {
       apiBaseUrl: config.apiBaseUrl,
       routingConsentEnabled: config.routingConsentEnabled,
       outcomeSubmissionEnabled: config.outcomeSubmissionEnabled,
-      modelAllowlist: [...config.modelAllowlist]
+      modelAllowlist: [...config.modelAllowlist],
+      ...config.routingObjective ? { routingObjective: config.routingObjective } : {}
     };
   }
   return {
@@ -2343,7 +2385,8 @@ function redactPluginConfig(config) {
     apiBaseUrl: config.apiBaseUrl,
     routingConsentEnabled: config.routingConsentEnabled,
     outcomeSubmissionEnabled: config.outcomeSubmissionEnabled,
-    modelAllowlist: [...config.modelAllowlist]
+    modelAllowlist: [...config.modelAllowlist],
+    ...config.routingObjective ? { routingObjective: config.routingObjective } : {}
   };
 }
 function summarizeAllowlist(config, registry) {
@@ -2434,6 +2477,29 @@ function normalizeBoolean(value, path3, fieldErrors, defaultValue) {
   }
   return value;
 }
+function normalizeObjective(value, fieldErrors, defaultValue) {
+  if (value === void 0) {
+    return defaultValue;
+  }
+  if (typeof value !== "string") {
+    fieldErrors.push({
+      path: "routingObjective",
+      code: "invalid_type",
+      message: "Expected routingObjective to be a string."
+    });
+    return defaultValue;
+  }
+  const parsed = parseRoutingObjective(value);
+  if (!parsed) {
+    fieldErrors.push({
+      path: "routingObjective",
+      code: "invalid_value",
+      message: `Unknown routing objective "${value}". Choose speed, cost, or reliability.`
+    });
+    return defaultValue;
+  }
+  return parsed;
+}
 function normalizeAllowlist(value, options) {
   const rawEntries = value === void 0 ? DEFAULT_ALLOWLIST : value;
   if (!Array.isArray(rawEntries)) {
@@ -2504,7 +2570,8 @@ function readEnvConfig(env) {
     } : {},
     ...env.HOKUSAI_MODEL_ALLOWLIST !== void 0 ? {
       modelAllowlist: env.HOKUSAI_MODEL_ALLOWLIST.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
-    } : {}
+    } : {},
+    ...env.HOKUSAI_OBJECTIVE !== void 0 ? { routingObjective: env.HOKUSAI_OBJECTIVE } : {}
   };
 }
 function parseBooleanEnv(value) {
@@ -4376,8 +4443,12 @@ function parseArgs(argv) {
     decline: false,
     json: false
   };
+  const positional = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === void 0) {
+      continue;
+    }
     if (arg === "--json") {
       parsed.json = true;
       continue;
@@ -4401,13 +4472,23 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === "--objective") {
+      parsed.objective = argv[index + 1] ?? "";
+      index += 1;
+      continue;
+    }
     if (arg === "--config") {
       const configPath = argv[index + 1];
       if (configPath !== void 0) {
         parsed.configPath = configPath;
       }
       index += 1;
+      continue;
     }
+    positional.push(arg);
+  }
+  if (parsed.task === void 0 && positional.length > 0) {
+    parsed.task = positional.join(" ");
   }
   return parsed;
 }
@@ -4455,6 +4536,17 @@ async function readStdin() {
 function createRunCli(profile, impls) {
   return async function runCli2(argv, env, deps = {}) {
     const parsed = parseArgs(argv);
+    let flagObjective;
+    if (parsed.objective !== void 0) {
+      flagObjective = parseRoutingObjective(parsed.objective);
+      if (!flagObjective) {
+        return toMessage(
+          parsed,
+          `Unknown routing objective "${parsed.objective}". Choose speed, cost, or reliability.`,
+          CLI_EXIT_CODES.UNKNOWN_ERROR
+        );
+      }
+    }
     const registry = profile.modelCatalog.registry;
     const loadConfigImpl = deps.loadConfig ?? ((input) => loadPluginConfig({
       env: input.env,
@@ -4529,7 +4621,16 @@ function createRunCli(profile, impls) {
       apiKey: config.apiKey,
       baseUrl: config.apiBaseUrl
     });
-    const result = await routeTaskImpl(impls.buildRouteInput(taskText), {
+    const objective = flagObjective ?? config.routingObjective ?? DEFAULT_ROUTING_OBJECTIVE;
+    const routeInput = impls.buildRouteInput(taskText);
+    const routeInputWithObjective = {
+      ...routeInput,
+      metadata: {
+        ...routeInput.metadata,
+        objective: routingObjectiveToApiValue(objective)
+      }
+    };
+    const result = await routeTaskImpl(routeInputWithObjective, {
       apiClient: client,
       registry,
       settings: {
@@ -5761,7 +5862,7 @@ var claudeCodeHarnessProfile = {
   createFallbackConfig({ baseUrl, modelAllowlist }) {
     return {
       apiBaseUrl: baseUrl,
-      routingConsentEnabled: false,
+      routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist
     };
@@ -6055,7 +6156,8 @@ async function loadClaudeCodePluginConfig(options = {}) {
   return loadPluginConfig({
     registry: options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS),
     ...store ? { store } : {},
-    ...loadOptions
+    ...loadOptions,
+    defaultRoutingConsentEnabled: true
   });
 }
 function createClaudeCodeDoctor(options) {

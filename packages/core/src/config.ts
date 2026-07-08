@@ -5,6 +5,11 @@ import { DEFAULT_HOKUSAI_BASE_URL } from './client.js';
 import { ANTHROPIC_MODELS, type ModelRegistry } from './model-registry.js';
 import type { HokusaiFieldError } from './schemas.js';
 import type { LocalStore } from './storage.js';
+import {
+  DEFAULT_ROUTING_OBJECTIVE,
+  parseRoutingObjective,
+  type RoutingObjective,
+} from './routing-objective.js';
 
 const CONFIG_RECORD_ID = 'hokusai-plugin-config';
 const DEFAULT_ALLOWLIST = ANTHROPIC_MODELS.map((model) => model.id);
@@ -15,6 +20,7 @@ export interface HokusaiPluginConfig {
   routingConsentEnabled: boolean;
   outcomeSubmissionEnabled: boolean;
   modelAllowlist: string[];
+  routingObjective?: RoutingObjective;
 }
 
 export interface PluginConfigOverrides {
@@ -23,6 +29,7 @@ export interface PluginConfigOverrides {
   routingConsentEnabled?: boolean;
   outcomeSubmissionEnabled?: boolean;
   modelAllowlist?: string[];
+  routingObjective?: RoutingObjective;
 }
 
 export interface PluginConfigStored {
@@ -30,6 +37,7 @@ export interface PluginConfigStored {
   routingConsentEnabled?: boolean;
   outcomeSubmissionEnabled?: boolean;
   modelAllowlist?: string[];
+  routingObjective?: RoutingObjective;
 }
 
 export interface RedactedPluginConfig
@@ -50,6 +58,7 @@ export interface LoadPluginConfigOptions {
   store?: PluginConfigStore;
   strictAllowlist?: boolean;
   registry?: ModelRegistry;
+  defaultRoutingConsentEnabled?: boolean;
 }
 
 export class ConfigValidationError extends Error {
@@ -147,7 +156,7 @@ export async function loadPluginConfig(
     merged.routingConsentEnabled,
     'routingConsentEnabled',
     fieldErrors,
-    false,
+    options.defaultRoutingConsentEnabled ?? false,
   );
   const outcomeSubmissionEnabled = normalizeBoolean(
     merged.outcomeSubmissionEnabled,
@@ -164,6 +173,11 @@ export async function loadPluginConfig(
     },
   );
   const apiKey = normalizeApiKey(merged.apiKey, fieldErrors);
+  const routingObjective = normalizeObjective(
+    merged.routingObjective,
+    fieldErrors,
+    DEFAULT_ROUTING_OBJECTIVE,
+  );
 
   if (fieldErrors.length > 0) {
     throw new ConfigValidationError(
@@ -178,6 +192,7 @@ export async function loadPluginConfig(
     routingConsentEnabled,
     outcomeSubmissionEnabled,
     modelAllowlist,
+    routingObjective,
   };
 }
 
@@ -191,6 +206,9 @@ export function redactPluginConfig(
       routingConsentEnabled: config.routingConsentEnabled,
       outcomeSubmissionEnabled: config.outcomeSubmissionEnabled,
       modelAllowlist: [...config.modelAllowlist],
+      ...(config.routingObjective
+        ? { routingObjective: config.routingObjective }
+        : {}),
     };
   }
 
@@ -201,6 +219,9 @@ export function redactPluginConfig(
     routingConsentEnabled: config.routingConsentEnabled,
     outcomeSubmissionEnabled: config.outcomeSubmissionEnabled,
     modelAllowlist: [...config.modelAllowlist],
+    ...(config.routingObjective
+      ? { routingObjective: config.routingObjective }
+      : {}),
   };
 }
 
@@ -326,6 +347,37 @@ function normalizeBoolean(
   return value;
 }
 
+function normalizeObjective(
+  value: unknown,
+  fieldErrors: HokusaiFieldError[],
+  defaultValue: RoutingObjective,
+): RoutingObjective {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  if (typeof value !== 'string') {
+    fieldErrors.push({
+      path: 'routingObjective',
+      code: 'invalid_type',
+      message: 'Expected routingObjective to be a string.',
+    });
+    return defaultValue;
+  }
+
+  const parsed = parseRoutingObjective(value);
+  if (!parsed) {
+    fieldErrors.push({
+      path: 'routingObjective',
+      code: 'invalid_value',
+      message: `Unknown routing objective "${value}". Choose speed, cost, or reliability.`,
+    });
+    return defaultValue;
+  }
+
+  return parsed;
+}
+
 function normalizeAllowlist(
   value: unknown,
   options: {
@@ -424,6 +476,9 @@ function readEnvConfig(env: NodeJS.ProcessEnv | undefined): PluginConfigOverride
             .map((entry) => entry.trim())
             .filter((entry) => entry.length > 0),
         }
+      : {}),
+    ...(env.HOKUSAI_OBJECTIVE !== undefined
+      ? { routingObjective: env.HOKUSAI_OBJECTIVE as RoutingObjective }
       : {}),
   };
 }

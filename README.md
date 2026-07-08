@@ -113,11 +113,11 @@ Claude Code is the most complete end-user plugin surface in this repository. Ins
 /reload-plugins
 ```
 
-Set your API key and opt in to routing:
+Set your API key. Installing the Claude Code plugin is the routing consent step;
+the plugin will not enable outcome contribution unless you opt in separately:
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
-export HOKUSAI_ROUTING_CONSENT=true
 hokusai-doctor
 ```
 
@@ -149,16 +149,20 @@ Route a task in Claude Code:
 /hokusai:route refactor the auth middleware to use the new policy engine
 ```
 
-Optionally opt in to anonymized outcome reporting:
+Optionally opt in to anonymized outcome reporting after your first route:
 
-```sh
-export HOKUSAI_OUTCOME_OPT_IN=true
-hokusai-doctor
+```text
+/hokusai:privacy reporting on
 ```
 
 ```text
 /hokusai:report --use-latest --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
 ```
+
+The report command previews the anonymized payload first and sends only after
+approval. Use `/hokusai:privacy list`, `/hokusai:privacy preview <correlation-id>`,
+and `/hokusai:privacy audit` to inspect local routing records and submission
+history from Claude Code.
 
 See [packages/adapter-claude-code/README.md](packages/adapter-claude-code/README.md) for Claude Code-specific install, privacy, doctor, and command details.
 
@@ -272,7 +276,8 @@ See [packages/adapter-wavemill/README.md](packages/adapter-wavemill/README.md) f
 
 Routing and outcome reporting are consent-gated. Harnesses should collect explicit consent before sending task routing data or telemetry.
 
-- Routing requires an API key and task-execution consent.
+- Routing requires an API key and task-execution consent. In Claude Code, installing
+  the Hokusai plugin provides that routing consent by default.
 - Outcome reporting requires separate telemetry consent.
 - Shared adapters split end-user consent between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
 - Raw task text, raw code, raw prompts, terminal logs, and customer data should not be stored in local correlation records.
@@ -285,9 +290,8 @@ Claude Code exposes these controls through environment variables and the `hokusa
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
-export HOKUSAI_ROUTING_CONSENT=true
-export HOKUSAI_OUTCOME_OPT_IN=true
 
+hokusai-privacy reporting on
 hokusai-privacy list
 hokusai-privacy preview <correlation-id>
 hokusai-privacy audit

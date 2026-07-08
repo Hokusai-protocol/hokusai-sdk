@@ -82,7 +82,7 @@ export const claudeCodeHarnessProfile: HarnessProfile<
   createFallbackConfig({ baseUrl, modelAllowlist }) {
     return {
       apiBaseUrl: baseUrl,
-      routingConsentEnabled: false,
+      routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist,
     };

@@ -62,14 +62,14 @@ Expected result:
 - Claude Code installs the plugin without requiring a repo checkout.
 - Claude Code shows `/hokusai:route`, `/hokusai:report`, `/hokusai:privacy`, and `/hokusai:doctor` in the slash-command menu.
 
-## Step 2. Configure auth and consent
+## Step 2. Configure auth and optional contribution
 
-Routing and outcome reporting are off by default. Enable them explicitly:
+For Claude Code, installing the plugin provides routing consent. Configure the
+API key, then enable outcome contribution only when testing the reporting path:
 
 ```sh
 export HOKUSAI_API_KEY=<test-key>
-export HOKUSAI_ROUTING_CONSENT=true
-export HOKUSAI_OUTCOME_OPT_IN=true
+hokusai-privacy reporting on
 ```
 
 Run the canonical post-install verification:
