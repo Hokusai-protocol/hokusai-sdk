@@ -55,7 +55,6 @@ After install, Claude Code should show `/hokusai:route`, `/hokusai:report`, and 
 Use environment variables or a local config file loaded through `loadClaudeCodePluginConfig()`:
 
 - `HOKUSAI_API_KEY`: Hokusai API key. Required for routing and reachability checks.
-- `HOKUSAI_ROUTING_CONSENT`: Optional routing override. Installing the Claude Code plugin provides routing consent by default; set this only when you need to force routing off or test alternate consent states.
 - `HOKUSAI_OUTCOME_OPT_IN`: Separate explicit opt-in for outcome submission. Defaults to off.
 - `HOKUSAI_MODEL_ALLOWLIST`: Comma-separated Anthropic model ids or aliases.
 
@@ -165,7 +164,6 @@ Decline reasons are redacted and length-capped before local persistence. The ada
 ## Failure behavior
 
 - Missing `HOKUSAI_API_KEY`: `Hokusai routing needs an API key. Set HOKUSAI_API_KEY and re-run.`
-- Routing explicitly disabled: `Routing consent is required. Run export HOKUSAI_ROUTING_CONSENT=true to opt in.`
 - Missing `HOKUSAI_OUTCOME_OPT_IN=true`: outcome preview/send refuses with an explicit opt-in remediation.
 - Network failure: `Could not reach Hokusai (...)`. Retry after checking connectivity, then inspect local state with `hokusai-privacy audit` and `hokusai-privacy reporting status`.
 - Unsupported recommendation: prints the unsupported model id and suggested Anthropic fallbacks.
@@ -174,8 +172,8 @@ Decline reasons are redacted and length-capped before local persistence. The ada
 ## Privacy posture
 
 - Local discovery and setup help work without network calls.
-- Routing requires `HOKUSAI_API_KEY`; installing the Claude Code plugin provides routing consent unless explicitly overridden.
-- Outcome preview and submission require routing consent plus `HOKUSAI_OUTCOME_OPT_IN=true`.
+- Routing requires `HOKUSAI_API_KEY`.
+- Outcome preview and submission require `HOKUSAI_OUTCOME_OPT_IN=true`.
 - Model recommendations are limited to Anthropic models in the configured allowlist.
 - Shared storage, preview, retention, and consent rules are documented in [docs/privacy-model.md](../../docs/privacy-model.md).
 

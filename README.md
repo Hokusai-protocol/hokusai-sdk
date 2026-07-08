@@ -113,8 +113,7 @@ Claude Code is the most complete end-user plugin surface in this repository. Ins
 /reload-plugins
 ```
 
-Set your API key. Installing the Claude Code plugin is the routing consent step;
-the plugin will not enable outcome contribution unless you opt in separately:
+Set your API key. The plugin will not enable outcome contribution unless you opt in separately:
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
@@ -183,7 +182,6 @@ Configure Hokusai and verify the install from Codex:
 
 ```sh
 export HOKUSAI_API_KEY=hk_live_your_key_here
-export HOKUSAI_ROUTING_CONSENT=true
 ```
 
 ```text
@@ -274,12 +272,10 @@ See [packages/adapter-wavemill/README.md](packages/adapter-wavemill/README.md) f
 
 ## Privacy And Consent
 
-Routing and outcome reporting are consent-gated. Harnesses should collect explicit consent before sending task routing data or telemetry.
+Routing requires an API key. Outcome reporting is separately consent-gated.
 
-- Routing requires an API key and task-execution consent. In Claude Code, installing
-  the Hokusai plugin provides that routing consent by default.
 - Outcome reporting requires separate telemetry consent.
-- Shared adapters split end-user consent between `HOKUSAI_ROUTING_CONSENT` and `HOKUSAI_OUTCOME_OPT_IN`.
+- Shared adapters use `HOKUSAI_OUTCOME_OPT_IN` for outcome submission opt-in.
 - Raw task text, raw code, raw prompts, terminal logs, and customer data should not be stored in local correlation records.
 - Adapter previews expose redacted payloads before submission.
 - Claude Code and Codex plugins include post-run outcome prompt hooks. The hooks detect likely success, then prompt for a report tied to the latest Hokusai route; they never submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit user approval in the report flow.

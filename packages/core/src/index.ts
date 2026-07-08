@@ -167,7 +167,6 @@ export {
   checkModelAllowlist,
   checkNodeRuntime,
   checkOutcomeConsent,
-  checkRoutingConsent,
   checkStateDirWritable,
   renderDoctorReport,
   runDoctor,

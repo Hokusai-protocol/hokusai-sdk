@@ -9,12 +9,11 @@ Install from an extracted release zip:
 Required environment variables:
 
 - `HOKUSAI_API_KEY`
-- `HOKUSAI_ROUTING_CONSENT=true`
 - `HOKUSAI_OUTCOME_OPT_IN=true` for outcome submission
 
 Final verification step:
 
-- Run `$hokusai-doctor` after setting auth and consent.
+- Run `$hokusai-doctor` after setting auth.
 - Continue only after it reports `Ready to use: yes`.
 
 Privacy posture:

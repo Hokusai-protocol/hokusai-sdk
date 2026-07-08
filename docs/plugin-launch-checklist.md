@@ -64,8 +64,7 @@ Expected result:
 
 ## Step 2. Configure auth and optional contribution
 
-For Claude Code, installing the plugin provides routing consent. Configure the
-API key, then enable outcome contribution only when testing the reporting path:
+Configure the API key, then enable outcome contribution only when testing the reporting path:
 
 ```sh
 export HOKUSAI_API_KEY=<test-key>
@@ -80,7 +79,7 @@ hokusai-doctor
 
 Expected result:
 
-- API key, routing consent, dry-run route, local state, allowlist, and outcome opt-in checks are reported with pass/fail/warn status.
+- API key, dry-run route, local state, allowlist, and outcome opt-in checks are reported with pass/fail/warn status.
 - Router reachability passes with a valid test key and network access, or reports an actionable auth/network fix.
 - The final line is `Ready to use: yes`.
 

@@ -7,7 +7,6 @@ import {
   checkModelAllowlist,
   checkNodeRuntime,
   checkOutcomeConsent,
-  checkRoutingConsent,
   checkStateDirWritable,
   renderDoctorReport,
   runDoctor,
@@ -193,18 +192,6 @@ describe('plugin doctor checks', () => {
       status: 'fail',
       nextAction: expect.stringContaining('HOKUSAI_API_KEY'),
     });
-  });
-
-  it('checks routing consent', () => {
-    expect(checkRoutingConsent({ routingConsentEnabled: true })).toMatchObject({
-      status: 'pass',
-    });
-    expect(checkRoutingConsent({ routingConsentEnabled: false })).toMatchObject(
-      {
-        status: 'fail',
-        nextAction: expect.stringContaining('HOKUSAI_ROUTING_CONSENT=1'),
-      },
-    );
   });
 
   it('checks outcome consent as a warning', () => {
@@ -396,7 +383,7 @@ describe('runPluginDoctor', () => {
     modelAllowlist: ['claude-sonnet-4-6'],
   };
 
-  it('defaults to offline mode when auth is incomplete', async () => {
+  it('defaults to network mode when only the API key is configured', async () => {
     const transportCalls: string[] = [];
     const report = await runPluginDoctor({
       config: {
@@ -413,19 +400,19 @@ describe('runPluginDoctor', () => {
       clock: () => new Date('2026-06-08T12:00:00.000Z'),
     });
 
-    expect(report.mode).toBe('offline');
+    expect(report.mode).toBe('network');
     expect(report.ok).toBe(false);
     expect(
       report.checks.find((check) => check.id === 'dry-run-route'),
     ).toMatchObject({
-      status: 'skipped',
+      status: 'pass',
     });
     expect(
       report.checks.find((check) => check.id === 'api-reachability'),
     ).toMatchObject({
-      status: 'skipped',
+      status: 'fail',
     });
-    expect(transportCalls).toEqual([]);
+    expect(transportCalls).toEqual(['https://api.hokus.ai/api/health']);
   });
 
   it('runs network mode when routing is configured and transport is available', async () => {

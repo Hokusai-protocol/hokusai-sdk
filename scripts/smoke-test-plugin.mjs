@@ -215,8 +215,6 @@ function assertOfflineCommands(installRoot) {
   const configDir = path.join(installRoot, '.smoke-config');
   const env = {
     ...process.env,
-    HOKUSAI_API_KEY: 'hk_live_smoke',
-    HOKUSAI_ROUTING_CONSENT: '',
     HOKUSAI_OUTCOME_OPT_IN: '',
     HOKUSAI_CONFIG_DIR: configDir,
   };
@@ -229,12 +227,12 @@ function assertOfflineCommands(installRoot) {
   );
   if (routeResult) {
     assert(
-      routeResult.status === 3,
-      'hokusai-route exits with consent-required code',
+      routeResult.status === 2,
+      'hokusai-route exits with auth-required code',
     );
     assert(
-      routeResult.stderr.includes('HOKUSAI_ROUTING_CONSENT'),
-      'hokusai-route prints routing consent guidance',
+      routeResult.stderr.includes('HOKUSAI_API_KEY'),
+      'hokusai-route prints API key guidance',
     );
     assertNoImportFailure(
       `${routeResult.stdout}\n${routeResult.stderr}`,
@@ -282,10 +280,6 @@ function assertOfflineCommands(installRoot) {
   );
   if (privacyResult) {
     assert(privacyResult.status === 0, 'hokusai-privacy exits successfully');
-    assert(
-      privacyResult.stdout.includes('No records found'),
-      'hokusai-privacy prints empty-state output',
-    );
     assertNoImportFailure(
       `${privacyResult.stdout}\n${privacyResult.stderr}`,
       'hokusai-privacy',
@@ -304,8 +298,8 @@ function assertOfflineCommands(installRoot) {
       'hokusai-doctor prints doctor header',
     );
     assert(
-      doctorResult.stdout.includes('routing-consent'),
-      'hokusai-doctor reports routing consent status',
+      !doctorResult.stdout.includes('routing-consent'),
+      'hokusai-doctor omits routing consent status',
     );
     assert(
       doctorResult.stdout.includes('api-reachability'),

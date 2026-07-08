@@ -45,7 +45,6 @@ describe('core public surface', () => {
     expect(core.renderDoctorReport).toBeDefined();
     expect(core.checkNodeRuntime).toBeDefined();
     expect(core.checkApiKey).toBeDefined();
-    expect(core.checkRoutingConsent).toBeDefined();
     expect(core.checkOutcomeConsent).toBeDefined();
     expect(core.checkModelAllowlist).toBeDefined();
     expect(core.checkStateDirWritable).toBeDefined();

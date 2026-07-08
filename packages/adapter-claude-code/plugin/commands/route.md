@@ -49,6 +49,6 @@ hokusai-route --json --objective speed --task "$ARGUMENTS"
 - Ask the user: `Accept this recommendation? (yes / no / different)`.
 - If the user declines or asks for a different model, call `hokusai-route --decline --correlation-id <id> --reason "<short reason>"` and confirm that the decline was recorded locally.
 - If the command fails, surface the remediation hint from stderr verbatim. Exit
-  code 2 means the API key is missing, 3 means routing consent is not enabled —
-  relay the hint rather than guessing at other invocations.
+  code 2 means the API key is missing; relay the hint rather than guessing at
+  other invocations.
 - Do not invent a routing recommendation locally.

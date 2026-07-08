@@ -20,13 +20,6 @@ export function resolveCodexConfigDir(
   return path.join(os.homedir(), '.config', 'hokusai', 'codex');
 }
 
-export function hasRoutingConsent(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  const v = env.HOKUSAI_ROUTING_CONSENT?.trim().toLowerCase();
-  return v === 'true' || v === '1' || v === 'yes';
-}
-
 export function hasOutcomeOptIn(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {

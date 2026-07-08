@@ -48,8 +48,7 @@ function buildOverallLine(report: PluginDoctorReport): string {
 
   const routingBlocked = report.checks.some(
     (check) =>
-      (check.id === 'api-key' || check.id === 'routing-consent') &&
-      check.status === 'fail',
+      check.id === 'api-key' && check.status === 'fail',
   );
 
   return routingBlocked
@@ -92,7 +91,7 @@ export function createRunBootstrapDoctor<
       modelAllowlist,
     }) ?? {
       apiBaseUrl: DEFAULT_HOKUSAI_BASE_URL,
-      routingConsentEnabled: false,
+      routingConsentEnabled: true,
       outcomeSubmissionEnabled: false,
       modelAllowlist,
     };
@@ -120,7 +119,7 @@ export function createRunBootstrapDoctor<
     }
 
     const mode =
-      config.apiKey?.trim() && config.routingConsentEnabled && options.transport
+      config.apiKey?.trim() && options.transport
         ? 'network'
         : 'offline';
     const baseReport = await runPluginDoctor({
