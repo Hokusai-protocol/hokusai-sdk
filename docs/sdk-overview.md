@@ -25,7 +25,7 @@ npm install @hokusai/adapter-codex
 npm install @hokusai/adapter-wavemill
 ```
 
-Current published package versions in this repository are `0.1.2` for `@hokusai/core`, `@hokusai/adapter-claude-code`, `@hokusai/adapter-codex`, and `@hokusai/adapter-wavemill`.
+Current published package versions in this repository are `0.1.3` for `@hokusai/core`, `@hokusai/adapter-claude-code`, `@hokusai/adapter-codex`, and `@hokusai/adapter-wavemill`.
 
 For most plugin quickstarts, the final verification step is the Hokusai doctor after auth is configured:
 
