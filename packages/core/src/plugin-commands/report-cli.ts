@@ -400,9 +400,13 @@ export function createRunReportCli<
         loadPluginConfig({
           env: input.env,
           registry,
-          ...(input.configPath
-            ? { store: new FilePluginConfigStore(input.configPath) }
-            : {}),
+          // Always read the persisted plugin config so consent set via
+          // `hokusai-privacy reporting on` is honored, not just the
+          // HOKUSAI_OUTCOME_OPT_IN env var. Mirrors getReportingStatus.
+          store: new FilePluginConfigStore(
+            input.configPath ??
+              defaultPluginConfigPath(profile.resolveConfigPath().dir),
+          ),
         }));
     const previewReportOutcomeImpl =
       deps.previewReportOutcomeImpl ?? impls.previewReportOutcome;
@@ -511,8 +515,19 @@ export function createRunReportCli<
       correlationId:
         parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? '',
       recommendedModel:
-        parsed.recommendedModel ?? pipedInput.recommendedModel ?? '',
-      actualModel: parsed.actualModel ?? pipedInput.actualModel ?? '',
+        parsed.recommendedModel ??
+        pipedInput.recommendedModel ??
+        latest?.recommendedModelId ??
+        '',
+      // When the recommendation was accepted, the actual model is the
+      // recommended one, so --use-latest can fill it from the stored decision.
+      // If it was not accepted, leave it empty so validation forces the caller
+      // to state which model they actually ran.
+      actualModel:
+        parsed.actualModel ??
+        pipedInput.actualModel ??
+        (recommendationAccepted === true ? latest?.recommendedModelId : undefined) ??
+        '',
       recommendationAccepted: recommendationAccepted ?? false,
       completionStatus: (parsed.status ?? pipedInput.completionStatus ?? '') as CompletionStatus,
       latencyBucket: withDefaultBucket(
