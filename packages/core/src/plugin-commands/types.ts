@@ -112,6 +112,17 @@ export interface RouteContextProjection {
   taskDescriptor: Record<string, string>;
   allowedModels: string[];
   budgetUsd?: number;
+  /**
+   * Cumulative session cost (USD) captured from the statusline sidecar at route
+   * time, used as the diff base when resolving actual cost at report time.
+   */
+  costBaselineUsd?: number;
+  /** Session id the cost baseline belongs to (guards the sidecar diff). */
+  sessionId?: string;
+  /** ISO timestamp of the route; filters transcript turns to this run. */
+  baselineAt?: string;
+  /** Encoded project-dir key (cwd → `-`) locating the session transcript. */
+  projectDirKey?: string;
 }
 
 export interface LatestRoutingDecision {

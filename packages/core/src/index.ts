@@ -245,6 +245,25 @@ export {
   type TokenCostInput,
 } from './pricing.js';
 export {
+  DEFAULT_SIDECAR_FRESHNESS_MS,
+  captureCostBaseline,
+  computeTranscriptCostUsd,
+  encodeProjectDirKey,
+  locateSessionTranscript,
+  parseTranscriptUsageTotals,
+  readSessionCostSidecar,
+  resolveActualCostUsd,
+  resolveClaudeConfigDir,
+  resolveSidecarCostDiff,
+  sessionCostSidecarPath,
+  sessionTranscriptDir,
+  type CostBaselineSnapshot,
+  type CostResolutionRouteContext,
+  type SessionCostSidecar,
+  type SessionUsageFileSystem,
+  type TranscriptUsageTotals,
+} from './session-usage.js';
+export {
   claudeCodeTaskPacketFixture,
   claudeCodeFailureOutcomeFixture,
   claudeCodeSuccessOutcomeFixture,

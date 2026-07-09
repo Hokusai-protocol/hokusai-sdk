@@ -1,6 +1,6 @@
 // src/index.ts
 import { mkdir as mkdir4, readFile as readFile3, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
-import path2 from "node:path";
+import path3 from "node:path";
 
 // ../core/src/anonymization.ts
 import { createHmac } from "node:crypto";
@@ -424,103 +424,103 @@ function createOutcomeCandidate(input) {
   }
   return candidate;
 }
-function validateSummary(value, path3, knownKeys, statuses, errors) {
+function validateSummary(value, path4, knownKeys, statuses, errors) {
   if (!isPlainObject(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an object.`
+      path: path4,
+      message: `"${path4}" must be an object.`
     });
     return;
   }
   for (const key of Object.keys(value)) {
     if (!knownKeys.has(key)) {
       errors.push({
-        path: `${path3}.${key}`,
-        message: `Unknown field "${key}" is not allowed in "${path3}".`
+        path: `${path4}.${key}`,
+        message: `Unknown field "${key}" is not allowed in "${path4}".`
       });
     }
   }
-  validateEnum(value.status, `${path3}.status`, statuses, errors);
+  validateEnum(value.status, `${path4}.status`, statuses, errors);
   if (value.failures !== void 0) {
-    validateNonNegativeInteger(value.failures, `${path3}.failures`, errors);
+    validateNonNegativeInteger(value.failures, `${path4}.failures`, errors);
   }
 }
-function validateExtensions(value, path3, errors) {
+function validateExtensions(value, path4, errors) {
   if (!isPlainObject(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an object.`
+      path: path4,
+      message: `"${path4}" must be an object.`
     });
     return;
   }
   for (const key of Object.keys(value)) {
     if (!OUTCOME_EXTENSION_KEY_SET.has(key)) {
       errors.push({
-        path: `${path3}.${key}`,
-        message: `Unknown field "${key}" is not allowed in "${path3}".`
+        path: `${path4}.${key}`,
+        message: `Unknown field "${key}" is not allowed in "${path4}".`
       });
     }
   }
-  validateNonEmptyString(value.version, `${path3}.version`, errors);
+  validateNonEmptyString(value.version, `${path4}.version`, errors);
   if (!isPlainObject(value.data)) {
     errors.push({
-      path: `${path3}.data`,
-      message: `"${path3}.data" must be an object.`
+      path: `${path4}.data`,
+      message: `"${path4}.data" must be an object.`
     });
   }
 }
-function validateLiteralString(value, path3, expected, errors) {
+function validateLiteralString(value, path4, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
     errors.push({
-      path: path3,
-      message: `Expected "${path3}" to be "${expected}".`
+      path: path4,
+      message: `Expected "${path4}" to be "${expected}".`
     });
     return;
   }
   if (value !== expected) {
     errors.push({
-      path: path3,
+      path: path4,
       message: `Unsupported schema version "${value}". Expected "${expected}".`
     });
   }
 }
-function validateNonEmptyString(value, path3, errors) {
+function validateNonEmptyString(value, path4, errors) {
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a non-empty string.`
+      path: path4,
+      message: `"${path4}" must be a non-empty string.`
     });
   }
 }
-function validateBoolean(value, path3, errors) {
+function validateBoolean(value, path4, errors) {
   if (typeof value !== "boolean") {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a boolean.`
+      path: path4,
+      message: `"${path4}" must be a boolean.`
     });
   }
 }
-function validateEnum(value, path3, allowedValues, errors) {
+function validateEnum(value, path4, allowedValues, errors) {
   if (typeof value !== "string" || !allowedValues.includes(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be one of: ${allowedValues.join(", ")}.`
+      path: path4,
+      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
     });
   }
 }
-function validateIntegerInRange(value, path3, min, max, errors) {
+function validateIntegerInRange(value, path4, min, max, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an integer between ${min} and ${max}.`
+      path: path4,
+      message: `"${path4}" must be an integer between ${min} and ${max}.`
     });
   }
 }
-function validateNonNegativeInteger(value, path3, errors) {
+function validateNonNegativeInteger(value, path4, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a non-negative integer.`
+      path: path4,
+      message: `"${path4}" must be a non-negative integer.`
     });
   }
 }
@@ -528,96 +528,96 @@ function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function formatBuildErrorMessage(errors) {
-  return `Invalid outcome report: ${errors.map(({ path: path3, message }) => `${path3 || "$"}: ${message}`).join("; ")}`;
+  return `Invalid outcome report: ${errors.map(({ path: path4, message }) => `${path4 || "$"}: ${message}`).join("; ")}`;
 }
 
 // ../core/src/schemas.ts
 function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
-function pushFieldError(errors, path3, message, code) {
-  errors.push({ path: path3, message, code });
+function pushFieldError(errors, path4, message, code) {
+  errors.push({ path: path4, message, code });
 }
-function validateNonEmptyString2(value, path3, errors) {
+function validateNonEmptyString2(value, path4, errors) {
   if (typeof value !== "string") {
-    pushFieldError(errors, path3, "Expected a string.", "invalid_type");
+    pushFieldError(errors, path4, "Expected a string.", "invalid_type");
     return;
   }
   if (value.trim().length === 0) {
-    pushFieldError(errors, path3, "Value must not be empty.", "required");
+    pushFieldError(errors, path4, "Value must not be empty.", "required");
   }
 }
-function validateStringRecord(value, path3, errors) {
+function validateStringRecord(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== "string") {
       pushFieldError(
         errors,
-        `${path3}.${key}`,
+        `${path4}.${key}`,
         "Expected a string value.",
         "invalid_type"
       );
     }
   }
 }
-function validateTaskInput(value, path3, errors) {
+function validateTaskInput(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.id, `${path3}.id`, errors);
-  validateNonEmptyString2(value.prompt, `${path3}.prompt`, errors);
+  validateNonEmptyString2(value.id, `${path4}.id`, errors);
+  validateNonEmptyString2(value.prompt, `${path4}.prompt`, errors);
   if ("metadata" in value && value.metadata !== void 0) {
-    validateStringRecord(value.metadata, `${path3}.metadata`, errors);
+    validateStringRecord(value.metadata, `${path4}.metadata`, errors);
   }
 }
-function validateConfidence(value, path3, errors) {
+function validateConfidence(value, path4, errors) {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    pushFieldError(errors, path3, "Expected a number.", "invalid_type");
+    pushFieldError(errors, path4, "Expected a number.", "invalid_type");
     return;
   }
   if (value < 0 || value > 1) {
     pushFieldError(
       errors,
-      path3,
+      path4,
       "Expected a number between 0 and 1.",
       "invalid_value"
     );
   }
 }
-function validateRouteRecommendationAlternative(value, path3, errors) {
+function validateRouteRecommendationAlternative(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.model, `${path3}.model`, errors);
+  validateNonEmptyString2(value.model, `${path4}.model`, errors);
   if ("reason" in value && value.reason !== void 0) {
-    validateNonEmptyString2(value.reason, `${path3}.reason`, errors);
+    validateNonEmptyString2(value.reason, `${path4}.reason`, errors);
   }
   if ("confidence" in value && value.confidence !== void 0) {
-    validateConfidence(value.confidence, `${path3}.confidence`, errors);
+    validateConfidence(value.confidence, `${path4}.confidence`, errors);
   }
 }
-function validateRouteRecommendation(value, path3, errors) {
+function validateRouteRecommendation(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.model, `${path3}.model`, errors);
+  validateNonEmptyString2(value.model, `${path4}.model`, errors);
   if ("reason" in value && value.reason !== void 0) {
-    validateNonEmptyString2(value.reason, `${path3}.reason`, errors);
+    validateNonEmptyString2(value.reason, `${path4}.reason`, errors);
   }
   if ("confidence" in value && value.confidence !== void 0) {
-    validateConfidence(value.confidence, `${path3}.confidence`, errors);
+    validateConfidence(value.confidence, `${path4}.confidence`, errors);
   }
   if ("alternatives" in value && value.alternatives !== void 0) {
     if (!Array.isArray(value.alternatives)) {
       pushFieldError(
         errors,
-        `${path3}.alternatives`,
+        `${path4}.alternatives`,
         "Expected an array.",
         "invalid_type"
       );
@@ -626,65 +626,65 @@ function validateRouteRecommendation(value, path3, errors) {
     value.alternatives.forEach((alternative, index) => {
       validateRouteRecommendationAlternative(
         alternative,
-        `${path3}.alternatives.${index}`,
+        `${path4}.alternatives.${index}`,
         errors
       );
     });
   }
 }
-function validateConsentSnapshot(value, path3, errors) {
+function validateConsentSnapshot(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.subjectId, `${path3}.subjectId`, errors);
+  validateNonEmptyString2(value.subjectId, `${path4}.subjectId`, errors);
   if (!Array.isArray(value.grantedScopes)) {
     pushFieldError(
       errors,
-      `${path3}.grantedScopes`,
+      `${path4}.grantedScopes`,
       "Expected an array of consent scopes.",
       "invalid_type"
     );
     return;
   }
   value.grantedScopes.forEach((scope, index) => {
-    validateNonEmptyString2(scope, `${path3}.grantedScopes.${index}`, errors);
+    validateNonEmptyString2(scope, `${path4}.grantedScopes.${index}`, errors);
   });
 }
-function validateModelSelection(value, path3, errors) {
+function validateModelSelection(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.id, `${path3}.id`, errors);
-  validateNonEmptyString2(value.provider, `${path3}.provider`, errors);
+  validateNonEmptyString2(value.id, `${path4}.id`, errors);
+  validateNonEmptyString2(value.provider, `${path4}.provider`, errors);
   if (!Array.isArray(value.capabilities)) {
     pushFieldError(
       errors,
-      `${path3}.capabilities`,
+      `${path4}.capabilities`,
       "Expected an array of capabilities.",
       "invalid_type"
     );
     return;
   }
   value.capabilities.forEach((capability, index) => {
-    validateNonEmptyString2(capability, `${path3}.capabilities.${index}`, errors);
+    validateNonEmptyString2(capability, `${path4}.capabilities.${index}`, errors);
   });
 }
-function validateCorrelationRecord(value, path3, errors) {
+function validateCorrelationRecord(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.taskId, `${path3}.taskId`, errors);
-  validateNonEmptyString2(value.correlationId, `${path3}.correlationId`, errors);
-  validateNonEmptyString2(value.createdAt, `${path3}.createdAt`, errors);
+  validateNonEmptyString2(value.taskId, `${path4}.taskId`, errors);
+  validateNonEmptyString2(value.correlationId, `${path4}.correlationId`, errors);
+  validateNonEmptyString2(value.createdAt, `${path4}.createdAt`, errors);
 }
-function validateRedactions(value, path3, errors) {
+function validateRedactions(value, path4, errors) {
   if (!Array.isArray(value)) {
     pushFieldError(
       errors,
-      path3,
+      path4,
       "Expected an array of redactions.",
       "invalid_type"
     );
@@ -694,26 +694,26 @@ function validateRedactions(value, path3, errors) {
     if (!isRecord(entry)) {
       pushFieldError(
         errors,
-        `${path3}.${index}`,
+        `${path4}.${index}`,
         "Expected an object.",
         "invalid_type"
       );
       return;
     }
     if ("label" in entry) {
-      validateNonEmptyString2(entry.label, `${path3}.${index}.label`, errors);
+      validateNonEmptyString2(entry.label, `${path4}.${index}.label`, errors);
       return;
     }
-    validateNonEmptyString2(entry.category, `${path3}.${index}.category`, errors);
+    validateNonEmptyString2(entry.category, `${path4}.${index}.category`, errors);
     validateNonEmptyString2(
       entry.placeholder,
-      `${path3}.${index}.placeholder`,
+      `${path4}.${index}.placeholder`,
       errors
     );
     if (typeof entry.count !== "number") {
       pushFieldError(
         errors,
-        `${path3}.${index}.count`,
+        `${path4}.${index}.count`,
         "Expected a number.",
         "invalid_type"
       );
@@ -1048,10 +1048,10 @@ function assertSafeStoreId(id) {
 function isRawFieldName(key) {
   return RAW_FIELD_NAMES.has(key) || RAW_FIELD_PATTERNS.some((pattern) => pattern.test(key));
 }
-function assertNoRawPayloadFields(record, path3 = "") {
+function assertNoRawPayloadFields(record, path4 = "") {
   if (Array.isArray(record)) {
     for (const [index, value] of record.entries()) {
-      assertNoRawPayloadFields(value, `${path3}[${index}]`);
+      assertNoRawPayloadFields(value, `${path4}[${index}]`);
     }
     return;
   }
@@ -1059,7 +1059,7 @@ function assertNoRawPayloadFields(record, path3 = "") {
     return;
   }
   for (const [key, value] of Object.entries(record)) {
-    const fieldPath = path3 ? `${path3}.${key}` : key;
+    const fieldPath = path4 ? `${path4}.${key}` : key;
     if (isRawFieldName(key)) {
       throw new RawPayloadRejectedError(fieldPath);
     }
@@ -1714,12 +1714,12 @@ var HokusaiClient = class {
     });
   }
 };
-function buildUrl(baseUrl, path3) {
+function buildUrl(baseUrl, path4) {
   const resolvedBaseUrl = new URL(baseUrl.toString());
   if (!resolvedBaseUrl.pathname.endsWith("/")) {
     resolvedBaseUrl.pathname = `${resolvedBaseUrl.pathname}/`;
   }
-  return new URL(path3.replace(/^\/+/, ""), resolvedBaseUrl).toString();
+  return new URL(path4.replace(/^\/+/, ""), resolvedBaseUrl).toString();
 }
 function createRequestId() {
   const cryptoObject = Reflect.get(globalThis, "crypto");
@@ -2554,15 +2554,15 @@ function normalizeBaseUrl(value, fieldErrors) {
     return DEFAULT_HOKUSAI_BASE_URL;
   }
 }
-function normalizeBoolean(value, path3, fieldErrors, defaultValue) {
+function normalizeBoolean(value, path4, fieldErrors, defaultValue) {
   if (value === void 0) {
     return defaultValue;
   }
   if (typeof value !== "boolean") {
     fieldErrors.push({
-      path: path3,
+      path: path4,
       code: "invalid_type",
-      message: `Expected ${path3} to be a boolean.`
+      message: `Expected ${path4} to be a boolean.`
     });
     return defaultValue;
   }
@@ -3000,9 +3000,9 @@ async function checkApiReachability(config, transport, options) {
     () => controller.abort(),
     options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
   );
-  const path3 = options?.path ?? DEFAULT_REACHABILITY_PATH;
+  const path4 = options?.path ?? DEFAULT_REACHABILITY_PATH;
   const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
-  const isDefaultHealthProbe = path3 === DEFAULT_REACHABILITY_PATH;
+  const isDefaultHealthProbe = path4 === DEFAULT_REACHABILITY_PATH;
   const headers = {
     "X-Request-ID": requestId,
     "X-Hokusai-Request-Id": requestId
@@ -3014,7 +3014,7 @@ async function checkApiReachability(config, transport, options) {
     const response = await transport(
       buildReachabilityUrl(
         config.apiBaseUrl,
-        path3
+        path4
       ),
       {
         method: "GET",
@@ -3153,12 +3153,12 @@ async function checkReachability(input, requestId) {
     clearTimeout(timeoutHandle);
   }
 }
-function buildReachabilityUrl(baseUrl, path3) {
+function buildReachabilityUrl(baseUrl, path4) {
   const normalizedBase = new URL(baseUrl);
   if (!normalizedBase.pathname.endsWith("/")) {
     normalizedBase.pathname = `${normalizedBase.pathname}/`;
   }
-  return new URL(path3.replace(/^\/+/, ""), normalizedBase).toString();
+  return new URL(path4.replace(/^\/+/, ""), normalizedBase).toString();
 }
 function mapReachabilityStatus(response) {
   if (response.status === 401 || response.status === 403) {
@@ -3347,42 +3347,42 @@ function buildTaskPacket(context) {
   }
   return result.packet;
 }
-function validateLiteralString2(value, path3, expected, errors) {
+function validateLiteralString2(value, path4, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
     errors.push({
-      path: path3,
-      message: `Expected "${path3}" to be "${expected}".`
+      path: path4,
+      message: `Expected "${path4}" to be "${expected}".`
     });
     return;
   }
   if (value !== expected) {
     errors.push({
-      path: path3,
+      path: path4,
       message: `Unsupported schema version "${value}". Expected "${expected}".`
     });
   }
 }
-function validateNonEmptyString3(value, path3, errors) {
+function validateNonEmptyString3(value, path4, errors) {
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a non-empty string.`
+      path: path4,
+      message: `"${path4}" must be a non-empty string.`
     });
   }
 }
-function validateEnum2(value, path3, allowedValues, errors) {
+function validateEnum2(value, path4, allowedValues, errors) {
   if (typeof value !== "string" || !allowedValues.includes(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be one of: ${allowedValues.join(", ")}.`
+      path: path4,
+      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
     });
   }
 }
-function validateStringArray(value, path3, errors) {
+function validateStringArray(value, path4, errors) {
   if (!Array.isArray(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an array of strings.`
+      path: path4,
+      message: `"${path4}" must be an array of strings.`
     });
     return;
   }
@@ -3391,8 +3391,8 @@ function validateStringArray(value, path3, errors) {
     const entry = entries[index];
     if (typeof entry !== "string" || entry.trim().length === 0) {
       errors.push({
-        path: `${path3}[${index}]`,
-        message: `"${path3}" entries must be non-empty strings.`
+        path: `${path4}[${index}]`,
+        message: `"${path4}" entries must be non-empty strings.`
       });
     }
   }
@@ -3581,6 +3581,279 @@ function computeActualCostUsd(input) {
   }
   const cost = inputTokens / 1e6 * price.inputPerMTokUsd + outputTokens / 1e6 * price.outputPerMTokUsd;
   return Math.round(cost * 1e6) / 1e6;
+}
+
+// ../core/src/session-usage.ts
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+var nodeFs = {
+  readFileSync: (filePath) => readFileSync(filePath, "utf8"),
+  readdirSync: (dirPath) => readdirSync(dirPath),
+  statSync: (filePath) => ({ mtimeMs: statSync(filePath).mtimeMs })
+};
+var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
+function encodeProjectDirKey(cwd) {
+  return cwd.replace(/[^a-zA-Z0-9]/g, "-");
+}
+function resolveClaudeConfigDir(input) {
+  const env = input?.env ?? process.env;
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  if (override) {
+    return override;
+  }
+  return path.join(input?.homedir ?? os.homedir(), ".claude");
+}
+function sessionCostSidecarPath(claudeConfigDir) {
+  return path.join(claudeConfigDir, "hokusai", "session-cost.json");
+}
+function sessionTranscriptDir(claudeConfigDir, cwd) {
+  return path.join(claudeConfigDir, "projects", encodeProjectDirKey(cwd));
+}
+function claudeConfigDirFrom(input) {
+  return resolveClaudeConfigDir({
+    ...input.env ? { env: input.env } : {},
+    ...input.homedir ? { homedir: input.homedir } : {}
+  });
+}
+function readSessionCostSidecar(sidecarPath, fs = nodeFs) {
+  let raw;
+  try {
+    raw = fs.readFileSync(sidecarPath);
+  } catch {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return void 0;
+    }
+    const record = parsed;
+    const sessionId = record.session_id;
+    const cost = record.cost_usd;
+    if (typeof sessionId !== "string" || sessionId.length === 0) {
+      return void 0;
+    }
+    if (typeof cost !== "number" || !Number.isFinite(cost)) {
+      return void 0;
+    }
+    return {
+      session_id: sessionId,
+      cost_usd: cost,
+      ...typeof record.updated_at === "string" ? { updated_at: record.updated_at } : {},
+      ...typeof record.input_tokens === "number" && Number.isFinite(record.input_tokens) ? { input_tokens: record.input_tokens } : {},
+      ...typeof record.output_tokens === "number" && Number.isFinite(record.output_tokens) ? { output_tokens: record.output_tokens } : {}
+    };
+  } catch {
+    return void 0;
+  }
+}
+function isSidecarFresh(sidecar, nowIso, freshnessMs) {
+  if (!sidecar.updated_at) {
+    return true;
+  }
+  const updated = Date.parse(sidecar.updated_at);
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(updated) || !Number.isFinite(now)) {
+    return true;
+  }
+  return Math.abs(now - updated) <= freshnessMs;
+}
+function captureCostBaseline(input) {
+  const snapshot = {
+    baselineAt: input.nowIso,
+    projectDirKey: encodeProjectDirKey(input.cwd)
+  };
+  try {
+    const configDir = claudeConfigDirFrom(input);
+    const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
+    if (sidecar && isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)) {
+      return {
+        ...snapshot,
+        costBaselineUsd: sidecar.cost_usd,
+        sessionId: sidecar.session_id
+      };
+    }
+  } catch {
+  }
+  return snapshot;
+}
+function resolveSidecarCostDiff(input) {
+  const { sidecar, baselineSessionId, costBaselineUsd } = input;
+  if (!sidecar) {
+    return void 0;
+  }
+  if (typeof costBaselineUsd !== "number" || !Number.isFinite(costBaselineUsd)) {
+    return void 0;
+  }
+  if (baselineSessionId !== void 0 && sidecar.session_id !== baselineSessionId) {
+    return void 0;
+  }
+  const diff = sidecar.cost_usd - costBaselineUsd;
+  const clamped = diff > 0 ? diff : 0;
+  return Math.round(clamped * 1e6) / 1e6;
+}
+function toNumericToken(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+function extractUsage(record) {
+  const message = record.message;
+  if (message && typeof message === "object" && !Array.isArray(message)) {
+    const usage2 = message.usage;
+    if (usage2 && typeof usage2 === "object" && !Array.isArray(usage2)) {
+      return usage2;
+    }
+  }
+  const usage = record.usage;
+  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
+    return usage;
+  }
+  return void 0;
+}
+function parseTranscriptUsageTotals(input) {
+  const afterMs = input.afterIso ? Date.parse(input.afterIso) : Number.NaN;
+  const hasAfter = Number.isFinite(afterMs);
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let turns = 0;
+  for (const line of input.contents.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let entry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry;
+    if (hasAfter) {
+      const timestamp = record.timestamp;
+      if (typeof timestamp !== "string") {
+        continue;
+      }
+      const timestampMs = Date.parse(timestamp);
+      if (!Number.isFinite(timestampMs) || timestampMs <= afterMs) {
+        continue;
+      }
+    }
+    const usage = extractUsage(record);
+    if (!usage) {
+      continue;
+    }
+    const inputForTurn = toNumericToken(usage.input_tokens) + toNumericToken(usage.cache_creation_input_tokens) + toNumericToken(usage.cache_read_input_tokens);
+    const outputForTurn = toNumericToken(usage.output_tokens);
+    if (inputForTurn === 0 && outputForTurn === 0) {
+      continue;
+    }
+    inputTokens += inputForTurn;
+    outputTokens += outputForTurn;
+    turns += 1;
+  }
+  return { inputTokens, outputTokens, turns };
+}
+function locateSessionTranscript(input) {
+  const fs = input.fs ?? nodeFs;
+  let names;
+  try {
+    names = fs.readdirSync(input.dir);
+  } catch {
+    return void 0;
+  }
+  let best;
+  let bestMtime = Number.NEGATIVE_INFINITY;
+  for (const name of names) {
+    if (!name.endsWith(".jsonl")) {
+      continue;
+    }
+    const full = path.join(input.dir, name);
+    let mtime;
+    try {
+      mtime = fs.statSync(full).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (mtime > bestMtime) {
+      bestMtime = mtime;
+      best = full;
+    }
+  }
+  return best;
+}
+function computeTranscriptCostUsd(input) {
+  const totals = parseTranscriptUsageTotals({
+    contents: input.contents,
+    ...input.afterIso ? { afterIso: input.afterIso } : {}
+  });
+  if (totals.turns === 0) {
+    return void 0;
+  }
+  return computeActualCostUsd({
+    model: input.model,
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens
+  });
+}
+function resolveActualCostUsd(input) {
+  if (typeof input.explicitActualCostUsd === "number" && Number.isFinite(input.explicitActualCostUsd)) {
+    return input.explicitActualCostUsd;
+  }
+  if (input.inputTokens !== void 0 && input.outputTokens !== void 0) {
+    const fromTokens = computeActualCostUsd({
+      model: input.model,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens
+    });
+    if (fromTokens !== void 0) {
+      return fromTokens;
+    }
+  }
+  const routeContext = input.routeContext;
+  if (routeContext && typeof routeContext.costBaselineUsd === "number") {
+    try {
+      const configDir = claudeConfigDirFrom(input);
+      const sidecar = readSessionCostSidecar(
+        sessionCostSidecarPath(configDir),
+        input.fs ?? nodeFs
+      );
+      const diff = resolveSidecarCostDiff({
+        sidecar,
+        baselineSessionId: routeContext.sessionId,
+        costBaselineUsd: routeContext.costBaselineUsd
+      });
+      if (diff !== void 0) {
+        return diff;
+      }
+    } catch {
+    }
+  }
+  if (routeContext?.baselineAt) {
+    try {
+      const configDir = claudeConfigDirFrom(input);
+      const dir = routeContext.projectDirKey ? path.join(configDir, "projects", routeContext.projectDirKey) : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
+      const transcriptPath = locateSessionTranscript({
+        dir,
+        ...input.fs ? { fs: input.fs } : {}
+      });
+      if (transcriptPath) {
+        const contents = (input.fs ?? nodeFs).readFileSync(transcriptPath);
+        const cost = computeTranscriptCostUsd({
+          contents,
+          model: input.model,
+          afterIso: routeContext.baselineAt
+        });
+        if (cost !== void 0) {
+          return cost;
+        }
+      }
+    } catch {
+    }
+  }
+  return void 0;
 }
 
 // ../core/src/plugin-commands/commands.ts
@@ -3795,10 +4068,17 @@ function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
   const allowedModels = parseMetadataList(firstMetadataValue(metadata, "available_models")) ?? parseMetadataList(firstMetadataValue(metadata, "available_coder_models")) ?? (modelConstraints && modelConstraints.length > 0 ? [...modelConstraints] : []);
   const budgetRaw = firstMetadataValue(metadata, "max_cost_usd");
   const budgetUsd = budgetRaw !== void 0 ? Number(budgetRaw) : void 0;
+  const costBaseline = signals.costBaseline;
   return {
     taskDescriptor,
     allowedModels,
-    ...budgetUsd !== void 0 && Number.isFinite(budgetUsd) ? { budgetUsd } : {}
+    ...budgetUsd !== void 0 && Number.isFinite(budgetUsd) ? { budgetUsd } : {},
+    ...costBaseline ? {
+      baselineAt: costBaseline.baselineAt,
+      projectDirKey: costBaseline.projectDirKey,
+      ...costBaseline.costBaselineUsd !== void 0 ? { costBaselineUsd: costBaseline.costBaselineUsd } : {},
+      ...costBaseline.sessionId !== void 0 ? { sessionId: costBaseline.sessionId } : {}
+    } : {}
   };
 }
 function parseRouteContext(value) {
@@ -3816,7 +4096,11 @@ function parseRouteContext(value) {
     return {
       taskDescriptor,
       allowedModels,
-      ...typeof record.budgetUsd === "number" && Number.isFinite(record.budgetUsd) ? { budgetUsd: record.budgetUsd } : {}
+      ...typeof record.budgetUsd === "number" && Number.isFinite(record.budgetUsd) ? { budgetUsd: record.budgetUsd } : {},
+      ...typeof record.costBaselineUsd === "number" && Number.isFinite(record.costBaselineUsd) ? { costBaselineUsd: record.costBaselineUsd } : {},
+      ...typeof record.sessionId === "string" && record.sessionId.length > 0 ? { sessionId: record.sessionId } : {},
+      ...typeof record.baselineAt === "string" && record.baselineAt.length > 0 ? { baselineAt: record.baselineAt } : {},
+      ...typeof record.projectDirKey === "string" && record.projectDirKey.length > 0 ? { projectDirKey: record.projectDirKey } : {}
     };
   } catch {
     return void 0;
@@ -4234,12 +4518,18 @@ function createRouteTask(profile) {
     );
     if (storedCorrelation.record) {
       const redactionConfig = context.builderOptions.redactionConfig ?? DEFAULT_REDACTION_CONFIG;
+      const costBaseline = captureCostBaseline({
+        cwd: process.cwd(),
+        nowIso: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
+        ...options?.env ? { env: options.env } : {}
+      });
       const routeContextProjection = buildRouteContextProjection(
         input.metadata,
         packetResult.packet.modelConstraints,
         {
           taskText: input.taskText,
-          ...input.repositorySignals ? { repositorySignals: input.repositorySignals } : {}
+          ...input.repositorySignals ? { repositorySignals: input.repositorySignals } : {},
+          costBaseline
         }
       );
       await store.putCorrelation({
@@ -5402,11 +5692,14 @@ function createRunReportCli(profile, impls) {
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
     const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
     const resolvedActualModel = parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "";
-    const resolvedActualCostUsd = parsed.actualCostUsd ?? (parsed.inputTokens !== void 0 && parsed.outputTokens !== void 0 ? computeActualCostUsd({
+    const resolvedActualCostUsd = resolveActualCostUsd({
       model: resolvedActualModel,
-      inputTokens: parsed.inputTokens,
-      outputTokens: parsed.outputTokens
-    }) : void 0);
+      env,
+      ...parsed.actualCostUsd !== void 0 ? { explicitActualCostUsd: parsed.actualCostUsd } : {},
+      ...parsed.inputTokens !== void 0 ? { inputTokens: parsed.inputTokens } : {},
+      ...parsed.outputTokens !== void 0 ? { outputTokens: parsed.outputTokens } : {},
+      ...latest?.routeContext ? { routeContext: latest.routeContext } : {}
+    });
     const reportInput = {
       taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
@@ -6160,10 +6453,10 @@ function isSparseCellMetadata(value) {
   }
   return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
 }
-function assertNoForbiddenKeys(value, path3 = []) {
+function assertNoForbiddenKeys(value, path4 = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys(item, [...path3, String(index)]);
+      assertNoForbiddenKeys(item, [...path4, String(index)]);
     }
     return;
   }
@@ -6175,10 +6468,10 @@ function assertNoForbiddenKeys(value, path3 = []) {
     if (FORBIDDEN_KEYS.has(normalizedKey)) {
       throw new ContributionValidationError(
         "forbidden_field",
-        `Forbidden field at ${[...path3, key].join(".")}`
+        `Forbidden field at ${[...path4, key].join(".")}`
       );
     }
-    assertNoForbiddenKeys(child, [...path3, key]);
+    assertNoForbiddenKeys(child, [...path4, key]);
   }
 }
 var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
@@ -6530,18 +6823,18 @@ function buildHarnessOutcomeRow(projection) {
 
 // src/config-path.ts
 import { existsSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import os2 from "node:os";
+import path2 from "node:path";
 var CLAUDE_CODE_STATE_FILE = "state.json";
 function resolveClaudeCodeConfigPath(options) {
-  const dir = options?.override?.trim() || process.env.HOKUSAI_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude", "hokusai");
+  const dir = options?.override?.trim() || process.env.HOKUSAI_CONFIG_DIR?.trim() || path2.join(os2.homedir(), ".claude", "hokusai");
   return {
     dir,
     exists: existsSync(dir)
   };
 }
 function getClaudeCodeStateFilePath(configDir) {
-  return path.join(configDir, CLAUDE_CODE_STATE_FILE);
+  return path2.join(configDir, CLAUDE_CODE_STATE_FILE);
 }
 
 // src/task-packet.ts
@@ -6942,7 +7235,7 @@ async function readStateFile(filePath) {
   }
 }
 async function writeStateFile(filePath, state) {
-  await mkdir4(path2.dirname(filePath), { recursive: true });
+  await mkdir4(path3.dirname(filePath), { recursive: true });
   await writeFile4(filePath, JSON.stringify(state, null, 2), "utf8");
 }
 function createClaudeCodeAdapter(options) {

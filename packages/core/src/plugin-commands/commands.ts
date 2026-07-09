@@ -12,6 +12,7 @@ import {
   buildOutcomeReport,
   canReportOutcome,
   canRoute,
+  captureCostBaseline,
   classifyTaskFamily,
   defaultPluginConfigPath,
   hashPayload,
@@ -29,6 +30,7 @@ import {
   type ConsentConfig,
   type ConsentSettings,
   type ContributionAcceptedResponse,
+  type CostBaselineSnapshot,
   type ContributionRequest,
   type HarnessOutcomeRowV1,
   type HarnessRecommendation,
@@ -266,6 +268,7 @@ function buildRouteContextProjection(
   signals: {
     taskText?: string | undefined;
     repositorySignals?: RouteRepositorySignals | undefined;
+    costBaseline?: CostBaselineSnapshot | undefined;
   } = {},
 ): RouteContextProjection {
   const derived = deriveTaskDescriptor({
@@ -314,10 +317,24 @@ function buildRouteContextProjection(
   const budgetRaw = firstMetadataValue(metadata, 'max_cost_usd');
   const budgetUsd = budgetRaw !== undefined ? Number(budgetRaw) : undefined;
 
+  const costBaseline = signals.costBaseline;
+
   return {
     taskDescriptor,
     allowedModels,
     ...(budgetUsd !== undefined && Number.isFinite(budgetUsd) ? { budgetUsd } : {}),
+    ...(costBaseline
+      ? {
+          baselineAt: costBaseline.baselineAt,
+          projectDirKey: costBaseline.projectDirKey,
+          ...(costBaseline.costBaselineUsd !== undefined
+            ? { costBaselineUsd: costBaseline.costBaselineUsd }
+            : {}),
+          ...(costBaseline.sessionId !== undefined
+            ? { sessionId: costBaseline.sessionId }
+            : {}),
+        }
+      : {}),
   };
 }
 
@@ -352,6 +369,18 @@ function parseRouteContext(value: string | undefined): RouteContextProjection | 
       allowedModels,
       ...(typeof record.budgetUsd === 'number' && Number.isFinite(record.budgetUsd)
         ? { budgetUsd: record.budgetUsd }
+        : {}),
+      ...(typeof record.costBaselineUsd === 'number' && Number.isFinite(record.costBaselineUsd)
+        ? { costBaselineUsd: record.costBaselineUsd }
+        : {}),
+      ...(typeof record.sessionId === 'string' && record.sessionId.length > 0
+        ? { sessionId: record.sessionId }
+        : {}),
+      ...(typeof record.baselineAt === 'string' && record.baselineAt.length > 0
+        ? { baselineAt: record.baselineAt }
+        : {}),
+      ...(typeof record.projectDirKey === 'string' && record.projectDirKey.length > 0
+        ? { projectDirKey: record.projectDirKey }
         : {}),
     };
   } catch {
@@ -955,6 +984,13 @@ export function createRouteTask<
       const redactionConfig =
         (context.builderOptions as { redactionConfig?: RedactionConfig })
           .redactionConfig ?? DEFAULT_REDACTION_CONFIG;
+      // Snapshot the session cost baseline so the report step can diff it.
+      // Purely best-effort: any failure yields a baseline without a cost anchor.
+      const costBaseline = captureCostBaseline({
+        cwd: process.cwd(),
+        nowIso: (options?.clock ?? (() => new Date()))().toISOString(),
+        ...(options?.env ? { env: options.env } : {}),
+      });
       const routeContextProjection = buildRouteContextProjection(
         input.metadata,
         packetResult.packet.modelConstraints,
@@ -963,6 +999,7 @@ export function createRouteTask<
           ...(input.repositorySignals
             ? { repositorySignals: input.repositorySignals }
             : {}),
+          costBaseline,
         },
       );
       await store.putCorrelation({

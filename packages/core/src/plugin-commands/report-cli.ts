@@ -2,9 +2,9 @@ import {
   FilePluginConfigStore,
   HokusaiClient,
   HokusaiNetworkError,
-  computeActualCostUsd,
   defaultPluginConfigPath,
   loadPluginConfig,
+  resolveActualCostUsd,
   type BuildSummary,
   type CoarseBucket,
   type CompletionStatus,
@@ -547,18 +547,22 @@ export function createRunReportCli<
       pipedInput.actualModel ??
       (recommendationAccepted === true ? latest?.recommendedModelId : undefined) ??
       '';
-    // Resolve actual cost: an explicit --actual-cost-usd wins; otherwise derive
-    // it from token counts + the resolved model via the core price table. If the
-    // model is unknown or tokens are missing, cost is omitted (row stays partial).
-    const resolvedActualCostUsd =
-      parsed.actualCostUsd ??
-      (parsed.inputTokens !== undefined && parsed.outputTokens !== undefined
-        ? computeActualCostUsd({
-            model: resolvedActualModel,
-            inputTokens: parsed.inputTokens,
-            outputTokens: parsed.outputTokens,
-          })
-        : undefined);
+    // Resolve actual cost with layered fallback (first finite value wins):
+    //  1. explicit --actual-cost-usd, 2. --input/--output-tokens via the price
+    //  table, 3. statusline sidecar diff vs the route baseline, 4. best-effort
+    //  transcript usage priced by the resolved model, 5. omitted (partial row).
+    // Tiers 3/4 engage only when the stored routeContext carries a cost/time
+    // baseline, so they never touch the filesystem for a bare report.
+    const resolvedActualCostUsd = resolveActualCostUsd({
+      model: resolvedActualModel,
+      env,
+      ...(parsed.actualCostUsd !== undefined
+        ? { explicitActualCostUsd: parsed.actualCostUsd }
+        : {}),
+      ...(parsed.inputTokens !== undefined ? { inputTokens: parsed.inputTokens } : {}),
+      ...(parsed.outputTokens !== undefined ? { outputTokens: parsed.outputTokens } : {}),
+      ...(latest?.routeContext ? { routeContext: latest.routeContext } : {}),
+    });
     const reportInput: ReportOutcomeInputWithTaskId = {
       taskId:
         parsed.taskId ??

@@ -50,6 +50,10 @@ hokusai-route --json --max-cost-usd 0.50 --task "$ARGUMENTS"
 - A training-eligible contribution needs both a budget (here) and an actual cost
   at report time. Without a budget, the outcome is still recorded, but only as
   telemetry. Do not invent a budget the user did not give.
+- Routing also snapshots a cost baseline so the report step can auto-fill the
+  actual cost. For an exact figure, enable the optional Hokusai statusline (see
+  `statusline/README.md`); otherwise the plugin best-effort-derives cost from the
+  session transcript at report time.
 
 ## Applying the result
 
