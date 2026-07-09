@@ -3550,6 +3550,8 @@ function summarizeFrameworkSignals(dependencyCategories) {
 }
 
 // ../core/src/pricing.ts
+var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
+var CACHE_READ_INPUT_MULTIPLIER = 0.1;
 var ANTHROPIC_MODEL_PRICING = {
   "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
   "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
@@ -3570,16 +3572,25 @@ function resolveModelPrice(model) {
   }
   return ANTHROPIC_MODEL_PRICING[normalized] ?? ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, "")];
 }
+function nonNegativeOrNull(value) {
+  if (value === void 0) {
+    return 0;
+  }
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
 function computeActualCostUsd(input) {
   const price = resolveModelPrice(input.model);
   if (!price) {
     return void 0;
   }
-  const { inputTokens, outputTokens } = input;
-  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens) || inputTokens < 0 || outputTokens < 0) {
+  const inputTokens = nonNegativeOrNull(input.inputTokens);
+  const outputTokens = nonNegativeOrNull(input.outputTokens);
+  const cacheCreationTokens = nonNegativeOrNull(input.cacheCreationTokens);
+  const cacheReadTokens = nonNegativeOrNull(input.cacheReadTokens);
+  if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
     return void 0;
   }
-  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + outputTokens / 1e6 * price.outputPerMTokUsd;
+  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
   return Math.round(cost * 1e6) / 1e6;
 }
 
@@ -3714,6 +3725,8 @@ function parseTranscriptUsageTotals(input) {
   const afterMs = input.afterIso ? Date.parse(input.afterIso) : Number.NaN;
   const hasAfter = Number.isFinite(afterMs);
   let inputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
   let outputTokens = 0;
   let turns = 0;
   for (const line of input.contents.split("\n")) {
@@ -3745,16 +3758,20 @@ function parseTranscriptUsageTotals(input) {
     if (!usage) {
       continue;
     }
-    const inputForTurn = toNumericToken(usage.input_tokens) + toNumericToken(usage.cache_creation_input_tokens) + toNumericToken(usage.cache_read_input_tokens);
+    const inputForTurn = toNumericToken(usage.input_tokens);
+    const cacheCreationForTurn = toNumericToken(usage.cache_creation_input_tokens);
+    const cacheReadForTurn = toNumericToken(usage.cache_read_input_tokens);
     const outputForTurn = toNumericToken(usage.output_tokens);
-    if (inputForTurn === 0 && outputForTurn === 0) {
+    if (inputForTurn === 0 && cacheCreationForTurn === 0 && cacheReadForTurn === 0 && outputForTurn === 0) {
       continue;
     }
     inputTokens += inputForTurn;
+    cacheCreationTokens += cacheCreationForTurn;
+    cacheReadTokens += cacheReadForTurn;
     outputTokens += outputForTurn;
     turns += 1;
   }
-  return { inputTokens, outputTokens, turns };
+  return { inputTokens, cacheCreationTokens, cacheReadTokens, outputTokens, turns };
 }
 function locateSessionTranscript(input) {
   const fs = input.fs ?? nodeFs;
@@ -3795,7 +3812,9 @@ function computeTranscriptCostUsd(input) {
   return computeActualCostUsd({
     model: input.model,
     inputTokens: totals.inputTokens,
-    outputTokens: totals.outputTokens
+    outputTokens: totals.outputTokens,
+    cacheCreationTokens: totals.cacheCreationTokens,
+    cacheReadTokens: totals.cacheReadTokens
   });
 }
 function resolveActualCostUsd(input) {

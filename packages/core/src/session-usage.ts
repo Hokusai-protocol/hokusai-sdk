@@ -72,10 +72,14 @@ export interface CostBaselineSnapshot {
   sessionId?: string;
 }
 
-/** Token totals summed from a transcript, already folding cache tokens in. */
+/** Token totals summed from a transcript, kept per-tier for correct pricing. */
 export interface TranscriptUsageTotals {
-  /** input_tokens + cache_creation_input_tokens + cache_read_input_tokens. */
+  /** Uncached input_tokens. */
   inputTokens: number;
+  /** cache_creation_input_tokens (billed above the input rate). */
+  cacheCreationTokens: number;
+  /** cache_read_input_tokens (billed below the input rate). */
+  cacheReadTokens: number;
   /** output_tokens. */
   outputTokens: number;
   /** Number of turns that contributed usage after the baseline filter. */
@@ -302,6 +306,8 @@ export function parseTranscriptUsageTotals(input: {
   const hasAfter = Number.isFinite(afterMs);
 
   let inputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
   let outputTokens = 0;
   let turns = 0;
 
@@ -338,21 +344,27 @@ export function parseTranscriptUsageTotals(input: {
       continue;
     }
 
-    const inputForTurn =
-      toNumericToken(usage.input_tokens) +
-      toNumericToken(usage.cache_creation_input_tokens) +
-      toNumericToken(usage.cache_read_input_tokens);
+    const inputForTurn = toNumericToken(usage.input_tokens);
+    const cacheCreationForTurn = toNumericToken(usage.cache_creation_input_tokens);
+    const cacheReadForTurn = toNumericToken(usage.cache_read_input_tokens);
     const outputForTurn = toNumericToken(usage.output_tokens);
-    if (inputForTurn === 0 && outputForTurn === 0) {
+    if (
+      inputForTurn === 0 &&
+      cacheCreationForTurn === 0 &&
+      cacheReadForTurn === 0 &&
+      outputForTurn === 0
+    ) {
       continue;
     }
 
     inputTokens += inputForTurn;
+    cacheCreationTokens += cacheCreationForTurn;
+    cacheReadTokens += cacheReadForTurn;
     outputTokens += outputForTurn;
     turns += 1;
   }
 
-  return { inputTokens, outputTokens, turns };
+  return { inputTokens, cacheCreationTokens, cacheReadTokens, outputTokens, turns };
 }
 
 /**
@@ -418,6 +430,8 @@ export function computeTranscriptCostUsd(input: {
     model: input.model,
     inputTokens: totals.inputTokens,
     outputTokens: totals.outputTokens,
+    cacheCreationTokens: totals.cacheCreationTokens,
+    cacheReadTokens: totals.cacheReadTokens,
   });
 }
 

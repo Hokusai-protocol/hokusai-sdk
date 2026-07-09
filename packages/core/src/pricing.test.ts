@@ -59,6 +59,40 @@ describe('computeActualCostUsd', () => {
     ).toBeCloseTo(expected, 9);
   });
 
+  it('prices cache write at 1.25x and cache read at 0.1x the input rate', () => {
+    // opus input $5/M: input 1M @ $5 + write 1M @ $6.25 + read 1M @ $0.5 = 11.75
+    expect(
+      computeActualCostUsd({
+        model: 'claude-opus-4-8',
+        inputTokens: 1_000_000,
+        cacheCreationTokens: 1_000_000,
+        cacheReadTokens: 1_000_000,
+        outputTokens: 0,
+      }),
+    ).toBe(11.75);
+  });
+
+  it('treats absent cache token counts as zero', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'claude-opus-4-8',
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+      }),
+    ).toBe(5);
+  });
+
+  it('returns undefined for a negative cache token count', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'claude-opus-4-8',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheReadTokens: -5,
+      }),
+    ).toBeUndefined();
+  });
+
   it('returns undefined (no fabricated cost) for an unknown model', () => {
     expect(
       computeActualCostUsd({

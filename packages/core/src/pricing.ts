@@ -13,7 +13,7 @@
  */
 
 /** ISO date the price table below was last verified against Anthropic pricing. */
-export const ANTHROPIC_MODEL_PRICING_AS_OF = '2026-06-24';
+export const ANTHROPIC_MODEL_PRICING_AS_OF = '2026-07-09';
 
 export interface ModelPrice {
   /** USD per 1,000,000 input tokens. */
@@ -21,6 +21,15 @@ export interface ModelPrice {
   /** USD per 1,000,000 output tokens. */
   outputPerMTokUsd: number;
 }
+
+/**
+ * Prompt-cache pricing multipliers relative to the base input rate, per
+ * Anthropic's published pricing. Cache writes (5-minute TTL, which Claude Code
+ * uses by default) bill at 1.25x input; cache reads bill at 0.1x input. Applied
+ * in {@link computeActualCostUsd} when cache token counts are supplied.
+ */
+export const CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
+export const CACHE_READ_INPUT_MULTIPLIER = 0.1;
 
 /**
  * Per-model prices keyed by canonical Anthropic model id. Date-suffixed ids
@@ -63,16 +72,35 @@ export function resolveModelPrice(model: string | undefined): ModelPrice | undef
 export interface TokenCostInput {
   /** Resolved model actually run (Anthropic model id). */
   model: string;
-  /** Prompt/input tokens consumed. */
+  /** Uncached prompt/input tokens consumed. */
   inputTokens: number;
   /** Completion/output tokens produced. */
   outputTokens: number;
+  /**
+   * Prompt-cache write tokens (`cache_creation_input_tokens`). Billed at
+   * {@link CACHE_WRITE_INPUT_MULTIPLIER}x the input rate. Defaults to 0.
+   */
+  cacheCreationTokens?: number;
+  /**
+   * Prompt-cache read tokens (`cache_read_input_tokens`). Billed at
+   * {@link CACHE_READ_INPUT_MULTIPLIER}x the input rate. Defaults to 0.
+   */
+  cacheReadTokens?: number;
+}
+
+/** A finite, non-negative number, or 0 when the value is absent/invalid-as-zero. */
+function nonNegativeOrNull(value: number | undefined): number | null {
+  if (value === undefined) {
+    return 0;
+  }
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 /**
- * Compute `actual_cost_usd` from token counts and the resolved model. Returns
- * `undefined` — never a fabricated value — when the model is unknown or the
- * token counts are not finite, non-negative numbers.
+ * Compute `actual_cost_usd` from token counts and the resolved model. Cache
+ * write/read tokens are billed at their reduced rates relative to input. Returns
+ * `undefined` — never a fabricated value — when the model is unknown or any
+ * supplied token count is not a finite, non-negative number.
  */
 export function computeActualCostUsd(input: TokenCostInput): number | undefined {
   const price = resolveModelPrice(input.model);
@@ -80,18 +108,27 @@ export function computeActualCostUsd(input: TokenCostInput): number | undefined 
     return undefined;
   }
 
-  const { inputTokens, outputTokens } = input;
+  const inputTokens = nonNegativeOrNull(input.inputTokens);
+  const outputTokens = nonNegativeOrNull(input.outputTokens);
+  const cacheCreationTokens = nonNegativeOrNull(input.cacheCreationTokens);
+  const cacheReadTokens = nonNegativeOrNull(input.cacheReadTokens);
   if (
-    !Number.isFinite(inputTokens) ||
-    !Number.isFinite(outputTokens) ||
-    inputTokens < 0 ||
-    outputTokens < 0
+    inputTokens === null ||
+    outputTokens === null ||
+    cacheCreationTokens === null ||
+    cacheReadTokens === null
   ) {
     return undefined;
   }
 
   const cost =
     (inputTokens / 1_000_000) * price.inputPerMTokUsd +
+    (cacheCreationTokens / 1_000_000) *
+      price.inputPerMTokUsd *
+      CACHE_WRITE_INPUT_MULTIPLIER +
+    (cacheReadTokens / 1_000_000) *
+      price.inputPerMTokUsd *
+      CACHE_READ_INPUT_MULTIPLIER +
     (outputTokens / 1_000_000) * price.outputPerMTokUsd;
 
   // Round to 6 decimal places (micro-dollar) to avoid floating-point noise.

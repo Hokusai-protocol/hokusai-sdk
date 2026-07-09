@@ -238,7 +238,9 @@ describe('parseTranscriptUsageTotals', () => {
     ].join('\n');
 
     expect(parseTranscriptUsageTotals({ contents })).toEqual({
-      inputTokens: 100 + 10 + 5 + 20,
+      inputTokens: 100 + 20,
+      cacheCreationTokens: 10,
+      cacheReadTokens: 5,
       outputTokens: 40 + 8,
       turns: 2,
     });
@@ -256,6 +258,8 @@ describe('parseTranscriptUsageTotals', () => {
 
     expect(parseTranscriptUsageTotals({ contents })).toEqual({
       inputTokens: 7,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
       outputTokens: 3,
       turns: 1,
     });
@@ -279,7 +283,13 @@ describe('parseTranscriptUsageTotals', () => {
 
     expect(
       parseTranscriptUsageTotals({ contents, afterIso: '2026-07-08T12:00:00.000Z' }),
-    ).toEqual({ inputTokens: 10, outputTokens: 4, turns: 1 });
+    ).toEqual({
+      inputTokens: 10,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      outputTokens: 4,
+      turns: 1,
+    });
   });
 });
 
@@ -313,6 +323,25 @@ describe('computeTranscriptCostUsd', () => {
     expect(
       computeTranscriptCostUsd({ contents, model: 'claude-opus-4-8' }),
     ).toBe(30);
+  });
+
+  it('prices cache write/read tokens at their reduced rates, not the input rate', () => {
+    const contents = JSON.stringify({
+      timestamp: '2026-07-08T12:05:00.000Z',
+      message: {
+        usage: {
+          input_tokens: 1_000_000,
+          cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000,
+          output_tokens: 0,
+        },
+      },
+    });
+    // opus input $5/M: input 1M @ $5 + cache-write 1M @ $5*1.25 + cache-read 1M @ $5*0.1
+    // = 5 + 6.25 + 0.5 = 11.75  (the old folded logic charged 3*5 = 15)
+    expect(
+      computeTranscriptCostUsd({ contents, model: 'claude-opus-4-8' }),
+    ).toBe(11.75);
   });
 
   it('returns undefined when no turn carried usage', () => {
