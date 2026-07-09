@@ -109,7 +109,8 @@ export interface ReportOutcomeInputWithTaskId extends OutcomeReportInput {
  * prompt or task text is never included.
  */
 export interface RouteContextProjection {
-  taskDescriptor: Record<string, string>;
+  /** Categorical labels plus a numeric `complexity` score. */
+  taskDescriptor: Record<string, string | number>;
   allowedModels: string[];
   budgetUsd?: number;
   /**

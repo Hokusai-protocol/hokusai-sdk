@@ -3605,6 +3605,55 @@ function summarizeFrameworkSignals(dependencyCategories) {
 }
 
 // ../core/src/task-descriptor.ts
+var REASONING_DEPTH_COMPLEXITY = {
+  shallow: 3,
+  standard: 5,
+  deep: 8
+};
+var COMPLEXITY_ALIASES = {
+  low: 3,
+  small: 3,
+  medium: 5,
+  moderate: 5,
+  high: 8,
+  large: 8,
+  very_high: 10,
+  ...REASONING_DEPTH_COMPLEXITY
+};
+function normalizeComplexity2(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : void 0;
+  }
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return void 0;
+  }
+  const alias = COMPLEXITY_ALIASES[normalized];
+  if (alias !== void 0) {
+    return alias;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+var HOKUSAI_LANGUAGE_BY_LABEL = {
+  python: "python",
+  typescript: "typescript",
+  javascript: "javascript",
+  go: "go",
+  rust: "rust",
+  java: "java",
+  shell: "bash",
+  bash: "bash"
+};
+function normalizeHokusaiLanguage(label) {
+  if (typeof label !== "string") {
+    return "unknown";
+  }
+  return HOKUSAI_LANGUAGE_BY_LABEL[label.trim().toLowerCase()] ?? "unknown";
+}
 var TASK_FAMILY_TO_HOKUSAI_TYPE = {
   bugfix: "bugfix",
   feature: "feature",
@@ -3639,7 +3688,7 @@ function deriveTaskDescriptor(input) {
   const taskText = input.taskText?.trim();
   if (taskText && taskText.length > 0) {
     derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
-    derived.complexity = inferReasoningDepth({ text: taskText });
+    derived.complexity = REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
   }
   const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
   if (repoSizeBucket) {
@@ -3649,7 +3698,7 @@ function deriveTaskDescriptor(input) {
   if (extensionCounts) {
     const dominant = dominantLanguage(extensionCounts);
     if (dominant) {
-      derived.language = dominant;
+      derived.language = normalizeHokusaiLanguage(dominant);
     }
   }
   return derived;
@@ -4115,17 +4164,21 @@ function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
     taskText: signals.taskText,
     repositorySignals: signals.repositorySignals
   });
+  const languageOverride = firstMetadataValue(metadata, "language", "primaryLanguage");
+  const complexityOverride = normalizeComplexity2(
+    firstMetadataValue(metadata, "estimated_complexity", "complexity", "reasoningDepth")
+  );
   const descriptorPairs = [
     [
       "task_type",
       firstMetadataValue(metadata, "task_type", "taskType", "taskFamily") ?? derived.task_type
     ],
-    ["language", firstMetadataValue(metadata, "language", "primaryLanguage") ?? derived.language],
-    ["domain", firstMetadataValue(metadata, "domain")],
     [
-      "complexity",
-      firstMetadataValue(metadata, "estimated_complexity", "complexity", "reasoningDepth") ?? derived.complexity
+      "language",
+      languageOverride !== void 0 ? normalizeHokusaiLanguage(languageOverride) : derived.language
     ],
+    ["domain", firstMetadataValue(metadata, "domain")],
+    ["complexity", complexityOverride ?? derived.complexity],
     [
       "repo_size_bucket",
       firstMetadataValue(metadata, "repo_size_bucket", "repositoryScale") ?? derived.repo_size_bucket

@@ -32,6 +32,7 @@ import {
   type ContributionAcceptedResponse,
   type HarnessOutcomeRowV1,
   type ModelDefinition,
+  type TaskDescriptorFields,
   type TaskDescriptorSignals,
 } from '@hokusai/core';
 import type { ReferenceHarnessAdapter } from '../harness/index.js';
@@ -66,7 +67,7 @@ export interface HokusaiLoopOptions {
 export interface HokusaiLoopResult {
   /** The API's inference log id, threaded from route into the row. */
   inferenceLogId: string;
-  taskDescriptor: Record<string, string>;
+  taskDescriptor: TaskDescriptorFields;
   allowedModels: string[];
   selectedModel: string;
   promptPreview: string;
