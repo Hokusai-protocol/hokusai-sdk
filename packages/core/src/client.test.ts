@@ -12,8 +12,11 @@ import {
   HokusaiValidationError,
   createGatedClient,
   type ConsentRequiredError,
+  type ContributionAcceptedResponse,
+  type ContributionRequest,
   type FetchTransport,
   type FetchTransportRequestInit,
+  type HarnessOutcomeRowV1,
 } from './index.js';
 import { InMemoryModelRegistry } from './model-registry.js';
 import type { OutcomeReport, RouteRequest } from './schemas.js';
@@ -976,5 +979,126 @@ describe('createGatedClient', () => {
       status: 'accepted',
     });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('submitContribution fidelity reporting', () => {
+  const row = {
+    schema_version: 'harness_outcome_row/v1',
+    task_descriptor: { task_type: 'bugfix' },
+    allowed_models: ['claude-sonnet-4-6'],
+    selected_models: { coder: 'claude-sonnet-4-6' },
+    completion_result: 'success',
+  } as unknown as HarnessOutcomeRowV1;
+
+  const request: ContributionRequest = {
+    rows: [row],
+    metadata: { idempotency_key: 'batch-1' },
+  };
+
+  it('maps camelCase fidelity fields from the API response', async () => {
+    const { calls, transport } = createMockTransport([
+      createResponse(201, {
+        accepted: true,
+        submissionId: 'sub-1',
+        rowsAccepted: 1,
+        submittedRows: 1,
+        rowFidelityTiers: ['training_eligible'],
+        fidelitySummary: {
+          training_eligible: 1,
+          partial: 0,
+          passthrough: 0,
+          invalid: 0,
+        },
+        rejectedRows: [],
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    const response = (await client.submitContribution(
+      request,
+    )) as ContributionAcceptedResponse;
+
+    expect(response.rowFidelityTiers).toEqual(['training_eligible']);
+    expect(response.fidelitySummary).toEqual({
+      training_eligible: 1,
+      partial: 0,
+      passthrough: 0,
+      invalid: 0,
+    });
+    expect(response.rejectedRows).toEqual([]);
+    expect(calls[0]?.init.headers?.['Idempotency-Key']).toBe('batch-1');
+  });
+
+  it('maps snake_case fidelity fields from the API response', async () => {
+    const { transport } = createMockTransport([
+      createResponse(201, {
+        accepted: true,
+        submission_id: 'sub-2',
+        rows_accepted: 1,
+        submitted_rows: 1,
+        row_fidelity_tiers: ['partial'],
+        fidelity_summary: {
+          training_eligible: 0,
+          partial: 1,
+          passthrough: 0,
+          invalid: 0,
+        },
+        rejected_rows: [{ index: 3, reason: 'missing_selected_models' }],
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    const response = (await client.submitContribution(
+      request,
+    )) as ContributionAcceptedResponse;
+
+    expect(response.rowFidelityTiers).toEqual(['partial']);
+    expect(response.fidelitySummary?.partial).toBe(1);
+    expect(response.rejectedRows).toEqual([
+      { index: 3, reason: 'missing_selected_models' },
+    ]);
+  });
+
+  it('omits fidelity fields when the API does not report them', async () => {
+    const { transport } = createMockTransport([
+      createResponse(201, {
+        accepted: true,
+        submissionId: 'sub-3',
+        rowsAccepted: 1,
+        submittedRows: 1,
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    const response = (await client.submitContribution(
+      request,
+    )) as ContributionAcceptedResponse;
+
+    // undefined means "the server did not say", never "eligible".
+    expect(response.rowFidelityTiers).toBeUndefined();
+    expect(response.fidelitySummary).toBeUndefined();
+    expect(response.rejectedRows).toBeUndefined();
+    expect(response.accepted).toBe(true);
+  });
+
+  it('ignores malformed fidelity payloads rather than fabricating tiers', async () => {
+    const { transport } = createMockTransport([
+      createResponse(201, {
+        accepted: true,
+        rowFidelityTiers: 'training_eligible',
+        fidelitySummary: 'nope',
+        rejectedRows: [{ index: 'x' }, { index: 1, reason: 'bad_row' }],
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    const response = (await client.submitContribution(
+      request,
+    )) as ContributionAcceptedResponse;
+
+    expect(response.rowFidelityTiers).toBeUndefined();
+    expect(response.fidelitySummary).toBeUndefined();
+    expect(response.rejectedRows).toEqual([{ index: 1, reason: 'bad_row' }]);
   });
 });

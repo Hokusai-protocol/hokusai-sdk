@@ -107,6 +107,31 @@ export interface ContributionRequest {
   metadata: ContributionRequestMetadata;
 }
 
+/**
+ * Authoritative, server-assigned fidelity tier for one contribution row. Only
+ * `training_eligible` rows reach the Model 30 training set; `partial` rows are
+ * accepted and stored as telemetry but excluded. Typed as a union with a string
+ * fallback so an SDK running against a newer API does not reject unknown tiers.
+ */
+export type ContributionFidelityTier =
+  | 'training_eligible'
+  | 'partial'
+  | 'passthrough'
+  | 'invalid'
+  | (string & {});
+
+export interface ContributionFidelitySummary {
+  training_eligible: number;
+  partial: number;
+  passthrough: number;
+  invalid: number;
+}
+
+export interface ContributionRejectedRow {
+  index: number;
+  reason: string;
+}
+
 export interface ContributionAcceptedResponse {
   accepted: boolean;
   requestId?: string | undefined;
@@ -114,6 +139,14 @@ export interface ContributionAcceptedResponse {
   rowsAccepted?: number | undefined;
   submittedRows?: number | undefined;
   tokenReward?: number | undefined;
+  /**
+   * Per-accepted-row fidelity tiers, aligned by index to the submitted rows
+   * that were accepted. Absent when the API predates fidelity reporting — never
+   * fabricated, so `undefined` means "unknown", not "eligible".
+   */
+  rowFidelityTiers?: ContributionFidelityTier[] | undefined;
+  fidelitySummary?: ContributionFidelitySummary | undefined;
+  rejectedRows?: ContributionRejectedRow[] | undefined;
 }
 
 export interface HokusaiClientOptions {
@@ -983,7 +1016,77 @@ function normalizeContributionResponse(
     response.tokenReward = tokenReward;
   }
 
+  const rowFidelityTiers = firstStringArray(
+    record.rowFidelityTiers,
+    record.row_fidelity_tiers,
+  );
+  if (rowFidelityTiers !== undefined) {
+    response.rowFidelityTiers = rowFidelityTiers;
+  }
+
+  const fidelitySummary = normalizeFidelitySummary(
+    record.fidelitySummary ?? record.fidelity_summary,
+  );
+  if (fidelitySummary !== undefined) {
+    response.fidelitySummary = fidelitySummary;
+  }
+
+  const rejectedRows = normalizeRejectedRows(
+    record.rejectedRows ?? record.rejected_rows,
+  );
+  if (rejectedRows !== undefined) {
+    response.rejectedRows = rejectedRows;
+  }
+
   return response;
+}
+
+function firstStringArray(...values: unknown[]): string[] | undefined {
+  for (const value of values) {
+    if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+      return [...value];
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeFidelitySummary(
+  value: unknown,
+): ContributionFidelitySummary | undefined {
+  if (!isPlainRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    training_eligible: firstFiniteNumber(value.training_eligible) ?? 0,
+    partial: firstFiniteNumber(value.partial) ?? 0,
+    passthrough: firstFiniteNumber(value.passthrough) ?? 0,
+    invalid: firstFiniteNumber(value.invalid) ?? 0,
+  };
+}
+
+function normalizeRejectedRows(
+  value: unknown,
+): ContributionRejectedRow[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const rows: ContributionRejectedRow[] = [];
+  for (const entry of value) {
+    if (!isPlainRecord(entry)) {
+      continue;
+    }
+
+    const index = firstFiniteNumber(entry.index);
+    const reason = firstString(entry.reason);
+    if (index !== undefined && reason !== undefined) {
+      rows.push({ index, reason });
+    }
+  }
+
+  return rows;
 }
 
 function firstFiniteNumber(...values: unknown[]): number | undefined {
