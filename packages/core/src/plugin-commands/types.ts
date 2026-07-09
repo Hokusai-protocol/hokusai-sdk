@@ -2,7 +2,9 @@ import type {
   AdapterResult,
   ConsentConfig,
   ConsentSettings,
+  ContributionAcceptedResponse,
   HarnessPayloadPreview,
+  HarnessOutcomeRowV1,
   HarnessRecommendation,
   HandoffInstructions,
   HokusaiClient,
@@ -31,11 +33,22 @@ export interface SharedCommandOptions {
   dryRun?: boolean;
 }
 
+/**
+ * Categorical repository signals available at route time. Used to derive the
+ * persisted task descriptor (repo size bucket, dominant language). Never carries
+ * raw file contents or paths — only counts.
+ */
+export interface RouteRepositorySignals {
+  fileCount?: number;
+  extensionCounts?: Record<string, number>;
+}
+
 export interface RouteInputBase {
   taskText: string;
   taskId?: string;
   modelId?: string;
   metadata?: Record<string, string>;
+  repositorySignals?: RouteRepositorySignals;
 }
 
 export interface RouteSuccess {
@@ -80,6 +93,36 @@ export interface PayloadPreviewResult<TPreview> {
 
 export interface ReportOutcomeInputWithTaskId extends OutcomeReportInput {
   taskId: string;
+  /** Model 30 inference log id captured at route time (route.routeId). */
+  inferenceLogId?: string;
+  /** Redacted routing inputs persisted at route time. */
+  routeContext?: RouteContextProjection;
+  /** Optional measured cost of the run, when the harness provides it. */
+  actualCostUsd?: number;
+  /** Optional wall-clock duration of the run, when the harness provides it. */
+  wallClockSeconds?: number;
+}
+
+/**
+ * Redacted routing inputs persisted at route time so the report step can build
+ * a harness contribution row. Only categorical/derived values are stored; raw
+ * prompt or task text is never included.
+ */
+export interface RouteContextProjection {
+  taskDescriptor: Record<string, string>;
+  allowedModels: string[];
+  budgetUsd?: number;
+  /**
+   * Cumulative session cost (USD) captured from the statusline sidecar at route
+   * time, used as the diff base when resolving actual cost at report time.
+   */
+  costBaselineUsd?: number;
+  /** Session id the cost baseline belongs to (guards the sidecar diff). */
+  sessionId?: string;
+  /** ISO timestamp of the route; filters transcript turns to this run. */
+  baselineAt?: string;
+  /** Encoded project-dir key (cwd → `-`) locating the session transcript. */
+  projectDirKey?: string;
 }
 
 export interface LatestRoutingDecision {
@@ -87,12 +130,18 @@ export interface LatestRoutingDecision {
   taskId: string;
   createdAt: string;
   recommendedModelId?: string;
+  inferenceLogId?: string;
+  routeContext?: RouteContextProjection;
 }
 
 export interface ReportOutcomeResult {
   report: OutcomeReport;
   response?: OutcomeResponse;
   submitted: boolean;
+  /** The harness contribution row built for the canonical submission. */
+  contributionRow?: HarnessOutcomeRowV1;
+  /** The Model 30 contribution acceptance response, when submitted. */
+  contribution?: ContributionAcceptedResponse;
 }
 
 export interface OutcomeReportPreview {
@@ -103,6 +152,8 @@ export interface OutcomeReportPreview {
 export interface PreviewReportOutcomeResult {
   report: OutcomeReport;
   preview: OutcomeReportPreview;
+  /** The harness contribution row that would be submitted, when derivable. */
+  contributionRow?: HarnessOutcomeRowV1;
 }
 
 export interface RoutingDecisionSummary {

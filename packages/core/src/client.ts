@@ -39,14 +39,16 @@ import {
   type CorrelationRecord,
   type CorrelationStorage,
 } from './storage.js';
+import type { HarnessOutcomeRowV1 } from './contribution/index.js';
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RETRY_AFTER_MS = 5_000;
 const ROUTE_PATH = '/api/v1/models/30/predict';
 const OUTCOME_PATH = '/v1/outcomes';
+const CONTRIBUTIONS_PATH = '/api/v1/models/30/contributions';
 const SIGNAL_PATH = '/v1/signals';
-const SDK_VERSION = '0.1.5';
+export const SDK_VERSION = '0.2.0';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
@@ -89,6 +91,29 @@ export interface HokusaiSignalRequest {
 export interface HokusaiSignalResponse {
   requestId?: string | undefined;
   status: 'recorded';
+}
+
+export interface ContributionRequestMetadata {
+  idempotency_key: string;
+}
+
+/**
+ * One-row batch submitted to the Model 30 contributions endpoint. The rows are
+ * already-redacted harness outcome rows built by the shared contribution
+ * builder.
+ */
+export interface ContributionRequest {
+  rows: HarnessOutcomeRowV1[];
+  metadata: ContributionRequestMetadata;
+}
+
+export interface ContributionAcceptedResponse {
+  accepted: boolean;
+  requestId?: string | undefined;
+  submissionId?: string | undefined;
+  rowsAccepted?: number | undefined;
+  submittedRows?: number | undefined;
+  tokenReward?: number | undefined;
 }
 
 export interface HokusaiClientOptions {
@@ -450,11 +475,51 @@ export class HokusaiClient {
     });
   }
 
+  async submitContribution(
+    request: ContributionRequest,
+    options: HokusaiRequestOptions = {},
+  ): Promise<
+    ContributionAcceptedResponse | HokusaiValidationSuccess<ContributionRequest>
+  > {
+    const requestId = options.requestId ?? this.#requestIdFactory();
+    const fieldErrors = validateContributionRequest(request);
+    if (fieldErrors.length > 0) {
+      throw new HokusaiValidationError('Contribution request validation failed.', {
+        requestId,
+        fieldErrors,
+      });
+    }
+
+    if (options.dryRun) {
+      return {
+        ok: true,
+        request,
+      };
+    }
+
+    const idempotencyKey =
+      request.metadata.idempotency_key.trim().length > 0
+        ? request.metadata.idempotency_key
+        : requestId;
+
+    return this.#send<ContributionRequest, ContributionAcceptedResponse>({
+      path: CONTRIBUTIONS_PATH,
+      request,
+      requestId,
+      requestOptions: options,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      responseMapper: normalizeContributionResponse,
+      responseValidator: validateContributionResponse,
+      responseErrorMessage: 'Hokusai API returned an invalid contribution response.',
+    });
+  }
+
   async #send<
     TRequest,
     TResponse extends { requestId?: string | undefined },
   >(options: {
     allowNoContent?: boolean;
+    headers?: Record<string, string>;
     path: string;
     request: TRequest;
     requestId: string;
@@ -493,6 +558,7 @@ export class HokusaiClient {
           requestId: options.requestId,
           signal: options.requestOptions.signal,
           transport,
+          ...(options.headers ? { headers: options.headers } : {}),
         });
 
         const headerRequestId =
@@ -595,6 +661,7 @@ export class HokusaiClient {
   }
 
   async #executeRequest<TRequest>(options: {
+    headers?: Record<string, string>;
     path: string;
     request: TRequest;
     requestId: string;
@@ -616,6 +683,7 @@ export class HokusaiClient {
           'X-Request-ID': options.requestId,
           'X-Hokusai-Request-Id': options.requestId,
           'X-Hokusai-Sdk-Version': this.#sdkVersion,
+          ...options.headers,
         },
         signal: controller.signal,
       });
@@ -845,6 +913,94 @@ function validateSignalResponse(value: unknown): HokusaiFieldError[] {
       message: 'Expected "recorded".',
     },
   ];
+}
+
+function validateContributionRequest(
+  request: ContributionRequest,
+): HokusaiFieldError[] {
+  const errors: HokusaiFieldError[] = [];
+
+  if (!Array.isArray(request.rows) || request.rows.length === 0) {
+    errors.push({
+      path: 'rows',
+      message: 'Expected a non-empty array of contribution rows.',
+    });
+  }
+
+  if (
+    typeof request.metadata?.idempotency_key !== 'string' ||
+    request.metadata.idempotency_key.trim().length === 0
+  ) {
+    errors.push({
+      path: 'metadata.idempotency_key',
+      message: 'Expected a non-empty idempotency key.',
+    });
+  }
+
+  return errors;
+}
+
+function validateContributionResponse(value: unknown): HokusaiFieldError[] {
+  if (isPlainRecord(value) && typeof value.accepted === 'boolean') {
+    return [];
+  }
+
+  return [
+    {
+      path: 'accepted',
+      message: 'Expected a boolean "accepted" field.',
+    },
+  ];
+}
+
+function normalizeContributionResponse(
+  value: unknown,
+  requestId: string,
+): ContributionAcceptedResponse {
+  const record = isPlainRecord(value) ? value : {};
+  const response: ContributionAcceptedResponse = {
+    accepted: record.accepted === true,
+    requestId,
+  };
+
+  const submissionId = firstString(record.submissionId, record.submission_id);
+  if (submissionId !== undefined) {
+    response.submissionId = submissionId;
+  }
+
+  const rowsAccepted = firstFiniteNumber(record.rowsAccepted, record.rows_accepted);
+  if (rowsAccepted !== undefined) {
+    response.rowsAccepted = rowsAccepted;
+  }
+
+  const submittedRows = firstFiniteNumber(record.submittedRows, record.submitted_rows);
+  if (submittedRows !== undefined) {
+    response.submittedRows = submittedRows;
+  }
+
+  const tokenReward = firstFiniteNumber(record.tokenReward, record.token_reward);
+  if (tokenReward !== undefined) {
+    response.tokenReward = tokenReward;
+  }
+
+  return response;
+}
+
+function firstFiniteNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {

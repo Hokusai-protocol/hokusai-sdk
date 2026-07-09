@@ -36,6 +36,25 @@ hokusai-route --json --objective speed --task "$ARGUMENTS"
   already applies reliability. A persistent default can also be set via
   `HOKUSAI_OBJECTIVE` or plugin config, so avoid overriding silently.
 
+## Budget (optional, recommended)
+
+If the user states a cost ceiling for the run, pass it as a budget so the
+contribution can become **training-eligible** rather than telemetry-only:
+
+```
+hokusai-route --json --max-cost-usd 0.50 --task "$ARGUMENTS"
+```
+
+- `--max-cost-usd` takes a dollar amount (e.g. `0.50`). It is persisted with the
+  routing decision as the budget and later compared against the actual cost.
+- A training-eligible contribution needs both a budget (here) and an actual cost
+  at report time. Without a budget, the outcome is still recorded, but only as
+  telemetry. Do not invent a budget the user did not give.
+- Routing also snapshots a cost baseline so the report step can auto-fill the
+  actual cost. For an exact figure, enable the optional Hokusai statusline (see
+  `statusline/README.md`); otherwise the plugin best-effort-derives cost from the
+  session transcript at report time.
+
 ## Applying the result
 
 The user invoked this command to route their task, so **accept the

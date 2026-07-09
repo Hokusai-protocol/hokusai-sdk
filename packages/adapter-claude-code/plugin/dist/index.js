@@ -1,6 +1,6 @@
 // src/index.ts
 import { mkdir as mkdir4, readFile as readFile3, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
-import path2 from "node:path";
+import path3 from "node:path";
 
 // ../core/src/anonymization.ts
 import { createHmac } from "node:crypto";
@@ -424,103 +424,103 @@ function createOutcomeCandidate(input) {
   }
   return candidate;
 }
-function validateSummary(value, path3, knownKeys, statuses, errors) {
+function validateSummary(value, path4, knownKeys, statuses, errors) {
   if (!isPlainObject(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an object.`
+      path: path4,
+      message: `"${path4}" must be an object.`
     });
     return;
   }
   for (const key of Object.keys(value)) {
     if (!knownKeys.has(key)) {
       errors.push({
-        path: `${path3}.${key}`,
-        message: `Unknown field "${key}" is not allowed in "${path3}".`
+        path: `${path4}.${key}`,
+        message: `Unknown field "${key}" is not allowed in "${path4}".`
       });
     }
   }
-  validateEnum(value.status, `${path3}.status`, statuses, errors);
+  validateEnum(value.status, `${path4}.status`, statuses, errors);
   if (value.failures !== void 0) {
-    validateNonNegativeInteger(value.failures, `${path3}.failures`, errors);
+    validateNonNegativeInteger(value.failures, `${path4}.failures`, errors);
   }
 }
-function validateExtensions(value, path3, errors) {
+function validateExtensions(value, path4, errors) {
   if (!isPlainObject(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an object.`
+      path: path4,
+      message: `"${path4}" must be an object.`
     });
     return;
   }
   for (const key of Object.keys(value)) {
     if (!OUTCOME_EXTENSION_KEY_SET.has(key)) {
       errors.push({
-        path: `${path3}.${key}`,
-        message: `Unknown field "${key}" is not allowed in "${path3}".`
+        path: `${path4}.${key}`,
+        message: `Unknown field "${key}" is not allowed in "${path4}".`
       });
     }
   }
-  validateNonEmptyString(value.version, `${path3}.version`, errors);
+  validateNonEmptyString(value.version, `${path4}.version`, errors);
   if (!isPlainObject(value.data)) {
     errors.push({
-      path: `${path3}.data`,
-      message: `"${path3}.data" must be an object.`
+      path: `${path4}.data`,
+      message: `"${path4}.data" must be an object.`
     });
   }
 }
-function validateLiteralString(value, path3, expected, errors) {
+function validateLiteralString(value, path4, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
     errors.push({
-      path: path3,
-      message: `Expected "${path3}" to be "${expected}".`
+      path: path4,
+      message: `Expected "${path4}" to be "${expected}".`
     });
     return;
   }
   if (value !== expected) {
     errors.push({
-      path: path3,
+      path: path4,
       message: `Unsupported schema version "${value}". Expected "${expected}".`
     });
   }
 }
-function validateNonEmptyString(value, path3, errors) {
+function validateNonEmptyString(value, path4, errors) {
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a non-empty string.`
+      path: path4,
+      message: `"${path4}" must be a non-empty string.`
     });
   }
 }
-function validateBoolean(value, path3, errors) {
+function validateBoolean(value, path4, errors) {
   if (typeof value !== "boolean") {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a boolean.`
+      path: path4,
+      message: `"${path4}" must be a boolean.`
     });
   }
 }
-function validateEnum(value, path3, allowedValues, errors) {
+function validateEnum(value, path4, allowedValues, errors) {
   if (typeof value !== "string" || !allowedValues.includes(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be one of: ${allowedValues.join(", ")}.`
+      path: path4,
+      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
     });
   }
 }
-function validateIntegerInRange(value, path3, min, max, errors) {
+function validateIntegerInRange(value, path4, min, max, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an integer between ${min} and ${max}.`
+      path: path4,
+      message: `"${path4}" must be an integer between ${min} and ${max}.`
     });
   }
 }
-function validateNonNegativeInteger(value, path3, errors) {
+function validateNonNegativeInteger(value, path4, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a non-negative integer.`
+      path: path4,
+      message: `"${path4}" must be a non-negative integer.`
     });
   }
 }
@@ -528,96 +528,96 @@ function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function formatBuildErrorMessage(errors) {
-  return `Invalid outcome report: ${errors.map(({ path: path3, message }) => `${path3 || "$"}: ${message}`).join("; ")}`;
+  return `Invalid outcome report: ${errors.map(({ path: path4, message }) => `${path4 || "$"}: ${message}`).join("; ")}`;
 }
 
 // ../core/src/schemas.ts
 function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
-function pushFieldError(errors, path3, message, code) {
-  errors.push({ path: path3, message, code });
+function pushFieldError(errors, path4, message, code) {
+  errors.push({ path: path4, message, code });
 }
-function validateNonEmptyString2(value, path3, errors) {
+function validateNonEmptyString2(value, path4, errors) {
   if (typeof value !== "string") {
-    pushFieldError(errors, path3, "Expected a string.", "invalid_type");
+    pushFieldError(errors, path4, "Expected a string.", "invalid_type");
     return;
   }
   if (value.trim().length === 0) {
-    pushFieldError(errors, path3, "Value must not be empty.", "required");
+    pushFieldError(errors, path4, "Value must not be empty.", "required");
   }
 }
-function validateStringRecord(value, path3, errors) {
+function validateStringRecord(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== "string") {
       pushFieldError(
         errors,
-        `${path3}.${key}`,
+        `${path4}.${key}`,
         "Expected a string value.",
         "invalid_type"
       );
     }
   }
 }
-function validateTaskInput(value, path3, errors) {
+function validateTaskInput(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.id, `${path3}.id`, errors);
-  validateNonEmptyString2(value.prompt, `${path3}.prompt`, errors);
+  validateNonEmptyString2(value.id, `${path4}.id`, errors);
+  validateNonEmptyString2(value.prompt, `${path4}.prompt`, errors);
   if ("metadata" in value && value.metadata !== void 0) {
-    validateStringRecord(value.metadata, `${path3}.metadata`, errors);
+    validateStringRecord(value.metadata, `${path4}.metadata`, errors);
   }
 }
-function validateConfidence(value, path3, errors) {
+function validateConfidence(value, path4, errors) {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    pushFieldError(errors, path3, "Expected a number.", "invalid_type");
+    pushFieldError(errors, path4, "Expected a number.", "invalid_type");
     return;
   }
   if (value < 0 || value > 1) {
     pushFieldError(
       errors,
-      path3,
+      path4,
       "Expected a number between 0 and 1.",
       "invalid_value"
     );
   }
 }
-function validateRouteRecommendationAlternative(value, path3, errors) {
+function validateRouteRecommendationAlternative(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.model, `${path3}.model`, errors);
+  validateNonEmptyString2(value.model, `${path4}.model`, errors);
   if ("reason" in value && value.reason !== void 0) {
-    validateNonEmptyString2(value.reason, `${path3}.reason`, errors);
+    validateNonEmptyString2(value.reason, `${path4}.reason`, errors);
   }
   if ("confidence" in value && value.confidence !== void 0) {
-    validateConfidence(value.confidence, `${path3}.confidence`, errors);
+    validateConfidence(value.confidence, `${path4}.confidence`, errors);
   }
 }
-function validateRouteRecommendation(value, path3, errors) {
+function validateRouteRecommendation(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.model, `${path3}.model`, errors);
+  validateNonEmptyString2(value.model, `${path4}.model`, errors);
   if ("reason" in value && value.reason !== void 0) {
-    validateNonEmptyString2(value.reason, `${path3}.reason`, errors);
+    validateNonEmptyString2(value.reason, `${path4}.reason`, errors);
   }
   if ("confidence" in value && value.confidence !== void 0) {
-    validateConfidence(value.confidence, `${path3}.confidence`, errors);
+    validateConfidence(value.confidence, `${path4}.confidence`, errors);
   }
   if ("alternatives" in value && value.alternatives !== void 0) {
     if (!Array.isArray(value.alternatives)) {
       pushFieldError(
         errors,
-        `${path3}.alternatives`,
+        `${path4}.alternatives`,
         "Expected an array.",
         "invalid_type"
       );
@@ -626,65 +626,65 @@ function validateRouteRecommendation(value, path3, errors) {
     value.alternatives.forEach((alternative, index) => {
       validateRouteRecommendationAlternative(
         alternative,
-        `${path3}.alternatives.${index}`,
+        `${path4}.alternatives.${index}`,
         errors
       );
     });
   }
 }
-function validateConsentSnapshot(value, path3, errors) {
+function validateConsentSnapshot(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.subjectId, `${path3}.subjectId`, errors);
+  validateNonEmptyString2(value.subjectId, `${path4}.subjectId`, errors);
   if (!Array.isArray(value.grantedScopes)) {
     pushFieldError(
       errors,
-      `${path3}.grantedScopes`,
+      `${path4}.grantedScopes`,
       "Expected an array of consent scopes.",
       "invalid_type"
     );
     return;
   }
   value.grantedScopes.forEach((scope, index) => {
-    validateNonEmptyString2(scope, `${path3}.grantedScopes.${index}`, errors);
+    validateNonEmptyString2(scope, `${path4}.grantedScopes.${index}`, errors);
   });
 }
-function validateModelSelection(value, path3, errors) {
+function validateModelSelection(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.id, `${path3}.id`, errors);
-  validateNonEmptyString2(value.provider, `${path3}.provider`, errors);
+  validateNonEmptyString2(value.id, `${path4}.id`, errors);
+  validateNonEmptyString2(value.provider, `${path4}.provider`, errors);
   if (!Array.isArray(value.capabilities)) {
     pushFieldError(
       errors,
-      `${path3}.capabilities`,
+      `${path4}.capabilities`,
       "Expected an array of capabilities.",
       "invalid_type"
     );
     return;
   }
   value.capabilities.forEach((capability, index) => {
-    validateNonEmptyString2(capability, `${path3}.capabilities.${index}`, errors);
+    validateNonEmptyString2(capability, `${path4}.capabilities.${index}`, errors);
   });
 }
-function validateCorrelationRecord(value, path3, errors) {
+function validateCorrelationRecord(value, path4, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path3, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.taskId, `${path3}.taskId`, errors);
-  validateNonEmptyString2(value.correlationId, `${path3}.correlationId`, errors);
-  validateNonEmptyString2(value.createdAt, `${path3}.createdAt`, errors);
+  validateNonEmptyString2(value.taskId, `${path4}.taskId`, errors);
+  validateNonEmptyString2(value.correlationId, `${path4}.correlationId`, errors);
+  validateNonEmptyString2(value.createdAt, `${path4}.createdAt`, errors);
 }
-function validateRedactions(value, path3, errors) {
+function validateRedactions(value, path4, errors) {
   if (!Array.isArray(value)) {
     pushFieldError(
       errors,
-      path3,
+      path4,
       "Expected an array of redactions.",
       "invalid_type"
     );
@@ -694,26 +694,26 @@ function validateRedactions(value, path3, errors) {
     if (!isRecord(entry)) {
       pushFieldError(
         errors,
-        `${path3}.${index}`,
+        `${path4}.${index}`,
         "Expected an object.",
         "invalid_type"
       );
       return;
     }
     if ("label" in entry) {
-      validateNonEmptyString2(entry.label, `${path3}.${index}.label`, errors);
+      validateNonEmptyString2(entry.label, `${path4}.${index}.label`, errors);
       return;
     }
-    validateNonEmptyString2(entry.category, `${path3}.${index}.category`, errors);
+    validateNonEmptyString2(entry.category, `${path4}.${index}.category`, errors);
     validateNonEmptyString2(
       entry.placeholder,
-      `${path3}.${index}.placeholder`,
+      `${path4}.${index}.placeholder`,
       errors
     );
     if (typeof entry.count !== "number") {
       pushFieldError(
         errors,
-        `${path3}.${index}.count`,
+        `${path4}.${index}.count`,
         "Expected a number.",
         "invalid_type"
       );
@@ -1048,10 +1048,10 @@ function assertSafeStoreId(id) {
 function isRawFieldName(key) {
   return RAW_FIELD_NAMES.has(key) || RAW_FIELD_PATTERNS.some((pattern) => pattern.test(key));
 }
-function assertNoRawPayloadFields(record, path3 = "") {
+function assertNoRawPayloadFields(record, path4 = "") {
   if (Array.isArray(record)) {
     for (const [index, value] of record.entries()) {
-      assertNoRawPayloadFields(value, `${path3}[${index}]`);
+      assertNoRawPayloadFields(value, `${path4}[${index}]`);
     }
     return;
   }
@@ -1059,7 +1059,7 @@ function assertNoRawPayloadFields(record, path3 = "") {
     return;
   }
   for (const [key, value] of Object.entries(record)) {
-    const fieldPath = path3 ? `${path3}.${key}` : key;
+    const fieldPath = path4 ? `${path4}.${key}` : key;
     if (isRawFieldName(key)) {
       throw new RawPayloadRejectedError(fieldPath);
     }
@@ -1266,8 +1266,9 @@ var DEFAULT_TIMEOUT_MS = 1e4;
 var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
+var CONTRIBUTIONS_PATH = "/api/v1/models/30/contributions";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.5";
+var SDK_VERSION = "0.2.0";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -1507,6 +1508,33 @@ var HokusaiClient = class {
       responseErrorMessage: "Hokusai API returned an invalid signal response."
     });
   }
+  async submitContribution(request, options = {}) {
+    const requestId = options.requestId ?? this.#requestIdFactory();
+    const fieldErrors = validateContributionRequest(request);
+    if (fieldErrors.length > 0) {
+      throw new HokusaiValidationError("Contribution request validation failed.", {
+        requestId,
+        fieldErrors
+      });
+    }
+    if (options.dryRun) {
+      return {
+        ok: true,
+        request
+      };
+    }
+    const idempotencyKey = request.metadata.idempotency_key.trim().length > 0 ? request.metadata.idempotency_key : requestId;
+    return this.#send({
+      path: CONTRIBUTIONS_PATH,
+      request,
+      requestId,
+      requestOptions: options,
+      headers: { "Idempotency-Key": idempotencyKey },
+      responseMapper: normalizeContributionResponse,
+      responseValidator: validateContributionResponse,
+      responseErrorMessage: "Hokusai API returned an invalid contribution response."
+    });
+  }
   async #send(options) {
     const transport = this.#transport;
     if (!transport) {
@@ -1534,7 +1562,8 @@ var HokusaiClient = class {
           request: options.request,
           requestId: options.requestId,
           signal: options.requestOptions.signal,
-          transport
+          transport,
+          ...options.headers ? { headers: options.headers } : {}
         });
         const headerRequestId = response.headers.get("x-hokusai-request-id") ?? options.requestId;
         if (response.status >= 200 && response.status < 300) {
@@ -1626,7 +1655,8 @@ var HokusaiClient = class {
           "Content-Type": "application/json",
           "X-Request-ID": options.requestId,
           "X-Hokusai-Request-Id": options.requestId,
-          "X-Hokusai-Sdk-Version": this.#sdkVersion
+          "X-Hokusai-Sdk-Version": this.#sdkVersion,
+          ...options.headers
         },
         signal: controller.signal
       });
@@ -1684,12 +1714,12 @@ var HokusaiClient = class {
     });
   }
 };
-function buildUrl(baseUrl, path3) {
+function buildUrl(baseUrl, path4) {
   const resolvedBaseUrl = new URL(baseUrl.toString());
   if (!resolvedBaseUrl.pathname.endsWith("/")) {
     resolvedBaseUrl.pathname = `${resolvedBaseUrl.pathname}/`;
   }
-  return new URL(path3.replace(/^\/+/, ""), resolvedBaseUrl).toString();
+  return new URL(path4.replace(/^\/+/, ""), resolvedBaseUrl).toString();
 }
 function createRequestId() {
   const cryptoObject = Reflect.get(globalThis, "crypto");
@@ -1774,6 +1804,71 @@ function validateSignalResponse(value) {
       message: 'Expected "recorded".'
     }
   ];
+}
+function validateContributionRequest(request) {
+  const errors = [];
+  if (!Array.isArray(request.rows) || request.rows.length === 0) {
+    errors.push({
+      path: "rows",
+      message: "Expected a non-empty array of contribution rows."
+    });
+  }
+  if (typeof request.metadata?.idempotency_key !== "string" || request.metadata.idempotency_key.trim().length === 0) {
+    errors.push({
+      path: "metadata.idempotency_key",
+      message: "Expected a non-empty idempotency key."
+    });
+  }
+  return errors;
+}
+function validateContributionResponse(value) {
+  if (isPlainRecord(value) && typeof value.accepted === "boolean") {
+    return [];
+  }
+  return [
+    {
+      path: "accepted",
+      message: 'Expected a boolean "accepted" field.'
+    }
+  ];
+}
+function normalizeContributionResponse(value, requestId) {
+  const record = isPlainRecord(value) ? value : {};
+  const response = {
+    accepted: record.accepted === true,
+    requestId
+  };
+  const submissionId = firstString(record.submissionId, record.submission_id);
+  if (submissionId !== void 0) {
+    response.submissionId = submissionId;
+  }
+  const rowsAccepted = firstFiniteNumber(record.rowsAccepted, record.rows_accepted);
+  if (rowsAccepted !== void 0) {
+    response.rowsAccepted = rowsAccepted;
+  }
+  const submittedRows = firstFiniteNumber(record.submittedRows, record.submitted_rows);
+  if (submittedRows !== void 0) {
+    response.submittedRows = submittedRows;
+  }
+  const tokenReward = firstFiniteNumber(record.tokenReward, record.token_reward);
+  if (tokenReward !== void 0) {
+    response.tokenReward = tokenReward;
+  }
+  return response;
+}
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return void 0;
 }
 function omitUndefined(value) {
   return Object.fromEntries(
@@ -2459,15 +2554,15 @@ function normalizeBaseUrl(value, fieldErrors) {
     return DEFAULT_HOKUSAI_BASE_URL;
   }
 }
-function normalizeBoolean(value, path3, fieldErrors, defaultValue) {
+function normalizeBoolean(value, path4, fieldErrors, defaultValue) {
   if (value === void 0) {
     return defaultValue;
   }
   if (typeof value !== "boolean") {
     fieldErrors.push({
-      path: path3,
+      path: path4,
       code: "invalid_type",
-      message: `Expected ${path3} to be a boolean.`
+      message: `Expected ${path4} to be a boolean.`
     });
     return defaultValue;
   }
@@ -2905,9 +3000,9 @@ async function checkApiReachability(config, transport, options) {
     () => controller.abort(),
     options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
   );
-  const path3 = options?.path ?? DEFAULT_REACHABILITY_PATH;
+  const path4 = options?.path ?? DEFAULT_REACHABILITY_PATH;
   const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
-  const isDefaultHealthProbe = path3 === DEFAULT_REACHABILITY_PATH;
+  const isDefaultHealthProbe = path4 === DEFAULT_REACHABILITY_PATH;
   const headers = {
     "X-Request-ID": requestId,
     "X-Hokusai-Request-Id": requestId
@@ -2919,7 +3014,7 @@ async function checkApiReachability(config, transport, options) {
     const response = await transport(
       buildReachabilityUrl(
         config.apiBaseUrl,
-        path3
+        path4
       ),
       {
         method: "GET",
@@ -3058,12 +3153,12 @@ async function checkReachability(input, requestId) {
     clearTimeout(timeoutHandle);
   }
 }
-function buildReachabilityUrl(baseUrl, path3) {
+function buildReachabilityUrl(baseUrl, path4) {
   const normalizedBase = new URL(baseUrl);
   if (!normalizedBase.pathname.endsWith("/")) {
     normalizedBase.pathname = `${normalizedBase.pathname}/`;
   }
-  return new URL(path3.replace(/^\/+/, ""), normalizedBase).toString();
+  return new URL(path4.replace(/^\/+/, ""), normalizedBase).toString();
 }
 function mapReachabilityStatus(response) {
   if (response.status === 401 || response.status === 403) {
@@ -3252,42 +3347,42 @@ function buildTaskPacket(context) {
   }
   return result.packet;
 }
-function validateLiteralString2(value, path3, expected, errors) {
+function validateLiteralString2(value, path4, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
     errors.push({
-      path: path3,
-      message: `Expected "${path3}" to be "${expected}".`
+      path: path4,
+      message: `Expected "${path4}" to be "${expected}".`
     });
     return;
   }
   if (value !== expected) {
     errors.push({
-      path: path3,
+      path: path4,
       message: `Unsupported schema version "${value}". Expected "${expected}".`
     });
   }
 }
-function validateNonEmptyString3(value, path3, errors) {
+function validateNonEmptyString3(value, path4, errors) {
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be a non-empty string.`
+      path: path4,
+      message: `"${path4}" must be a non-empty string.`
     });
   }
 }
-function validateEnum2(value, path3, allowedValues, errors) {
+function validateEnum2(value, path4, allowedValues, errors) {
   if (typeof value !== "string" || !allowedValues.includes(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be one of: ${allowedValues.join(", ")}.`
+      path: path4,
+      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
     });
   }
 }
-function validateStringArray(value, path3, errors) {
+function validateStringArray(value, path4, errors) {
   if (!Array.isArray(value)) {
     errors.push({
-      path: path3,
-      message: `"${path3}" must be an array of strings.`
+      path: path4,
+      message: `"${path4}" must be an array of strings.`
     });
     return;
   }
@@ -3296,8 +3391,8 @@ function validateStringArray(value, path3, errors) {
     const entry = entries[index];
     if (typeof entry !== "string" || entry.trim().length === 0) {
       errors.push({
-        path: `${path3}[${index}]`,
-        message: `"${path3}" entries must be non-empty strings.`
+        path: `${path4}[${index}]`,
+        message: `"${path4}" entries must be non-empty strings.`
       });
     }
   }
@@ -3454,6 +3549,332 @@ function summarizeFrameworkSignals(dependencyCategories) {
   );
 }
 
+// ../core/src/pricing.ts
+var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
+var CACHE_READ_INPUT_MULTIPLIER = 0.1;
+var ANTHROPIC_MODEL_PRICING = {
+  "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
+  "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-opus-4-7": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-opus-4-6": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-sonnet-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
+};
+var DATE_SUFFIX = /-\d{8}$/;
+function resolveModelPrice(model) {
+  if (typeof model !== "string") {
+    return void 0;
+  }
+  const normalized = model.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return void 0;
+  }
+  return ANTHROPIC_MODEL_PRICING[normalized] ?? ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, "")];
+}
+function nonNegativeOrNull(value) {
+  if (value === void 0) {
+    return 0;
+  }
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+function computeActualCostUsd(input) {
+  const price = resolveModelPrice(input.model);
+  if (!price) {
+    return void 0;
+  }
+  const inputTokens = nonNegativeOrNull(input.inputTokens);
+  const outputTokens = nonNegativeOrNull(input.outputTokens);
+  const cacheCreationTokens = nonNegativeOrNull(input.cacheCreationTokens);
+  const cacheReadTokens = nonNegativeOrNull(input.cacheReadTokens);
+  if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
+    return void 0;
+  }
+  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
+  return Math.round(cost * 1e6) / 1e6;
+}
+
+// ../core/src/session-usage.ts
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+var nodeFs = {
+  readFileSync: (filePath) => readFileSync(filePath, "utf8"),
+  readdirSync: (dirPath) => readdirSync(dirPath),
+  statSync: (filePath) => ({ mtimeMs: statSync(filePath).mtimeMs })
+};
+var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
+function encodeProjectDirKey(cwd) {
+  return cwd.replace(/[^a-zA-Z0-9]/g, "-");
+}
+function resolveClaudeConfigDir(input) {
+  const env = input?.env ?? process.env;
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  if (override) {
+    return override;
+  }
+  return path.join(input?.homedir ?? os.homedir(), ".claude");
+}
+function sessionCostSidecarPath(claudeConfigDir) {
+  return path.join(claudeConfigDir, "hokusai", "session-cost.json");
+}
+function sessionTranscriptDir(claudeConfigDir, cwd) {
+  return path.join(claudeConfigDir, "projects", encodeProjectDirKey(cwd));
+}
+function claudeConfigDirFrom(input) {
+  return resolveClaudeConfigDir({
+    ...input.env ? { env: input.env } : {},
+    ...input.homedir ? { homedir: input.homedir } : {}
+  });
+}
+function readSessionCostSidecar(sidecarPath, fs = nodeFs) {
+  let raw;
+  try {
+    raw = fs.readFileSync(sidecarPath);
+  } catch {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return void 0;
+    }
+    const record = parsed;
+    const sessionId = record.session_id;
+    const cost = record.cost_usd;
+    if (typeof sessionId !== "string" || sessionId.length === 0) {
+      return void 0;
+    }
+    if (typeof cost !== "number" || !Number.isFinite(cost)) {
+      return void 0;
+    }
+    return {
+      session_id: sessionId,
+      cost_usd: cost,
+      ...typeof record.updated_at === "string" ? { updated_at: record.updated_at } : {},
+      ...typeof record.input_tokens === "number" && Number.isFinite(record.input_tokens) ? { input_tokens: record.input_tokens } : {},
+      ...typeof record.output_tokens === "number" && Number.isFinite(record.output_tokens) ? { output_tokens: record.output_tokens } : {}
+    };
+  } catch {
+    return void 0;
+  }
+}
+function isSidecarFresh(sidecar, nowIso, freshnessMs) {
+  if (!sidecar.updated_at) {
+    return true;
+  }
+  const updated = Date.parse(sidecar.updated_at);
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(updated) || !Number.isFinite(now)) {
+    return true;
+  }
+  return Math.abs(now - updated) <= freshnessMs;
+}
+function captureCostBaseline(input) {
+  const snapshot = {
+    baselineAt: input.nowIso,
+    projectDirKey: encodeProjectDirKey(input.cwd)
+  };
+  try {
+    const configDir = claudeConfigDirFrom(input);
+    const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
+    if (sidecar && isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)) {
+      return {
+        ...snapshot,
+        costBaselineUsd: sidecar.cost_usd,
+        sessionId: sidecar.session_id
+      };
+    }
+  } catch {
+  }
+  return snapshot;
+}
+function resolveSidecarCostDiff(input) {
+  const { sidecar, baselineSessionId, costBaselineUsd } = input;
+  if (!sidecar) {
+    return void 0;
+  }
+  if (typeof costBaselineUsd !== "number" || !Number.isFinite(costBaselineUsd)) {
+    return void 0;
+  }
+  if (baselineSessionId !== void 0 && sidecar.session_id !== baselineSessionId) {
+    return void 0;
+  }
+  const diff = sidecar.cost_usd - costBaselineUsd;
+  const clamped = diff > 0 ? diff : 0;
+  return Math.round(clamped * 1e6) / 1e6;
+}
+function toNumericToken(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+function extractUsage(record) {
+  const message = record.message;
+  if (message && typeof message === "object" && !Array.isArray(message)) {
+    const usage2 = message.usage;
+    if (usage2 && typeof usage2 === "object" && !Array.isArray(usage2)) {
+      return usage2;
+    }
+  }
+  const usage = record.usage;
+  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
+    return usage;
+  }
+  return void 0;
+}
+function parseTranscriptUsageTotals(input) {
+  const afterMs = input.afterIso ? Date.parse(input.afterIso) : Number.NaN;
+  const hasAfter = Number.isFinite(afterMs);
+  let inputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
+  let outputTokens = 0;
+  let turns = 0;
+  for (const line of input.contents.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let entry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry;
+    if (hasAfter) {
+      const timestamp = record.timestamp;
+      if (typeof timestamp !== "string") {
+        continue;
+      }
+      const timestampMs = Date.parse(timestamp);
+      if (!Number.isFinite(timestampMs) || timestampMs <= afterMs) {
+        continue;
+      }
+    }
+    const usage = extractUsage(record);
+    if (!usage) {
+      continue;
+    }
+    const inputForTurn = toNumericToken(usage.input_tokens);
+    const cacheCreationForTurn = toNumericToken(usage.cache_creation_input_tokens);
+    const cacheReadForTurn = toNumericToken(usage.cache_read_input_tokens);
+    const outputForTurn = toNumericToken(usage.output_tokens);
+    if (inputForTurn === 0 && cacheCreationForTurn === 0 && cacheReadForTurn === 0 && outputForTurn === 0) {
+      continue;
+    }
+    inputTokens += inputForTurn;
+    cacheCreationTokens += cacheCreationForTurn;
+    cacheReadTokens += cacheReadForTurn;
+    outputTokens += outputForTurn;
+    turns += 1;
+  }
+  return { inputTokens, cacheCreationTokens, cacheReadTokens, outputTokens, turns };
+}
+function locateSessionTranscript(input) {
+  const fs = input.fs ?? nodeFs;
+  let names;
+  try {
+    names = fs.readdirSync(input.dir);
+  } catch {
+    return void 0;
+  }
+  let best;
+  let bestMtime = Number.NEGATIVE_INFINITY;
+  for (const name of names) {
+    if (!name.endsWith(".jsonl")) {
+      continue;
+    }
+    const full = path.join(input.dir, name);
+    let mtime;
+    try {
+      mtime = fs.statSync(full).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (mtime > bestMtime) {
+      bestMtime = mtime;
+      best = full;
+    }
+  }
+  return best;
+}
+function computeTranscriptCostUsd(input) {
+  const totals = parseTranscriptUsageTotals({
+    contents: input.contents,
+    ...input.afterIso ? { afterIso: input.afterIso } : {}
+  });
+  if (totals.turns === 0) {
+    return void 0;
+  }
+  return computeActualCostUsd({
+    model: input.model,
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens,
+    cacheCreationTokens: totals.cacheCreationTokens,
+    cacheReadTokens: totals.cacheReadTokens
+  });
+}
+function resolveActualCostUsd(input) {
+  if (typeof input.explicitActualCostUsd === "number" && Number.isFinite(input.explicitActualCostUsd)) {
+    return input.explicitActualCostUsd;
+  }
+  if (input.inputTokens !== void 0 && input.outputTokens !== void 0) {
+    const fromTokens = computeActualCostUsd({
+      model: input.model,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens
+    });
+    if (fromTokens !== void 0) {
+      return fromTokens;
+    }
+  }
+  const routeContext = input.routeContext;
+  if (routeContext && typeof routeContext.costBaselineUsd === "number") {
+    try {
+      const configDir = claudeConfigDirFrom(input);
+      const sidecar = readSessionCostSidecar(
+        sessionCostSidecarPath(configDir),
+        input.fs ?? nodeFs
+      );
+      const diff = resolveSidecarCostDiff({
+        sidecar,
+        baselineSessionId: routeContext.sessionId,
+        costBaselineUsd: routeContext.costBaselineUsd
+      });
+      if (diff !== void 0) {
+        return diff;
+      }
+    } catch {
+    }
+  }
+  if (routeContext?.baselineAt) {
+    try {
+      const configDir = claudeConfigDirFrom(input);
+      const dir = routeContext.projectDirKey ? path.join(configDir, "projects", routeContext.projectDirKey) : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
+      const transcriptPath = locateSessionTranscript({
+        dir,
+        ...input.fs ? { fs: input.fs } : {}
+      });
+      if (transcriptPath) {
+        const contents = (input.fs ?? nodeFs).readFileSync(transcriptPath);
+        const cost = computeTranscriptCostUsd({
+          contents,
+          model: input.model,
+          afterIso: routeContext.baselineAt
+        });
+        if (cost !== void 0) {
+          return cost;
+        }
+      }
+    } catch {
+    }
+  }
+  return void 0;
+}
+
 // ../core/src/plugin-commands/commands.ts
 import { rm as rm4 } from "node:fs/promises";
 
@@ -3563,6 +3984,146 @@ function buildDebugPreview(input, config) {
 }
 function toAuditId(correlationId, suffix) {
   return `${toStoredCorrelationId(correlationId)}-${suffix}`;
+}
+function firstMetadataValue(metadata, ...keys) {
+  if (!metadata) {
+    return void 0;
+  }
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return void 0;
+}
+function parseMetadataList(value) {
+  if (!value) {
+    return void 0;
+  }
+  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  return entries.length > 0 ? entries : void 0;
+}
+var TASK_FAMILY_TO_HOKUSAI_TYPE = {
+  bugfix: "bugfix",
+  feature: "feature",
+  migration: "migration",
+  refactor: "refactor",
+  test: "tests",
+  docs: "docs",
+  infra: "infra",
+  chore: "infra",
+  mixed: "unknown",
+  investigation: "unknown"
+};
+function deriveTaskDescriptor(input) {
+  const derived = {};
+  const taskText = input.taskText?.trim();
+  if (taskText && taskText.length > 0) {
+    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity = inferReasoningDepth({ text: taskText });
+  }
+  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  if (repoSizeBucket) {
+    derived.repo_size_bucket = repoSizeBucket;
+  }
+  const extensionCounts = input.repositorySignals?.extensionCounts;
+  if (extensionCounts) {
+    const dominant = dominantLanguage(extensionCounts);
+    if (dominant) {
+      derived.language = dominant;
+    }
+  }
+  return derived;
+}
+function dominantLanguage(extensionCounts) {
+  let bestExtension;
+  let bestCount = 0;
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+    if (count > bestCount || count === bestCount && (bestExtension === void 0 || extension < bestExtension)) {
+      bestExtension = extension;
+      bestCount = count;
+    }
+  }
+  if (bestExtension === void 0) {
+    return void 0;
+  }
+  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
+}
+function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
+  const derived = deriveTaskDescriptor({
+    taskText: signals.taskText,
+    repositorySignals: signals.repositorySignals
+  });
+  const descriptorPairs = [
+    [
+      "task_type",
+      firstMetadataValue(metadata, "task_type", "taskType", "taskFamily") ?? derived.task_type
+    ],
+    ["language", firstMetadataValue(metadata, "language", "primaryLanguage") ?? derived.language],
+    ["domain", firstMetadataValue(metadata, "domain")],
+    [
+      "complexity",
+      firstMetadataValue(metadata, "estimated_complexity", "complexity", "reasoningDepth") ?? derived.complexity
+    ],
+    [
+      "repo_size_bucket",
+      firstMetadataValue(metadata, "repo_size_bucket", "repositoryScale") ?? derived.repo_size_bucket
+    ],
+    ["risk_level", firstMetadataValue(metadata, "risk_level")]
+  ];
+  const taskDescriptor = {};
+  for (const [key, value] of descriptorPairs) {
+    if (value !== void 0) {
+      taskDescriptor[key] = value;
+    }
+  }
+  if (Object.keys(taskDescriptor).length === 0) {
+    taskDescriptor.task_type = "unknown";
+  }
+  const allowedModels = parseMetadataList(firstMetadataValue(metadata, "available_models")) ?? parseMetadataList(firstMetadataValue(metadata, "available_coder_models")) ?? (modelConstraints && modelConstraints.length > 0 ? [...modelConstraints] : []);
+  const budgetRaw = firstMetadataValue(metadata, "max_cost_usd");
+  const budgetUsd = budgetRaw !== void 0 ? Number(budgetRaw) : void 0;
+  const costBaseline = signals.costBaseline;
+  return {
+    taskDescriptor,
+    allowedModels,
+    ...budgetUsd !== void 0 && Number.isFinite(budgetUsd) ? { budgetUsd } : {},
+    ...costBaseline ? {
+      baselineAt: costBaseline.baselineAt,
+      projectDirKey: costBaseline.projectDirKey,
+      ...costBaseline.costBaselineUsd !== void 0 ? { costBaselineUsd: costBaseline.costBaselineUsd } : {},
+      ...costBaseline.sessionId !== void 0 ? { sessionId: costBaseline.sessionId } : {}
+    } : {}
+  };
+}
+function parseRouteContext(value) {
+  if (!value) {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return void 0;
+    }
+    const record = parsed;
+    const taskDescriptor = typeof record.taskDescriptor === "object" && record.taskDescriptor !== null && !Array.isArray(record.taskDescriptor) ? record.taskDescriptor : {};
+    const allowedModels = Array.isArray(record.allowedModels) ? record.allowedModels.filter((entry) => typeof entry === "string") : [];
+    return {
+      taskDescriptor,
+      allowedModels,
+      ...typeof record.budgetUsd === "number" && Number.isFinite(record.budgetUsd) ? { budgetUsd: record.budgetUsd } : {},
+      ...typeof record.costBaselineUsd === "number" && Number.isFinite(record.costBaselineUsd) ? { costBaselineUsd: record.costBaselineUsd } : {},
+      ...typeof record.sessionId === "string" && record.sessionId.length > 0 ? { sessionId: record.sessionId } : {},
+      ...typeof record.baselineAt === "string" && record.baselineAt.length > 0 ? { baselineAt: record.baselineAt } : {},
+      ...typeof record.projectDirKey === "string" && record.projectDirKey.length > 0 ? { projectDirKey: record.projectDirKey } : {}
+    };
+  } catch {
+    return void 0;
+  }
 }
 function parseAlternativeIds(value) {
   if (!value) {
@@ -3697,6 +4258,52 @@ function buildOutcomePreviewLines(report) {
     "Excluded by default: raw code, raw prompts, terminal logs, and customer data."
   );
   return lines;
+}
+function buildContributionPreviewLines(row) {
+  return [
+    "",
+    "Contribution row (harness_outcome_row/v1) that will be submitted:",
+    JSON.stringify(row, null, 2)
+  ];
+}
+function buildReportContributionRow(input) {
+  if (!input.inferenceLogId) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "No inference log id is available for this routing decision. Route a task with this plugin first, or pass --inference-log-id."
+    );
+  }
+  if (!input.routeContext || input.routeContext.allowedModels.length === 0) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "No routing context with allowed models was found for this decision. Route a task with this plugin before reporting."
+    );
+  }
+  try {
+    const row = buildHarnessOutcomeRow({
+      inferenceLogId: input.inferenceLogId,
+      taskDescriptor: input.routeContext.taskDescriptor,
+      allowedModels: input.routeContext.allowedModels,
+      selectedModels: {
+        coder: input.report.actualModel,
+        reviewer: input.report.actualModel
+      },
+      completionResult: input.report.completionStatus === "succeeded" ? "success" : "failure",
+      harness: input.harness,
+      sdkVersion: SDK_VERSION,
+      observedAt: input.observedAt,
+      ...input.routeContext.budgetUsd !== void 0 ? { budgetUsd: input.routeContext.budgetUsd } : {},
+      ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
+      ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
+      ...input.taskId ? { taskId: input.taskId } : {}
+    });
+    return ok(row);
+  } catch (error) {
+    return fail(
+      "CONTRIBUTION_VALIDATION_FAILED",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 }
 function applyProfileConstraints(packet, profile, registry) {
   const providerConstraints = profile.modelCatalog.providerConstraintLabels ?? profile.modelCatalog.allowedProviders;
@@ -3930,6 +4537,20 @@ function createRouteTask(profile) {
     );
     if (storedCorrelation.record) {
       const redactionConfig = context.builderOptions.redactionConfig ?? DEFAULT_REDACTION_CONFIG;
+      const costBaseline = captureCostBaseline({
+        cwd: process.cwd(),
+        nowIso: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
+        ...options?.env ? { env: options.env } : {}
+      });
+      const routeContextProjection = buildRouteContextProjection(
+        input.metadata,
+        packetResult.packet.modelConstraints,
+        {
+          taskText: input.taskText,
+          ...input.repositorySignals ? { repositorySignals: input.repositorySignals } : {},
+          costBaseline
+        }
+      );
       await store.putCorrelation({
         ...storedCorrelation.record,
         metadata: {
@@ -3944,6 +4565,8 @@ function createRouteTask(profile) {
             redactionConfig
           ),
           payloadHash,
+          routeContext: JSON.stringify(routeContextProjection),
+          ...route?.routeId ? { inferenceLogId: route.routeId } : {},
           status: "pending",
           decisionAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
           ...options?.env?.HOKUSAI_DEBUG === "1" || process.env.HOKUSAI_DEBUG === "1" ? {
@@ -4113,11 +4736,14 @@ async function findLatestRoutingDecision(input) {
   if (!latest) {
     return void 0;
   }
+  const routeContext = parseRouteContext(latest.metadata?.routeContext);
   return {
     correlationId: latest.metadata?.originalCorrelationId ?? latest.correlationId,
     taskId: latest.metadata?.taskId ?? latest.packetHash,
     createdAt: new Date(latest.createdAt).toISOString(),
-    ...latest.metadata?.recommendedModelId ? { recommendedModelId: latest.metadata.recommendedModelId } : {}
+    ...latest.metadata?.recommendedModelId ? { recommendedModelId: latest.metadata.recommendedModelId } : {},
+    ...latest.metadata?.inferenceLogId ? { inferenceLogId: latest.metadata.inferenceLogId } : {},
+    ...routeContext ? { routeContext } : {}
   };
 }
 function createPreviewReportOutcome(profile) {
@@ -4130,8 +4756,14 @@ function createPreviewReportOutcome(profile) {
       );
     }
     let report;
-    const { taskId, ...reportInput } = input;
-    void taskId;
+    const {
+      taskId,
+      inferenceLogId,
+      routeContext,
+      actualCostUsd,
+      wallClockSeconds,
+      ...reportInput
+    } = input;
     try {
       report = buildOutcomeReport(reportInput);
     } catch (error) {
@@ -4145,12 +4777,28 @@ function createPreviewReportOutcome(profile) {
       }
       throw error;
     }
+    const contributionResult = buildReportContributionRow({
+      report,
+      routeContext,
+      inferenceLogId,
+      harness: profile.harness,
+      observedAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
+      ...actualCostUsd !== void 0 ? { actualCostUsd } : {},
+      ...wallClockSeconds !== void 0 ? { wallClockSeconds } : {},
+      ...taskId ? { taskId } : {}
+    });
+    const contributionRow = contributionResult.ok ? contributionResult.value : void 0;
+    const lines = buildOutcomePreviewLines(report);
+    if (contributionRow) {
+      lines.push(...buildContributionPreviewLines(contributionRow));
+    }
     return ok({
       report,
       preview: {
-        lines: buildOutcomePreviewLines(report),
+        lines,
         payload: report
-      }
+      },
+      ...contributionRow ? { contributionRow } : {}
     });
   };
 }
@@ -4164,13 +4812,32 @@ function createReportTaskOutcome(profile) {
     const context = resolveCommandContext(profile, options);
     const store = new FsLocalStore(context.configDir);
     const timestamp = (options?.clock ?? (() => /* @__PURE__ */ new Date()))().getTime();
+    const observedAt = new Date(timestamp).toISOString();
     const redactionConfig = context.builderOptions.redactionConfig ?? DEFAULT_REDACTION_CONFIG;
     await store.putPayloadHash({
       hash: hashPayload(previewResult.value.report, redactionConfig.salt),
       algorithm: "sha-256-hmac",
       createdAt: timestamp
     });
+    const resolvedCorrelation = await findStoredCorrelationRecord(
+      store,
+      input.correlationId
+    );
+    const routeContext = parseRouteContext(resolvedCorrelation.record?.metadata?.routeContext) ?? input.routeContext;
+    const inferenceLogId = input.inferenceLogId ?? resolvedCorrelation.record?.metadata?.inferenceLogId;
+    const contributionRowResult = buildReportContributionRow({
+      report: previewResult.value.report,
+      routeContext,
+      inferenceLogId,
+      harness: profile.harness,
+      observedAt,
+      ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
+      ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
+      ...input.taskId ? { taskId: input.taskId } : {}
+    });
     let response;
+    let contribution;
+    let contributionRow = contributionRowResult.ok ? contributionRowResult.value : void 0;
     if (options?.dryRun) {
       await store.appendAudit({
         id: toAuditId(input.correlationId, "outcome"),
@@ -4181,12 +4848,29 @@ function createReportTaskOutcome(profile) {
         error: "dry-run"
       });
     } else if (options?.apiClient) {
+      if (!contributionRowResult.ok) {
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, "contribution"),
+          kind: "outcome",
+          correlationId: input.correlationId,
+          status: "failed",
+          timestamp,
+          error: contributionRowResult.error.message
+        });
+        return contributionRowResult;
+      }
+      const row = contributionRowResult.value;
+      contributionRow = row;
+      const contributionRequest = {
+        rows: [row],
+        metadata: { idempotency_key: input.correlationId }
+      };
       try {
-        response = await options.apiClient.reportOutcome(
-          previewResult.value.report
+        contribution = await options.apiClient.submitContribution(
+          contributionRequest
         );
         await store.appendAudit({
-          id: toAuditId(input.correlationId, "outcome"),
+          id: toAuditId(input.correlationId, "contribution"),
           kind: "outcome",
           correlationId: input.correlationId,
           status: "submitted",
@@ -4201,7 +4885,7 @@ function createReportTaskOutcome(profile) {
         });
       } catch (error) {
         await store.appendAudit({
-          id: toAuditId(input.correlationId, "outcome"),
+          id: toAuditId(input.correlationId, "contribution"),
           kind: "outcome",
           correlationId: input.correlationId,
           status: "failed",
@@ -4215,6 +4899,27 @@ function createReportTaskOutcome(profile) {
         }
         throw error;
       }
+      try {
+        response = await options.apiClient.reportOutcome(
+          previewResult.value.report
+        );
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, "outcome"),
+          kind: "outcome",
+          correlationId: input.correlationId,
+          status: "submitted",
+          timestamp
+        });
+      } catch (error) {
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, "outcome"),
+          kind: "outcome",
+          correlationId: input.correlationId,
+          status: "failed",
+          timestamp,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
     } else {
       await store.appendAudit({
         id: toAuditId(input.correlationId, "outcome"),
@@ -4227,7 +4932,9 @@ function createReportTaskOutcome(profile) {
     return ok({
       report: previewResult.value.report,
       ...response ? { response } : {},
-      submitted: Boolean(response)
+      submitted: Boolean(contribution ?? response),
+      ...contributionRow ? { contributionRow } : {},
+      ...contribution ? { contribution } : {}
     });
   };
 }
@@ -4453,6 +5160,14 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === "--max-cost-usd") {
+      const value = Number(argv[index + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.maxCostUsd = value;
+      }
+      index += 1;
+      continue;
+    }
     if (arg === "--config") {
       const configPath = argv[index + 1];
       if (configPath !== void 0) {
@@ -4596,7 +5311,8 @@ function createRunCli(profile, impls) {
       ...routeInput,
       metadata: {
         ...routeInput.metadata,
-        objective: routingObjectiveToApiValue(objective)
+        objective: routingObjectiveToApiValue(objective),
+        ...parsed.maxCostUsd !== void 0 ? { max_cost_usd: String(parsed.maxCostUsd) } : {}
       }
     };
     const result = await routeTaskImpl(routeInputWithObjective, {
@@ -4750,6 +5466,33 @@ function parseArgs2(argv) {
       index += 1;
     } else if (arg === "--task-id" && next !== void 0) {
       parsed.taskId = next;
+      index += 1;
+    } else if (arg === "--inference-log-id" && next !== void 0) {
+      parsed.inferenceLogId = next;
+      index += 1;
+    } else if (arg === "--actual-cost-usd" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value)) {
+        parsed.actualCostUsd = value;
+      }
+      index += 1;
+    } else if (arg === "--wall-clock-seconds" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value)) {
+        parsed.wallClockSeconds = value;
+      }
+      index += 1;
+    } else if (arg === "--input-tokens" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.inputTokens = value;
+      }
+      index += 1;
+    } else if (arg === "--output-tokens" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.outputTokens = value;
+      }
       index += 1;
     }
   }
@@ -4966,15 +5709,21 @@ function createRunReportCli(profile, impls) {
     }
     const stderrNotes = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
+    const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
+    const resolvedActualModel = parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "";
+    const resolvedActualCostUsd = resolveActualCostUsd({
+      model: resolvedActualModel,
+      env,
+      ...parsed.actualCostUsd !== void 0 ? { explicitActualCostUsd: parsed.actualCostUsd } : {},
+      ...parsed.inputTokens !== void 0 ? { inputTokens: parsed.inputTokens } : {},
+      ...parsed.outputTokens !== void 0 ? { outputTokens: parsed.outputTokens } : {},
+      ...latest?.routeContext ? { routeContext: latest.routeContext } : {}
+    });
     const reportInput = {
       taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
       recommendedModel: parsed.recommendedModel ?? pipedInput.recommendedModel ?? latest?.recommendedModelId ?? "",
-      // When the recommendation was accepted, the actual model is the
-      // recommended one, so --use-latest can fill it from the stored decision.
-      // If it was not accepted, leave it empty so validation forces the caller
-      // to state which model they actually ran.
-      actualModel: parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "",
+      actualModel: resolvedActualModel,
       recommendationAccepted: recommendationAccepted ?? false,
       completionStatus: parsed.status ?? pipedInput.completionStatus ?? "",
       latencyBucket: withDefaultBucket(
@@ -4999,7 +5748,11 @@ function createRunReportCli(profile, impls) {
       ...buildSummary(parsed.testStatus, parsed.testFailures) ?? pipedInput.test ? {
         test: buildSummary(parsed.testStatus, parsed.testFailures) ?? pipedInput.test
       } : {},
-      ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {}
+      ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {},
+      ...resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {},
+      ...latest?.routeContext ? { routeContext: latest.routeContext } : {},
+      ...resolvedActualCostUsd !== void 0 ? { actualCostUsd: resolvedActualCostUsd } : {},
+      ...parsed.wallClockSeconds !== void 0 ? { wallClockSeconds: parsed.wallClockSeconds } : {}
     };
     try {
       const result = parsed.send ? await reportTaskOutcomeImpl(reportInput, {
@@ -5015,7 +5768,7 @@ function createRunReportCli(profile, impls) {
         ...parsed.configPath ? { configPath: parsed.configPath } : {}
       });
       if (!result.ok) {
-        const code = result.error.code === "OUTCOME_VALIDATION_FAILED" ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR : result.error.code === "NETWORK_ERROR" ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
+        const code = result.error.code === "OUTCOME_VALIDATION_FAILED" || result.error.code === "CONTRIBUTION_UNAVAILABLE" || result.error.code === "CONTRIBUTION_VALIDATION_FAILED" ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR : result.error.code === "NETWORK_ERROR" ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
         return toMessage2(parsed, result.error.message, code, result.error.details);
       }
       return renderSuccess(parsed, result.value, stderrNotes);
@@ -5632,20 +6385,475 @@ function createRunBootstrapDoctor(profile) {
   };
 }
 
+// ../core/src/contribution/schema.ts
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
+var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
+var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  "prompt",
+  "messages",
+  "task_text",
+  "raw_input",
+  "eval_record",
+  "originalprompt",
+  "original_prompt",
+  "description",
+  "issue_body"
+]);
+var ContributionValidationError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "ContributionValidationError";
+    this.code = code;
+  }
+};
+function isPlainObject3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isFiniteNonNegativeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+function isIsoDateString(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+function hasOnlyAllowedKeys(value, keys) {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+function isTechnicalTaskRouterSelectedModels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["planner", "coder", "reviewer"])) {
+    return false;
+  }
+  if (typeof value.coder !== "string" || typeof value.reviewer !== "string") {
+    return false;
+  }
+  return value.planner === void 0 || typeof value.planner === "string";
+}
+function isRoleAvailableModels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["planner_models", "coder_models", "reviewer_models"])) {
+    return false;
+  }
+  return isStringArray(value.planner_models) && isStringArray(value.coder_models) && isStringArray(value.reviewer_models);
+}
+function isOutcomeLabels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["budget_label", "cost_label", "time_label", "success_label"])) {
+    return false;
+  }
+  return (value.budget_label === "under_budget" || value.budget_label === "over_budget" || value.budget_label === "unknown") && (value.cost_label === "free" || value.cost_label === "low" || value.cost_label === "medium" || value.cost_label === "high" || value.cost_label === "unknown") && (value.time_label === "fast" || value.time_label === "medium" || value.time_label === "slow" || value.time_label === "unknown") && (value.success_label === "success" || value.success_label === "failure");
+}
+function isCandidatePoolMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["scenario_id", "scenario_kind", "pool_size", "baseline_model"])) {
+    return false;
+  }
+  return typeof value.scenario_id === "string" && typeof value.scenario_kind === "string" && isFiniteNonNegativeNumber(value.pool_size) && (value.baseline_model === void 0 || typeof value.baseline_model === "string");
+}
+function isSparseCellMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["cell_id", "descriptor_signature", "observed_count", "is_sparse"])) {
+    return false;
+  }
+  return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
+}
+function assertNoForbiddenKeys(value, path4 = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertNoForbiddenKeys(item, [...path4, String(index)]);
+    }
+    return;
+  }
+  if (!isPlainObject3(value)) {
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    if (FORBIDDEN_KEYS.has(normalizedKey)) {
+      throw new ContributionValidationError(
+        "forbidden_field",
+        `Forbidden field at ${[...path4, key].join(".")}`
+      );
+    }
+    assertNoForbiddenKeys(child, [...path4, key]);
+  }
+}
+var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
+  "eligible",
+  "ineligible_missing_outcome",
+  "ineligible_failed_outcome",
+  "unknown"
+]);
+var OUTCOME_SOURCE_VALUES = /* @__PURE__ */ new Set([
+  "feature_outcome_artifact",
+  "reconstructed",
+  "unknown"
+]);
+function isSubmitDataContributionRow(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "success_under_budget",
+    "inputs",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "task_id",
+    "harness",
+    "outcome_diagnostic",
+    "outcome_source",
+    "outcome_artifact_present",
+    "outcome_artifact_valid",
+    "outcome_artifact_used",
+    "outcome_missing_fields",
+    "outcome_invalid_fields",
+    "outcome_failure_reason"
+  ])) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.inputs !== void 0 && !isPlainObject3(value.inputs)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  if (value.outcome_diagnostic !== void 0 && !OUTCOME_DIAGNOSTIC_VALUES.has(value.outcome_diagnostic)) {
+    return false;
+  }
+  if (value.outcome_source !== void 0 && !OUTCOME_SOURCE_VALUES.has(value.outcome_source)) {
+    return false;
+  }
+  if (value.outcome_artifact_present !== void 0 && typeof value.outcome_artifact_present !== "boolean") {
+    return false;
+  }
+  if (value.outcome_artifact_valid !== void 0 && typeof value.outcome_artifact_valid !== "boolean") {
+    return false;
+  }
+  if (value.outcome_artifact_used !== void 0 && typeof value.outcome_artifact_used !== "boolean") {
+    return false;
+  }
+  if (value.outcome_missing_fields !== void 0 && !isStringArray(value.outcome_missing_fields)) {
+    return false;
+  }
+  if (value.outcome_invalid_fields !== void 0 && !isStringArray(value.outcome_invalid_fields)) {
+    return false;
+  }
+  if (value.outcome_failure_reason !== void 0 && typeof value.outcome_failure_reason !== "string") {
+    return false;
+  }
+  return !("schema_version" in value);
+}
+function isTechnicalTaskRouterContributionRowV1(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "candidate_pools",
+    "current_candidate_pools",
+    "audit_metadata",
+    "scenario",
+    "scenarios"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor)) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models)) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (!isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  return true;
+}
+function isTechnicalTaskRouterContributionRowV2(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "available_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "outcome_labels",
+    "candidate_pool",
+    "sparse_cell",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "candidate_pools",
+    "current_candidate_pools",
+    "audit_metadata",
+    "scenario",
+    "scenarios"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor)) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models)) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (!isRoleAvailableModels(value.available_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (!isOutcomeLabels(value.outcome_labels)) {
+    return false;
+  }
+  if (!isCandidatePoolMetadata(value.candidate_pool)) {
+    return false;
+  }
+  if (!isSparseCellMetadata(value.sparse_cell)) {
+    return false;
+  }
+  if (!isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  return true;
+}
+function isHarnessOutcomeRowMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["harness", "sdk_version"])) {
+    return false;
+  }
+  return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
+}
+function isHarnessOutcomeRowV1(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "completion_result",
+    "success_under_budget",
+    "inference_log_id",
+    "harness",
+    "task_id",
+    "observed_at",
+    "harness_metadata"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (value.success_under_budget !== void 0 && typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.inference_log_id !== void 0 && typeof value.inference_log_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.observed_at !== void 0 && !isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.harness_metadata !== void 0 && !isHarnessOutcomeRowMetadata(value.harness_metadata)) {
+    return false;
+  }
+  return true;
+}
+function validateContributionRow(row) {
+  assertNoForbiddenKeys(row);
+  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
+    return row;
+  }
+  throw new ContributionValidationError(
+    "schema_validation_failed",
+    "Contribution row does not match a supported redacted schema"
+  );
+}
+
+// ../core/src/contribution/builder.ts
+function buildHarnessOutcomeRow(projection) {
+  if (!projection.taskDescriptor || Object.keys(projection.taskDescriptor).length === 0) {
+    throw new Error("taskDescriptor must be a non-empty object");
+  }
+  if (!projection.allowedModels || projection.allowedModels.length === 0) {
+    throw new Error("allowedModels must be a non-empty array");
+  }
+  if (!projection.selectedModels) {
+    throw new Error("selectedModels is required");
+  }
+  const harnessMetadata = {
+    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
+  };
+  const row = {
+    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+    task_descriptor: { ...projection.taskDescriptor },
+    allowed_models: [...projection.allowedModels],
+    selected_models: { ...projection.selectedModels },
+    completion_result: projection.completionResult,
+    ...projection.budgetUsd !== void 0 ? { budget_usd: projection.budgetUsd } : {},
+    ...projection.actualCostUsd !== void 0 ? { actual_cost_usd: projection.actualCostUsd } : {},
+    ...projection.wallClockSeconds !== void 0 ? { wall_clock_seconds: projection.wallClockSeconds } : {},
+    ...projection.successUnderBudget !== void 0 ? { success_under_budget: projection.successUnderBudget } : {},
+    ...projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {},
+    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.taskId ? { task_id: projection.taskId } : {},
+    ...projection.observedAt ? { observed_at: projection.observedAt } : {},
+    ...Object.keys(harnessMetadata).length > 0 ? { harness_metadata: harnessMetadata } : {}
+  };
+  return validateContributionRow(row);
+}
+
 // src/config-path.ts
 import { existsSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import os2 from "node:os";
+import path2 from "node:path";
 var CLAUDE_CODE_STATE_FILE = "state.json";
 function resolveClaudeCodeConfigPath(options) {
-  const dir = options?.override?.trim() || process.env.HOKUSAI_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude", "hokusai");
+  const dir = options?.override?.trim() || process.env.HOKUSAI_CONFIG_DIR?.trim() || path2.join(os2.homedir(), ".claude", "hokusai");
   return {
     dir,
     exists: existsSync(dir)
   };
 }
 function getClaudeCodeStateFilePath(configDir) {
-  return path.join(configDir, CLAUDE_CODE_STATE_FILE);
+  return path2.join(configDir, CLAUDE_CODE_STATE_FILE);
 }
 
 // src/task-packet.ts
@@ -6046,7 +7254,7 @@ async function readStateFile(filePath) {
   }
 }
 async function writeStateFile(filePath, state) {
-  await mkdir4(path2.dirname(filePath), { recursive: true });
+  await mkdir4(path3.dirname(filePath), { recursive: true });
   await writeFile4(filePath, JSON.stringify(state, null, 2), "utf8");
 }
 function createClaudeCodeAdapter(options) {

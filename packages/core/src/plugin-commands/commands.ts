@@ -6,11 +6,17 @@ import {
   HokusaiDispatchBuilder,
   HokusaiNetworkError,
   ModelMappingError,
+  SDK_VERSION,
+  bucketRepositoryScale,
+  buildHarnessOutcomeRow,
   buildOutcomeReport,
   canReportOutcome,
   canRoute,
+  captureCostBaseline,
+  classifyTaskFamily,
   defaultPluginConfigPath,
   hashPayload,
+  inferReasoningDepth,
   isConsentGranted,
   listSupportedModelIds,
   loadPluginConfig,
@@ -18,10 +24,15 @@ import {
   preview,
   redact,
   resolveConsent,
+  summarizeLanguageSignals,
   validateRouteRequest,
   type AdapterResult,
   type ConsentConfig,
   type ConsentSettings,
+  type ContributionAcceptedResponse,
+  type CostBaselineSnapshot,
+  type ContributionRequest,
+  type HarnessOutcomeRowV1,
   type HarnessRecommendation,
   type ModelRegistry,
   type OutcomeReport,
@@ -31,6 +42,7 @@ import {
   type RetentionPolicy,
   type RouteResponse,
   type SubmissionAuditEntry,
+  type TaskFamily,
   type TaskPacket,
 } from '../index.js';
 import {
@@ -54,7 +66,9 @@ import type {
   ReportOutcomeInputWithTaskId,
   ReportOutcomeResult,
   ReportingStatusResult,
+  RouteContextProjection,
   RouteInputBase,
+  RouteRepositorySignals,
   RouteResult,
   RoutingDecisionSummary,
   SharedCommandOptions,
@@ -130,6 +144,248 @@ function buildDebugPreview(input: string, config: RedactionConfig): string {
 
 function toAuditId(correlationId: string, suffix: string): string {
   return `${toStoredCorrelationId(correlationId)}-${suffix}`;
+}
+
+function firstMetadataValue(
+  metadata: Record<string, string> | undefined,
+  ...keys: string[]
+): string | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function parseMetadataList(value: string | undefined): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return entries.length > 0 ? entries : undefined;
+}
+
+/** Map a deterministic TaskFamily label onto the server's HokusaiTaskType set. */
+const TASK_FAMILY_TO_HOKUSAI_TYPE: Record<TaskFamily, string> = {
+  bugfix: 'bugfix',
+  feature: 'feature',
+  migration: 'migration',
+  refactor: 'refactor',
+  test: 'tests',
+  docs: 'docs',
+  infra: 'infra',
+  chore: 'infra',
+  mixed: 'unknown',
+  investigation: 'unknown',
+};
+
+/**
+ * Derive categorical descriptor labels from the raw task text and repository
+ * signals available at route time. Only opaque categorical labels/buckets are
+ * produced — the raw task text is never stored or returned (privacy).
+ */
+function deriveTaskDescriptor(input: {
+  taskText: string | undefined;
+  repositorySignals: RouteRepositorySignals | undefined;
+}): Record<string, string> {
+  const derived: Record<string, string> = {};
+
+  const taskText = input.taskText?.trim();
+  if (taskText && taskText.length > 0) {
+    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity = inferReasoningDepth({ text: taskText });
+  }
+
+  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  if (repoSizeBucket) {
+    derived.repo_size_bucket = repoSizeBucket;
+  }
+
+  const extensionCounts = input.repositorySignals?.extensionCounts;
+  if (extensionCounts) {
+    const dominant = dominantLanguage(extensionCounts);
+    if (dominant) {
+      derived.language = dominant;
+    }
+  }
+
+  return derived;
+}
+
+/**
+ * Pick the single dominant language from extension counts. Ties break
+ * deterministically by extension name. Returns undefined when no extension maps
+ * to a known language.
+ */
+function dominantLanguage(extensionCounts: Record<string, number>): string | undefined {
+  let bestExtension: string | undefined;
+  let bestCount = 0;
+
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+
+    if (
+      count > bestCount ||
+      (count === bestCount && (bestExtension === undefined || extension < bestExtension))
+    ) {
+      bestExtension = extension;
+      bestCount = count;
+    }
+  }
+
+  if (bestExtension === undefined) {
+    return undefined;
+  }
+
+  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
+}
+
+/**
+ * Derive a redacted route-context projection from the route request inputs so
+ * the report step can build a harness contribution row. Only categorical
+ * routing signals are captured; raw prompt/task text is never included.
+ *
+ * Harness-supplied metadata always takes precedence over derived labels; when a
+ * descriptor field is absent from metadata it is derived from the task text and
+ * repository signals where a deterministic signal exists.
+ */
+function buildRouteContextProjection(
+  metadata: Record<string, string> | undefined,
+  modelConstraints: string[] | undefined,
+  signals: {
+    taskText?: string | undefined;
+    repositorySignals?: RouteRepositorySignals | undefined;
+    costBaseline?: CostBaselineSnapshot | undefined;
+  } = {},
+): RouteContextProjection {
+  const derived = deriveTaskDescriptor({
+    taskText: signals.taskText,
+    repositorySignals: signals.repositorySignals,
+  });
+
+  const descriptorPairs: Array<[string, string | undefined]> = [
+    [
+      'task_type',
+      firstMetadataValue(metadata, 'task_type', 'taskType', 'taskFamily') ?? derived.task_type,
+    ],
+    ['language', firstMetadataValue(metadata, 'language', 'primaryLanguage') ?? derived.language],
+    ['domain', firstMetadataValue(metadata, 'domain')],
+    [
+      'complexity',
+      firstMetadataValue(metadata, 'estimated_complexity', 'complexity', 'reasoningDepth') ??
+        derived.complexity,
+    ],
+    [
+      'repo_size_bucket',
+      firstMetadataValue(metadata, 'repo_size_bucket', 'repositoryScale') ??
+        derived.repo_size_bucket,
+    ],
+    ['risk_level', firstMetadataValue(metadata, 'risk_level')],
+  ];
+
+  const taskDescriptor: Record<string, string> = {};
+  for (const [key, value] of descriptorPairs) {
+    if (value !== undefined) {
+      taskDescriptor[key] = value;
+    }
+  }
+
+  // Guarantee a non-empty partial descriptor: when nothing could be derived or
+  // supplied, record task_type as "unknown" rather than fabricating values.
+  if (Object.keys(taskDescriptor).length === 0) {
+    taskDescriptor.task_type = 'unknown';
+  }
+
+  const allowedModels =
+    parseMetadataList(firstMetadataValue(metadata, 'available_models')) ??
+    parseMetadataList(firstMetadataValue(metadata, 'available_coder_models')) ??
+    (modelConstraints && modelConstraints.length > 0 ? [...modelConstraints] : []);
+
+  const budgetRaw = firstMetadataValue(metadata, 'max_cost_usd');
+  const budgetUsd = budgetRaw !== undefined ? Number(budgetRaw) : undefined;
+
+  const costBaseline = signals.costBaseline;
+
+  return {
+    taskDescriptor,
+    allowedModels,
+    ...(budgetUsd !== undefined && Number.isFinite(budgetUsd) ? { budgetUsd } : {}),
+    ...(costBaseline
+      ? {
+          baselineAt: costBaseline.baselineAt,
+          projectDirKey: costBaseline.projectDirKey,
+          ...(costBaseline.costBaselineUsd !== undefined
+            ? { costBaselineUsd: costBaseline.costBaselineUsd }
+            : {}),
+          ...(costBaseline.sessionId !== undefined
+            ? { sessionId: costBaseline.sessionId }
+            : {}),
+        }
+      : {}),
+  };
+}
+
+function parseRouteContext(value: string | undefined): RouteContextProjection | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return undefined;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const taskDescriptor =
+      typeof record.taskDescriptor === 'object' &&
+      record.taskDescriptor !== null &&
+      !Array.isArray(record.taskDescriptor)
+        ? (record.taskDescriptor as Record<string, string>)
+        : {};
+    const allowedModels = Array.isArray(record.allowedModels)
+      ? record.allowedModels.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+
+    return {
+      taskDescriptor,
+      allowedModels,
+      ...(typeof record.budgetUsd === 'number' && Number.isFinite(record.budgetUsd)
+        ? { budgetUsd: record.budgetUsd }
+        : {}),
+      ...(typeof record.costBaselineUsd === 'number' && Number.isFinite(record.costBaselineUsd)
+        ? { costBaselineUsd: record.costBaselineUsd }
+        : {}),
+      ...(typeof record.sessionId === 'string' && record.sessionId.length > 0
+        ? { sessionId: record.sessionId }
+        : {}),
+      ...(typeof record.baselineAt === 'string' && record.baselineAt.length > 0
+        ? { baselineAt: record.baselineAt }
+        : {}),
+      ...(typeof record.projectDirKey === 'string' && record.projectDirKey.length > 0
+        ? { projectDirKey: record.projectDirKey }
+        : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function parseAlternativeIds(value: string | undefined): string[] {
@@ -324,6 +580,76 @@ function buildOutcomePreviewLines(report: OutcomeReport): string[] {
   );
 
   return lines;
+}
+
+function buildContributionPreviewLines(row: HarnessOutcomeRowV1): string[] {
+  return [
+    '',
+    'Contribution row (harness_outcome_row/v1) that will be submitted:',
+    JSON.stringify(row, null, 2),
+  ];
+}
+
+/**
+ * Build the canonical harness contribution row from a validated outcome report
+ * plus the routing context persisted at route time. Returns a failure result
+ * when the required routing signals (inference log id / allowed models) are
+ * unavailable, mirroring how the report CLI fails on missing correlation ids.
+ */
+function buildReportContributionRow(input: {
+  report: OutcomeReport;
+  routeContext: RouteContextProjection | undefined;
+  inferenceLogId: string | undefined;
+  actualCostUsd?: number | undefined;
+  wallClockSeconds?: number | undefined;
+  taskId?: string | undefined;
+  harness: string;
+  observedAt: string;
+}): AdapterResult<HarnessOutcomeRowV1> {
+  if (!input.inferenceLogId) {
+    return fail(
+      'CONTRIBUTION_UNAVAILABLE',
+      'No inference log id is available for this routing decision. Route a task with this plugin first, or pass --inference-log-id.',
+    );
+  }
+
+  if (!input.routeContext || input.routeContext.allowedModels.length === 0) {
+    return fail(
+      'CONTRIBUTION_UNAVAILABLE',
+      'No routing context with allowed models was found for this decision. Route a task with this plugin before reporting.',
+    );
+  }
+
+  try {
+    const row = buildHarnessOutcomeRow({
+      inferenceLogId: input.inferenceLogId,
+      taskDescriptor: input.routeContext.taskDescriptor,
+      allowedModels: input.routeContext.allowedModels,
+      selectedModels: {
+        coder: input.report.actualModel,
+        reviewer: input.report.actualModel,
+      },
+      completionResult:
+        input.report.completionStatus === 'succeeded' ? 'success' : 'failure',
+      harness: input.harness,
+      sdkVersion: SDK_VERSION,
+      observedAt: input.observedAt,
+      ...(input.routeContext.budgetUsd !== undefined
+        ? { budgetUsd: input.routeContext.budgetUsd }
+        : {}),
+      ...(input.actualCostUsd !== undefined ? { actualCostUsd: input.actualCostUsd } : {}),
+      ...(input.wallClockSeconds !== undefined
+        ? { wallClockSeconds: input.wallClockSeconds }
+        : {}),
+      ...(input.taskId ? { taskId: input.taskId } : {}),
+    });
+    return ok(row);
+  } catch (error) {
+    return fail(
+      'CONTRIBUTION_VALIDATION_FAILED',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 function applyProfileConstraints(
@@ -658,6 +984,24 @@ export function createRouteTask<
       const redactionConfig =
         (context.builderOptions as { redactionConfig?: RedactionConfig })
           .redactionConfig ?? DEFAULT_REDACTION_CONFIG;
+      // Snapshot the session cost baseline so the report step can diff it.
+      // Purely best-effort: any failure yields a baseline without a cost anchor.
+      const costBaseline = captureCostBaseline({
+        cwd: process.cwd(),
+        nowIso: (options?.clock ?? (() => new Date()))().toISOString(),
+        ...(options?.env ? { env: options.env } : {}),
+      });
+      const routeContextProjection = buildRouteContextProjection(
+        input.metadata,
+        packetResult.packet.modelConstraints,
+        {
+          taskText: input.taskText,
+          ...(input.repositorySignals
+            ? { repositorySignals: input.repositorySignals }
+            : {}),
+          costBaseline,
+        },
+      );
       await store.putCorrelation({
         ...storedCorrelation.record,
         metadata: {
@@ -672,6 +1016,8 @@ export function createRouteTask<
             redactionConfig,
           ),
           payloadHash,
+          routeContext: JSON.stringify(routeContextProjection),
+          ...(route?.routeId ? { inferenceLogId: route.routeId } : {}),
           status: 'pending',
           decisionAt: (options?.clock ?? (() => new Date()))().toISOString(),
           ...(options?.env?.HOKUSAI_DEBUG === '1' ||
@@ -904,6 +1250,8 @@ export async function findLatestRoutingDecision(input: {
     return undefined;
   }
 
+  const routeContext = parseRouteContext(latest.metadata?.routeContext);
+
   return {
     correlationId:
       latest.metadata?.originalCorrelationId ?? latest.correlationId,
@@ -912,6 +1260,10 @@ export async function findLatestRoutingDecision(input: {
     ...(latest.metadata?.recommendedModelId
       ? { recommendedModelId: latest.metadata.recommendedModelId }
       : {}),
+    ...(latest.metadata?.inferenceLogId
+      ? { inferenceLogId: latest.metadata.inferenceLogId }
+      : {}),
+    ...(routeContext ? { routeContext } : {}),
   };
 }
 
@@ -934,8 +1286,14 @@ export function createPreviewReportOutcome<
     }
 
     let report: OutcomeReport;
-    const { taskId, ...reportInput } = input;
-    void taskId;
+    const {
+      taskId,
+      inferenceLogId,
+      routeContext,
+      actualCostUsd,
+      wallClockSeconds,
+      ...reportInput
+    } = input;
     try {
       report = buildOutcomeReport(reportInput);
     } catch (error) {
@@ -954,12 +1312,35 @@ export function createPreviewReportOutcome<
       throw error;
     }
 
+    // Best-effort: show the harness contribution row that would be submitted
+    // when the routing context is available. Preview must never hard-fail on a
+    // missing routing context; the submit path enforces that.
+    const contributionResult = buildReportContributionRow({
+      report,
+      routeContext,
+      inferenceLogId,
+      harness: profile.harness,
+      observedAt: (options?.clock ?? (() => new Date()))().toISOString(),
+      ...(actualCostUsd !== undefined ? { actualCostUsd } : {}),
+      ...(wallClockSeconds !== undefined ? { wallClockSeconds } : {}),
+      ...(taskId ? { taskId } : {}),
+    });
+    const contributionRow = contributionResult.ok
+      ? contributionResult.value
+      : undefined;
+
+    const lines = buildOutcomePreviewLines(report);
+    if (contributionRow) {
+      lines.push(...buildContributionPreviewLines(contributionRow));
+    }
+
     return ok({
       report,
       preview: {
-        lines: buildOutcomePreviewLines(report),
+        lines,
         payload: report,
       },
+      ...(contributionRow ? { contributionRow } : {}),
     });
   };
 }
@@ -984,6 +1365,7 @@ export function createReportTaskOutcome<
     const context = resolveCommandContext(profile, options);
     const store = new FsLocalStore(context.configDir);
     const timestamp = (options?.clock ?? (() => new Date()))().getTime();
+    const observedAt = new Date(timestamp).toISOString();
     const redactionConfig =
       (context.builderOptions as { redactionConfig?: RedactionConfig })
         .redactionConfig ?? DEFAULT_REDACTION_CONFIG;
@@ -993,7 +1375,42 @@ export function createReportTaskOutcome<
       createdAt: timestamp,
     });
 
+    // Resolve the routing context persisted at route time (authoritative), with
+    // any values threaded through the input as a fallback.
+    const resolvedCorrelation = await findStoredCorrelationRecord(
+      store,
+      input.correlationId,
+    );
+    const routeContext =
+      parseRouteContext(resolvedCorrelation.record?.metadata?.routeContext) ??
+      input.routeContext;
+    const inferenceLogId =
+      input.inferenceLogId ??
+      resolvedCorrelation.record?.metadata?.inferenceLogId;
+
+    // Build the canonical contribution row before any network call so a missing
+    // routing context fails fast with a clear message.
+    const contributionRowResult = buildReportContributionRow({
+      report: previewResult.value.report,
+      routeContext,
+      inferenceLogId,
+      harness: profile.harness,
+      observedAt,
+      ...(input.actualCostUsd !== undefined
+        ? { actualCostUsd: input.actualCostUsd }
+        : {}),
+      ...(input.wallClockSeconds !== undefined
+        ? { wallClockSeconds: input.wallClockSeconds }
+        : {}),
+      ...(input.taskId ? { taskId: input.taskId } : {}),
+    });
+
     let response: OutcomeResponse | undefined;
+    let contribution: ContributionAcceptedResponse | undefined;
+    let contributionRow: HarnessOutcomeRowV1 | undefined = contributionRowResult.ok
+      ? contributionRowResult.value
+      : undefined;
+
     if (options?.dryRun) {
       await store.appendAudit({
         id: toAuditId(input.correlationId, 'outcome'),
@@ -1004,12 +1421,32 @@ export function createReportTaskOutcome<
         error: 'dry-run',
       });
     } else if (options?.apiClient) {
-      try {
-        response = (await options.apiClient.reportOutcome(
-          previewResult.value.report,
-        )) as OutcomeResponse;
+      // Canonical submission: the Model 30 contributions endpoint.
+      if (!contributionRowResult.ok) {
         await store.appendAudit({
-          id: toAuditId(input.correlationId, 'outcome'),
+          id: toAuditId(input.correlationId, 'contribution'),
+          kind: 'outcome',
+          correlationId: input.correlationId,
+          status: 'failed',
+          timestamp,
+          error: contributionRowResult.error.message,
+        });
+        return contributionRowResult;
+      }
+
+      const row = contributionRowResult.value;
+      contributionRow = row;
+      const contributionRequest: ContributionRequest = {
+        rows: [row],
+        metadata: { idempotency_key: input.correlationId },
+      };
+
+      try {
+        contribution = (await options.apiClient.submitContribution(
+          contributionRequest,
+        )) as ContributionAcceptedResponse;
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, 'contribution'),
           kind: 'outcome',
           correlationId: input.correlationId,
           status: 'submitted',
@@ -1024,7 +1461,7 @@ export function createReportTaskOutcome<
         });
       } catch (error) {
         await store.appendAudit({
-          id: toAuditId(input.correlationId, 'outcome'),
+          id: toAuditId(input.correlationId, 'contribution'),
           kind: 'outcome',
           correlationId: input.correlationId,
           status: 'failed',
@@ -1040,6 +1477,30 @@ export function createReportTaskOutcome<
 
         throw error;
       }
+
+      // Retained telemetry bridge: the legacy outcome endpoint still receives a
+      // weaker signal. Its failure must not mask a successful contribution.
+      try {
+        response = (await options.apiClient.reportOutcome(
+          previewResult.value.report,
+        )) as OutcomeResponse;
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, 'outcome'),
+          kind: 'outcome',
+          correlationId: input.correlationId,
+          status: 'submitted',
+          timestamp,
+        });
+      } catch (error) {
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, 'outcome'),
+          kind: 'outcome',
+          correlationId: input.correlationId,
+          status: 'failed',
+          timestamp,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     } else {
       await store.appendAudit({
         id: toAuditId(input.correlationId, 'outcome'),
@@ -1053,7 +1514,9 @@ export function createReportTaskOutcome<
     return ok({
       report: previewResult.value.report,
       ...(response ? { response } : {}),
-      submitted: Boolean(response),
+      submitted: Boolean(contribution ?? response),
+      ...(contributionRow ? { contributionRow } : {}),
+      ...(contribution ? { contribution } : {}),
     });
   };
 }

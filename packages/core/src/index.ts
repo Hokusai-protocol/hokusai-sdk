@@ -8,7 +8,11 @@ export {
   HokusaiNetworkError,
   HokusaiRateLimitError,
   HokusaiValidationError,
+  SDK_VERSION,
   createGatedClient,
+  type ContributionAcceptedResponse,
+  type ContributionRequest,
+  type ContributionRequestMetadata,
   type FetchTransport,
   type FetchTransportRequestInit,
   type FetchTransportResponse,
@@ -233,6 +237,33 @@ export {
   type TaskFamilyClassificationInput,
 } from './task-signals.js';
 export {
+  ANTHROPIC_MODEL_PRICING,
+  ANTHROPIC_MODEL_PRICING_AS_OF,
+  computeActualCostUsd,
+  resolveModelPrice,
+  type ModelPrice,
+  type TokenCostInput,
+} from './pricing.js';
+export {
+  DEFAULT_SIDECAR_FRESHNESS_MS,
+  captureCostBaseline,
+  computeTranscriptCostUsd,
+  encodeProjectDirKey,
+  locateSessionTranscript,
+  parseTranscriptUsageTotals,
+  readSessionCostSidecar,
+  resolveActualCostUsd,
+  resolveClaudeConfigDir,
+  resolveSidecarCostDiff,
+  sessionCostSidecarPath,
+  sessionTranscriptDir,
+  type CostBaselineSnapshot,
+  type CostResolutionRouteContext,
+  type SessionCostSidecar,
+  type SessionUsageFileSystem,
+  type TranscriptUsageTotals,
+} from './session-usage.js';
+export {
   claudeCodeTaskPacketFixture,
   claudeCodeFailureOutcomeFixture,
   claudeCodeSuccessOutcomeFixture,
@@ -268,3 +299,4 @@ export {
   type ConformanceSubject,
 } from './conformance.js';
 export * from './plugin-commands/index.js';
+export * from './contribution/index.js';

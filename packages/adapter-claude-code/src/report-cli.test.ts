@@ -311,6 +311,68 @@ describe('runReportCli', () => {
     expect(result.stdout).toContain('Server status: accepted');
   });
 
+  it('derives actual cost from token counts and the resolved model', async () => {
+    const previewReportOutcomeImpl = vi.fn(
+      (input: { actualCostUsd?: number; actualModel: string }) =>
+        Promise.resolve({
+          ok: true as const,
+          value: {
+            report: {
+              schemaVersion: '1' as const,
+              correlationId: 'route-1',
+              recommendedModel: 'claude-opus-4-8',
+              actualModel: input.actualModel,
+              recommendationAccepted: true,
+              completionStatus: 'succeeded' as const,
+              latencyBucket: 'medium' as const,
+              costBucket: 'medium' as const,
+              tokenBucket: 'medium' as const,
+            },
+            preview: { lines: [], payload: {} as never },
+          },
+        }),
+    );
+
+    const result = await runReportCli(
+      [
+        '--preview',
+        '--json',
+        '--correlation-id',
+        'route-1',
+        '--recommended-model',
+        'claude-opus-4-8',
+        '--actual-model',
+        'claude-opus-4-8',
+        '--accepted',
+        '--status',
+        'succeeded',
+        '--input-tokens',
+        '1000000',
+        '--output-tokens',
+        '1000000',
+      ],
+      {},
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiBaseUrl: 'https://api.hokus.ai',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-opus-4-8'],
+          }),
+        previewReportOutcomeImpl,
+        readStdin: () => Promise.resolve(''),
+      },
+    );
+
+    expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+    // 1M input @ $5/1M + 1M output @ $25/1M = 30
+    expect(previewReportOutcomeImpl).toHaveBeenCalledWith(
+      expect.objectContaining({ actualCostUsd: 30 }),
+      expect.anything(),
+    );
+  });
+
   it('maps invalid status values to outcome validation errors', async () => {
     const result = await runReportCli(
       [
