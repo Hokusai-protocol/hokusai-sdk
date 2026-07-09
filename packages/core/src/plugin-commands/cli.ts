@@ -46,6 +46,7 @@ interface ParsedArgs {
   configPath?: string;
   decline: boolean;
   json: boolean;
+  maxCostUsd?: number;
   objective?: string;
   reason?: string;
   task?: string;
@@ -115,6 +116,15 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === '--objective') {
       parsed.objective = argv[index + 1] ?? '';
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--max-cost-usd') {
+      const value = Number(argv[index + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.maxCostUsd = value;
+      }
       index += 1;
       continue;
     }
@@ -338,6 +348,9 @@ export function createRunCli<
       metadata: {
         ...routeInput.metadata,
         objective: routingObjectiveToApiValue(objective),
+        ...(parsed.maxCostUsd !== undefined
+          ? { max_cost_usd: String(parsed.maxCostUsd) }
+          : {}),
       },
     } as TRouteInput;
 

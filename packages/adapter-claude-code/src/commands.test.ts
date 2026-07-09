@@ -491,6 +491,87 @@ describe('routeTask', () => {
   });
 });
 
+describe('routeTask descriptor enrichment', () => {
+  const anthropicRegistry = () =>
+    new InMemoryModelRegistry([
+      {
+        id: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        family: 'claude',
+        capabilities: ['reasoning', 'streaming', 'tool-use'],
+        default: true,
+      },
+    ]);
+
+  async function routeAndReadContext(input: Parameters<typeof routeTask>[0]) {
+    const configPath = await createTempDir('hokusai-claude-descriptor-');
+    const result = await routeTask(input, {
+      configPath,
+      registry: anthropicRegistry(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error('routeTask failed');
+    }
+
+    const storedId = result.value.correlationId.replace(/[:.]/g, '_');
+    const store = new FsLocalStore(configPath);
+    const persisted = await store.getCorrelation(storedId);
+    const rawOnDisk = await readFile(
+      path.join(configPath, 'correlations', `${storedId}.json`),
+      'utf8',
+    );
+    const routeContext = JSON.parse(
+      persisted?.metadata?.routeContext ?? '{}',
+    ) as { taskDescriptor: Record<string, string>; budgetUsd?: number };
+    return { routeContext, rawOnDisk };
+  }
+
+  it('derives task_type and complexity from the task text without leaking raw text', async () => {
+    const taskText =
+      'Implement a new feature to add support for exporting reports as PDF files';
+    const { routeContext, rawOnDisk } = await routeAndReadContext({ taskText });
+
+    expect(routeContext.taskDescriptor).toMatchObject({
+      task_type: 'feature',
+      complexity: 'standard',
+    });
+    // Privacy: only categorical labels are persisted; never the raw task text.
+    expect(rawOnDisk).not.toContain('exporting reports');
+    expect(rawOnDisk).not.toContain(taskText);
+    expect(JSON.stringify(routeContext.taskDescriptor)).not.toContain('PDF');
+  });
+
+  it('lets harness-supplied metadata override derived descriptor labels', async () => {
+    const { routeContext } = await routeAndReadContext({
+      taskText:
+        'Implement a new feature to add support for exporting reports as PDF files',
+      metadata: { task_type: 'bugfix', complexity: 'deep' },
+    });
+
+    expect(routeContext.taskDescriptor).toMatchObject({
+      task_type: 'bugfix',
+      complexity: 'deep',
+    });
+  });
+
+  it('derives repo_size_bucket and dominant language from repository signals', async () => {
+    const { routeContext } = await routeAndReadContext({
+      taskText: 'Refactor the storage layer to reduce duplication',
+      repositorySignals: {
+        fileCount: 250,
+        extensionCounts: { ts: 10, py: 3 },
+      },
+    });
+
+    expect(routeContext.taskDescriptor).toMatchObject({
+      task_type: 'refactor',
+      repo_size_bucket: 'medium',
+      language: 'TypeScript',
+    });
+  });
+});
+
 describe('declineRecommendation', () => {
   it('updates the persisted routing decision to declined with a redacted reason', async () => {
     const configPath = await createTempDir('hokusai-claude-decline-');
@@ -832,6 +913,76 @@ describe('reportTaskOutcome', () => {
         error: 'outcome unavailable',
       }),
     ]);
+  });
+});
+
+describe('contribution row training-eligibility', () => {
+  const richRouteContext = {
+    taskDescriptor: {
+      task_type: 'feature',
+      complexity: 'standard',
+      language: 'TypeScript',
+      repo_size_bucket: 'medium',
+    },
+    allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+    budgetUsd: 5,
+  };
+
+  it('builds a training-eligible row when budget and actual cost are present', () => {
+    const result = previewReportOutcome({
+      taskId: 'task-eligible',
+      ...claudeCodeSuccessOutcomeFixture,
+      routeContext: richRouteContext,
+      inferenceLogId: 'inf-eligible',
+      actualCostUsd: 0.32,
+      wallClockSeconds: 120,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    // A training-eligible row carries a rich descriptor + allowed_models +
+    // selected_models{coder,reviewer} + budget_usd + actual_cost_usd +
+    // completion_result. The server classifies fidelity from these fields.
+    expect(result.value.contributionRow).toMatchObject({
+      task_descriptor: {
+        task_type: 'feature',
+        complexity: 'standard',
+        language: 'TypeScript',
+        repo_size_bucket: 'medium',
+      },
+      allowed_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      selected_models: {
+        coder: 'claude-3-7-sonnet',
+        reviewer: 'claude-3-7-sonnet',
+      },
+      budget_usd: 5,
+      actual_cost_usd: 0.32,
+      completion_result: 'success',
+    });
+  });
+
+  it('builds only a partial (telemetry-only) row when actual cost is absent', () => {
+    const result = previewReportOutcome({
+      taskId: 'task-partial',
+      ...claudeCodeSuccessOutcomeFixture,
+      routeContext: richRouteContext,
+      inferenceLogId: 'inf-partial',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const row = result.value.contributionRow;
+    expect(row).toBeDefined();
+    // Budget and descriptor are present, but without an actual cost the row is
+    // partial (telemetry only) — the field must be absent, not fabricated.
+    expect(row).toMatchObject({ budget_usd: 5, completion_result: 'success' });
+    expect(row).not.toHaveProperty('actual_cost_usd');
   });
 });
 

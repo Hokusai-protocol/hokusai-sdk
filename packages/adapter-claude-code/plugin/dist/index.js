@@ -3549,6 +3549,40 @@ function summarizeFrameworkSignals(dependencyCategories) {
   );
 }
 
+// ../core/src/pricing.ts
+var ANTHROPIC_MODEL_PRICING = {
+  "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
+  "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-opus-4-7": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-opus-4-6": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-sonnet-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
+};
+var DATE_SUFFIX = /-\d{8}$/;
+function resolveModelPrice(model) {
+  if (typeof model !== "string") {
+    return void 0;
+  }
+  const normalized = model.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return void 0;
+  }
+  return ANTHROPIC_MODEL_PRICING[normalized] ?? ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, "")];
+}
+function computeActualCostUsd(input) {
+  const price = resolveModelPrice(input.model);
+  if (!price) {
+    return void 0;
+  }
+  const { inputTokens, outputTokens } = input;
+  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens) || inputTokens < 0 || outputTokens < 0) {
+    return void 0;
+  }
+  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + outputTokens / 1e6 * price.outputPerMTokUsd;
+  return Math.round(cost * 1e6) / 1e6;
+}
+
 // ../core/src/plugin-commands/commands.ts
 import { rm as rm4 } from "node:fs/promises";
 
@@ -3678,16 +3712,75 @@ function parseMetadataList(value) {
   const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
   return entries.length > 0 ? entries : void 0;
 }
-function buildRouteContextProjection(metadata, modelConstraints) {
+var TASK_FAMILY_TO_HOKUSAI_TYPE = {
+  bugfix: "bugfix",
+  feature: "feature",
+  migration: "migration",
+  refactor: "refactor",
+  test: "tests",
+  docs: "docs",
+  infra: "infra",
+  chore: "infra",
+  mixed: "unknown",
+  investigation: "unknown"
+};
+function deriveTaskDescriptor(input) {
+  const derived = {};
+  const taskText = input.taskText?.trim();
+  if (taskText && taskText.length > 0) {
+    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity = inferReasoningDepth({ text: taskText });
+  }
+  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  if (repoSizeBucket) {
+    derived.repo_size_bucket = repoSizeBucket;
+  }
+  const extensionCounts = input.repositorySignals?.extensionCounts;
+  if (extensionCounts) {
+    const dominant = dominantLanguage(extensionCounts);
+    if (dominant) {
+      derived.language = dominant;
+    }
+  }
+  return derived;
+}
+function dominantLanguage(extensionCounts) {
+  let bestExtension;
+  let bestCount = 0;
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+    if (count > bestCount || count === bestCount && (bestExtension === void 0 || extension < bestExtension)) {
+      bestExtension = extension;
+      bestCount = count;
+    }
+  }
+  if (bestExtension === void 0) {
+    return void 0;
+  }
+  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
+}
+function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
+  const derived = deriveTaskDescriptor({
+    taskText: signals.taskText,
+    repositorySignals: signals.repositorySignals
+  });
   const descriptorPairs = [
-    ["task_type", firstMetadataValue(metadata, "task_type", "taskType", "taskFamily")],
-    ["language", firstMetadataValue(metadata, "language", "primaryLanguage")],
+    [
+      "task_type",
+      firstMetadataValue(metadata, "task_type", "taskType", "taskFamily") ?? derived.task_type
+    ],
+    ["language", firstMetadataValue(metadata, "language", "primaryLanguage") ?? derived.language],
     ["domain", firstMetadataValue(metadata, "domain")],
     [
       "complexity",
-      firstMetadataValue(metadata, "estimated_complexity", "complexity", "reasoningDepth")
+      firstMetadataValue(metadata, "estimated_complexity", "complexity", "reasoningDepth") ?? derived.complexity
     ],
-    ["repo_size_bucket", firstMetadataValue(metadata, "repo_size_bucket", "repositoryScale")],
+    [
+      "repo_size_bucket",
+      firstMetadataValue(metadata, "repo_size_bucket", "repositoryScale") ?? derived.repo_size_bucket
+    ],
     ["risk_level", firstMetadataValue(metadata, "risk_level")]
   ];
   const taskDescriptor = {};
@@ -4143,7 +4236,11 @@ function createRouteTask(profile) {
       const redactionConfig = context.builderOptions.redactionConfig ?? DEFAULT_REDACTION_CONFIG;
       const routeContextProjection = buildRouteContextProjection(
         input.metadata,
-        packetResult.packet.modelConstraints
+        packetResult.packet.modelConstraints,
+        {
+          taskText: input.taskText,
+          ...input.repositorySignals ? { repositorySignals: input.repositorySignals } : {}
+        }
       );
       await store.putCorrelation({
         ...storedCorrelation.record,
@@ -4754,6 +4851,14 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === "--max-cost-usd") {
+      const value = Number(argv[index + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.maxCostUsd = value;
+      }
+      index += 1;
+      continue;
+    }
     if (arg === "--config") {
       const configPath = argv[index + 1];
       if (configPath !== void 0) {
@@ -4897,7 +5002,8 @@ function createRunCli(profile, impls) {
       ...routeInput,
       metadata: {
         ...routeInput.metadata,
-        objective: routingObjectiveToApiValue(objective)
+        objective: routingObjectiveToApiValue(objective),
+        ...parsed.maxCostUsd !== void 0 ? { max_cost_usd: String(parsed.maxCostUsd) } : {}
       }
     };
     const result = await routeTaskImpl(routeInputWithObjective, {
@@ -5065,6 +5171,18 @@ function parseArgs2(argv) {
       const value = Number(next);
       if (Number.isFinite(value)) {
         parsed.wallClockSeconds = value;
+      }
+      index += 1;
+    } else if (arg === "--input-tokens" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.inputTokens = value;
+      }
+      index += 1;
+    } else if (arg === "--output-tokens" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.outputTokens = value;
       }
       index += 1;
     }
@@ -5283,15 +5401,17 @@ function createRunReportCli(profile, impls) {
     const stderrNotes = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
     const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
+    const resolvedActualModel = parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "";
+    const resolvedActualCostUsd = parsed.actualCostUsd ?? (parsed.inputTokens !== void 0 && parsed.outputTokens !== void 0 ? computeActualCostUsd({
+      model: resolvedActualModel,
+      inputTokens: parsed.inputTokens,
+      outputTokens: parsed.outputTokens
+    }) : void 0);
     const reportInput = {
       taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
       recommendedModel: parsed.recommendedModel ?? pipedInput.recommendedModel ?? latest?.recommendedModelId ?? "",
-      // When the recommendation was accepted, the actual model is the
-      // recommended one, so --use-latest can fill it from the stored decision.
-      // If it was not accepted, leave it empty so validation forces the caller
-      // to state which model they actually ran.
-      actualModel: parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "",
+      actualModel: resolvedActualModel,
       recommendationAccepted: recommendationAccepted ?? false,
       completionStatus: parsed.status ?? pipedInput.completionStatus ?? "",
       latencyBucket: withDefaultBucket(
@@ -5319,7 +5439,7 @@ function createRunReportCli(profile, impls) {
       ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {},
       ...resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {},
       ...latest?.routeContext ? { routeContext: latest.routeContext } : {},
-      ...parsed.actualCostUsd !== void 0 ? { actualCostUsd: parsed.actualCostUsd } : {},
+      ...resolvedActualCostUsd !== void 0 ? { actualCostUsd: resolvedActualCostUsd } : {},
       ...parsed.wallClockSeconds !== void 0 ? { wallClockSeconds: parsed.wallClockSeconds } : {}
     };
     try {

@@ -7,12 +7,15 @@ import {
   HokusaiNetworkError,
   ModelMappingError,
   SDK_VERSION,
+  bucketRepositoryScale,
   buildHarnessOutcomeRow,
   buildOutcomeReport,
   canReportOutcome,
   canRoute,
+  classifyTaskFamily,
   defaultPluginConfigPath,
   hashPayload,
+  inferReasoningDepth,
   isConsentGranted,
   listSupportedModelIds,
   loadPluginConfig,
@@ -20,6 +23,7 @@ import {
   preview,
   redact,
   resolveConsent,
+  summarizeLanguageSignals,
   validateRouteRequest,
   type AdapterResult,
   type ConsentConfig,
@@ -36,6 +40,7 @@ import {
   type RetentionPolicy,
   type RouteResponse,
   type SubmissionAuditEntry,
+  type TaskFamily,
   type TaskPacket,
 } from '../index.js';
 import {
@@ -61,6 +66,7 @@ import type {
   ReportingStatusResult,
   RouteContextProjection,
   RouteInputBase,
+  RouteRepositorySignals,
   RouteResult,
   RoutingDecisionSummary,
   SharedCommandOptions,
@@ -168,24 +174,122 @@ function parseMetadataList(value: string | undefined): string[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
+/** Map a deterministic TaskFamily label onto the server's HokusaiTaskType set. */
+const TASK_FAMILY_TO_HOKUSAI_TYPE: Record<TaskFamily, string> = {
+  bugfix: 'bugfix',
+  feature: 'feature',
+  migration: 'migration',
+  refactor: 'refactor',
+  test: 'tests',
+  docs: 'docs',
+  infra: 'infra',
+  chore: 'infra',
+  mixed: 'unknown',
+  investigation: 'unknown',
+};
+
+/**
+ * Derive categorical descriptor labels from the raw task text and repository
+ * signals available at route time. Only opaque categorical labels/buckets are
+ * produced — the raw task text is never stored or returned (privacy).
+ */
+function deriveTaskDescriptor(input: {
+  taskText: string | undefined;
+  repositorySignals: RouteRepositorySignals | undefined;
+}): Record<string, string> {
+  const derived: Record<string, string> = {};
+
+  const taskText = input.taskText?.trim();
+  if (taskText && taskText.length > 0) {
+    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity = inferReasoningDepth({ text: taskText });
+  }
+
+  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  if (repoSizeBucket) {
+    derived.repo_size_bucket = repoSizeBucket;
+  }
+
+  const extensionCounts = input.repositorySignals?.extensionCounts;
+  if (extensionCounts) {
+    const dominant = dominantLanguage(extensionCounts);
+    if (dominant) {
+      derived.language = dominant;
+    }
+  }
+
+  return derived;
+}
+
+/**
+ * Pick the single dominant language from extension counts. Ties break
+ * deterministically by extension name. Returns undefined when no extension maps
+ * to a known language.
+ */
+function dominantLanguage(extensionCounts: Record<string, number>): string | undefined {
+  let bestExtension: string | undefined;
+  let bestCount = 0;
+
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+
+    if (
+      count > bestCount ||
+      (count === bestCount && (bestExtension === undefined || extension < bestExtension))
+    ) {
+      bestExtension = extension;
+      bestCount = count;
+    }
+  }
+
+  if (bestExtension === undefined) {
+    return undefined;
+  }
+
+  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
+}
+
 /**
  * Derive a redacted route-context projection from the route request inputs so
  * the report step can build a harness contribution row. Only categorical
  * routing signals are captured; raw prompt/task text is never included.
+ *
+ * Harness-supplied metadata always takes precedence over derived labels; when a
+ * descriptor field is absent from metadata it is derived from the task text and
+ * repository signals where a deterministic signal exists.
  */
 function buildRouteContextProjection(
   metadata: Record<string, string> | undefined,
   modelConstraints: string[] | undefined,
+  signals: {
+    taskText?: string | undefined;
+    repositorySignals?: RouteRepositorySignals | undefined;
+  } = {},
 ): RouteContextProjection {
+  const derived = deriveTaskDescriptor({
+    taskText: signals.taskText,
+    repositorySignals: signals.repositorySignals,
+  });
+
   const descriptorPairs: Array<[string, string | undefined]> = [
-    ['task_type', firstMetadataValue(metadata, 'task_type', 'taskType', 'taskFamily')],
-    ['language', firstMetadataValue(metadata, 'language', 'primaryLanguage')],
+    [
+      'task_type',
+      firstMetadataValue(metadata, 'task_type', 'taskType', 'taskFamily') ?? derived.task_type,
+    ],
+    ['language', firstMetadataValue(metadata, 'language', 'primaryLanguage') ?? derived.language],
     ['domain', firstMetadataValue(metadata, 'domain')],
     [
       'complexity',
-      firstMetadataValue(metadata, 'estimated_complexity', 'complexity', 'reasoningDepth'),
+      firstMetadataValue(metadata, 'estimated_complexity', 'complexity', 'reasoningDepth') ??
+        derived.complexity,
     ],
-    ['repo_size_bucket', firstMetadataValue(metadata, 'repo_size_bucket', 'repositoryScale')],
+    [
+      'repo_size_bucket',
+      firstMetadataValue(metadata, 'repo_size_bucket', 'repositoryScale') ??
+        derived.repo_size_bucket,
+    ],
     ['risk_level', firstMetadataValue(metadata, 'risk_level')],
   ];
 
@@ -196,9 +300,8 @@ function buildRouteContextProjection(
     }
   }
 
-  // Guarantee a non-empty partial descriptor: when the caller supplied no
-  // categorical routing signals, record task_type as "unknown" rather than
-  // fabricating values.
+  // Guarantee a non-empty partial descriptor: when nothing could be derived or
+  // supplied, record task_type as "unknown" rather than fabricating values.
   if (Object.keys(taskDescriptor).length === 0) {
     taskDescriptor.task_type = 'unknown';
   }
@@ -855,6 +958,12 @@ export function createRouteTask<
       const routeContextProjection = buildRouteContextProjection(
         input.metadata,
         packetResult.packet.modelConstraints,
+        {
+          taskText: input.taskText,
+          ...(input.repositorySignals
+            ? { repositorySignals: input.repositorySignals }
+            : {}),
+        },
       );
       await store.putCorrelation({
         ...storedCorrelation.record,

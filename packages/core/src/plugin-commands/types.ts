@@ -33,11 +33,22 @@ export interface SharedCommandOptions {
   dryRun?: boolean;
 }
 
+/**
+ * Categorical repository signals available at route time. Used to derive the
+ * persisted task descriptor (repo size bucket, dominant language). Never carries
+ * raw file contents or paths — only counts.
+ */
+export interface RouteRepositorySignals {
+  fileCount?: number;
+  extensionCounts?: Record<string, number>;
+}
+
 export interface RouteInputBase {
   taskText: string;
   taskId?: string;
   modelId?: string;
   metadata?: Record<string, string>;
+  repositorySignals?: RouteRepositorySignals;
 }
 
 export interface RouteSuccess {

@@ -237,6 +237,14 @@ export {
   type TaskFamilyClassificationInput,
 } from './task-signals.js';
 export {
+  ANTHROPIC_MODEL_PRICING,
+  ANTHROPIC_MODEL_PRICING_AS_OF,
+  computeActualCostUsd,
+  resolveModelPrice,
+  type ModelPrice,
+  type TokenCostInput,
+} from './pricing.js';
+export {
   claudeCodeTaskPacketFixture,
   claudeCodeFailureOutcomeFixture,
   claudeCodeSuccessOutcomeFixture,

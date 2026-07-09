@@ -2,6 +2,7 @@ import {
   FilePluginConfigStore,
   HokusaiClient,
   HokusaiNetworkError,
+  computeActualCostUsd,
   defaultPluginConfigPath,
   loadPluginConfig,
   type BuildSummary,
@@ -41,9 +42,11 @@ interface ParsedArgs {
   costBucket?: CoarseBucket;
   dryRun: boolean;
   inferenceLogId?: string;
+  inputTokens?: number;
   json: boolean;
   latencyBucket?: CoarseBucket;
   notes?: string;
+  outputTokens?: number;
   preview: boolean;
   rating?: number;
   recommendedModel?: string;
@@ -200,6 +203,18 @@ function parseArgs(argv: string[]): ParsedArgs {
       const value = Number(next);
       if (Number.isFinite(value)) {
         parsed.wallClockSeconds = value;
+      }
+      index += 1;
+    } else if (arg === '--input-tokens' && next !== undefined) {
+      const value = Number(next);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.inputTokens = value;
+      }
+      index += 1;
+    } else if (arg === '--output-tokens' && next !== undefined) {
+      const value = Number(next);
+      if (Number.isFinite(value) && value >= 0) {
+        parsed.outputTokens = value;
       }
       index += 1;
     }
@@ -523,6 +538,27 @@ export function createRunReportCli<
     const stderrNotes: string[] = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
     const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
+    // When the recommendation was accepted, the actual model is the recommended
+    // one, so --use-latest can fill it from the stored decision. If it was not
+    // accepted, leave it empty so validation forces the caller to state which
+    // model they actually ran.
+    const resolvedActualModel =
+      parsed.actualModel ??
+      pipedInput.actualModel ??
+      (recommendationAccepted === true ? latest?.recommendedModelId : undefined) ??
+      '';
+    // Resolve actual cost: an explicit --actual-cost-usd wins; otherwise derive
+    // it from token counts + the resolved model via the core price table. If the
+    // model is unknown or tokens are missing, cost is omitted (row stays partial).
+    const resolvedActualCostUsd =
+      parsed.actualCostUsd ??
+      (parsed.inputTokens !== undefined && parsed.outputTokens !== undefined
+        ? computeActualCostUsd({
+            model: resolvedActualModel,
+            inputTokens: parsed.inputTokens,
+            outputTokens: parsed.outputTokens,
+          })
+        : undefined);
     const reportInput: ReportOutcomeInputWithTaskId = {
       taskId:
         parsed.taskId ??
@@ -538,15 +574,7 @@ export function createRunReportCli<
         pipedInput.recommendedModel ??
         latest?.recommendedModelId ??
         '',
-      // When the recommendation was accepted, the actual model is the
-      // recommended one, so --use-latest can fill it from the stored decision.
-      // If it was not accepted, leave it empty so validation forces the caller
-      // to state which model they actually ran.
-      actualModel:
-        parsed.actualModel ??
-        pipedInput.actualModel ??
-        (recommendationAccepted === true ? latest?.recommendedModelId : undefined) ??
-        '',
+      actualModel: resolvedActualModel,
       recommendationAccepted: recommendationAccepted ?? false,
       completionStatus: (parsed.status ?? pipedInput.completionStatus ?? '') as CompletionStatus,
       latencyBucket: withDefaultBucket(
@@ -588,8 +616,8 @@ export function createRunReportCli<
         : {}),
       ...(resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {}),
       ...(latest?.routeContext ? { routeContext: latest.routeContext } : {}),
-      ...(parsed.actualCostUsd !== undefined
-        ? { actualCostUsd: parsed.actualCostUsd }
+      ...(resolvedActualCostUsd !== undefined
+        ? { actualCostUsd: resolvedActualCostUsd }
         : {}),
       ...(parsed.wallClockSeconds !== undefined
         ? { wallClockSeconds: parsed.wallClockSeconds }
