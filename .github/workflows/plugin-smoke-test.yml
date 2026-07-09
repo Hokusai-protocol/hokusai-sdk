@@ -55,6 +55,27 @@ jobs:
       - name: Bundle plugin
         run: pnpm --filter @hokusai/adapter-claude-code bundle:plugin
 
+      # plugin/dist/index.js is a committed build artifact. The Claude Code
+      # marketplace installs it straight from main HEAD via a git-subdir source,
+      # so a stale commit ships stale code to every user. Every other job here
+      # rebundles before it packages, which means nothing else would notice.
+      - name: Check committed plugin bundle is current
+        run: |
+          if ! git diff --quiet -- packages/adapter-claude-code/plugin/dist/index.js; then
+            echo "::error file=packages/adapter-claude-code/plugin/dist/index.js::Committed plugin bundle is stale. Rebundle and commit it."
+            echo
+            echo "The Claude Code marketplace serves this file from main HEAD, so a stale"
+            echo "commit ships stale code to users even when CI is green."
+            echo
+            echo "Fix with:"
+            echo "  pnpm --filter @hokusai/adapter-claude-code bundle:plugin"
+            echo "  git add packages/adapter-claude-code/plugin/dist/index.js"
+            echo
+            git diff --stat -- packages/adapter-claude-code/plugin/dist/index.js
+            exit 1
+          fi
+          echo "Committed plugin bundle matches a fresh build."
+
       - name: Bundle Codex plugin
         run: pnpm --filter @hokusai/adapter-codex bundle:plugin
 
