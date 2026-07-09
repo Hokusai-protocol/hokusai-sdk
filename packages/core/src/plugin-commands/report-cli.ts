@@ -32,6 +32,7 @@ export type ReportCliExitCode =
 
 interface ParsedArgs {
   accepted?: boolean;
+  actualCostUsd?: number;
   actualModel?: string;
   buildFailures?: number;
   buildStatus?: BuildSummary['status'];
@@ -39,6 +40,7 @@ interface ParsedArgs {
   correlationId?: string;
   costBucket?: CoarseBucket;
   dryRun: boolean;
+  inferenceLogId?: string;
   json: boolean;
   latencyBucket?: CoarseBucket;
   notes?: string;
@@ -53,6 +55,7 @@ interface ParsedArgs {
   testStatus?: TestSummary['status'];
   tokenBucket?: CoarseBucket;
   useLatest: boolean;
+  wallClockSeconds?: number;
 }
 
 type ReportCommandResult =
@@ -183,6 +186,21 @@ function parseArgs(argv: string[]): ParsedArgs {
       index += 1;
     } else if (arg === '--task-id' && next !== undefined) {
       parsed.taskId = next;
+      index += 1;
+    } else if (arg === '--inference-log-id' && next !== undefined) {
+      parsed.inferenceLogId = next;
+      index += 1;
+    } else if (arg === '--actual-cost-usd' && next !== undefined) {
+      const value = Number(next);
+      if (Number.isFinite(value)) {
+        parsed.actualCostUsd = value;
+      }
+      index += 1;
+    } else if (arg === '--wall-clock-seconds' && next !== undefined) {
+      const value = Number(next);
+      if (Number.isFinite(value)) {
+        parsed.wallClockSeconds = value;
+      }
       index += 1;
     }
   }
@@ -504,6 +522,7 @@ export function createRunReportCli<
 
     const stderrNotes: string[] = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
+    const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
     const reportInput: ReportOutcomeInputWithTaskId = {
       taskId:
         parsed.taskId ??
@@ -567,6 +586,14 @@ export function createRunReportCli<
       ...(parsed.notes ?? pipedInput.notes
         ? { notes: parsed.notes ?? pipedInput.notes }
         : {}),
+      ...(resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {}),
+      ...(latest?.routeContext ? { routeContext: latest.routeContext } : {}),
+      ...(parsed.actualCostUsd !== undefined
+        ? { actualCostUsd: parsed.actualCostUsd }
+        : {}),
+      ...(parsed.wallClockSeconds !== undefined
+        ? { wallClockSeconds: parsed.wallClockSeconds }
+        : {}),
     };
 
     try {
@@ -589,7 +616,9 @@ export function createRunReportCli<
 
       if (!result.ok) {
         const code =
-          result.error.code === 'OUTCOME_VALIDATION_FAILED'
+          result.error.code === 'OUTCOME_VALIDATION_FAILED' ||
+          result.error.code === 'CONTRIBUTION_UNAVAILABLE' ||
+          result.error.code === 'CONTRIBUTION_VALIDATION_FAILED'
             ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
             : result.error.code === 'NETWORK_ERROR'
               ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR

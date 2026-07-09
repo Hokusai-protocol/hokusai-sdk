@@ -7,17 +7,21 @@
 import type { HokusaiAvailableModels, HokusaiTaskDescriptor } from './descriptor-types.js';
 import {
   COST_BUCKET_THRESHOLDS_USD,
+  HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2,
   TIME_BUCKET_THRESHOLDS_SECONDS,
   validateContributionRow,
   type CandidatePoolMetadata,
+  type HarnessOutcomeRowMetadata,
+  type HarnessOutcomeRowV1,
   type OutcomeLabels,
   type RoleAvailableModels,
   type SparseCellMetadata,
   type SubmitDataContributionRow,
   type TechnicalTaskRouterContributionRowV1,
   type TechnicalTaskRouterContributionRowV2,
+  type TechnicalTaskRouterSelectedModels,
 } from './schema.js';
 
 type InputScalar = string | number | boolean | null;
@@ -275,7 +279,74 @@ export function buildSubmitDataContributionRow(
     row.inputs = inputs;
   }
 
-  return validateContributionRow(row);
+  return validateContributionRow(row) as SubmitDataContributionRow;
+}
+
+export interface HarnessOutcomeRowProjection {
+  inferenceLogId?: string;
+  taskDescriptor: Partial<HokusaiTaskDescriptor>;
+  allowedModels: string[];
+  selectedModels: TechnicalTaskRouterSelectedModels;
+  budgetUsd?: number;
+  actualCostUsd?: number;
+  wallClockSeconds?: number;
+  completionResult: 'success' | 'failure';
+  successUnderBudget?: boolean;
+  harness?: string;
+  sdkVersion?: string;
+  taskId?: string;
+  observedAt?: string;
+}
+
+export function buildHarnessOutcomeRow(
+  projection: HarnessOutcomeRowProjection,
+): HarnessOutcomeRowV1 {
+  if (
+    !projection.taskDescriptor
+    || Object.keys(projection.taskDescriptor).length === 0
+  ) {
+    throw new Error('taskDescriptor must be a non-empty object');
+  }
+
+  if (!projection.allowedModels || projection.allowedModels.length === 0) {
+    throw new Error('allowedModels must be a non-empty array');
+  }
+
+  if (!projection.selectedModels) {
+    throw new Error('selectedModels is required');
+  }
+
+  const harnessMetadata: HarnessOutcomeRowMetadata = {
+    ...(projection.harness ? { harness: projection.harness } : {}),
+    ...(projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}),
+  };
+
+  const row: HarnessOutcomeRowV1 = {
+    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+    task_descriptor: { ...projection.taskDescriptor },
+    allowed_models: [...projection.allowedModels],
+    selected_models: { ...projection.selectedModels },
+    completion_result: projection.completionResult,
+    ...(projection.budgetUsd !== undefined ? { budget_usd: projection.budgetUsd } : {}),
+    ...(projection.actualCostUsd !== undefined
+      ? { actual_cost_usd: projection.actualCostUsd }
+      : {}),
+    ...(projection.wallClockSeconds !== undefined
+      ? { wall_clock_seconds: projection.wallClockSeconds }
+      : {}),
+    ...(projection.successUnderBudget !== undefined
+      ? { success_under_budget: projection.successUnderBudget }
+      : {}),
+    ...(projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {}),
+    ...(projection.harness ? { harness: projection.harness } : {}),
+    ...(projection.taskId ? { task_id: projection.taskId } : {}),
+    ...(projection.observedAt ? { observed_at: projection.observedAt } : {}),
+    ...(Object.keys(harnessMetadata).length > 0
+      ? { harness_metadata: harnessMetadata }
+      : {}),
+  };
+
+  return validateContributionRow(row) as HarnessOutcomeRowV1;
 }
 
 export function buildTechnicalTaskRouterContributionRow(

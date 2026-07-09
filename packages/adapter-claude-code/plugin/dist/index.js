@@ -1266,8 +1266,9 @@ var DEFAULT_TIMEOUT_MS = 1e4;
 var MAX_RETRY_AFTER_MS = 5e3;
 var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
+var CONTRIBUTIONS_PATH = "/api/v1/models/30/contributions";
 var SIGNAL_PATH = "/v1/signals";
-var SDK_VERSION = "0.1.5";
+var SDK_VERSION = "0.2.0";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -1507,6 +1508,33 @@ var HokusaiClient = class {
       responseErrorMessage: "Hokusai API returned an invalid signal response."
     });
   }
+  async submitContribution(request, options = {}) {
+    const requestId = options.requestId ?? this.#requestIdFactory();
+    const fieldErrors = validateContributionRequest(request);
+    if (fieldErrors.length > 0) {
+      throw new HokusaiValidationError("Contribution request validation failed.", {
+        requestId,
+        fieldErrors
+      });
+    }
+    if (options.dryRun) {
+      return {
+        ok: true,
+        request
+      };
+    }
+    const idempotencyKey = request.metadata.idempotency_key.trim().length > 0 ? request.metadata.idempotency_key : requestId;
+    return this.#send({
+      path: CONTRIBUTIONS_PATH,
+      request,
+      requestId,
+      requestOptions: options,
+      headers: { "Idempotency-Key": idempotencyKey },
+      responseMapper: normalizeContributionResponse,
+      responseValidator: validateContributionResponse,
+      responseErrorMessage: "Hokusai API returned an invalid contribution response."
+    });
+  }
   async #send(options) {
     const transport = this.#transport;
     if (!transport) {
@@ -1534,7 +1562,8 @@ var HokusaiClient = class {
           request: options.request,
           requestId: options.requestId,
           signal: options.requestOptions.signal,
-          transport
+          transport,
+          ...options.headers ? { headers: options.headers } : {}
         });
         const headerRequestId = response.headers.get("x-hokusai-request-id") ?? options.requestId;
         if (response.status >= 200 && response.status < 300) {
@@ -1626,7 +1655,8 @@ var HokusaiClient = class {
           "Content-Type": "application/json",
           "X-Request-ID": options.requestId,
           "X-Hokusai-Request-Id": options.requestId,
-          "X-Hokusai-Sdk-Version": this.#sdkVersion
+          "X-Hokusai-Sdk-Version": this.#sdkVersion,
+          ...options.headers
         },
         signal: controller.signal
       });
@@ -1774,6 +1804,71 @@ function validateSignalResponse(value) {
       message: 'Expected "recorded".'
     }
   ];
+}
+function validateContributionRequest(request) {
+  const errors = [];
+  if (!Array.isArray(request.rows) || request.rows.length === 0) {
+    errors.push({
+      path: "rows",
+      message: "Expected a non-empty array of contribution rows."
+    });
+  }
+  if (typeof request.metadata?.idempotency_key !== "string" || request.metadata.idempotency_key.trim().length === 0) {
+    errors.push({
+      path: "metadata.idempotency_key",
+      message: "Expected a non-empty idempotency key."
+    });
+  }
+  return errors;
+}
+function validateContributionResponse(value) {
+  if (isPlainRecord(value) && typeof value.accepted === "boolean") {
+    return [];
+  }
+  return [
+    {
+      path: "accepted",
+      message: 'Expected a boolean "accepted" field.'
+    }
+  ];
+}
+function normalizeContributionResponse(value, requestId) {
+  const record = isPlainRecord(value) ? value : {};
+  const response = {
+    accepted: record.accepted === true,
+    requestId
+  };
+  const submissionId = firstString(record.submissionId, record.submission_id);
+  if (submissionId !== void 0) {
+    response.submissionId = submissionId;
+  }
+  const rowsAccepted = firstFiniteNumber(record.rowsAccepted, record.rows_accepted);
+  if (rowsAccepted !== void 0) {
+    response.rowsAccepted = rowsAccepted;
+  }
+  const submittedRows = firstFiniteNumber(record.submittedRows, record.submitted_rows);
+  if (submittedRows !== void 0) {
+    response.submittedRows = submittedRows;
+  }
+  const tokenReward = firstFiniteNumber(record.tokenReward, record.token_reward);
+  if (tokenReward !== void 0) {
+    response.tokenReward = tokenReward;
+  }
+  return response;
+}
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return void 0;
 }
 function omitUndefined(value) {
   return Object.fromEntries(
@@ -3564,6 +3659,76 @@ function buildDebugPreview(input, config) {
 function toAuditId(correlationId, suffix) {
   return `${toStoredCorrelationId(correlationId)}-${suffix}`;
 }
+function firstMetadataValue(metadata, ...keys) {
+  if (!metadata) {
+    return void 0;
+  }
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return void 0;
+}
+function parseMetadataList(value) {
+  if (!value) {
+    return void 0;
+  }
+  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  return entries.length > 0 ? entries : void 0;
+}
+function buildRouteContextProjection(metadata, modelConstraints) {
+  const descriptorPairs = [
+    ["task_type", firstMetadataValue(metadata, "task_type", "taskType", "taskFamily")],
+    ["language", firstMetadataValue(metadata, "language", "primaryLanguage")],
+    ["domain", firstMetadataValue(metadata, "domain")],
+    [
+      "complexity",
+      firstMetadataValue(metadata, "estimated_complexity", "complexity", "reasoningDepth")
+    ],
+    ["repo_size_bucket", firstMetadataValue(metadata, "repo_size_bucket", "repositoryScale")],
+    ["risk_level", firstMetadataValue(metadata, "risk_level")]
+  ];
+  const taskDescriptor = {};
+  for (const [key, value] of descriptorPairs) {
+    if (value !== void 0) {
+      taskDescriptor[key] = value;
+    }
+  }
+  if (Object.keys(taskDescriptor).length === 0) {
+    taskDescriptor.task_type = "unknown";
+  }
+  const allowedModels = parseMetadataList(firstMetadataValue(metadata, "available_models")) ?? parseMetadataList(firstMetadataValue(metadata, "available_coder_models")) ?? (modelConstraints && modelConstraints.length > 0 ? [...modelConstraints] : []);
+  const budgetRaw = firstMetadataValue(metadata, "max_cost_usd");
+  const budgetUsd = budgetRaw !== void 0 ? Number(budgetRaw) : void 0;
+  return {
+    taskDescriptor,
+    allowedModels,
+    ...budgetUsd !== void 0 && Number.isFinite(budgetUsd) ? { budgetUsd } : {}
+  };
+}
+function parseRouteContext(value) {
+  if (!value) {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return void 0;
+    }
+    const record = parsed;
+    const taskDescriptor = typeof record.taskDescriptor === "object" && record.taskDescriptor !== null && !Array.isArray(record.taskDescriptor) ? record.taskDescriptor : {};
+    const allowedModels = Array.isArray(record.allowedModels) ? record.allowedModels.filter((entry) => typeof entry === "string") : [];
+    return {
+      taskDescriptor,
+      allowedModels,
+      ...typeof record.budgetUsd === "number" && Number.isFinite(record.budgetUsd) ? { budgetUsd: record.budgetUsd } : {}
+    };
+  } catch {
+    return void 0;
+  }
+}
 function parseAlternativeIds(value) {
   if (!value) {
     return [];
@@ -3697,6 +3862,52 @@ function buildOutcomePreviewLines(report) {
     "Excluded by default: raw code, raw prompts, terminal logs, and customer data."
   );
   return lines;
+}
+function buildContributionPreviewLines(row) {
+  return [
+    "",
+    "Contribution row (harness_outcome_row/v1) that will be submitted:",
+    JSON.stringify(row, null, 2)
+  ];
+}
+function buildReportContributionRow(input) {
+  if (!input.inferenceLogId) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "No inference log id is available for this routing decision. Route a task with this plugin first, or pass --inference-log-id."
+    );
+  }
+  if (!input.routeContext || input.routeContext.allowedModels.length === 0) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "No routing context with allowed models was found for this decision. Route a task with this plugin before reporting."
+    );
+  }
+  try {
+    const row = buildHarnessOutcomeRow({
+      inferenceLogId: input.inferenceLogId,
+      taskDescriptor: input.routeContext.taskDescriptor,
+      allowedModels: input.routeContext.allowedModels,
+      selectedModels: {
+        coder: input.report.actualModel,
+        reviewer: input.report.actualModel
+      },
+      completionResult: input.report.completionStatus === "succeeded" ? "success" : "failure",
+      harness: input.harness,
+      sdkVersion: SDK_VERSION,
+      observedAt: input.observedAt,
+      ...input.routeContext.budgetUsd !== void 0 ? { budgetUsd: input.routeContext.budgetUsd } : {},
+      ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
+      ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
+      ...input.taskId ? { taskId: input.taskId } : {}
+    });
+    return ok(row);
+  } catch (error) {
+    return fail(
+      "CONTRIBUTION_VALIDATION_FAILED",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 }
 function applyProfileConstraints(packet, profile, registry) {
   const providerConstraints = profile.modelCatalog.providerConstraintLabels ?? profile.modelCatalog.allowedProviders;
@@ -3930,6 +4141,10 @@ function createRouteTask(profile) {
     );
     if (storedCorrelation.record) {
       const redactionConfig = context.builderOptions.redactionConfig ?? DEFAULT_REDACTION_CONFIG;
+      const routeContextProjection = buildRouteContextProjection(
+        input.metadata,
+        packetResult.packet.modelConstraints
+      );
       await store.putCorrelation({
         ...storedCorrelation.record,
         metadata: {
@@ -3944,6 +4159,8 @@ function createRouteTask(profile) {
             redactionConfig
           ),
           payloadHash,
+          routeContext: JSON.stringify(routeContextProjection),
+          ...route?.routeId ? { inferenceLogId: route.routeId } : {},
           status: "pending",
           decisionAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
           ...options?.env?.HOKUSAI_DEBUG === "1" || process.env.HOKUSAI_DEBUG === "1" ? {
@@ -4113,11 +4330,14 @@ async function findLatestRoutingDecision(input) {
   if (!latest) {
     return void 0;
   }
+  const routeContext = parseRouteContext(latest.metadata?.routeContext);
   return {
     correlationId: latest.metadata?.originalCorrelationId ?? latest.correlationId,
     taskId: latest.metadata?.taskId ?? latest.packetHash,
     createdAt: new Date(latest.createdAt).toISOString(),
-    ...latest.metadata?.recommendedModelId ? { recommendedModelId: latest.metadata.recommendedModelId } : {}
+    ...latest.metadata?.recommendedModelId ? { recommendedModelId: latest.metadata.recommendedModelId } : {},
+    ...latest.metadata?.inferenceLogId ? { inferenceLogId: latest.metadata.inferenceLogId } : {},
+    ...routeContext ? { routeContext } : {}
   };
 }
 function createPreviewReportOutcome(profile) {
@@ -4130,8 +4350,14 @@ function createPreviewReportOutcome(profile) {
       );
     }
     let report;
-    const { taskId, ...reportInput } = input;
-    void taskId;
+    const {
+      taskId,
+      inferenceLogId,
+      routeContext,
+      actualCostUsd,
+      wallClockSeconds,
+      ...reportInput
+    } = input;
     try {
       report = buildOutcomeReport(reportInput);
     } catch (error) {
@@ -4145,12 +4371,28 @@ function createPreviewReportOutcome(profile) {
       }
       throw error;
     }
+    const contributionResult = buildReportContributionRow({
+      report,
+      routeContext,
+      inferenceLogId,
+      harness: profile.harness,
+      observedAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
+      ...actualCostUsd !== void 0 ? { actualCostUsd } : {},
+      ...wallClockSeconds !== void 0 ? { wallClockSeconds } : {},
+      ...taskId ? { taskId } : {}
+    });
+    const contributionRow = contributionResult.ok ? contributionResult.value : void 0;
+    const lines = buildOutcomePreviewLines(report);
+    if (contributionRow) {
+      lines.push(...buildContributionPreviewLines(contributionRow));
+    }
     return ok({
       report,
       preview: {
-        lines: buildOutcomePreviewLines(report),
+        lines,
         payload: report
-      }
+      },
+      ...contributionRow ? { contributionRow } : {}
     });
   };
 }
@@ -4164,13 +4406,32 @@ function createReportTaskOutcome(profile) {
     const context = resolveCommandContext(profile, options);
     const store = new FsLocalStore(context.configDir);
     const timestamp = (options?.clock ?? (() => /* @__PURE__ */ new Date()))().getTime();
+    const observedAt = new Date(timestamp).toISOString();
     const redactionConfig = context.builderOptions.redactionConfig ?? DEFAULT_REDACTION_CONFIG;
     await store.putPayloadHash({
       hash: hashPayload(previewResult.value.report, redactionConfig.salt),
       algorithm: "sha-256-hmac",
       createdAt: timestamp
     });
+    const resolvedCorrelation = await findStoredCorrelationRecord(
+      store,
+      input.correlationId
+    );
+    const routeContext = parseRouteContext(resolvedCorrelation.record?.metadata?.routeContext) ?? input.routeContext;
+    const inferenceLogId = input.inferenceLogId ?? resolvedCorrelation.record?.metadata?.inferenceLogId;
+    const contributionRowResult = buildReportContributionRow({
+      report: previewResult.value.report,
+      routeContext,
+      inferenceLogId,
+      harness: profile.harness,
+      observedAt,
+      ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
+      ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
+      ...input.taskId ? { taskId: input.taskId } : {}
+    });
     let response;
+    let contribution;
+    let contributionRow = contributionRowResult.ok ? contributionRowResult.value : void 0;
     if (options?.dryRun) {
       await store.appendAudit({
         id: toAuditId(input.correlationId, "outcome"),
@@ -4181,12 +4442,29 @@ function createReportTaskOutcome(profile) {
         error: "dry-run"
       });
     } else if (options?.apiClient) {
+      if (!contributionRowResult.ok) {
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, "contribution"),
+          kind: "outcome",
+          correlationId: input.correlationId,
+          status: "failed",
+          timestamp,
+          error: contributionRowResult.error.message
+        });
+        return contributionRowResult;
+      }
+      const row = contributionRowResult.value;
+      contributionRow = row;
+      const contributionRequest = {
+        rows: [row],
+        metadata: { idempotency_key: input.correlationId }
+      };
       try {
-        response = await options.apiClient.reportOutcome(
-          previewResult.value.report
+        contribution = await options.apiClient.submitContribution(
+          contributionRequest
         );
         await store.appendAudit({
-          id: toAuditId(input.correlationId, "outcome"),
+          id: toAuditId(input.correlationId, "contribution"),
           kind: "outcome",
           correlationId: input.correlationId,
           status: "submitted",
@@ -4201,7 +4479,7 @@ function createReportTaskOutcome(profile) {
         });
       } catch (error) {
         await store.appendAudit({
-          id: toAuditId(input.correlationId, "outcome"),
+          id: toAuditId(input.correlationId, "contribution"),
           kind: "outcome",
           correlationId: input.correlationId,
           status: "failed",
@@ -4215,6 +4493,27 @@ function createReportTaskOutcome(profile) {
         }
         throw error;
       }
+      try {
+        response = await options.apiClient.reportOutcome(
+          previewResult.value.report
+        );
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, "outcome"),
+          kind: "outcome",
+          correlationId: input.correlationId,
+          status: "submitted",
+          timestamp
+        });
+      } catch (error) {
+        await store.appendAudit({
+          id: toAuditId(input.correlationId, "outcome"),
+          kind: "outcome",
+          correlationId: input.correlationId,
+          status: "failed",
+          timestamp,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
     } else {
       await store.appendAudit({
         id: toAuditId(input.correlationId, "outcome"),
@@ -4227,7 +4526,9 @@ function createReportTaskOutcome(profile) {
     return ok({
       report: previewResult.value.report,
       ...response ? { response } : {},
-      submitted: Boolean(response)
+      submitted: Boolean(contribution ?? response),
+      ...contributionRow ? { contributionRow } : {},
+      ...contribution ? { contribution } : {}
     });
   };
 }
@@ -4751,6 +5052,21 @@ function parseArgs2(argv) {
     } else if (arg === "--task-id" && next !== void 0) {
       parsed.taskId = next;
       index += 1;
+    } else if (arg === "--inference-log-id" && next !== void 0) {
+      parsed.inferenceLogId = next;
+      index += 1;
+    } else if (arg === "--actual-cost-usd" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value)) {
+        parsed.actualCostUsd = value;
+      }
+      index += 1;
+    } else if (arg === "--wall-clock-seconds" && next !== void 0) {
+      const value = Number(next);
+      if (Number.isFinite(value)) {
+        parsed.wallClockSeconds = value;
+      }
+      index += 1;
     }
   }
   return parsed;
@@ -4966,6 +5282,7 @@ function createRunReportCli(profile, impls) {
     }
     const stderrNotes = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
+    const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
     const reportInput = {
       taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
@@ -4999,7 +5316,11 @@ function createRunReportCli(profile, impls) {
       ...buildSummary(parsed.testStatus, parsed.testFailures) ?? pipedInput.test ? {
         test: buildSummary(parsed.testStatus, parsed.testFailures) ?? pipedInput.test
       } : {},
-      ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {}
+      ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {},
+      ...resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {},
+      ...latest?.routeContext ? { routeContext: latest.routeContext } : {},
+      ...parsed.actualCostUsd !== void 0 ? { actualCostUsd: parsed.actualCostUsd } : {},
+      ...parsed.wallClockSeconds !== void 0 ? { wallClockSeconds: parsed.wallClockSeconds } : {}
     };
     try {
       const result = parsed.send ? await reportTaskOutcomeImpl(reportInput, {
@@ -5015,7 +5336,7 @@ function createRunReportCli(profile, impls) {
         ...parsed.configPath ? { configPath: parsed.configPath } : {}
       });
       if (!result.ok) {
-        const code = result.error.code === "OUTCOME_VALIDATION_FAILED" ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR : result.error.code === "NETWORK_ERROR" ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
+        const code = result.error.code === "OUTCOME_VALIDATION_FAILED" || result.error.code === "CONTRIBUTION_UNAVAILABLE" || result.error.code === "CONTRIBUTION_VALIDATION_FAILED" ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR : result.error.code === "NETWORK_ERROR" ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
         return toMessage2(parsed, result.error.message, code, result.error.details);
       }
       return renderSuccess(parsed, result.value, stderrNotes);
@@ -5630,6 +5951,461 @@ function createRunBootstrapDoctor(profile) {
       )
     };
   };
+}
+
+// ../core/src/contribution/schema.ts
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
+var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
+var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  "prompt",
+  "messages",
+  "task_text",
+  "raw_input",
+  "eval_record",
+  "originalprompt",
+  "original_prompt",
+  "description",
+  "issue_body"
+]);
+var ContributionValidationError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "ContributionValidationError";
+    this.code = code;
+  }
+};
+function isPlainObject3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isFiniteNonNegativeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+function isIsoDateString(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+function hasOnlyAllowedKeys(value, keys) {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+function isTechnicalTaskRouterSelectedModels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["planner", "coder", "reviewer"])) {
+    return false;
+  }
+  if (typeof value.coder !== "string" || typeof value.reviewer !== "string") {
+    return false;
+  }
+  return value.planner === void 0 || typeof value.planner === "string";
+}
+function isRoleAvailableModels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["planner_models", "coder_models", "reviewer_models"])) {
+    return false;
+  }
+  return isStringArray(value.planner_models) && isStringArray(value.coder_models) && isStringArray(value.reviewer_models);
+}
+function isOutcomeLabels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["budget_label", "cost_label", "time_label", "success_label"])) {
+    return false;
+  }
+  return (value.budget_label === "under_budget" || value.budget_label === "over_budget" || value.budget_label === "unknown") && (value.cost_label === "free" || value.cost_label === "low" || value.cost_label === "medium" || value.cost_label === "high" || value.cost_label === "unknown") && (value.time_label === "fast" || value.time_label === "medium" || value.time_label === "slow" || value.time_label === "unknown") && (value.success_label === "success" || value.success_label === "failure");
+}
+function isCandidatePoolMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["scenario_id", "scenario_kind", "pool_size", "baseline_model"])) {
+    return false;
+  }
+  return typeof value.scenario_id === "string" && typeof value.scenario_kind === "string" && isFiniteNonNegativeNumber(value.pool_size) && (value.baseline_model === void 0 || typeof value.baseline_model === "string");
+}
+function isSparseCellMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["cell_id", "descriptor_signature", "observed_count", "is_sparse"])) {
+    return false;
+  }
+  return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
+}
+function assertNoForbiddenKeys(value, path3 = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertNoForbiddenKeys(item, [...path3, String(index)]);
+    }
+    return;
+  }
+  if (!isPlainObject3(value)) {
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    if (FORBIDDEN_KEYS.has(normalizedKey)) {
+      throw new ContributionValidationError(
+        "forbidden_field",
+        `Forbidden field at ${[...path3, key].join(".")}`
+      );
+    }
+    assertNoForbiddenKeys(child, [...path3, key]);
+  }
+}
+var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
+  "eligible",
+  "ineligible_missing_outcome",
+  "ineligible_failed_outcome",
+  "unknown"
+]);
+var OUTCOME_SOURCE_VALUES = /* @__PURE__ */ new Set([
+  "feature_outcome_artifact",
+  "reconstructed",
+  "unknown"
+]);
+function isSubmitDataContributionRow(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "success_under_budget",
+    "inputs",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "task_id",
+    "harness",
+    "outcome_diagnostic",
+    "outcome_source",
+    "outcome_artifact_present",
+    "outcome_artifact_valid",
+    "outcome_artifact_used",
+    "outcome_missing_fields",
+    "outcome_invalid_fields",
+    "outcome_failure_reason"
+  ])) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.inputs !== void 0 && !isPlainObject3(value.inputs)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  if (value.outcome_diagnostic !== void 0 && !OUTCOME_DIAGNOSTIC_VALUES.has(value.outcome_diagnostic)) {
+    return false;
+  }
+  if (value.outcome_source !== void 0 && !OUTCOME_SOURCE_VALUES.has(value.outcome_source)) {
+    return false;
+  }
+  if (value.outcome_artifact_present !== void 0 && typeof value.outcome_artifact_present !== "boolean") {
+    return false;
+  }
+  if (value.outcome_artifact_valid !== void 0 && typeof value.outcome_artifact_valid !== "boolean") {
+    return false;
+  }
+  if (value.outcome_artifact_used !== void 0 && typeof value.outcome_artifact_used !== "boolean") {
+    return false;
+  }
+  if (value.outcome_missing_fields !== void 0 && !isStringArray(value.outcome_missing_fields)) {
+    return false;
+  }
+  if (value.outcome_invalid_fields !== void 0 && !isStringArray(value.outcome_invalid_fields)) {
+    return false;
+  }
+  if (value.outcome_failure_reason !== void 0 && typeof value.outcome_failure_reason !== "string") {
+    return false;
+  }
+  return !("schema_version" in value);
+}
+function isTechnicalTaskRouterContributionRowV1(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "candidate_pools",
+    "current_candidate_pools",
+    "audit_metadata",
+    "scenario",
+    "scenarios"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor)) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models)) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (!isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  return true;
+}
+function isTechnicalTaskRouterContributionRowV2(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "available_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "outcome_labels",
+    "candidate_pool",
+    "sparse_cell",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "candidate_pools",
+    "current_candidate_pools",
+    "audit_metadata",
+    "scenario",
+    "scenarios"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor)) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models)) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (!isRoleAvailableModels(value.available_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (!isOutcomeLabels(value.outcome_labels)) {
+    return false;
+  }
+  if (!isCandidatePoolMetadata(value.candidate_pool)) {
+    return false;
+  }
+  if (!isSparseCellMetadata(value.sparse_cell)) {
+    return false;
+  }
+  if (!isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  return true;
+}
+function isHarnessOutcomeRowMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["harness", "sdk_version"])) {
+    return false;
+  }
+  return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
+}
+function isHarnessOutcomeRowV1(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "completion_result",
+    "success_under_budget",
+    "inference_log_id",
+    "harness",
+    "task_id",
+    "observed_at",
+    "harness_metadata"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (value.success_under_budget !== void 0 && typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.inference_log_id !== void 0 && typeof value.inference_log_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.observed_at !== void 0 && !isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.harness_metadata !== void 0 && !isHarnessOutcomeRowMetadata(value.harness_metadata)) {
+    return false;
+  }
+  return true;
+}
+function validateContributionRow(row) {
+  assertNoForbiddenKeys(row);
+  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
+    return row;
+  }
+  throw new ContributionValidationError(
+    "schema_validation_failed",
+    "Contribution row does not match a supported redacted schema"
+  );
+}
+
+// ../core/src/contribution/builder.ts
+function buildHarnessOutcomeRow(projection) {
+  if (!projection.taskDescriptor || Object.keys(projection.taskDescriptor).length === 0) {
+    throw new Error("taskDescriptor must be a non-empty object");
+  }
+  if (!projection.allowedModels || projection.allowedModels.length === 0) {
+    throw new Error("allowedModels must be a non-empty array");
+  }
+  if (!projection.selectedModels) {
+    throw new Error("selectedModels is required");
+  }
+  const harnessMetadata = {
+    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
+  };
+  const row = {
+    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+    task_descriptor: { ...projection.taskDescriptor },
+    allowed_models: [...projection.allowedModels],
+    selected_models: { ...projection.selectedModels },
+    completion_result: projection.completionResult,
+    ...projection.budgetUsd !== void 0 ? { budget_usd: projection.budgetUsd } : {},
+    ...projection.actualCostUsd !== void 0 ? { actual_cost_usd: projection.actualCostUsd } : {},
+    ...projection.wallClockSeconds !== void 0 ? { wall_clock_seconds: projection.wallClockSeconds } : {},
+    ...projection.successUnderBudget !== void 0 ? { success_under_budget: projection.successUnderBudget } : {},
+    ...projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {},
+    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.taskId ? { task_id: projection.taskId } : {},
+    ...projection.observedAt ? { observed_at: projection.observedAt } : {},
+    ...Object.keys(harnessMetadata).length > 0 ? { harness_metadata: harnessMetadata } : {}
+  };
+  return validateContributionRow(row);
 }
 
 // src/config-path.ts

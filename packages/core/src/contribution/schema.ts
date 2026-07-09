@@ -13,6 +13,7 @@ import type {
 
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = 'technical_task_router_row/v1';
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = 'technical_task_router_row/v2';
+export const HARNESS_OUTCOME_ROW_SCHEMA_VERSION = 'harness_outcome_row/v1';
 export const COST_BUCKET_THRESHOLDS_USD = {
   lowUpperBound: 1,
   mediumUpperBound: 5,
@@ -116,10 +117,39 @@ export interface TechnicalTaskRouterContributionRowV2 {
   harness?: string;
 }
 
+/**
+ * Lighter "harness" contribution row emitted by SDK plugins after a routed
+ * task completes. The server classifies fidelity (training_eligible vs
+ * partial) from the fields present; the SDK only builds and validates the
+ * redacted shape. `task_descriptor` may be a partial descriptor.
+ */
+export interface HarnessOutcomeRowMetadata {
+  harness?: string;
+  sdk_version?: string;
+}
+
+export interface HarnessOutcomeRowV1 {
+  schema_version: typeof HARNESS_OUTCOME_ROW_SCHEMA_VERSION;
+  task_descriptor: Partial<HokusaiTaskDescriptor>;
+  allowed_models: string[];
+  selected_models: TechnicalTaskRouterSelectedModels;
+  budget_usd?: number;
+  actual_cost_usd?: number;
+  wall_clock_seconds?: number;
+  completion_result: 'success' | 'failure';
+  success_under_budget?: boolean;
+  inference_log_id?: string;
+  harness?: string;
+  task_id?: string;
+  observed_at?: string;
+  harness_metadata?: HarnessOutcomeRowMetadata;
+}
+
 export type ContributionRow =
   | SubmitDataContributionRow
   | TechnicalTaskRouterContributionRowV1
-  | TechnicalTaskRouterContributionRowV2;
+  | TechnicalTaskRouterContributionRowV2
+  | HarnessOutcomeRowV1;
 
 type ContributionScalar = string | number | boolean | null;
 
@@ -557,10 +587,114 @@ export function isTechnicalTaskRouterContributionRowV2(
   return true;
 }
 
+function isHarnessOutcomeRowMetadata(value: unknown): value is HarnessOutcomeRowMetadata {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  if (!hasOnlyAllowedKeys(value, ['harness', 'sdk_version'])) {
+    return false;
+  }
+
+  return (
+    (value.harness === undefined || typeof value.harness === 'string')
+    && (value.sdk_version === undefined || typeof value.sdk_version === 'string')
+  );
+}
+
+export function isHarnessOutcomeRowV1(value: unknown): value is HarnessOutcomeRowV1 {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+
+  if (!hasOnlyAllowedKeys(value, [
+    'schema_version',
+    'task_descriptor',
+    'allowed_models',
+    'selected_models',
+    'budget_usd',
+    'actual_cost_usd',
+    'wall_clock_seconds',
+    'completion_result',
+    'success_under_budget',
+    'inference_log_id',
+    'harness',
+    'task_id',
+    'observed_at',
+    'harness_metadata',
+  ])) {
+    return false;
+  }
+
+  // Partial descriptor is allowed, but it must be a non-empty object.
+  if (!isPlainObject(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
+    return false;
+  }
+
+  if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
+    return false;
+  }
+
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+
+  if (value.budget_usd !== undefined && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+
+  if (value.actual_cost_usd !== undefined && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+
+  if (value.wall_clock_seconds !== undefined && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+
+  if (value.completion_result !== 'success' && value.completion_result !== 'failure') {
+    return false;
+  }
+
+  if (value.success_under_budget !== undefined && typeof value.success_under_budget !== 'boolean') {
+    return false;
+  }
+
+  if (value.inference_log_id !== undefined && typeof value.inference_log_id !== 'string') {
+    return false;
+  }
+
+  if (value.harness !== undefined && typeof value.harness !== 'string') {
+    return false;
+  }
+
+  if (value.task_id !== undefined && typeof value.task_id !== 'string') {
+    return false;
+  }
+
+  if (value.observed_at !== undefined && !isIsoDateString(value.observed_at)) {
+    return false;
+  }
+
+  if (value.harness_metadata !== undefined && !isHarnessOutcomeRowMetadata(value.harness_metadata)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function validateContributionRow(row: unknown): ContributionRow {
   assertNoForbiddenKeys(row);
 
-  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isSubmitDataContributionRow(row)) {
+  if (
+    isTechnicalTaskRouterContributionRowV1(row)
+    || isTechnicalTaskRouterContributionRowV2(row)
+    || isHarnessOutcomeRowV1(row)
+    || isSubmitDataContributionRow(row)
+  ) {
     return row;
   }
 

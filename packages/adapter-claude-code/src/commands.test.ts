@@ -105,6 +105,41 @@ function callsForPath(calls: MockCall[], pathname: string): MockCall[] {
   return calls.filter((call) => new URL(call.input).pathname === pathname);
 }
 
+/**
+ * Path-aware transport: returns a response based on the request pathname rather
+ * than call ordering. Robust to the (funnel-signal-dependent) number and order
+ * of calls the report flow makes across contributions, outcomes, and signals.
+ */
+function createPathTransport(
+  responses: Record<string, Awaited<ReturnType<FetchTransport>>>,
+): { calls: MockCall[]; transport: FetchTransport } {
+  const calls: MockCall[] = [];
+
+  return {
+    calls,
+    transport: (input, init) => {
+      calls.push({ input, init });
+      const pathname = new URL(input).pathname;
+      const result = responses[pathname];
+      if (!result) {
+        return Promise.reject(
+          new Error(`No mock response registered for path ${pathname}`),
+        );
+      }
+      return Promise.resolve(result);
+    },
+  };
+}
+
+// Redacted routing context / inference log id as persisted at route time, so
+// the report step can build the canonical harness contribution row.
+const testRouteContext = {
+  taskDescriptor: { task_type: 'feature', language: 'typescript' },
+  allowedModels: ['claude-3-7-sonnet', 'gpt-5-codex'],
+  budgetUsd: 5,
+};
+const testInferenceLogId = 'inf-log-1';
+
 async function createTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
   tempDirs.push(dir);
@@ -611,14 +646,19 @@ describe('reportTaskOutcome', () => {
 
   it('submits a valid outcome once', async () => {
     const configPath = await createTempDir('hokusai-claude-outcome-success-');
-    const { calls, transport } = createMockTransport([
-      createResponse(200, {
+    const { calls, transport } = createPathTransport({
+      '/api/v1/models/30/contributions': createResponse(200, {
+        accepted: true,
+        submissionId: 'sub-1',
+        rowsAccepted: 1,
+        submittedRows: 1,
+      }),
+      '/v1/outcomes': createResponse(200, {
         taskId: 'task-1',
         status: 'accepted',
       }),
-      createResponse(204),
-      createResponse(204),
-    ]);
+      '/v1/signals': createResponse(204),
+    });
     const client = new HokusaiClient({
       apiKey: 'k_test',
       transport,
@@ -628,6 +668,8 @@ describe('reportTaskOutcome', () => {
       {
         taskId: 'task-1',
         ...claudeCodeSuccessOutcomeFixture,
+        routeContext: testRouteContext,
+        inferenceLogId: testInferenceLogId,
       },
       {
         apiClient: client,
@@ -643,19 +685,46 @@ describe('reportTaskOutcome', () => {
           taskId: 'task-1',
           status: 'accepted',
         },
+        contribution: {
+          accepted: true,
+          submissionId: 'sub-1',
+          rowsAccepted: 1,
+        },
+        contributionRow: {
+          schema_version: 'harness_outcome_row/v1',
+          inference_log_id: testInferenceLogId,
+          selected_models: {
+            coder: 'claude-3-7-sonnet',
+            reviewer: 'claude-3-7-sonnet',
+          },
+          completion_result: 'success',
+        },
       },
     });
+    // Canonical submission to the Model 30 contributions endpoint.
+    expect(callsForPath(calls, '/api/v1/models/30/contributions')).toHaveLength(1);
+    const contributionCall = callsForPath(
+      calls,
+      '/api/v1/models/30/contributions',
+    )[0];
+    expect(contributionCall?.init.headers?.['Idempotency-Key']).toBe(
+      claudeCodeSuccessOutcomeFixture.correlationId,
+    );
+    // Retained telemetry bridge.
     expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
     expect(callsForPath(calls, '/v1/signals')).toHaveLength(2);
 
     const store = new FsLocalStore(configPath);
-    expect(await store.listAudit()).toEqual([
-      expect.objectContaining({
-        kind: 'outcome',
-        status: 'submitted',
-        correlationId: claudeCodeSuccessOutcomeFixture.correlationId,
-      }),
-    ]);
+    const audit = await store.listAudit();
+    expect(audit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'outcome',
+          status: 'submitted',
+          correlationId: claudeCodeSuccessOutcomeFixture.correlationId,
+        }),
+      ]),
+    );
     expect(await store.listPayloadHashes()).toHaveLength(1);
   });
 
@@ -735,6 +804,8 @@ describe('reportTaskOutcome', () => {
       {
         taskId: 'task-1',
         ...claudeCodeSuccessOutcomeFixture,
+        routeContext: testRouteContext,
+        inferenceLogId: testInferenceLogId,
       },
       {
         apiClient: client,
@@ -1219,20 +1290,23 @@ describe('route/report smoke path', () => {
     const configPath = await createTempDir('hokusai-claude-smoke-');
     await rm(configPath, { recursive: true, force: true });
 
-    const { calls, transport } = createMockTransport([
-      createResponse(200, {
+    const { calls, transport } = createPathTransport({
+      '/api/v1/models/30/predict': createResponse(200, {
         routeId: 'route-1',
         taskId: 'task-smoke',
         status: 'accepted',
       }),
-      createResponse(204),
-      createResponse(204),
-      createResponse(200, {
+      '/api/v1/models/30/contributions': createResponse(200, {
+        accepted: true,
+        submissionId: 'sub-smoke',
+        rowsAccepted: 1,
+      }),
+      '/v1/outcomes': createResponse(200, {
         taskId: 'task-smoke',
         status: 'accepted',
       }),
-      createResponse(204),
-    ]);
+      '/v1/signals': createResponse(204),
+    });
     const client = new HokusaiClient({
       apiKey: 'k_test',
       transport,
@@ -1281,6 +1355,9 @@ describe('route/report smoke path', () => {
       {
         taskId: 'task-smoke',
         ...claudeCodeSuccessOutcomeFixture,
+        // Correlate the report to the routing decision persisted above so the
+        // canonical contribution row can be built from its route context.
+        correlationId: routed.value.correlationId,
       },
       {
         apiClient: client,
@@ -1292,11 +1369,15 @@ describe('route/report smoke path', () => {
       ok: true,
       value: {
         submitted: true,
+        contributionRow: {
+          schema_version: 'harness_outcome_row/v1',
+          inference_log_id: 'route-1',
+        },
       },
     });
     expect(callsForPath(calls, '/api/v1/models/30/predict')).toHaveLength(1);
+    expect(callsForPath(calls, '/api/v1/models/30/contributions')).toHaveLength(1);
     expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
-    expect(callsForPath(calls, '/v1/signals')).toHaveLength(3);
     expect(runDoctor({ configPath, apiClient: client })).toMatchObject({
       configPresent: true,
       needsSetup: false,
