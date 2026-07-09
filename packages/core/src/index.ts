@@ -237,6 +237,12 @@ export {
   type TaskFamilyClassificationInput,
 } from './task-signals.js';
 export {
+  TASK_FAMILY_TO_HOKUSAI_TYPE,
+  deriveTaskDescriptor,
+  type TaskDescriptorInput,
+  type TaskDescriptorSignals,
+} from './task-descriptor.js';
+export {
   ANTHROPIC_MODEL_PRICING,
   ANTHROPIC_MODEL_PRICING_AS_OF,
   computeActualCostUsd,

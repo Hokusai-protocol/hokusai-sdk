@@ -1,0 +1,30 @@
+{
+  "schema_version": "harness_outcome_row/v1",
+  "task_descriptor": {
+    "task_type": "tests",
+    "complexity": "standard",
+    "repo_size_bucket": "medium",
+    "language": "TypeScript"
+  },
+  "allowed_models": [
+    "claude-haiku-4-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-8"
+  ],
+  "selected_models": {
+    "coder": "claude-sonnet-4-6",
+    "reviewer": "claude-sonnet-4-6"
+  },
+  "completion_result": "success",
+  "budget_usd": 0.5,
+  "actual_cost_usd": 0.177,
+  "wall_clock_seconds": 74.5,
+  "inference_log_id": "73c19164-7194-48b1-a62e-7314bcf3ebd5",
+  "harness": "reference-harness",
+  "task_id": "ref-task-001",
+  "observed_at": "2026-06-08T00:00:00.000Z",
+  "harness_metadata": {
+    "harness": "reference-harness",
+    "sdk_version": "0.2.0"
+  }
+}

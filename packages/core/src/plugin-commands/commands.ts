@@ -7,16 +7,14 @@ import {
   HokusaiNetworkError,
   ModelMappingError,
   SDK_VERSION,
-  bucketRepositoryScale,
   buildHarnessOutcomeRow,
   buildOutcomeReport,
   canReportOutcome,
   canRoute,
   captureCostBaseline,
-  classifyTaskFamily,
   defaultPluginConfigPath,
+  deriveTaskDescriptor,
   hashPayload,
-  inferReasoningDepth,
   isConsentGranted,
   listSupportedModelIds,
   loadPluginConfig,
@@ -24,7 +22,6 @@ import {
   preview,
   redact,
   resolveConsent,
-  summarizeLanguageSignals,
   validateRouteRequest,
   type AdapterResult,
   type ConsentConfig,
@@ -42,7 +39,6 @@ import {
   type RetentionPolicy,
   type RouteResponse,
   type SubmissionAuditEntry,
-  type TaskFamily,
   type TaskPacket,
 } from '../index.js';
 import {
@@ -176,82 +172,6 @@ function parseMetadataList(value: string | undefined): string[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
-/** Map a deterministic TaskFamily label onto the server's HokusaiTaskType set. */
-const TASK_FAMILY_TO_HOKUSAI_TYPE: Record<TaskFamily, string> = {
-  bugfix: 'bugfix',
-  feature: 'feature',
-  migration: 'migration',
-  refactor: 'refactor',
-  test: 'tests',
-  docs: 'docs',
-  infra: 'infra',
-  chore: 'infra',
-  mixed: 'unknown',
-  investigation: 'unknown',
-};
-
-/**
- * Derive categorical descriptor labels from the raw task text and repository
- * signals available at route time. Only opaque categorical labels/buckets are
- * produced — the raw task text is never stored or returned (privacy).
- */
-function deriveTaskDescriptor(input: {
-  taskText: string | undefined;
-  repositorySignals: RouteRepositorySignals | undefined;
-}): Record<string, string> {
-  const derived: Record<string, string> = {};
-
-  const taskText = input.taskText?.trim();
-  if (taskText && taskText.length > 0) {
-    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
-    derived.complexity = inferReasoningDepth({ text: taskText });
-  }
-
-  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
-  if (repoSizeBucket) {
-    derived.repo_size_bucket = repoSizeBucket;
-  }
-
-  const extensionCounts = input.repositorySignals?.extensionCounts;
-  if (extensionCounts) {
-    const dominant = dominantLanguage(extensionCounts);
-    if (dominant) {
-      derived.language = dominant;
-    }
-  }
-
-  return derived;
-}
-
-/**
- * Pick the single dominant language from extension counts. Ties break
- * deterministically by extension name. Returns undefined when no extension maps
- * to a known language.
- */
-function dominantLanguage(extensionCounts: Record<string, number>): string | undefined {
-  let bestExtension: string | undefined;
-  let bestCount = 0;
-
-  for (const [extension, count] of Object.entries(extensionCounts)) {
-    if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) {
-      continue;
-    }
-
-    if (
-      count > bestCount ||
-      (count === bestCount && (bestExtension === undefined || extension < bestExtension))
-    ) {
-      bestExtension = extension;
-      bestCount = count;
-    }
-  }
-
-  if (bestExtension === undefined) {
-    return undefined;
-  }
-
-  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
-}
 
 /**
  * Derive a redacted route-context projection from the route request inputs so

@@ -2,7 +2,7 @@
 
 This document is the harness-agnostic reference for the Hokusai integration loop. It now applies to both the Claude Code plugin and the Codex MCP plugin, with the reusable command path extracted into `@hokusai/core`.
 
-## The route/report loop
+## The route/contribute loop
 
 ### 1. Build a normalized task packet
 
@@ -18,80 +18,128 @@ const packet = buildTaskPacket({
 });
 ```
 
-The runnable version of this step lives in [`examples/reference-harness/src/index.ts`](../examples/reference-harness/src/index.ts).
+The task packet is the routing-side view of a task. The runnable loop lives in [`examples/reference-harness/src/hokusai/loop.ts`](../examples/reference-harness/src/hokusai/loop.ts).
 
-### 2. Anonymize
+### 2. Derive the task descriptor
+
+The contribution row carries a `task_descriptor` — the categorical summary the router actually learns from. `deriveTaskDescriptor()` from [`packages/core/src/task-descriptor.ts`](../packages/core/src/task-descriptor.ts) produces it from the raw task text plus counts-only repository signals.
+
+```ts
+const derived = deriveTaskDescriptor({
+  taskText: ctx.task.prompt,
+  repositorySignals: { fileCount: 420, extensionCounts: { ts: 180 } },
+});
+const taskDescriptor =
+  Object.keys(derived).length > 0 ? derived : { task_type: 'unknown' };
+```
+
+Only opaque labels and buckets come out: `task_type`, `complexity`, `repo_size_bucket`, `language`. The raw text is read and discarded — never stored, never transmitted. Fields with no derivable signal are omitted rather than guessed, and `buildHarnessOutcomeRow()` rejects an empty descriptor, so fall back to `{ task_type: 'unknown' }` rather than fabricating labels.
+
+Harness-supplied metadata should take precedence over derived labels where both exist; see `buildRouteContextProjection()` in [`packages/core/src/plugin-commands/commands.ts`](../packages/core/src/plugin-commands/commands.ts).
+
+### 3. Anonymize
 
 Before any routing call, the harness prepares an anonymized dispatch payload with `HokusaiDispatchBuilder.prepareDispatch()` from [`packages/core/src/client.ts`](../packages/core/src/client.ts). Redaction rules come from the shared engine in [`packages/core/src/anonymization.ts`](../packages/core/src/anonymization.ts). Claude Code performs this step in the `hokusai-route` flow implemented in [`packages/adapter-claude-code/src/cli.ts`](../packages/adapter-claude-code/src/cli.ts).
 
 ```ts
 const dispatchPayload = await dispatchBuilder.prepareDispatch(
   ctx.task,
-  REFERENCE_MODEL.id,
+  allowedModels[0],
 );
-const preview = requireOk(
-  await adapter.payloads.previewPayload({ payload: dispatchPayload }),
-);
+const preview = adapter.previewPayload(dispatchPayload);
 ```
 
 This is where raw prompt text is redacted and previewed before transport.
 
-### 3. Call the Hokusai router
+### 4. Call the Hokusai router
 
 The transport boundary is `HokusaiClient.route()` from [`packages/core/src/client.ts`](../packages/core/src/client.ts). Request validation is enforced by `validateRouteRequest()` in [`packages/core/src/schemas.ts`](../packages/core/src/schemas.ts) before network I/O. In Claude Code, the user-facing entry point is [`plugin/commands/route.md`](../packages/adapter-claude-code/plugin/commands/route.md).
 
 ```ts
-const routeResponse = await mockClient.route(dispatchPayload);
+const route = await client.route(dispatchPayload);
+const inferenceLogId = route.routeId; // the API's persisted inference_log_id
 ```
+
+`RouteResponse.routeId` carries the API's `inference_log_id`. Hold onto it — step 7 depends on it.
 
 The reference harness uses a mock client in [`examples/reference-harness/src/mock-client.ts`](../examples/reference-harness/src/mock-client.ts), but the shape matches the real client call.
 
-### 4. Execute in the host harness
+### 5. Execute in the host harness
 
 Execution is adapter-owned. `mapRecommendation()` from [`packages/core/src/model-registry.ts`](../packages/core/src/model-registry.ts) resolves the recommended model id into a concrete model definition, and then the host harness runs the task with its own UX and execution controls. Claude Code renders a manual handoff with `buildHandoffInstructions()` from [`packages/core/src/handoff.ts`](../packages/core/src/handoff.ts) and presents it through [`packages/adapter-claude-code/src/commands.ts`](../packages/adapter-claude-code/src/commands.ts).
 
 ```ts
-const mappedModel = mapRecommendation(
-  { model: REFERENCE_MODEL.id },
+const mapped = mapRecommendation(
+  { model: route.recommendation?.model ?? allowedModels[0] },
   { registry },
 );
-const outcome = requireOk(
-  await adapter.outcomes.collectOutcome({
-    task: ctx.task,
-    model: {
-      id: mappedModel.id,
-      provider: mappedModel.provider,
-      capabilities: [...mappedModel.capabilities],
-    },
-  }),
-);
+const execution = await adapter.executeTask({
+  task: ctx.task,
+  model: { id: mapped.id, provider: mapped.provider },
+});
 ```
+
+When the router names a model the harness cannot run, `mapRecommendation()` falls back to a registry default rather than throwing. Honor the fallback or record a decline — never substitute a model silently, because `selected_models` must describe what actually ran.
 
 Claude Code's visible entry points for this stage are the routed recommendation output and the copyable `/model ...` handoff generated after `/hokusai:route`.
 
-### 5. Submit an anonymized outcome report
+### 6. Derive the actual cost
 
-When execution finishes, the harness creates a shared `OutcomeReport` with `buildOutcomeReport()` and previews the redacted payload with `previewOutcomePayload()` from [`packages/core/src/outcome.ts`](../packages/core/src/outcome.ts). Submission happens through `HokusaiClient.reportOutcome()` in [`packages/core/src/client.ts`](../packages/core/src/client.ts). Claude Code exposes this as [`plugin/commands/report.md`](../packages/adapter-claude-code/plugin/commands/report.md) backed by [`packages/adapter-claude-code/src/report-cli.ts`](../packages/adapter-claude-code/src/report-cli.ts).
+A contribution row is only training-eligible when the reward scorer can decide whether the run came in under budget, which needs a numeric `budget_usd` **and** a numeric `actual_cost_usd`. Most harnesses have token counts rather than dollars, so `computeActualCostUsd()` from [`packages/core/src/pricing.ts`](../packages/core/src/pricing.ts) converts one into the other.
 
 ```ts
-const reportInput = {
-  correlationId: stored.correlationId,
-  recommendedModel: mappedModel.id,
-  actualModel: mappedModel.id,
-  recommendationAccepted: true,
-  completionStatus: 'succeeded' as const,
-  latencyBucket: 'low' as const,
-  costBucket: 'low' as const,
-  tokenBucket: 'medium' as const,
-  notes: outcome.summary,
-  redactionSalt: REDACTION_SALT,
-};
-const report = buildOutcomeReport(reportInput);
-const reportPreview = previewOutcomePayload(reportInput);
-await mockClient.reportOutcome(report);
+const actualCostUsd = computeActualCostUsd({
+  model: mapped.id,
+  inputTokens: execution.inputTokens,
+  outputTokens: execution.outputTokens,
+  cacheCreationTokens: execution.cacheCreationTokens,
+  cacheReadTokens: execution.cacheReadTokens,
+});
 ```
 
-The important boundary is the same in every harness: collect local execution outcome, redact it, preview it, then submit it against the correlation id from routing.
+Prompt-cache tokens are billed at 1.25x (writes) and 0.1x (reads) the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs. For an unknown model the function returns `undefined` rather than a fabricated figure, and the row degrades to telemetry.
+
+Claude Code additionally derives cost automatically from its statusline sidecar or session transcript via [`packages/core/src/session-usage.ts`](../packages/core/src/session-usage.ts). Harnesses without those surfaces — Pi, OpenHands, most custom loops — should pass token counts explicitly.
+
+### 7. Submit a contribution row
+
+This is the canonical submission path. `buildHarnessOutcomeRow()` from [`packages/core/src/contribution/builder.ts`](../packages/core/src/contribution/builder.ts) produces a `harness_outcome_row/v1`, and `HokusaiClient.submitContribution()` posts a one-row batch to `POST /api/v1/models/30/contributions` with an `Idempotency-Key`.
+
+```ts
+const row = buildHarnessOutcomeRow({
+  inferenceLogId,                    // <- from route. Do not drop this.
+  taskDescriptor,
+  allowedModels,
+  selectedModels: { coder: mapped.id, reviewer: mapped.id },
+  completionResult: execution.completionResult,
+  budgetUsd,
+  actualCostUsd,
+  wallClockSeconds: execution.wallClockSeconds,
+});
+
+const response = await client.submitContribution({
+  rows: [row],
+  metadata: { idempotency_key: idempotencyKey },
+});
+```
+
+**Thread the `inference_log_id`.** Route returns it as `RouteResponse.routeId`. Without it a row cannot be attributed back to the routing decision and earns nothing, however complete the rest of it is. The Claude Code plugin shipped this bug: it received the id and dropped it.
+
+`validateContributionRow()` enforces the privacy boundary with a forbidden-key guard, rejecting any row carrying `prompt`, `messages`, `task_text`, `description`, and similar. Run it locally — the reference harness's mock client does — so a leak fails in tests rather than in production.
+
+### 8. Read the fidelity tier
+
+The server classifies every accepted row and reports the result:
+
+```ts
+const tier = response.rowFidelityTiers?.[0];
+// 'training_eligible' -> trains the router, earns stake
+// 'partial'           -> accepted, stored as telemetry, excluded from training
+```
+
+The classification is **server-authoritative**. Read it; never compute it client-side. A `partial` row still returns `accepted: true` and `rowsAccepted: 1`, so the tier is the only thing that distinguishes a contribution that counts from one that does not.
+
+`reportOutcome()` and `POST /api/v1/outcomes` still exist as a telemetry/compatibility surface. They patch an inference log and bypass training and reward attribution entirely. **Do not build a new integration on them.**
 
 ## What is harness-agnostic vs Claude Code-specific
 
@@ -99,18 +147,18 @@ The important boundary is the same in every harness: collect local execution out
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `buildTaskPacket()` normalizes local task context into the shared `TaskPacket` schema in [`packages/core/src/task-packet.ts`](../packages/core/src/task-packet.ts).                                                                                          | `buildClaudeCodeTaskPacket()` derives Claude-oriented task signals and previews from Claude command input in [`packages/adapter-claude-code/src/task-packet.ts`](../packages/adapter-claude-code/src/task-packet.ts).                                                                   |
 | `HokusaiDispatchBuilder`, shared redaction, and payload hashing live in [`packages/core/src/client.ts`](../packages/core/src/client.ts) and [`packages/core/src/anonymization.ts`](../packages/core/src/anonymization.ts).                                   | The route command UX, CLI parsing, and consent/error messaging live in [`packages/adapter-claude-code/src/cli.ts`](../packages/adapter-claude-code/src/cli.ts) and [`packages/adapter-claude-code/plugin/commands/route.md`](../packages/adapter-claude-code/plugin/commands/route.md). |
-| `HokusaiClient.route()` and `HokusaiClient.reportOutcome()` own request validation and transport in [`packages/core/src/client.ts`](../packages/core/src/client.ts).                                                                                         | Claude's report preview/send flow is wired in [`packages/adapter-claude-code/src/report-cli.ts`](../packages/adapter-claude-code/src/report-cli.ts) and [`packages/adapter-claude-code/plugin/commands/report.md`](../packages/adapter-claude-code/plugin/commands/report.md).          |
+| `HokusaiClient.route()` and `HokusaiClient.submitContribution()` own request validation and transport in [`packages/core/src/client.ts`](../packages/core/src/client.ts).                                                                                         | Claude's report preview/send flow is wired in [`packages/adapter-claude-code/src/report-cli.ts`](../packages/adapter-claude-code/src/report-cli.ts) and [`packages/adapter-claude-code/plugin/commands/report.md`](../packages/adapter-claude-code/plugin/commands/report.md).          |
 | `mapRecommendation()`, `validateRecommendedModel()`, and `ANTHROPIC_MODELS` define shared model resolution rules in [`packages/core/src/model-registry.ts`](../packages/core/src/model-registry.ts).                                                         | Claude Code chooses Anthropic-only surfaced models and doctor UX in [`packages/adapter-claude-code/src/index.ts`](../packages/adapter-claude-code/src/index.ts) and [`packages/adapter-claude-code/src/doctor-command.ts`](../packages/adapter-claude-code/src/doctor-command.ts).      |
-| `buildOutcomeReport()`, `previewOutcomePayload()`, and the conformance suite are reusable core contracts in [`packages/core/src/outcome.ts`](../packages/core/src/outcome.ts) and [`packages/core/src/conformance.ts`](../packages/core/src/conformance.ts). | Claude Code-specific slash commands and install surface live under [`packages/adapter-claude-code/plugin/`](../packages/adapter-claude-code/plugin/).                                                                                                                                   |
+| `deriveTaskDescriptor()`, `buildHarnessOutcomeRow()`, `computeActualCostUsd()`, and the conformance suite are reusable core contracts in [`packages/core/src/task-descriptor.ts`](../packages/core/src/task-descriptor.ts), [`packages/core/src/contribution/`](../packages/core/src/contribution/), and [`packages/core/src/conformance.ts`](../packages/core/src/conformance.ts). | Claude Code-specific slash commands and install surface live under [`packages/adapter-claude-code/plugin/`](../packages/adapter-claude-code/plugin/).                                                                                                                                   |
 
 ## Example payloads
 
 Safe example payloads live in [`examples/reference-harness/examples/`](../examples/reference-harness/examples/README.md):
 
 - [`task-packet.example.json`](../examples/reference-harness/examples/task-packet.example.json)
-- [`outcome-report.example.json`](../examples/reference-harness/examples/outcome-report.example.json)
+- [`contribution-row.example.json`](../examples/reference-harness/examples/contribution-row.example.json)
 
-The example suite validates these files with `validateTaskPacket()` and `validateOutcomeReport()` in [`examples/reference-harness/src/payloads.test.ts`](../examples/reference-harness/src/payloads.test.ts), so schema drift fails CI instead of silently aging the docs.
+The example suite validates these files with `validateTaskPacket()` and `validateContributionRow()` in [`examples/reference-harness/src/payloads.test.ts`](../examples/reference-harness/src/payloads.test.ts), so schema drift fails CI instead of silently aging the docs.
 
 ## Privacy, consent & model-provider constraints
 
