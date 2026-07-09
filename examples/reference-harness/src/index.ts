@@ -1,288 +1,77 @@
-import {
-  buildOutcomeReport,
-  buildTaskPacket,
-  DEFAULT_REDACTION_CONFIG,
-  HokusaiDispatchBuilder,
-  InMemoryLocalStore,
-  InMemoryModelRegistry,
-  mapRecommendation,
-  previewOutcomePayload,
-  type AdapterResult,
-  type HarnessAdapter,
-  type HokusaiDispatchPayload,
-  type HokusaiOutcome,
-  type HokusaiTaskInput,
-  type ModelDefinition,
-  type OutcomeReport,
-  type OutcomeResponse,
-  type RouteResponse,
-} from '@hokusai/core';
-import { FAKE_OUTCOME, FAKE_TASK_CONTEXT } from './fake-data.js';
-import {
-  createMockHokusaiClient,
-  type MockHokusaiClient,
-} from './mock-client.js';
+/**
+ * Runs the Hokusai loop twice against an offline mock API, to show the one
+ * distinction that decides whether a contribution earns anything:
+ *
+ *   Run A submits `actual_cost_usd` and lands `training_eligible`.
+ *   Run B omits it and lands `partial` — accepted, stored, never trained on.
+ *
+ * Both return `accepted: true`. Only the fidelity tier tells them apart.
+ *
+ * @module index
+ */
 
-export const REFERENCE_MODEL: ModelDefinition = {
-  id: 'gpt-5-reference',
-  provider: 'openai',
-  family: 'gpt-5',
-  capabilities: ['reasoning', 'tool-use'],
-  default: true,
-};
+import { FAKE_REPOSITORY_SIGNALS, FAKE_SECRET, createReferenceHarnessAdapter } from './harness/index.js';
+import { runHokusaiLoop, type HokusaiLoopResult } from './hokusai/index.js';
+import { createMockHokusaiClient } from './mock-client.js';
 
 const REDACTION_SALT = 'reference-harness-salt';
-const FAKE_SECRET = 'fake-secret-DO-NOT-USE';
-
-function ok<T>(value: T) {
-  return { ok: true as const, value };
-}
-
-function requireOk<T>(result: AdapterResult<T>): T {
-  if (!result.ok) {
-    throw new Error(result.error.message);
-  }
-
-  return result.value;
-}
-
-export function createReferenceHarnessAdapter(): HarnessAdapter {
-  const storage = new Map<string, string>();
-
-  return {
-    context: {
-      collectTaskContext() {
-        return Promise.resolve(ok(FAKE_TASK_CONTEXT));
-      },
-    },
-    models: {
-      discoverModels() {
-        return Promise.resolve(ok([
-          {
-            id: REFERENCE_MODEL.id,
-            label: 'GPT-5 Reference',
-            metadata: {
-              provider: REFERENCE_MODEL.provider,
-            },
-          },
-        ]));
-      },
-      mapModel(request) {
-        const availableModel = request.availableModels.find(
-          (model) => model.id === request.harnessModelId,
-        );
-
-        if (!availableModel) {
-          return Promise.resolve({
-            ok: false as const,
-            error: {
-              code: 'model_not_found',
-              message: `Model ${request.harnessModelId} is not available.`,
-            },
-          });
-        }
-
-        return Promise.resolve(ok({
-          id: availableModel.id,
-          provider: availableModel.provider,
-          capabilities: [...availableModel.capabilities],
-        }));
-      },
-    },
-    recommendations: {
-      displayRecommendation() {
-        return ok(undefined);
-      },
-    },
-    outcomes: {
-      collectOutcome(request) {
-        return Promise.resolve(ok({
-          ...FAKE_OUTCOME,
-          taskId: request.task.id,
-        }));
-      },
-    },
-    payloads: {
-      previewPayload(request) {
-        return ok(previewDispatchPayload(request.payload));
-      },
-    },
-    consent: {
-      promptConsent(request) {
-        return Promise.resolve(ok({
-          outcome: 'granted',
-          scope: request.scope,
-        }));
-      },
-    },
-    storage: {
-      get(key) {
-        return Promise.resolve(ok(storage.get(key)));
-      },
-      set(key, value) {
-        storage.set(key, value);
-        return Promise.resolve(ok(undefined));
-      },
-      delete(key) {
-        storage.delete(key);
-        return Promise.resolve(ok(undefined));
-      },
-    },
-  };
-}
-
-function previewDispatchPayload(payload: HokusaiDispatchPayload) {
-  return {
-    summary: `Dispatch ${payload.task.id} with ${payload.model.id}`,
-    promptPreview: payload.prompt,
-    redactionCount: payload.redactions.length,
-  };
-}
-
-function logStep(step: number, message: string): void {
-  console.log(`[${step}/9] ${message}`);
-}
+const BUDGET_USD = 0.5;
 
 export interface ReferenceFlowSummary {
-  task: HokusaiTaskInput;
-  packetPrompt: string;
-  packetRedactionCount: number;
-  packet: ReturnType<typeof buildTaskPacket>;
-  routeStatus: 'accepted';
-  correlationId: string;
-  storedDecisionId: string;
-  mappedModelId: string;
-  outcome: HokusaiOutcome;
-  report: OutcomeReport;
-  reportNotes: string | undefined;
-  submittedCorrelationId: string;
-  reportStatus: 'recorded';
+  trainingEligible: HokusaiLoopResult;
+  partial: HokusaiLoopResult;
 }
 
-export async function runReferenceFlow(): Promise<ReferenceFlowSummary> {
+export async function runReferenceFlow(
+  log: (line: string) => void = () => undefined,
+): Promise<ReferenceFlowSummary> {
   const adapter = createReferenceHarnessAdapter();
-  const mockClient: MockHokusaiClient = createMockHokusaiClient();
-  const registry = new InMemoryModelRegistry([REFERENCE_MODEL]);
-  const dispatchBuilder = new HokusaiDispatchBuilder({
-    consent: {
-      subjectId: FAKE_TASK_CONTEXT.task.id,
-      grantedScopes: ['task-execution'],
-    },
-    modelRegistry: registry,
-    redactionConfig: {
-      ...DEFAULT_REDACTION_CONFIG,
-      salt: REDACTION_SALT,
-      customRules: [
-        {
-          category: 'secret',
-          pattern: new RegExp(FAKE_SECRET, 'g'),
-        },
-      ],
-    },
-    clock: () => new Date('2026-06-08T00:00:00.000Z'),
-  });
-  const localStore = new InMemoryLocalStore();
+  const client = createMockHokusaiClient();
 
-  logStep(1, 'Collecting task context');
-  const ctx = requireOk<typeof FAKE_TASK_CONTEXT>(
-    await adapter.context.collectTaskContext({}),
-  );
-
-  logStep(2, 'Building generic task packet');
-  const packet = buildTaskPacket({
-    userIntent: ctx.task.prompt,
-    taskFamily: 'feature',
-    reasoningDepth: 'standard',
-    languageSignals: ['TypeScript'],
-    frameworkSignals: ['Node.js'],
-  });
-
-  logStep(3, 'Previewing anonymized dispatch payload');
-  const dispatchPayload = await dispatchBuilder.prepareDispatch(
-    ctx.task,
-    REFERENCE_MODEL.id,
-  );
-  const preview = requireOk<ReturnType<typeof previewDispatchPayload>>(
-    await adapter.payloads.previewPayload({ payload: dispatchPayload }),
-  );
-  console.log(`prompt=${preview.promptPreview}`);
-  console.log(`redactions=${preview.redactionCount}`);
-
-  logStep(4, 'Calling mock route');
-  const routeResponse: RouteResponse = await mockClient.route(dispatchPayload);
-
-  logStep(5, 'Mapping recommended model');
-  const mappedModel = mapRecommendation(
-    { model: REFERENCE_MODEL.id },
-    { registry },
-  );
-
-  logStep(6, 'Persisting local decision id');
-  await localStore.putCorrelation({
-    correlationId: routeResponse.routeId,
-    packetHash: 'fake-hash-for-example',
-    createdAt: Date.now(),
-  });
-  const stored = await localStore.getCorrelation(routeResponse.routeId);
-  if (!stored) {
-    throw new Error('Local decision id was not stored.');
-  }
-
-  logStep(7, 'Collecting fake outcome');
-  const outcome = requireOk<HokusaiOutcome>(
-    await adapter.outcomes.collectOutcome({
-      task: ctx.task,
-      model: {
-        id: mappedModel.id,
-        provider: mappedModel.provider,
-        capabilities: [...mappedModel.capabilities],
-      },
-    }),
-  );
-
-  logStep(8, 'Previewing anonymized outcome report');
-  const reportInput = {
-    correlationId: stored.correlationId,
-    recommendedModel: mappedModel.id,
-    actualModel: mappedModel.id,
-    recommendationAccepted: true,
-    completionStatus: 'succeeded' as const,
-    latencyBucket: 'low' as const,
-    costBucket: 'low' as const,
-    tokenBucket: 'medium' as const,
-    notes: outcome.summary,
+  const shared = {
+    adapter,
+    client,
+    models: adapter.discoverModels(),
+    repositorySignals: FAKE_REPOSITORY_SIGNALS,
     redactionSalt: REDACTION_SALT,
+    redactionSecret: FAKE_SECRET,
+    log,
   };
-  const report = buildOutcomeReport(reportInput);
-  const reportPreview = previewOutcomePayload(reportInput);
-  console.log(`notes=${reportPreview.notes ?? ''}`);
 
-  logStep(9, 'Submitting report');
-  const ack: OutcomeResponse = await mockClient.reportOutcome(report);
-  if (ack.status !== 'recorded') {
-    throw new Error(`Unexpected outcome acknowledgement: ${ack.status}`);
-  }
-  console.log(`[9/9] Submitting report -> ${ack.status}`);
+  log('');
+  log('=== Run A: budget + actual cost reported ===================');
+  const trainingEligible = await runHokusaiLoop({
+    ...shared,
+    budgetUsd: BUDGET_USD,
+    idempotencyKey: 'reference-harness-run-a',
+  });
+  log('');
+  log(`  -> ${trainingEligible.fidelityTier ?? 'unknown'}`);
+  log('     budget_usd and actual_cost_usd are both numeric, so the server can');
+  log('     score success-under-budget. This row trains the router.');
 
-  return {
-    task: ctx.task,
-    packetPrompt: preview.promptPreview,
-    packetRedactionCount: preview.redactionCount,
-    packet,
-    routeStatus: routeResponse.status,
-    correlationId: routeResponse.routeId,
-    storedDecisionId: stored.correlationId,
-    mappedModelId: mappedModel.id,
-    outcome,
-    report,
-    reportNotes: reportPreview.notes,
-    submittedCorrelationId: report.correlationId,
-    reportStatus: ack.status,
-  };
+  log('');
+  log('=== Run B: actual cost omitted =============================');
+  const partial = await runHokusaiLoop({
+    ...shared,
+    budgetUsd: BUDGET_USD,
+    reportCost: false,
+    idempotencyKey: 'reference-harness-run-b',
+  });
+  log('');
+  log(`  -> ${partial.fidelityTier ?? 'unknown'}`);
+  log('     Without actual_cost_usd the reward scorer cannot decide whether the');
+  log('     run came in under budget. The row is accepted and stored as');
+  log('     telemetry, excluded from training, and earns no stake.');
+  log('');
+  log('Both runs returned accepted=true. Only the tier distinguishes them.');
+  log('');
+
+  return { trainingEligible, partial };
 }
 
 async function main(): Promise<void> {
-  await runReferenceFlow();
+  await runReferenceFlow((line) => { console.log(line); });
 }
 
 const isEntrypoint =

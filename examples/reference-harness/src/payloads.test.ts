@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
   TASK_PACKET_SCHEMA_VERSION,
-  OUTCOME_REPORT_SCHEMA_VERSION,
-  validateOutcomeReport,
+  isHarnessOutcomeRowV1,
+  validateContributionRow,
   validateTaskPacket,
 } from '@hokusai/core';
 
@@ -43,26 +44,35 @@ describe('published example payloads', () => {
     expect(result.packet.schemaVersion).toBe(TASK_PACKET_SCHEMA_VERSION);
   });
 
-  it('validates the outcome report example against the core schema', async () => {
-    const outcomeReport = await readJsonFixture('outcome-report.example.json');
-    const errors = validateOutcomeReport(outcomeReport);
+  it('validates the contribution row example against the core schema', async () => {
+    const row = await readJsonFixture('contribution-row.example.json');
 
-    expect(errors).toEqual([]);
-    if (errors.length > 0) {
-      return;
-    }
-
-    expect((outcomeReport as { schemaVersion?: string }).schemaVersion).toBe(
-      OUTCOME_REPORT_SCHEMA_VERSION,
+    expect(isHarnessOutcomeRowV1(row)).toBe(true);
+    expect(() => validateContributionRow(row)).not.toThrow();
+    expect((row as { schema_version?: string }).schema_version).toBe(
+      HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
     );
   });
 
+  it('publishes a row carrying the fields training eligibility requires', async () => {
+    const row = (await readJsonFixture('contribution-row.example.json')) as Record<
+      string,
+      unknown
+    >;
+
+    expect(row.inference_log_id).toBeTypeOf('string');
+    expect(row.budget_usd).toBeTypeOf('number');
+    expect(row.actual_cost_usd).toBeTypeOf('number');
+    expect(row.task_descriptor).not.toEqual({});
+    expect(row.allowed_models).not.toEqual([]);
+  });
+
   it('contains only fake data patterns that are safe to publish', async () => {
-    const [taskPacket, outcomeReport] = await Promise.all([
+    const [taskPacket, contributionRow] = await Promise.all([
       readJsonFixture('task-packet.example.json'),
-      readJsonFixture('outcome-report.example.json'),
+      readJsonFixture('contribution-row.example.json'),
     ]);
-    const serialized = JSON.stringify({ taskPacket, outcomeReport });
+    const serialized = JSON.stringify({ taskPacket, contributionRow });
 
     for (const pattern of suspiciousPatterns) {
       expect(serialized).not.toMatch(pattern);

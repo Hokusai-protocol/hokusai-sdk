@@ -1,50 +1,90 @@
 # Reference Harness
 
-This package is the smallest complete Hokusai integration example that is safe to publish. It uses only fake task data and an in-memory mock client, so a harness author can run the full route and report flow without private credentials or a live Hokusai API.
+Fork this to integrate Hokusai into your own coding harness — Pi, OpenHands, or an agent loop you built yourself.
 
-## How to run
+It runs offline. No API key, no network, no credentials. It uses fake task data and a mock Hokusai API so you can watch the whole loop before you wire up anything real.
 
 ```bash
 pnpm --filter @hokusai/reference-harness start
 ```
 
-## Example payloads
+## What it demonstrates
 
-Published fake payloads live in [`examples/`](./examples/README.md):
+The point of a Hokusai integration is not to route a task. It is to contribute a row that **trains the router and earns stake**. Those are different things, and the difference is easy to miss: a row that trains and a row that is silently discarded both come back `accepted: true`.
 
-- [`task-packet.example.json`](./examples/task-packet.example.json)
-- [`outcome-report.example.json`](./examples/outcome-report.example.json)
+So this harness runs the loop twice.
 
-## Expected console output
+| Run | `actual_cost_usd` | Server tier | Outcome |
+|---|---|---|---|
+| A | reported | `training_eligible` | Trains the router. Earns stake. |
+| B | omitted | `partial` | Stored as telemetry. Excluded from training. Earns nothing. |
 
-The script prints nine labeled steps:
+Everything else about the two rows is identical. Only `rowFidelityTiers` in the response tells them apart. Run it and read the output — that contrast is the whole lesson.
 
-```text
-[1/9] Collecting task context
-[2/9] Building generic task packet
-[3/9] Previewing anonymized dispatch payload
-[4/9] Calling mock route
-[5/9] Mapping recommended model
-[6/9] Persisting local decision id
-[7/9] Collecting fake outcome
-[8/9] Previewing anonymized outcome report
-[9/9] Submitting report
-```
+## Training eligibility
 
-The payload preview and report preview also print redacted values so you can confirm that fake secrets are removed before anything is sent.
+The server classifies every row it accepts. It is **authoritative** — never compute the tier yourself; read `response.rowFidelityTiers`. To land `training_eligible` a row needs all of:
+
+- a non-empty `task_descriptor`
+- a non-empty `allowed_models`
+- a `selected_models` naming at least a coder or reviewer
+- a numeric `budget_usd` **and** a numeric `actual_cost_usd`
+
+The last one is where real harnesses fall down. The reward scorer decides whether a run came in under budget; with no cost it cannot, so the row is demoted. Most harnesses have token counts rather than a dollar figure — `computeActualCostUsd()` converts one to the other, and returns `undefined` for a model it does not recognize rather than inventing a number.
 
 ## Structure
 
-- `src/fake-data.ts` contains safe-to-publish task and outcome fixtures.
-- `src/mock-client.ts` provides offline `route` and `reportOutcome` methods with deterministic responses.
-- `src/index.ts` defines the minimal `HarnessAdapter` plus the full nine-step integration flow.
-- `src/index.test.ts` proves the flow runs end to end and that both previews redact the fake secret.
+The split is the point. One directory is yours, one is not.
 
-## Adapting this
+```
+src/
+  hokusai/     <- the reusable loop. Do not edit.
+  harness/     <- yours. Four TODOs.
+  mock-client.ts  <- an offline stand-in for the Hokusai API
+  index.ts        <- wires the two together and prints the trace
+```
 
-For a real harness, keep the reusable `@hokusai/core` pieces and replace only the harness-specific parts:
+`src/harness/adapter.ts` has exactly four things to implement:
 
-- Replace `src/fake-data.ts` with real task-context and outcome collection.
-- Replace `src/mock-client.ts` with a real `HokusaiClient`.
-- Keep the `HokusaiDispatchBuilder`, model registry, outcome builder, and local correlation storage wiring.
-- Expand the adapter methods to reflect your harness command surface, consent UX, model discovery, and local persistence choices.
+1. `collectTaskContext` — where does a task come from in your harness?
+2. `discoverModels` — which models can you actually run?
+3. `executeTask` — run it; return token usage
+4. `previewPayload` — show the operator what will be sent
+
+Everything else — descriptor derivation, redaction, routing, pricing, row construction, submission — lives in `src/hokusai/loop.ts` and should not need changing.
+
+## The step every integrator gets wrong
+
+Route returns an `inference_log_id` (as `RouteResponse.routeId`). It must be threaded into the contribution row. Without it the row cannot be attributed back to the routing decision, so it earns nothing no matter how complete the rest of it is.
+
+The Claude Code plugin shipped this bug: it received the id and dropped it on the floor. `src/hokusai/loop.ts` threads it, and `src/index.test.ts` asserts it.
+
+## Notes for specific harnesses
+
+### Pi and OpenHands
+
+Both have their own model-selection surface. `mapRecommendation()` resolves the router's recommended model id against your `InMemoryModelRegistry`; when the router names a model you cannot run, it falls back to a registry default rather than throwing. Either honor the fallback or record a decline — do not silently substitute a model and then report the recommended one, because `selected_models` would no longer describe what actually ran.
+
+Model ids in `discoverModels()` must be real provider ids. `pricing.ts` looks them up; a made-up id yields no cost and drops your row to `partial`.
+
+### Cost capture
+
+Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically. **Neither Pi nor OpenHands does**, so that layered fallback does not apply. Return token counts from `executeTask` and let `computeActualCostUsd()` price them, as this harness does.
+
+If your provider reports prompt-cache tokens, pass `cacheCreationTokens` and `cacheReadTokens` too. They are billed at 1.25x and 0.1x the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs.
+
+## Privacy
+
+Raw task text is read to derive categorical labels and then discarded. It is never stored and never transmitted. `validateContributionRow()` enforces this with a forbidden-key guard: a row containing `prompt`, `messages`, `task_text`, `description`, and similar is rejected outright.
+
+The mock client runs that same validator, so a fork that leaks prompt text **fails locally**, in tests, rather than at the network boundary in production. `src/index.test.ts` covers it.
+
+## Example payloads
+
+Safe-to-publish fixtures live in [`examples/`](./examples/README.md). `contribution-row.example.json` is generated from an actual run of this harness, so it cannot drift from what the code emits.
+
+## Further reading
+
+- [`docs/reference-pattern.md`](../../docs/reference-pattern.md) — the harness-agnostic contract
+- [`docs/privacy-model.md`](../../docs/privacy-model.md) — what leaves the machine
+- [`packages/adapter-claude-code/`](../../packages/adapter-claude-code/) and [`packages/adapter-wavemill/`](../../packages/adapter-wavemill/) — two production integrations

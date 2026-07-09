@@ -1854,7 +1854,62 @@ function normalizeContributionResponse(value, requestId) {
   if (tokenReward !== void 0) {
     response.tokenReward = tokenReward;
   }
+  const rowFidelityTiers = firstStringArray(
+    record.rowFidelityTiers,
+    record.row_fidelity_tiers
+  );
+  if (rowFidelityTiers !== void 0) {
+    response.rowFidelityTiers = rowFidelityTiers;
+  }
+  const fidelitySummary = normalizeFidelitySummary(
+    record.fidelitySummary ?? record.fidelity_summary
+  );
+  if (fidelitySummary !== void 0) {
+    response.fidelitySummary = fidelitySummary;
+  }
+  const rejectedRows = normalizeRejectedRows(
+    record.rejectedRows ?? record.rejected_rows
+  );
+  if (rejectedRows !== void 0) {
+    response.rejectedRows = rejectedRows;
+  }
   return response;
+}
+function firstStringArray(...values) {
+  for (const value of values) {
+    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+      return [...value];
+    }
+  }
+  return void 0;
+}
+function normalizeFidelitySummary(value) {
+  if (!isPlainRecord(value)) {
+    return void 0;
+  }
+  return {
+    training_eligible: firstFiniteNumber(value.training_eligible) ?? 0,
+    partial: firstFiniteNumber(value.partial) ?? 0,
+    passthrough: firstFiniteNumber(value.passthrough) ?? 0,
+    invalid: firstFiniteNumber(value.invalid) ?? 0
+  };
+}
+function normalizeRejectedRows(value) {
+  if (!Array.isArray(value)) {
+    return void 0;
+  }
+  const rows = [];
+  for (const entry of value) {
+    if (!isPlainRecord(entry)) {
+      continue;
+    }
+    const index = firstFiniteNumber(entry.index);
+    const reason = firstString(entry.reason);
+    if (index !== void 0 && reason !== void 0) {
+      rows.push({ index, reason });
+    }
+  }
+  return rows;
 }
 function firstFiniteNumber(...values) {
   for (const value of values) {
@@ -3549,6 +3604,57 @@ function summarizeFrameworkSignals(dependencyCategories) {
   );
 }
 
+// ../core/src/task-descriptor.ts
+var TASK_FAMILY_TO_HOKUSAI_TYPE = {
+  bugfix: "bugfix",
+  feature: "feature",
+  migration: "migration",
+  refactor: "refactor",
+  test: "tests",
+  docs: "docs",
+  infra: "infra",
+  chore: "infra",
+  mixed: "unknown",
+  investigation: "unknown"
+};
+function dominantLanguage(extensionCounts) {
+  let bestExtension;
+  let bestCount = 0;
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+    if (count > bestCount || count === bestCount && (bestExtension === void 0 || extension < bestExtension)) {
+      bestExtension = extension;
+      bestCount = count;
+    }
+  }
+  if (bestExtension === void 0) {
+    return void 0;
+  }
+  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
+}
+function deriveTaskDescriptor(input) {
+  const derived = {};
+  const taskText = input.taskText?.trim();
+  if (taskText && taskText.length > 0) {
+    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity = inferReasoningDepth({ text: taskText });
+  }
+  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  if (repoSizeBucket) {
+    derived.repo_size_bucket = repoSizeBucket;
+  }
+  const extensionCounts = input.repositorySignals?.extensionCounts;
+  if (extensionCounts) {
+    const dominant = dominantLanguage(extensionCounts);
+    if (dominant) {
+      derived.language = dominant;
+    }
+  }
+  return derived;
+}
+
 // ../core/src/pricing.ts
 var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
 var CACHE_READ_INPUT_MULTIPLIER = 0.1;
@@ -4003,55 +4109,6 @@ function parseMetadataList(value) {
   }
   const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
   return entries.length > 0 ? entries : void 0;
-}
-var TASK_FAMILY_TO_HOKUSAI_TYPE = {
-  bugfix: "bugfix",
-  feature: "feature",
-  migration: "migration",
-  refactor: "refactor",
-  test: "tests",
-  docs: "docs",
-  infra: "infra",
-  chore: "infra",
-  mixed: "unknown",
-  investigation: "unknown"
-};
-function deriveTaskDescriptor(input) {
-  const derived = {};
-  const taskText = input.taskText?.trim();
-  if (taskText && taskText.length > 0) {
-    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
-    derived.complexity = inferReasoningDepth({ text: taskText });
-  }
-  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
-  if (repoSizeBucket) {
-    derived.repo_size_bucket = repoSizeBucket;
-  }
-  const extensionCounts = input.repositorySignals?.extensionCounts;
-  if (extensionCounts) {
-    const dominant = dominantLanguage(extensionCounts);
-    if (dominant) {
-      derived.language = dominant;
-    }
-  }
-  return derived;
-}
-function dominantLanguage(extensionCounts) {
-  let bestExtension;
-  let bestCount = 0;
-  for (const [extension, count] of Object.entries(extensionCounts)) {
-    if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
-      continue;
-    }
-    if (count > bestCount || count === bestCount && (bestExtension === void 0 || extension < bestExtension)) {
-      bestExtension = extension;
-      bestCount = count;
-    }
-  }
-  if (bestExtension === void 0) {
-    return void 0;
-  }
-  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
 }
 function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
   const derived = deriveTaskDescriptor({
