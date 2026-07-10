@@ -59,12 +59,39 @@ Dependency direction is one-way: `@hokusai/core` does not import adapters; adapt
 - `HokusaiDispatchBuilder`
 - `createGatedClient()`
 - `DEFAULT_HOKUSAI_BASE_URL` (`https://api.hokus.ai`)
+- `DEFAULT_ROUTER_MODEL_ID` (`30`)
 - `HokusaiApiError`
 - `HokusaiAuthError`
 - `HokusaiDispatchError`
 - `HokusaiNetworkError`
 - `HokusaiRateLimitError`
 - `HokusaiValidationError`
+
+#### Targeting a different router model or backend path
+
+`HokusaiClient` defaults to Model 30, calling `/api/v1/models/30/predict` for
+routes and `/api/v1/models/30/contributions` for contributions. The backend can
+promote a newer router model ahead of an SDK release, so these are configurable
+without upgrading `@hokusai/core`:
+
+| Option                | Default                            | Use when                                                                                                                                    |
+| --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routeModelId`        | `30`                               | The backend serves the router under a new model version and you want to opt in early. Path becomes `/api/v1/models/{routeModelId}/predict`. |
+| `routePath`           | derived from `routeModelId`        | The backend path shape itself changes (not just the version). Full override; takes precedence over `routeModelId`.                          |
+| `contributionModelId` | `30`                               | Contributions should land on a newer model's endpoint. Path becomes `/api/v1/models/{contributionModelId}/contributions`.                   |
+| `contributionPath`    | derived from `contributionModelId` | Full override for the contribution path.                                                                                                    |
+
+```ts
+// Opt into a newer router model without an SDK upgrade.
+const client = new HokusaiClient({ apiKey, routeModelId: '31' });
+
+// Confirm the target path without a network call.
+const { path } = await client.route(payload, { dryRun: true });
+// path === '/api/v1/models/31/predict'
+```
+
+Leave every option unset to keep the current Model 30 behavior. Dry-run results
+carry a `path` field so you can verify a configured target before sending.
 
 ### Schemas and Validation
 

@@ -174,6 +174,12 @@ export interface HokusaiFieldError {
 export interface HokusaiValidationSuccess<TRequest> {
   ok: true;
   request: TRequest;
+  /**
+   * The API path this request would have been sent to. Present on dry-run
+   * results so callers can confirm a configured route/contribution path or
+   * model version without making a network call.
+   */
+  path?: string | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

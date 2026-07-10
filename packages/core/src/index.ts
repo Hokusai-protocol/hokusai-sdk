@@ -1,5 +1,6 @@
 export {
   DEFAULT_HOKUSAI_BASE_URL,
+  DEFAULT_ROUTER_MODEL_ID,
   HokusaiApiError,
   HokusaiAuthError,
   HokusaiClient,

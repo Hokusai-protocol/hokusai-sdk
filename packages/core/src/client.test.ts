@@ -969,6 +969,7 @@ describe('HokusaiClient', () => {
     await expect(client.route(routeRequest, { dryRun: true })).resolves.toEqual(
       {
         ok: true,
+        path: '/api/v1/models/30/predict',
         request: expect.objectContaining({
           inputs: expect.objectContaining({
             routing: expect.objectContaining({
@@ -988,6 +989,117 @@ describe('HokusaiClient', () => {
       request: outcomeReport,
     });
     expect(calls).toHaveLength(0);
+  });
+
+  it('targets the Model 30 route path by default', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: { coder_model: 'gpt-5-codex', route_id: 'r' },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    await client.route(routeRequest);
+
+    expect(new URL(calls[0]!.input).pathname).toBe('/api/v1/models/30/predict');
+  });
+
+  it('targets a configured router model version for network route calls', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: { coder_model: 'gpt-5-codex', route_id: 'r' },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      routeModelId: '42',
+    });
+
+    await client.route(routeRequest);
+
+    expect(new URL(calls[0]!.input).pathname).toBe('/api/v1/models/42/predict');
+  });
+
+  it('honors a full route path override ahead of the model id', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: { coder_model: 'gpt-5-codex', route_id: 'r' },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      routeModelId: '42',
+      routePath: '/internal/router/predict',
+    });
+
+    await client.route(routeRequest);
+
+    expect(new URL(calls[0]!.input).pathname).toBe('/internal/router/predict');
+  });
+
+  it('surfaces the configured route path in dry-run output', async () => {
+    const routeRequest = await createRouteRequest();
+    const client = new HokusaiClient({ routeModelId: '31' });
+
+    const result = await client.route(routeRequest, { dryRun: true });
+
+    expect(result).toMatchObject({
+      ok: true,
+      path: '/api/v1/models/31/predict',
+    });
+  });
+
+  it('targets a configured contribution model version for network calls', async () => {
+    const row = {
+      schema_version: 'harness_outcome_row/v1',
+      task_descriptor: { task_type: 'bugfix' },
+      allowed_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      selected_models: { coder: 'claude-sonnet-4-6' },
+      completion_result: 'success',
+    } as unknown as HarnessOutcomeRowV1;
+    const { calls, transport } = createMockTransport([
+      createResponse(201, { accepted: true, rowsAccepted: 1 }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      contributionModelId: '42',
+    });
+
+    await client.submitContribution({
+      rows: [row],
+      metadata: { idempotency_key: 'batch-x' },
+    });
+
+    expect(new URL(calls[0]!.input).pathname).toBe(
+      '/api/v1/models/42/contributions',
+    );
+  });
+
+  it('surfaces the configured contribution path in dry-run output', async () => {
+    const row = {
+      schema_version: 'harness_outcome_row/v1',
+      task_descriptor: { task_type: 'bugfix' },
+      allowed_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      selected_models: { coder: 'claude-sonnet-4-6' },
+      completion_result: 'success',
+    } as unknown as HarnessOutcomeRowV1;
+    const client = new HokusaiClient({ contributionPath: '/internal/contrib' });
+
+    const result = await client.submitContribution(
+      { rows: [row], metadata: { idempotency_key: 'batch-y' } },
+      { dryRun: true },
+    );
+
+    expect(result).toMatchObject({ ok: true, path: '/internal/contrib' });
   });
 
   it('throws a validation error for invalid dry-run payloads', async () => {

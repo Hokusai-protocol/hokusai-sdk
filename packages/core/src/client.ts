@@ -51,10 +51,19 @@ import type { HarnessOutcomeRowV1 } from './contribution/index.js';
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RETRY_AFTER_MS = 5_000;
-const ROUTE_PATH = '/api/v1/models/30/predict';
 const OUTCOME_PATH = '/v1/outcomes';
-const CONTRIBUTIONS_PATH = '/api/v1/models/30/contributions';
 const SIGNAL_PATH = '/v1/signals';
+
+/** The router model version targeted when a caller does not override it. */
+export const DEFAULT_ROUTER_MODEL_ID = '30';
+
+function buildModelPredictPath(modelId: string): string {
+  return `/api/v1/models/${modelId}/predict`;
+}
+
+function buildModelContributionsPath(modelId: string): string {
+  return `/api/v1/models/${modelId}/contributions`;
+}
 export const SDK_VERSION = '0.2.0';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
@@ -188,6 +197,28 @@ export interface HokusaiClientOptions {
   requestIdFactory?: () => string;
   backoffMs?: (attempt: number) => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Router model version to target for route predictions. Defaults to Model 30.
+   * Override to point at a newer registry model without upgrading the SDK; the
+   * request path becomes `/api/v1/models/{routeModelId}/predict`.
+   */
+  routeModelId?: string;
+  /**
+   * Full override for the route prediction path. Takes precedence over
+   * `routeModelId`. Use only when the backend path shape itself changes.
+   */
+  routePath?: string;
+  /**
+   * Model version whose contribution endpoint receives outcome rows. Defaults
+   * to Model 30. The path becomes
+   * `/api/v1/models/{contributionModelId}/contributions`.
+   */
+  contributionModelId?: string;
+  /**
+   * Full override for the contribution path. Takes precedence over
+   * `contributionModelId`.
+   */
+  contributionPath?: string;
 }
 
 export interface HokusaiDispatchBuilderOptions {
@@ -450,6 +481,8 @@ export class HokusaiClient {
   readonly #sleep: (ms: number) => Promise<void>;
   readonly #timeoutMs: number;
   readonly #transport: FetchTransport | undefined;
+  readonly #routePath: string;
+  readonly #contributionPath: string;
 
   constructor(options: HokusaiClientOptions = {}) {
     this.#apiKey = options.apiKey;
@@ -461,6 +494,14 @@ export class HokusaiClient {
     this.#requestIdFactory = options.requestIdFactory ?? createRequestId;
     this.#backoffMs = options.backoffMs ?? defaultBackoffMs;
     this.#sleep = options.sleep ?? defaultSleep;
+    this.#routePath =
+      options.routePath ??
+      buildModelPredictPath(options.routeModelId ?? DEFAULT_ROUTER_MODEL_ID);
+    this.#contributionPath =
+      options.contributionPath ??
+      buildModelContributionsPath(
+        options.contributionModelId ?? DEFAULT_ROUTER_MODEL_ID,
+      );
   }
 
   async route(
@@ -511,11 +552,12 @@ export class HokusaiClient {
       return {
         ok: true,
         request: technicalTaskRouterRequest,
+        path: this.#routePath,
       };
     }
 
     return this.#send<TechnicalTaskRouterRequest, RouteResponse>({
-      path: ROUTE_PATH,
+      path: this.#routePath,
       request: technicalTaskRouterRequest,
       requestId,
       requestOptions: options,
@@ -622,6 +664,7 @@ export class HokusaiClient {
       return {
         ok: true,
         request,
+        path: this.#contributionPath,
       };
     }
 
@@ -631,7 +674,7 @@ export class HokusaiClient {
         : requestId;
 
     return this.#send<ContributionRequest, ContributionAcceptedResponse>({
-      path: CONTRIBUTIONS_PATH,
+      path: this.#contributionPath,
       request,
       requestId,
       requestOptions: options,
