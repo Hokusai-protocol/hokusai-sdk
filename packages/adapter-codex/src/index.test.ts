@@ -26,6 +26,12 @@ const models: ModelDefinition[] = [
     capabilities: ['reasoning', 'tool-use'],
     default: true,
   },
+  {
+    id: 'gpt-5',
+    provider: 'openai',
+    family: 'gpt',
+    capabilities: ['reasoning', 'tool-use'],
+  },
 ];
 
 const redactionConfig = {
@@ -67,16 +73,16 @@ describe('createCodexAdapter', () => {
       apiKey: 'test-key',
       transport: () =>
         Promise.resolve({
-        status: 200,
-        headers: { get: () => null },
-        text: () =>
-          Promise.resolve(
-            JSON.stringify({
-              routeId: 'route-1',
-              taskId: 'task-1',
-              status: 'accepted',
-            }),
-          ),
+          status: 200,
+          headers: { get: () => null },
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                routeId: 'route-1',
+                taskId: 'task-1',
+                status: 'accepted',
+              }),
+            ),
         }),
       requestIdFactory: () => 'req-1',
     });
@@ -179,7 +185,9 @@ describe('createCodexHarnessAdapter', () => {
     const typedAdapter: HarnessAdapter = adapter;
     void typedAdapter;
 
-    const context = await adapter.context.collectTaskContext({ taskId: 'task-1' });
+    const context = await adapter.context.collectTaskContext({
+      taskId: 'task-1',
+    });
     expect(context.ok).toBe(true);
     if (!context.ok) {
       return;
@@ -221,7 +229,8 @@ describe('createCodexHarnessAdapter', () => {
         createdAt: '2026-06-08T00:00:00.000Z',
       },
     });
-    const resolvedPreview = preview instanceof Promise ? await preview : preview;
+    const resolvedPreview =
+      preview instanceof Promise ? await preview : preview;
     expect(resolvedPreview).toEqual({
       ok: true,
       value: {
@@ -267,10 +276,12 @@ describe('createCodexHarnessAdapter', () => {
       ok: true,
       value: 'enabled',
     });
-    await expect(adapter.consent.promptConsent({
-      scope: 'task-execution',
-      reason: 'Need to route the task',
-    })).resolves.toEqual({
+    await expect(
+      adapter.consent.promptConsent({
+        scope: 'task-execution',
+        reason: 'Need to route the task',
+      }),
+    ).resolves.toEqual({
       ok: true,
       value: {
         outcome: 'granted',

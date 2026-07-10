@@ -1,5 +1,6 @@
 export {
   DEFAULT_HOKUSAI_BASE_URL,
+  DEFAULT_ROUTER_MODEL_ID,
   HokusaiApiError,
   HokusaiAuthError,
   HokusaiClient,
@@ -21,6 +22,7 @@ export {
   type HokusaiDispatchBuilderOptions,
   type HokusaiPluginClientOptions,
   type HokusaiRequestOptions,
+  type HokusaiRouteOptions,
   type HokusaiSignalRequest,
   type HokusaiSignalResponse,
 } from './client.js';
@@ -47,6 +49,21 @@ export {
   type RoutingObjective,
   type RoutingObjectiveApiValue,
 } from './routing-objective.js';
+export {
+  ROUTING_ROLES,
+  classifyRoutingPools,
+  effectiveRolePool,
+  resolveRoutingInput,
+  singletonRoles,
+  validateRoutingInput,
+  type ResolveRoutingInputOptions,
+  type ResolvedRoutingInput,
+  type RouteRoutingInput,
+  type RoutingCandidatePools,
+  type RoutingMode,
+  type RoutingPoolFidelity,
+  type RoutingRole,
+} from './routing-inputs.js';
 export {
   anonymizeText,
   DEFAULT_REDACTION_CONFIG,
@@ -237,8 +254,12 @@ export {
   type TaskFamilyClassificationInput,
 } from './task-signals.js';
 export {
+  REASONING_DEPTH_COMPLEXITY,
   TASK_FAMILY_TO_HOKUSAI_TYPE,
   deriveTaskDescriptor,
+  normalizeComplexity,
+  normalizeHokusaiLanguage,
+  type TaskDescriptorFields,
   type TaskDescriptorInput,
   type TaskDescriptorSignals,
 } from './task-descriptor.js';

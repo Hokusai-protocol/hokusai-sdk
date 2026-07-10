@@ -2,9 +2,9 @@
   "schema_version": "harness_outcome_row/v1",
   "task_descriptor": {
     "task_type": "tests",
-    "complexity": "standard",
+    "complexity": 5,
     "repo_size_bucket": "medium",
-    "language": "TypeScript"
+    "language": "typescript"
   },
   "allowed_models": [
     "claude-haiku-4-5",

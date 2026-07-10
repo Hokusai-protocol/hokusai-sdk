@@ -15,6 +15,8 @@ import {
   defaultPluginConfigPath,
   deriveTaskDescriptor,
   hashPayload,
+  normalizeComplexity,
+  normalizeHokusaiLanguage,
   isConsentGranted,
   listSupportedModelIds,
   loadPluginConfig,
@@ -196,18 +198,26 @@ function buildRouteContextProjection(
     repositorySignals: signals.repositorySignals,
   });
 
-  const descriptorPairs: Array<[string, string | undefined]> = [
+  const languageOverride = firstMetadataValue(metadata, 'language', 'primaryLanguage');
+  // Complexity is a numeric score in the descriptor contract; a harness may
+  // supply it as a number-like string or one of the server's word aliases.
+  const complexityOverride = normalizeComplexity(
+    firstMetadataValue(metadata, 'estimated_complexity', 'complexity', 'reasoningDepth'),
+  );
+
+  const descriptorPairs: Array<[string, string | number | undefined]> = [
     [
       'task_type',
       firstMetadataValue(metadata, 'task_type', 'taskType', 'taskFamily') ?? derived.task_type,
     ],
-    ['language', firstMetadataValue(metadata, 'language', 'primaryLanguage') ?? derived.language],
-    ['domain', firstMetadataValue(metadata, 'domain')],
     [
-      'complexity',
-      firstMetadataValue(metadata, 'estimated_complexity', 'complexity', 'reasoningDepth') ??
-        derived.complexity,
+      'language',
+      languageOverride !== undefined
+        ? normalizeHokusaiLanguage(languageOverride)
+        : derived.language,
     ],
+    ['domain', firstMetadataValue(metadata, 'domain')],
+    ['complexity', complexityOverride ?? derived.complexity],
     [
       'repo_size_bucket',
       firstMetadataValue(metadata, 'repo_size_bucket', 'repositoryScale') ??
@@ -216,7 +226,7 @@ function buildRouteContextProjection(
     ['risk_level', firstMetadataValue(metadata, 'risk_level')],
   ];
 
-  const taskDescriptor: Record<string, string> = {};
+  const taskDescriptor: Record<string, string | number> = {};
   for (const [key, value] of descriptorPairs) {
     if (value !== undefined) {
       taskDescriptor[key] = value;
@@ -278,7 +288,7 @@ function parseRouteContext(value: string | undefined): RouteContextProjection | 
       typeof record.taskDescriptor === 'object' &&
       record.taskDescriptor !== null &&
       !Array.isArray(record.taskDescriptor)
-        ? (record.taskDescriptor as Record<string, string>)
+        ? (record.taskDescriptor as Record<string, string | number>)
         : {};
     const allowedModels = Array.isArray(record.allowedModels)
       ? record.allowedModels.filter((entry): entry is string => typeof entry === 'string')

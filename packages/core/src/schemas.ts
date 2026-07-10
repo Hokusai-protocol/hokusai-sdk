@@ -2,6 +2,10 @@ import type { ConsentSnapshot } from './consent.js';
 import type { ModelSelection } from './model-registry.js';
 import type { RedactionRecord } from './anonymization.js';
 import type { CorrelationRecord } from './storage.js';
+import {
+  validateRoutingInput,
+  type RouteRoutingInput,
+} from './routing-inputs.js';
 export type {
   BuildSummary,
   CoarseBucket,
@@ -40,6 +44,12 @@ export interface HokusaiDispatchPayload {
   /** Redaction records - original sensitive values are never included. */
   redactions: Array<{ label: string } | RedactionRecord>;
   createdAt: string;
+  /**
+   * Typed routing inputs. `HokusaiDispatchBuilder.prepareDispatch()` populates
+   * `availableModels` from the model registry, so a default route call ranks
+   * every model the harness supports rather than only the selected one.
+   */
+  routing?: RouteRoutingInput | undefined;
 }
 
 export type RouteRequest = HokusaiDispatchPayload;
@@ -59,49 +69,62 @@ export interface TechnicalTaskRouterInputs {
     framework?: string | undefined;
     repo_type?: string | undefined;
   };
-  routing?: {
-    available_models?: string[] | undefined;
-    available_planner_models?: string[] | undefined;
-    available_coder_models?: string[] | undefined;
-    available_reviewer_models?: string[] | undefined;
-    preferred_models?: string[] | undefined;
-    max_cost_usd?: number | undefined;
-    max_latency_seconds?: number | undefined;
-    objective?:
-      | 'lowest_cost'
-      | 'fastest_completion'
-      | 'highest_reliability'
-      | undefined;
-    prioritize_quality?: boolean | undefined;
-    prioritize_speed?: boolean | undefined;
-  } | undefined;
-  context?: {
-    domain?: string | undefined;
-    repo_size_bucket?:
-      | 'tiny'
-      | 'small'
-      | 'medium'
-      | 'large'
-      | 'very_large'
-      | undefined;
-    requires_tests?: boolean | undefined;
-    risk_level?: 'low' | 'medium' | 'high' | 'critical' | undefined;
-    file_count?: number | undefined;
-    estimated_complexity?: 'low' | 'medium' | 'high' | undefined;
-    security_sensitive?: boolean | undefined;
-  } | undefined;
-  workflow?: {
-    surface?: string | undefined;
-    stages?: Array<'plan' | 'code' | 'review'> | undefined;
-    execution_environment?: 'local' | 'ci' | 'remote' | 'hybrid' | undefined;
-    human_review_required?: boolean | undefined;
-  } | undefined;
-  metadata?: {
-    external_task_id?: string | undefined;
-    run_id?: string | undefined;
-    integration_version?: string | undefined;
-    idempotency_key?: string | undefined;
-  } | undefined;
+  routing?:
+    | {
+        available_models?: string[] | undefined;
+        available_planner_models?: string[] | undefined;
+        available_coder_models?: string[] | undefined;
+        available_reviewer_models?: string[] | undefined;
+        preferred_models?: string[] | undefined;
+        max_cost_usd?: number | undefined;
+        max_latency_seconds?: number | undefined;
+        objective?:
+          | 'lowest_cost'
+          | 'fastest_completion'
+          | 'highest_reliability'
+          | undefined;
+        prioritize_quality?: boolean | undefined;
+        prioritize_speed?: boolean | undefined;
+      }
+    | undefined;
+  context?:
+    | {
+        domain?: string | undefined;
+        repo_size_bucket?:
+          | 'tiny'
+          | 'small'
+          | 'medium'
+          | 'large'
+          | 'very_large'
+          | undefined;
+        requires_tests?: boolean | undefined;
+        risk_level?: 'low' | 'medium' | 'high' | 'critical' | undefined;
+        file_count?: number | undefined;
+        estimated_complexity?: 'low' | 'medium' | 'high' | undefined;
+        security_sensitive?: boolean | undefined;
+      }
+    | undefined;
+  workflow?:
+    | {
+        surface?: string | undefined;
+        stages?: Array<'plan' | 'code' | 'review'> | undefined;
+        execution_environment?:
+          | 'local'
+          | 'ci'
+          | 'remote'
+          | 'hybrid'
+          | undefined;
+        human_review_required?: boolean | undefined;
+      }
+    | undefined;
+  metadata?:
+    | {
+        external_task_id?: string | undefined;
+        run_id?: string | undefined;
+        integration_version?: string | undefined;
+        idempotency_key?: string | undefined;
+      }
+    | undefined;
 }
 
 export interface TechnicalTaskRouterRequest {
@@ -151,6 +174,12 @@ export interface HokusaiFieldError {
 export interface HokusaiValidationSuccess<TRequest> {
   ok: true;
   request: TRequest;
+  /**
+   * The API path this request would have been sent to. Present on dry-run
+   * results so callers can confirm a configured route/contribution path or
+   * model version without making a network call.
+   */
+  path?: string | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -442,6 +471,14 @@ export function validateRouteRequest(request: unknown): HokusaiFieldError[] {
   validateCorrelationRecord(request.correlation, 'correlation', errors);
   validateRedactions(request.redactions, 'redactions', errors);
   validateNonEmptyString(request.createdAt, 'createdAt', errors);
+
+  if (request.routing !== undefined) {
+    if (isRecord(request.routing)) {
+      errors.push(...validateRoutingInput(request.routing));
+    } else {
+      pushFieldError(errors, 'routing', 'Expected an object.', 'invalid_type');
+    }
+  }
 
   return errors;
 }
