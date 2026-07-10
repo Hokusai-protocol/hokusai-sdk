@@ -236,6 +236,209 @@ function resolveConsent(partial) {
   };
 }
 
+// ../core/src/routing-objective.ts
+var DEFAULT_ROUTING_OBJECTIVE = "reliability";
+var ALIASES = {
+  speed: "speed",
+  fast: "speed",
+  fastest: "speed",
+  latency: "speed",
+  // backend enum, accepted for power users
+  fastest_completion: "speed",
+  cost: "cost",
+  cheap: "cost",
+  cheapest: "cost",
+  lowest_cost: "cost",
+  reliability: "reliability",
+  reliable: "reliability",
+  quality: "reliability",
+  highest_reliability: "reliability"
+};
+var API_VALUES = {
+  speed: "fastest_completion",
+  cost: "lowest_cost",
+  reliability: "highest_reliability"
+};
+function parseRoutingObjective(value) {
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  return ALIASES[value.trim().toLowerCase()];
+}
+function routingObjectiveToApiValue(objective) {
+  return API_VALUES[objective];
+}
+
+// ../core/src/routing-inputs.ts
+var ROUTING_ROLES = ["planner", "coder", "reviewer"];
+var ROLE_POOL_FIELDS = {
+  planner: "availablePlannerModels",
+  coder: "availableCoderModels",
+  reviewer: "availableReviewerModels"
+};
+var CSV_METADATA_KEYS = {
+  availableModels: "available_models",
+  availablePlannerModels: "available_planner_models",
+  availableCoderModels: "available_coder_models",
+  availableReviewerModels: "available_reviewer_models"
+};
+function normalizePool(value) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed) {
+      seen.add(trimmed);
+    }
+  }
+  return [...seen];
+}
+function parseCsvPool(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return void 0;
+  }
+  const entries = normalizePool(value.split(","));
+  return entries.length > 0 ? entries : void 0;
+}
+function parseNumber(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : void 0;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return void 0;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+function parseBoolean(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no"].includes(normalized)) {
+    return false;
+  }
+  return void 0;
+}
+function parseObjective(value) {
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const objective = parseRoutingObjective(value);
+  return objective ? routingObjectiveToApiValue(objective) : void 0;
+}
+function effectiveRolePool(pools, role) {
+  return pools[ROLE_POOL_FIELDS[role]] ?? pools.availableModels;
+}
+function classifyRoutingPools(pools) {
+  const constrained = ROUTING_ROLES.map(
+    (role) => effectiveRolePool(pools, role)
+  ).filter((pool) => pool !== void 0);
+  if (constrained.length === 0) {
+    return "ranking";
+  }
+  const singletons = constrained.filter(
+    (pool) => normalizePool(pool).length < 2
+  );
+  if (singletons.length === 0) {
+    return "ranking";
+  }
+  return singletons.length === constrained.length ? "non_ranking" : "partially_ranking";
+}
+function singletonRoles(pools) {
+  return ROUTING_ROLES.filter((role) => {
+    const pool = effectiveRolePool(pools, role);
+    return pool !== void 0 && normalizePool(pool).length < 2;
+  });
+}
+function validateRoutingInput(routing, path4 = "routing") {
+  if (routing === void 0) {
+    return [];
+  }
+  const errors = [];
+  const poolFields = [
+    "availableModels",
+    "availablePlannerModels",
+    "availableCoderModels",
+    "availableReviewerModels",
+    "preferredModels"
+  ];
+  for (const field of poolFields) {
+    const value = routing[field];
+    if (value === void 0) {
+      continue;
+    }
+    if (!Array.isArray(value)) {
+      errors.push({
+        path: `${path4}.${field}`,
+        message: "Expected an array of model ids.",
+        code: "invalid_type"
+      });
+      continue;
+    }
+    if (normalizePool(value).length === 0) {
+      errors.push({
+        path: `${path4}.${field}`,
+        message: "Candidate pool must not be empty. Omit the field to leave the pool unconstrained.",
+        code: "invalid_value"
+      });
+    }
+  }
+  return errors;
+}
+function resolveRoutingInput(options) {
+  const typed = options.routing ?? {};
+  const metadata = options.metadata ?? {};
+  const deprecations = [];
+  const fromCsv = (field) => {
+    const key = CSV_METADATA_KEYS[field];
+    const parsed = parseCsvPool(metadata[key]);
+    if (parsed) {
+      deprecations.push(
+        `task.metadata.${key} is deprecated; set routing.${field} on the dispatch payload instead.`
+      );
+    }
+    return parsed;
+  };
+  const resolvePool = (field) => {
+    const typedValue = typed[field];
+    if (typedValue !== void 0) {
+      return normalizePool(typedValue);
+    }
+    return fromCsv(field);
+  };
+  const availableModels = resolvePool("availableModels") ?? normalizePool(options.fallbackModels);
+  const pools = {
+    availableModels,
+    availablePlannerModels: resolvePool("availablePlannerModels"),
+    availableCoderModels: resolvePool("availableCoderModels"),
+    availableReviewerModels: resolvePool("availableReviewerModels")
+  };
+  const preferredModels = typed.preferredModels !== void 0 ? normalizePool(typed.preferredModels) : parseCsvPool(metadata.preferred_models);
+  const routing = {
+    ...pools,
+    preferredModels,
+    objective: typed.objective ?? parseObjective(metadata.objective),
+    maxCostUsd: typed.maxCostUsd ?? parseNumber(metadata.max_cost_usd),
+    maxLatencySeconds: typed.maxLatencySeconds ?? parseNumber(metadata.max_latency_seconds),
+    prioritizeQuality: typed.prioritizeQuality ?? parseBoolean(metadata.prioritize_quality),
+    prioritizeSpeed: typed.prioritizeSpeed ?? parseBoolean(metadata.prioritize_speed)
+  };
+  return {
+    routing,
+    fidelity: classifyRoutingPools(pools),
+    deprecations
+  };
+}
+
 // ../core/src/outcome.ts
 var OUTCOME_REPORT_SCHEMA_VERSION = "1";
 var COMPLETION_STATUSES = [
@@ -738,6 +941,13 @@ function validateRouteRequest(request) {
   validateCorrelationRecord(request.correlation, "correlation", errors);
   validateRedactions(request.redactions, "redactions", errors);
   validateNonEmptyString2(request.createdAt, "createdAt", errors);
+  if (request.routing !== void 0) {
+    if (isRecord(request.routing)) {
+      errors.push(...validateRoutingInput(request.routing));
+    } else {
+      pushFieldError(errors, "routing", "Expected an object.", "invalid_type");
+    }
+  }
   return errors;
 }
 function validateOutcomeReport2(request) {
@@ -1264,10 +1474,15 @@ var FsLocalStore = class {
 var DEFAULT_MAX_RETRIES = 2;
 var DEFAULT_TIMEOUT_MS = 1e4;
 var MAX_RETRY_AFTER_MS = 5e3;
-var ROUTE_PATH = "/api/v1/models/30/predict";
 var OUTCOME_PATH = "/v1/outcomes";
-var CONTRIBUTIONS_PATH = "/api/v1/models/30/contributions";
 var SIGNAL_PATH = "/v1/signals";
+var DEFAULT_ROUTER_MODEL_ID = "30";
+function buildModelPredictPath(modelId) {
+  return `/api/v1/models/${modelId}/predict`;
+}
+function buildModelContributionsPath(modelId) {
+  return `/api/v1/models/${modelId}/contributions`;
+}
 var SDK_VERSION = "0.2.0";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
@@ -1324,6 +1539,9 @@ var HokusaiRateLimitError = class extends HokusaiApiError {
     }
   }
 };
+function defaultRoutingWarning(message) {
+  console.warn(`[hokusai] ${message}`);
+}
 var HokusaiDispatchBuilder = class {
   #anonymization;
   #redactionConfig;
@@ -1341,7 +1559,22 @@ var HokusaiDispatchBuilder = class {
     this.#storage = options.storage ?? new InMemoryCorrelationStorage();
     this.#clock = options.clock ?? (() => /* @__PURE__ */ new Date());
   }
-  async prepareDispatch(task, modelId, scope = "task-execution") {
+  /**
+   * Every model the harness can actually route to: the registry's available
+   * models, narrowed by the configured allowlist. This is the default candidate
+   * pool for a route call.
+   */
+  listCandidateModels() {
+    const supported = listSupportedModelIds(this.#modelRegistry);
+    if (!this.#modelAllowlist) {
+      return supported;
+    }
+    const allowed = new Set(
+      this.#modelAllowlist.map((entry) => this.#modelRegistry.resolve(entry)?.id).filter((id) => id !== void 0)
+    );
+    return supported.filter((id) => allowed.has(id));
+  }
+  async prepareDispatch(task, modelId, scope = "task-execution", routing) {
     if (!isConsentGranted(this.#consent, scope)) {
       throw new HokusaiDispatchError(
         `Consent has not been granted for scope "${scope}".`
@@ -1361,6 +1594,11 @@ var HokusaiDispatchBuilder = class {
     }
     const correlationRecord = await this.#getOrCreateCorrelationRecord(task.id);
     const promptPayload = this.#redactionConfig ? redact(task.prompt, this.#redactionConfig) : anonymizeText(task.prompt, this.#anonymization ?? {});
+    const candidateModels = this.listCandidateModels();
+    const resolvedRouting = {
+      ...routing,
+      availableModels: routing?.availableModels ?? (candidateModels.length > 0 ? candidateModels : [model.id])
+    };
     return {
       task,
       consent: {
@@ -1371,7 +1609,8 @@ var HokusaiDispatchBuilder = class {
       correlation: correlationRecord,
       prompt: "output" in promptPayload ? promptPayload.output : promptPayload.text,
       redactions: "output" in promptPayload ? promptPayload.redactions : promptPayload.redactions.map(({ label }) => ({ label })),
-      createdAt: this.#clock().toISOString()
+      createdAt: this.#clock().toISOString(),
+      routing: resolvedRouting
     };
   }
   async #getOrCreateCorrelationRecord(taskId) {
@@ -1413,6 +1652,8 @@ var HokusaiClient = class {
   #sleep;
   #timeoutMs;
   #transport;
+  #routePath;
+  #contributionPath;
   constructor(options = {}) {
     this.#apiKey = options.apiKey;
     this.#baseUrl = parseBaseUrl(options.baseUrl ?? DEFAULT_HOKUSAI_BASE_URL);
@@ -1423,6 +1664,10 @@ var HokusaiClient = class {
     this.#requestIdFactory = options.requestIdFactory ?? createRequestId;
     this.#backoffMs = options.backoffMs ?? defaultBackoffMs;
     this.#sleep = options.sleep ?? defaultSleep;
+    this.#routePath = options.routePath ?? buildModelPredictPath(options.routeModelId ?? DEFAULT_ROUTER_MODEL_ID);
+    this.#contributionPath = options.contributionPath ?? buildModelContributionsPath(
+      options.contributionModelId ?? DEFAULT_ROUTER_MODEL_ID
+    );
   }
   async route(request, options = {}) {
     const requestId = options.requestId ?? this.#requestIdFactory();
@@ -1433,15 +1678,38 @@ var HokusaiClient = class {
         fieldErrors
       });
     }
-    const technicalTaskRouterRequest = buildTechnicalTaskRouterRequest(request);
+    const { request: technicalTaskRouterRequest, resolved } = buildTechnicalTaskRouterRequest(request);
+    const warn = options.onWarning ?? defaultRoutingWarning;
+    for (const deprecation of resolved.deprecations) {
+      warn(deprecation);
+    }
+    if (resolved.fidelity !== "ranking") {
+      const roles = singletonRoles(resolved.routing);
+      const detail = `Candidate pool for ${roles.join(", ")} has fewer than two models; the router cannot rank it.`;
+      if (!options.dryRun && options.routingMode !== "non-ranking") {
+        throw new HokusaiValidationError(
+          `Route request is not ranking-eligible. ${detail} Supply more candidate models via routing.availableModels, or pass routingMode: 'non-ranking' to submit it as non-ranking telemetry.`,
+          {
+            requestId,
+            fieldErrors: roles.map((role) => ({
+              path: `routing.available${role[0].toUpperCase()}${role.slice(1)}Models`,
+              message: "Candidate pool must contain at least two models.",
+              code: "invalid_value"
+            }))
+          }
+        );
+      }
+      warn(`${detail} This row is classified ${resolved.fidelity}.`);
+    }
     if (options.dryRun) {
       return {
         ok: true,
-        request: technicalTaskRouterRequest
+        request: technicalTaskRouterRequest,
+        path: this.#routePath
       };
     }
     return this.#send({
-      path: ROUTE_PATH,
+      path: this.#routePath,
       request: technicalTaskRouterRequest,
       requestId,
       requestOptions: options,
@@ -1512,20 +1780,24 @@ var HokusaiClient = class {
     const requestId = options.requestId ?? this.#requestIdFactory();
     const fieldErrors = validateContributionRequest(request);
     if (fieldErrors.length > 0) {
-      throw new HokusaiValidationError("Contribution request validation failed.", {
-        requestId,
-        fieldErrors
-      });
+      throw new HokusaiValidationError(
+        "Contribution request validation failed.",
+        {
+          requestId,
+          fieldErrors
+        }
+      );
     }
     if (options.dryRun) {
       return {
         ok: true,
-        request
+        request,
+        path: this.#contributionPath
       };
     }
     const idempotencyKey = request.metadata.idempotency_key.trim().length > 0 ? request.metadata.idempotency_key : requestId;
     return this.#send({
-      path: CONTRIBUTIONS_PATH,
+      path: this.#contributionPath,
       request,
       requestId,
       requestOptions: options,
@@ -1766,7 +2038,12 @@ function getTaskId(request) {
 }
 function validateSignalRequest(request) {
   const errors = [];
-  for (const field of ["kind", "stage", "installationId", "occurredAt"]) {
+  for (const field of [
+    "kind",
+    "stage",
+    "installationId",
+    "occurredAt"
+  ]) {
     if (typeof request[field] !== "string" || request[field].trim().length === 0) {
       errors.push({
         path: field,
@@ -1842,15 +2119,24 @@ function normalizeContributionResponse(value, requestId) {
   if (submissionId !== void 0) {
     response.submissionId = submissionId;
   }
-  const rowsAccepted = firstFiniteNumber(record.rowsAccepted, record.rows_accepted);
+  const rowsAccepted = firstFiniteNumber(
+    record.rowsAccepted,
+    record.rows_accepted
+  );
   if (rowsAccepted !== void 0) {
     response.rowsAccepted = rowsAccepted;
   }
-  const submittedRows = firstFiniteNumber(record.submittedRows, record.submitted_rows);
+  const submittedRows = firstFiniteNumber(
+    record.submittedRows,
+    record.submitted_rows
+  );
   if (submittedRows !== void 0) {
     response.submittedRows = submittedRows;
   }
-  const tokenReward = firstFiniteNumber(record.tokenReward, record.token_reward);
+  const tokenReward = firstFiniteNumber(
+    record.tokenReward,
+    record.token_reward
+  );
   if (tokenReward !== void 0) {
     response.tokenReward = tokenReward;
   }
@@ -1945,13 +2231,6 @@ function firstNonEmptyString(...values) {
   }
   return void 0;
 }
-function readStringList(value) {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return void 0;
-  }
-  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
-  return entries.length > 0 ? entries : void 0;
-}
 function readNumber(value) {
   if (typeof value !== "string" || value.trim().length === 0) {
     return void 0;
@@ -2033,15 +2312,6 @@ function normalizeComplexity(value) {
   }
   return void 0;
 }
-function normalizeRoutingObjective(value) {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (["lowest_cost", "fastest_completion", "highest_reliability"].includes(
-    normalized
-  )) {
-    return normalized;
-  }
-  return void 0;
-}
 function normalizeExecutionEnvironment(value) {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (["local", "ci", "remote", "hybrid"].includes(normalized)) {
@@ -2051,9 +2321,12 @@ function normalizeExecutionEnvironment(value) {
 }
 function buildTechnicalTaskRouterRequest(request) {
   const metadata = request.task.metadata ?? {};
-  const modelIds = readStringList(metadata.available_models) ?? [
-    request.model.id
-  ];
+  const resolved = resolveRoutingInput({
+    routing: request.routing,
+    metadata,
+    fallbackModels: [request.model.id]
+  });
+  const { routing } = resolved;
   const inputs = {
     task: omitUndefined({
       description: request.prompt,
@@ -2061,21 +2334,24 @@ function buildTechnicalTaskRouterRequest(request) {
         metadata.task_type ?? metadata.taskType ?? metadata.taskFamily,
         request.prompt
       ),
-      language: firstNonEmptyString(metadata.primaryLanguage, metadata.language),
+      language: firstNonEmptyString(
+        metadata.primaryLanguage,
+        metadata.language
+      ),
       framework: firstNonEmptyString(metadata.framework, metadata.stack),
       repo_type: firstNonEmptyString(metadata.repoType, metadata.repo_type)
     }),
     routing: omitUndefined({
-      available_models: modelIds,
-      available_planner_models: readStringList(metadata.available_planner_models) ?? modelIds,
-      available_coder_models: readStringList(metadata.available_coder_models) ?? modelIds,
-      available_reviewer_models: readStringList(metadata.available_reviewer_models) ?? modelIds,
-      preferred_models: readStringList(metadata.preferred_models),
-      max_cost_usd: readNumber(metadata.max_cost_usd),
-      max_latency_seconds: readNumber(metadata.max_latency_seconds),
-      objective: normalizeRoutingObjective(metadata.objective),
-      prioritize_quality: readBoolean(metadata.prioritize_quality),
-      prioritize_speed: readBoolean(metadata.prioritize_speed)
+      available_models: routing.availableModels,
+      available_planner_models: routing.availablePlannerModels,
+      available_coder_models: routing.availableCoderModels,
+      available_reviewer_models: routing.availableReviewerModels,
+      preferred_models: routing.preferredModels,
+      max_cost_usd: routing.maxCostUsd,
+      max_latency_seconds: routing.maxLatencySeconds,
+      objective: routing.objective,
+      prioritize_quality: routing.prioritizeQuality,
+      prioritize_speed: routing.prioritizeSpeed
     }),
     context: omitUndefined({
       domain: firstNonEmptyString(metadata.domain, metadata.repo),
@@ -2103,7 +2379,7 @@ function buildTechnicalTaskRouterRequest(request) {
       idempotency_key: request.correlation.correlationId
     })
   };
-  return { inputs: omitEmptySections(inputs) };
+  return { request: { inputs: omitEmptySections(inputs) }, resolved };
 }
 function normalizeTechnicalTaskRouterResponse(response, request, requestId) {
   if (validateRouteResponse(response).length === 0) {
@@ -2179,7 +2455,9 @@ function normalizeTechnicalTaskRouterResponse(response, request, requestId) {
   return normalized;
 }
 function inferRequiresTests(prompt) {
-  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(prompt);
+  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(
+    prompt
+  );
 }
 function inferTaskType(prompt) {
   if (/\b(migrat(?:e|ion|ing)|backfill)\b/i.test(prompt)) {
@@ -2392,41 +2670,6 @@ function shouldRetryResponse(status, attempt, maxRetries) {
 import { readFile as readFile2, rm as rm2, writeFile as writeFile2 } from "node:fs/promises";
 import { dirname as dirname2, join as join2 } from "node:path";
 import { mkdir as mkdir2 } from "node:fs/promises";
-
-// ../core/src/routing-objective.ts
-var DEFAULT_ROUTING_OBJECTIVE = "reliability";
-var ALIASES = {
-  speed: "speed",
-  fast: "speed",
-  fastest: "speed",
-  latency: "speed",
-  // backend enum, accepted for power users
-  fastest_completion: "speed",
-  cost: "cost",
-  cheap: "cost",
-  cheapest: "cost",
-  lowest_cost: "cost",
-  reliability: "reliability",
-  reliable: "reliability",
-  quality: "reliability",
-  highest_reliability: "reliability"
-};
-var API_VALUES = {
-  speed: "fastest_completion",
-  cost: "lowest_cost",
-  reliability: "highest_reliability"
-};
-function parseRoutingObjective(value) {
-  if (typeof value !== "string") {
-    return void 0;
-  }
-  return ALIASES[value.trim().toLowerCase()];
-}
-function routingObjectiveToApiValue(objective) {
-  return API_VALUES[objective];
-}
-
-// ../core/src/config.ts
 var CONFIG_RECORD_ID = "hokusai-plugin-config";
 var DEFAULT_ALLOWLIST = ANTHROPIC_MODELS.map((model) => model.id);
 var ConfigValidationError = class extends Error {
@@ -6067,7 +6310,7 @@ function firstPositional(argv) {
   }
   return void 0;
 }
-function parseNumber(value) {
+function parseNumber2(value) {
   if (value === void 0) return void 0;
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? void 0 : parsed;
@@ -6079,7 +6322,7 @@ function parseArgs3(argv) {
   const configPath = configIndex >= 0 ? argv[configIndex + 1] : void 0;
   if (subcommand === "list" || subcommand === "audit") {
     const limitIndex = argv.indexOf("--limit");
-    const limit = limitIndex >= 0 ? parseNumber(argv[limitIndex + 1]) : void 0;
+    const limit = limitIndex >= 0 ? parseNumber2(argv[limitIndex + 1]) : void 0;
     return {
       subcommand,
       json,
