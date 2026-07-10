@@ -77,8 +77,7 @@ describe('previewRoutePayloadWithCodex', () => {
 
 describe('routeTaskWithCodex', () => {
   it('fails with a structured missing-key error before network', async () => {
-    const env = await createEnv({
-    });
+    const env = await createEnv({});
     const transport = vi.fn();
 
     const result = await routeTaskWithCodex(
@@ -225,7 +224,7 @@ describe('routeTaskWithCodex', () => {
   it('sends only allowlisted OpenAI models to the router', async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
-      HOKUSAI_MODEL_ALLOWLIST: 'gpt-5, claude-sonnet-4-6',
+      HOKUSAI_MODEL_ALLOWLIST: 'gpt-5, gpt-5-mini, claude-sonnet-4-6',
     });
     let capturedPrompt = '';
 
@@ -259,15 +258,17 @@ describe('routeTaskWithCodex', () => {
 
     expect(request.inputs).toMatchObject({
       routing: {
-        available_coder_models: ['gpt-5'],
-        available_models: ['gpt-5'],
-        available_planner_models: ['gpt-5'],
-        available_reviewer_models: ['gpt-5'],
+        available_models: ['gpt-5', 'gpt-5-mini'],
       },
       task: {
         task_type: 'maintenance',
       },
     });
+    // The non-OpenAI allowlist entry is filtered out by provider.
+    expect(
+      (request.inputs.routing as { available_models: string[] })
+        .available_models,
+    ).not.toContain('claude-sonnet-4-6');
   });
 });
 

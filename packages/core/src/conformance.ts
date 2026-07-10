@@ -70,6 +70,9 @@ const secret = "do-not-ship";
       },
     ],
     createdAt: '2026-06-08T12:00:00.000Z',
+    routing: {
+      availableModels: ['conformance-model', 'conformance-model-alt'],
+    },
   } satisfies HokusaiDispatchPayload,
 };
 

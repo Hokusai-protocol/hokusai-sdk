@@ -409,6 +409,12 @@ describe('routeTask', () => {
             capabilities: ['reasoning', 'streaming', 'tool-use'],
             default: true,
           },
+          {
+            id: 'claude-opus-4-8',
+            provider: 'anthropic',
+            family: 'claude',
+            capabilities: ['reasoning', 'streaming', 'tool-use'],
+          },
         ]),
       },
     );
@@ -783,7 +789,9 @@ describe('reportTaskOutcome', () => {
       },
     });
     // Canonical submission to the Model 30 contributions endpoint.
-    expect(callsForPath(calls, '/api/v1/models/30/contributions')).toHaveLength(1);
+    expect(callsForPath(calls, '/api/v1/models/30/contributions')).toHaveLength(
+      1,
+    );
     const contributionCall = callsForPath(
       calls,
       '/api/v1/models/30/contributions',
@@ -1480,6 +1488,12 @@ describe('route/report smoke path', () => {
             capabilities: ['reasoning', 'streaming', 'tool-use'],
             default: true,
           },
+          {
+            id: 'claude-opus-4-8',
+            provider: 'anthropic',
+            family: 'claude',
+            capabilities: ['reasoning', 'streaming', 'tool-use'],
+          },
         ]),
       },
     );
@@ -1494,7 +1508,7 @@ describe('route/report smoke path', () => {
     expect(requestBody).toMatchObject({
       inputs: {
         routing: {
-          available_coder_models: ['claude-sonnet-4-6'],
+          available_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
         },
         task: {
           task_type: 'bugfix',
@@ -1527,7 +1541,9 @@ describe('route/report smoke path', () => {
       },
     });
     expect(callsForPath(calls, '/api/v1/models/30/predict')).toHaveLength(1);
-    expect(callsForPath(calls, '/api/v1/models/30/contributions')).toHaveLength(1);
+    expect(callsForPath(calls, '/api/v1/models/30/contributions')).toHaveLength(
+      1,
+    );
     expect(callsForPath(calls, '/v1/outcomes')).toHaveLength(1);
     expect(runDoctor({ configPath, apiClient: client })).toMatchObject({
       configPresent: true,
