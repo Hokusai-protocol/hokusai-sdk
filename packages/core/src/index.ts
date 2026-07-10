@@ -21,6 +21,7 @@ export {
   type HokusaiDispatchBuilderOptions,
   type HokusaiPluginClientOptions,
   type HokusaiRequestOptions,
+  type HokusaiRouteOptions,
   type HokusaiSignalRequest,
   type HokusaiSignalResponse,
 } from './client.js';
@@ -47,6 +48,21 @@ export {
   type RoutingObjective,
   type RoutingObjectiveApiValue,
 } from './routing-objective.js';
+export {
+  ROUTING_ROLES,
+  classifyRoutingPools,
+  effectiveRolePool,
+  resolveRoutingInput,
+  singletonRoles,
+  validateRoutingInput,
+  type ResolveRoutingInputOptions,
+  type ResolvedRoutingInput,
+  type RouteRoutingInput,
+  type RoutingCandidatePools,
+  type RoutingMode,
+  type RoutingPoolFidelity,
+  type RoutingRole,
+} from './routing-inputs.js';
 export {
   anonymizeText,
   DEFAULT_REDACTION_CONFIG,

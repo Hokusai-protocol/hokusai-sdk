@@ -191,6 +191,12 @@ describe('createWavemillAdapter', () => {
           capabilities: ['reasoning'],
           default: true,
         },
+        {
+          id: 'wavemill/fast',
+          provider: 'wavemill',
+          family: 'wavemill',
+          capabilities: ['reasoning'],
+        },
       ]),
       clock: () => new Date('2026-06-08T12:00:00.000Z'),
     });
@@ -214,7 +220,7 @@ describe('createWavemillAdapter', () => {
     expect(body).toMatchObject({
       inputs: {
         routing: {
-          available_coder_models: ['wavemill/default'],
+          available_models: ['wavemill/default', 'wavemill/fast'],
         },
         task: {
           task_type: 'maintenance',

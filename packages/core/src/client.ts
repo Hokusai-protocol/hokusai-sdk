@@ -29,11 +29,18 @@ import {
   validateRouteResponse,
 } from './schemas.js';
 import {
+  listSupportedModelIds,
   type ModelDefinition,
   type ModelRegistry,
   type ModelSelection,
   validateRecommendedModel,
 } from './model-registry.js';
+import {
+  resolveRoutingInput,
+  singletonRoles,
+  type RouteRoutingInput,
+  type RoutingMode,
+} from './routing-inputs.js';
 import {
   InMemoryCorrelationStorage,
   type CorrelationRecord,
@@ -78,6 +85,23 @@ export interface HokusaiRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface HokusaiRouteOptions extends HokusaiRequestOptions {
+  /**
+   * `ranking` (the default) rejects a real route call whose candidate pool
+   * cannot be ranked — an empty pool, or a constrained role offering only one
+   * model. Pass `non-ranking` to send it anyway; the server accepts the row as
+   * telemetry and excludes it from ranking and training.
+   *
+   * Dry runs never throw on a singleton pool; they surface it as a warning.
+   */
+  routingMode?: RoutingMode;
+  /**
+   * Receives deprecation and non-ranking notices. Defaults to `console.warn`.
+   * Pass `() => {}` to silence.
+   */
+  onWarning?: (message: string) => void;
+}
+
 export interface HokusaiSignalRequest {
   kind: string;
   stage: string;
@@ -109,13 +133,16 @@ export interface ContributionRequest {
 
 /**
  * Authoritative, server-assigned fidelity tier for one contribution row. Only
- * `training_eligible` rows reach the Model 30 training set; `partial` rows are
- * accepted and stored as telemetry but excluded. Typed as a union with a string
+ * `training_eligible` rows reach the Model 30 training set; `partial` and
+ * `non_ranking` rows are accepted and stored as telemetry but excluded.
+ * `non_ranking` means the row carried a singleton `allowed_models` pool, so
+ * there was nothing for the router to rank. Typed as a union with a string
  * fallback so an SDK running against a newer API does not reject unknown tiers.
  */
 export type ContributionFidelityTier =
   | 'training_eligible'
   | 'partial'
+  | 'non_ranking'
   | 'passthrough'
   | 'invalid'
   | (string & {});
@@ -125,6 +152,8 @@ export interface ContributionFidelitySummary {
   partial: number;
   passthrough: number;
   invalid: number;
+  /** Absent on APIs predating the non-ranking tier. */
+  non_ranking?: number | undefined;
 }
 
 export interface ContributionRejectedRow {
@@ -182,7 +211,7 @@ export interface GatedClient {
   readonly client: HokusaiClient;
   route(
     request: RouteRequest,
-    options?: HokusaiRequestOptions,
+    options?: HokusaiRouteOptions,
   ): Promise<
     RouteResponse | HokusaiValidationSuccess<TechnicalTaskRouterRequest>
   >;
@@ -274,6 +303,10 @@ export class HokusaiRateLimitError extends HokusaiApiError {
   }
 }
 
+function defaultRoutingWarning(message: string): void {
+  console.warn(`[hokusai] ${message}`);
+}
+
 export class HokusaiDispatchBuilder {
   readonly #anonymization: AnonymizationOptions | undefined;
   readonly #redactionConfig: RedactionConfig | undefined;
@@ -293,10 +326,31 @@ export class HokusaiDispatchBuilder {
     this.#clock = options.clock ?? (() => new Date());
   }
 
+  /**
+   * Every model the harness can actually route to: the registry's available
+   * models, narrowed by the configured allowlist. This is the default candidate
+   * pool for a route call.
+   */
+  listCandidateModels(): string[] {
+    const supported = listSupportedModelIds(this.#modelRegistry);
+    if (!this.#modelAllowlist) {
+      return supported;
+    }
+
+    const allowed = new Set(
+      this.#modelAllowlist
+        .map((entry) => this.#modelRegistry.resolve(entry)?.id)
+        .filter((id): id is string => id !== undefined),
+    );
+
+    return supported.filter((id) => allowed.has(id));
+  }
+
   async prepareDispatch(
     task: HokusaiTaskInput,
     modelId: string,
     scope: ConsentScope = 'task-execution',
+    routing?: RouteRoutingInput,
   ): Promise<HokusaiDispatchPayload> {
     if (!isConsentGranted(this.#consent, scope)) {
       throw new HokusaiDispatchError(
@@ -322,6 +376,14 @@ export class HokusaiDispatchBuilder {
       ? redact(task.prompt, this.#redactionConfig)
       : anonymizeText(task.prompt, this.#anonymization ?? {});
 
+    const candidateModels = this.listCandidateModels();
+    const resolvedRouting: RouteRoutingInput = {
+      ...routing,
+      availableModels:
+        routing?.availableModels ??
+        (candidateModels.length > 0 ? candidateModels : [model.id]),
+    };
+
     return {
       task,
       consent: {
@@ -337,6 +399,7 @@ export class HokusaiDispatchBuilder {
           ? promptPayload.redactions
           : promptPayload.redactions.map(({ label }) => ({ label })),
       createdAt: this.#clock().toISOString(),
+      routing: resolvedRouting,
     };
   }
 
@@ -402,7 +465,7 @@ export class HokusaiClient {
 
   async route(
     request: RouteRequest,
-    options: HokusaiRequestOptions = {},
+    options: HokusaiRouteOptions = {},
   ): Promise<
     RouteResponse | HokusaiValidationSuccess<TechnicalTaskRouterRequest>
   > {
@@ -415,7 +478,34 @@ export class HokusaiClient {
       });
     }
 
-    const technicalTaskRouterRequest = buildTechnicalTaskRouterRequest(request);
+    const { request: technicalTaskRouterRequest, resolved } =
+      buildTechnicalTaskRouterRequest(request);
+    const warn = options.onWarning ?? defaultRoutingWarning;
+
+    for (const deprecation of resolved.deprecations) {
+      warn(deprecation);
+    }
+
+    if (resolved.fidelity !== 'ranking') {
+      const roles = singletonRoles(resolved.routing);
+      const detail = `Candidate pool for ${roles.join(', ')} has fewer than two models; the router cannot rank it.`;
+
+      if (!options.dryRun && options.routingMode !== 'non-ranking') {
+        throw new HokusaiValidationError(
+          `Route request is not ranking-eligible. ${detail} Supply more candidate models via routing.availableModels, or pass routingMode: 'non-ranking' to submit it as non-ranking telemetry.`,
+          {
+            requestId,
+            fieldErrors: roles.map((role) => ({
+              path: `routing.available${role[0]!.toUpperCase()}${role.slice(1)}Models`,
+              message: 'Candidate pool must contain at least two models.',
+              code: 'invalid_value' as const,
+            })),
+          },
+        );
+      }
+
+      warn(`${detail} This row is classified ${resolved.fidelity}.`);
+    }
 
     if (options.dryRun) {
       return {
@@ -480,7 +570,9 @@ export class HokusaiClient {
   async signal(
     request: HokusaiSignalRequest,
     options: HokusaiRequestOptions = {},
-  ): Promise<HokusaiSignalResponse | HokusaiValidationSuccess<HokusaiSignalRequest>> {
+  ): Promise<
+    HokusaiSignalResponse | HokusaiValidationSuccess<HokusaiSignalRequest>
+  > {
     const requestId = options.requestId ?? this.#requestIdFactory();
     const fieldErrors = validateSignalRequest(request);
     if (fieldErrors.length > 0) {
@@ -517,10 +609,13 @@ export class HokusaiClient {
     const requestId = options.requestId ?? this.#requestIdFactory();
     const fieldErrors = validateContributionRequest(request);
     if (fieldErrors.length > 0) {
-      throw new HokusaiValidationError('Contribution request validation failed.', {
-        requestId,
-        fieldErrors,
-      });
+      throw new HokusaiValidationError(
+        'Contribution request validation failed.',
+        {
+          requestId,
+          fieldErrors,
+        },
+      );
     }
 
     if (options.dryRun) {
@@ -543,7 +638,8 @@ export class HokusaiClient {
       headers: { 'Idempotency-Key': idempotencyKey },
       responseMapper: normalizeContributionResponse,
       responseValidator: validateContributionResponse,
-      responseErrorMessage: 'Hokusai API returned an invalid contribution response.',
+      responseErrorMessage:
+        'Hokusai API returned an invalid contribution response.',
     });
   }
 
@@ -893,8 +989,16 @@ function validateSignalRequest(
 ): HokusaiFieldError[] {
   const errors: HokusaiFieldError[] = [];
 
-  for (const field of ['kind', 'stage', 'installationId', 'occurredAt'] as const) {
-    if (typeof request[field] !== 'string' || request[field].trim().length === 0) {
+  for (const field of [
+    'kind',
+    'stage',
+    'installationId',
+    'occurredAt',
+  ] as const) {
+    if (
+      typeof request[field] !== 'string' ||
+      request[field].trim().length === 0
+    ) {
       errors.push({
         path: field,
         message: 'Expected a non-empty string.',
@@ -1001,17 +1105,26 @@ function normalizeContributionResponse(
     response.submissionId = submissionId;
   }
 
-  const rowsAccepted = firstFiniteNumber(record.rowsAccepted, record.rows_accepted);
+  const rowsAccepted = firstFiniteNumber(
+    record.rowsAccepted,
+    record.rows_accepted,
+  );
   if (rowsAccepted !== undefined) {
     response.rowsAccepted = rowsAccepted;
   }
 
-  const submittedRows = firstFiniteNumber(record.submittedRows, record.submitted_rows);
+  const submittedRows = firstFiniteNumber(
+    record.submittedRows,
+    record.submitted_rows,
+  );
   if (submittedRows !== undefined) {
     response.submittedRows = submittedRows;
   }
 
-  const tokenReward = firstFiniteNumber(record.tokenReward, record.token_reward);
+  const tokenReward = firstFiniteNumber(
+    record.tokenReward,
+    record.token_reward,
+  );
   if (tokenReward !== undefined) {
     response.tokenReward = tokenReward;
   }
@@ -1043,7 +1156,10 @@ function normalizeContributionResponse(
 
 function firstStringArray(...values: unknown[]): string[] | undefined {
   for (const value of values) {
-    if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+    if (
+      Array.isArray(value) &&
+      value.every((entry) => typeof entry === 'string')
+    ) {
       return [...value];
     }
   }
@@ -1134,18 +1250,6 @@ function firstNonEmptyString(...values: Array<unknown>): string | undefined {
   return undefined;
 }
 
-function readStringList(value: unknown): string[] | undefined {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return undefined;
-  }
-
-  const entries = value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return entries.length > 0 ? entries : undefined;
-}
-
 function readNumber(value: unknown): number | undefined {
   if (typeof value !== 'string' || value.trim().length === 0) {
     return undefined;
@@ -1219,7 +1323,9 @@ function normalizeLegacyTaskType(value: string): TechnicalTaskRouterTaskType {
 
 function normalizeRepoSizeBucket(
   value: unknown,
-): NonNullable<TechnicalTaskRouterRequest['inputs']['context']>['repo_size_bucket'] {
+): NonNullable<
+  TechnicalTaskRouterRequest['inputs']['context']
+>['repo_size_bucket'] {
   const normalized =
     typeof value === 'string'
       ? value.trim().toLowerCase().replace('-', '_')
@@ -1249,7 +1355,9 @@ function normalizeRiskLevel(
 
 function normalizeComplexity(
   value: unknown,
-): NonNullable<TechnicalTaskRouterRequest['inputs']['context']>['estimated_complexity'] {
+): NonNullable<
+  TechnicalTaskRouterRequest['inputs']['context']
+>['estimated_complexity'] {
   const normalized =
     typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (['low', 'medium', 'high'].includes(normalized)) {
@@ -1267,27 +1375,11 @@ function normalizeComplexity(
   return undefined;
 }
 
-function normalizeRoutingObjective(
-  value: unknown,
-): NonNullable<TechnicalTaskRouterRequest['inputs']['routing']>['objective'] {
-  const normalized =
-    typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (
-    ['lowest_cost', 'fastest_completion', 'highest_reliability'].includes(
-      normalized,
-    )
-  ) {
-    return normalized as NonNullable<
-      TechnicalTaskRouterRequest['inputs']['routing']
-    >['objective'];
-  }
-
-  return undefined;
-}
-
 function normalizeExecutionEnvironment(
   value: unknown,
-): NonNullable<TechnicalTaskRouterRequest['inputs']['workflow']>['execution_environment'] {
+): NonNullable<
+  TechnicalTaskRouterRequest['inputs']['workflow']
+>['execution_environment'] {
   const normalized =
     typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (['local', 'ci', 'remote', 'hybrid'].includes(normalized)) {
@@ -1299,13 +1391,17 @@ function normalizeExecutionEnvironment(
   return undefined;
 }
 
-function buildTechnicalTaskRouterRequest(
-  request: RouteRequest,
-): TechnicalTaskRouterRequest {
+function buildTechnicalTaskRouterRequest(request: RouteRequest): {
+  request: TechnicalTaskRouterRequest;
+  resolved: ReturnType<typeof resolveRoutingInput>;
+} {
   const metadata = request.task.metadata ?? {};
-  const modelIds = readStringList(metadata.available_models) ?? [
-    request.model.id,
-  ];
+  const resolved = resolveRoutingInput({
+    routing: request.routing,
+    metadata,
+    fallbackModels: [request.model.id],
+  });
+  const { routing } = resolved;
   const inputs: TechnicalTaskRouterRequest['inputs'] = {
     task: omitUndefined({
       description: request.prompt,
@@ -1313,33 +1409,37 @@ function buildTechnicalTaskRouterRequest(
         metadata.task_type ?? metadata.taskType ?? metadata.taskFamily,
         request.prompt,
       ),
-      language: firstNonEmptyString(metadata.primaryLanguage, metadata.language),
+      language: firstNonEmptyString(
+        metadata.primaryLanguage,
+        metadata.language,
+      ),
       framework: firstNonEmptyString(metadata.framework, metadata.stack),
       repo_type: firstNonEmptyString(metadata.repoType, metadata.repo_type),
     }),
     routing: omitUndefined({
-      available_models: modelIds,
-      available_planner_models:
-        readStringList(metadata.available_planner_models) ?? modelIds,
-      available_coder_models:
-        readStringList(metadata.available_coder_models) ?? modelIds,
-      available_reviewer_models:
-        readStringList(metadata.available_reviewer_models) ?? modelIds,
-      preferred_models: readStringList(metadata.preferred_models),
-      max_cost_usd: readNumber(metadata.max_cost_usd),
-      max_latency_seconds: readNumber(metadata.max_latency_seconds),
-      objective: normalizeRoutingObjective(metadata.objective),
-      prioritize_quality: readBoolean(metadata.prioritize_quality),
-      prioritize_speed: readBoolean(metadata.prioritize_speed),
+      available_models: routing.availableModels,
+      available_planner_models: routing.availablePlannerModels,
+      available_coder_models: routing.availableCoderModels,
+      available_reviewer_models: routing.availableReviewerModels,
+      preferred_models: routing.preferredModels,
+      max_cost_usd: routing.maxCostUsd,
+      max_latency_seconds: routing.maxLatencySeconds,
+      objective: routing.objective,
+      prioritize_quality: routing.prioritizeQuality,
+      prioritize_speed: routing.prioritizeSpeed,
     }),
     context: omitUndefined({
       domain: firstNonEmptyString(metadata.domain, metadata.repo),
       repo_size_bucket: normalizeRepoSizeBucket(metadata.repositoryScale),
-      requires_tests: readBoolean(metadata.requires_tests) ?? inferRequiresTests(request.prompt),
+      requires_tests:
+        readBoolean(metadata.requires_tests) ??
+        inferRequiresTests(request.prompt),
       risk_level: normalizeRiskLevel(metadata.risk_level),
       file_count: readInteger(metadata.file_count),
       estimated_complexity: normalizeComplexity(
-        metadata.estimated_complexity ?? metadata.complexity ?? metadata.reasoningDepth,
+        metadata.estimated_complexity ??
+          metadata.complexity ??
+          metadata.reasoningDepth,
       ),
       security_sensitive: readBoolean(metadata.security_sensitive),
     }),
@@ -1359,7 +1459,7 @@ function buildTechnicalTaskRouterRequest(
     }),
   };
 
-  return { inputs: omitEmptySections(inputs) };
+  return { request: { inputs: omitEmptySections(inputs) }, resolved };
 }
 
 function normalizeTechnicalTaskRouterResponse(
@@ -1463,7 +1563,9 @@ function normalizeTechnicalTaskRouterResponse(
 }
 
 function inferRequiresTests(prompt: string): boolean {
-  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(prompt);
+  return /\b(test|tests|testing|spec|vitest|jest|pytest|cypress)\b/i.test(
+    prompt,
+  );
 }
 
 function inferTaskType(prompt: string): string {

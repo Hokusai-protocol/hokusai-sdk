@@ -33,6 +33,12 @@ const models: ModelDefinition[] = [
     capabilities: ['reasoning', 'tool-use'],
     default: true,
   },
+  {
+    id: 'gpt-5',
+    provider: 'openai',
+    family: 'gpt',
+    capabilities: ['reasoning', 'tool-use'],
+  },
 ];
 
 function createDispatchBuilder() {
@@ -94,7 +100,7 @@ describe('requestRecommendation', () => {
     expect(body).toMatchObject({
       inputs: {
         routing: {
-          available_coder_models: ['gpt-5-codex'],
+          available_models: ['gpt-5-codex', 'gpt-5'],
         },
         task: {
           task_type: 'maintenance',
