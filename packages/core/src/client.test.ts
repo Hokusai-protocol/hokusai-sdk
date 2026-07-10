@@ -126,6 +126,12 @@ async function createRouteRequest(): Promise<RouteRequest> {
         capabilities: ['reasoning', 'tool-use'],
         default: true,
       },
+      {
+        id: 'gpt-5',
+        provider: 'openai',
+        family: 'gpt-5',
+        capabilities: ['reasoning', 'tool-use'],
+      },
     ]),
     storage: new InMemoryCorrelationStorage(),
     clock: () => new Date('2026-01-02T03:04:05.000Z'),
@@ -348,10 +354,7 @@ describe('HokusaiClient', () => {
           task_type: 'maintenance',
         },
         routing: {
-          available_coder_models: ['gpt-5-codex'],
-          available_models: ['gpt-5-codex'],
-          available_planner_models: ['gpt-5-codex'],
-          available_reviewer_models: ['gpt-5-codex'],
+          available_models: ['gpt-5-codex', 'gpt-5'],
         },
         context: {
           domain: 'hokusai-sdk',
@@ -367,6 +370,157 @@ describe('HokusaiClient', () => {
         },
       },
     });
+  });
+
+  it('populates the candidate pool from the registry in prepareDispatch', async () => {
+    const routeRequest = await createRouteRequest();
+    expect(routeRequest.routing?.availableModels).toEqual([
+      'gpt-5-codex',
+      'gpt-5',
+    ]);
+  });
+
+  it('rejects a singleton candidate pool in the default ranking mode', async () => {
+    const builder = new HokusaiDispatchBuilder({
+      consent: { subjectId: 'u', grantedScopes: ['task-execution'] },
+      modelRegistry: new InMemoryModelRegistry([
+        {
+          id: 'only-model',
+          provider: 'openai',
+          family: 'gpt-5',
+          capabilities: ['reasoning'],
+          default: true,
+        },
+      ]),
+      storage: new InMemoryCorrelationStorage(),
+      clock: () => new Date('2026-01-02T03:04:05.000Z'),
+    });
+    const payload = await builder.prepareDispatch(
+      { id: 'task-single', prompt: 'Do the thing.' },
+      'only-model',
+    );
+
+    const { calls, transport } = createMockTransport([
+      createResponse(200, { taskId: 'task-single', status: 'accepted' }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    await expect(client.route(payload)).rejects.toBeInstanceOf(
+      HokusaiValidationError,
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it('sends a singleton pool when routingMode is non-ranking', async () => {
+    const builder = new HokusaiDispatchBuilder({
+      consent: { subjectId: 'u', grantedScopes: ['task-execution'] },
+      modelRegistry: new InMemoryModelRegistry([
+        {
+          id: 'only-model',
+          provider: 'openai',
+          family: 'gpt-5',
+          capabilities: ['reasoning'],
+          default: true,
+        },
+      ]),
+      storage: new InMemoryCorrelationStorage(),
+      clock: () => new Date('2026-01-02T03:04:05.000Z'),
+    });
+    const payload = await builder.prepareDispatch(
+      { id: 'task-single', prompt: 'Do the thing.' },
+      'only-model',
+    );
+
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: {
+          coder_model: 'only-model',
+          route_id: 'route-nr',
+        },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+    const warnings: string[] = [];
+
+    await client.route(payload, {
+      routingMode: 'non-ranking',
+      onWarning: (message) => warnings.push(message),
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(warnings.some((message) => message.includes('non_ranking'))).toBe(
+      true,
+    );
+  });
+
+  it('warns but does not throw on a singleton pool during a dry run', async () => {
+    const builder = new HokusaiDispatchBuilder({
+      consent: { subjectId: 'u', grantedScopes: ['task-execution'] },
+      modelRegistry: new InMemoryModelRegistry([
+        {
+          id: 'only-model',
+          provider: 'openai',
+          family: 'gpt-5',
+          capabilities: ['reasoning'],
+          default: true,
+        },
+      ]),
+      storage: new InMemoryCorrelationStorage(),
+      clock: () => new Date('2026-01-02T03:04:05.000Z'),
+    });
+    const payload = await builder.prepareDispatch(
+      { id: 'task-single', prompt: 'Do the thing.' },
+      'only-model',
+    );
+
+    const warnings: string[] = [];
+    const client = new HokusaiClient({
+      transport: () => Promise.reject(new Error('no network')),
+    });
+
+    await expect(
+      client.route(payload, {
+        dryRun: true,
+        onWarning: (message) => warnings.push(message),
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('warns when a route request still carries deprecated CSV metadata', async () => {
+    const routeRequest = await createRouteRequest();
+    const withCsv: RouteRequest = {
+      ...routeRequest,
+      task: {
+        ...routeRequest.task,
+        metadata: {
+          ...routeRequest.task.metadata,
+          available_models: 'gpt-5-codex,gpt-5',
+        },
+      },
+      routing: undefined,
+    };
+
+    const { transport } = createMockTransport([
+      createResponse(200, {
+        metadata: {
+          coder_model: 'gpt-5-codex',
+          route_id: 'route-csv',
+        },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+    const warnings: string[] = [];
+
+    await client.route(withCsv, {
+      onWarning: (message) => warnings.push(message),
+    });
+
+    expect(warnings.some((message) => message.includes('deprecated'))).toBe(
+      true,
+    );
   });
 
   it('normalizes live Model 30 strategy responses to route responses', async () => {
@@ -815,10 +969,11 @@ describe('HokusaiClient', () => {
     await expect(client.route(routeRequest, { dryRun: true })).resolves.toEqual(
       {
         ok: true,
+        path: '/api/v1/models/30/predict',
         request: expect.objectContaining({
           inputs: expect.objectContaining({
             routing: expect.objectContaining({
-              available_coder_models: ['gpt-5-codex'],
+              available_models: ['gpt-5-codex', 'gpt-5'],
             }),
             task: expect.objectContaining({
               task_type: 'maintenance',
@@ -834,6 +989,117 @@ describe('HokusaiClient', () => {
       request: outcomeReport,
     });
     expect(calls).toHaveLength(0);
+  });
+
+  it('targets the Model 30 route path by default', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: { coder_model: 'gpt-5-codex', route_id: 'r' },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({ apiKey: 'k_test', transport });
+
+    await client.route(routeRequest);
+
+    expect(new URL(calls[0]!.input).pathname).toBe('/api/v1/models/30/predict');
+  });
+
+  it('targets a configured router model version for network route calls', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: { coder_model: 'gpt-5-codex', route_id: 'r' },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      routeModelId: '42',
+    });
+
+    await client.route(routeRequest);
+
+    expect(new URL(calls[0]!.input).pathname).toBe('/api/v1/models/42/predict');
+  });
+
+  it('honors a full route path override ahead of the model id', async () => {
+    const routeRequest = await createRouteRequest();
+    const { calls, transport } = createMockTransport([
+      createResponse(200, {
+        metadata: { coder_model: 'gpt-5-codex', route_id: 'r' },
+        completed_successfully: 'true',
+      }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      routeModelId: '42',
+      routePath: '/internal/router/predict',
+    });
+
+    await client.route(routeRequest);
+
+    expect(new URL(calls[0]!.input).pathname).toBe('/internal/router/predict');
+  });
+
+  it('surfaces the configured route path in dry-run output', async () => {
+    const routeRequest = await createRouteRequest();
+    const client = new HokusaiClient({ routeModelId: '31' });
+
+    const result = await client.route(routeRequest, { dryRun: true });
+
+    expect(result).toMatchObject({
+      ok: true,
+      path: '/api/v1/models/31/predict',
+    });
+  });
+
+  it('targets a configured contribution model version for network calls', async () => {
+    const row = {
+      schema_version: 'harness_outcome_row/v1',
+      task_descriptor: { task_type: 'bugfix' },
+      allowed_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      selected_models: { coder: 'claude-sonnet-4-6' },
+      completion_result: 'success',
+    } as unknown as HarnessOutcomeRowV1;
+    const { calls, transport } = createMockTransport([
+      createResponse(201, { accepted: true, rowsAccepted: 1 }),
+    ]);
+    const client = new HokusaiClient({
+      apiKey: 'k_test',
+      transport,
+      contributionModelId: '42',
+    });
+
+    await client.submitContribution({
+      rows: [row],
+      metadata: { idempotency_key: 'batch-x' },
+    });
+
+    expect(new URL(calls[0]!.input).pathname).toBe(
+      '/api/v1/models/42/contributions',
+    );
+  });
+
+  it('surfaces the configured contribution path in dry-run output', async () => {
+    const row = {
+      schema_version: 'harness_outcome_row/v1',
+      task_descriptor: { task_type: 'bugfix' },
+      allowed_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      selected_models: { coder: 'claude-sonnet-4-6' },
+      completion_result: 'success',
+    } as unknown as HarnessOutcomeRowV1;
+    const client = new HokusaiClient({ contributionPath: '/internal/contrib' });
+
+    const result = await client.submitContribution(
+      { rows: [row], metadata: { idempotency_key: 'batch-y' } },
+      { dryRun: true },
+    );
+
+    expect(result).toMatchObject({ ok: true, path: '/internal/contrib' });
   });
 
   it('throws a validation error for invalid dry-run payloads', async () => {
