@@ -19,7 +19,8 @@ import {
   inferReasoningDepth,
   summarizeLanguageSignals,
 } from './task-signals.js';
-import type { TaskFamily } from './task-packet.js';
+import type { ReasoningDepth, TaskFamily } from './task-packet.js';
+import type { HokusaiLanguage } from './contribution/descriptor-types.js';
 
 /**
  * Categorical repository signals available at route time. Counts only — never
@@ -33,6 +34,94 @@ export interface TaskDescriptorSignals {
 export interface TaskDescriptorInput {
   taskText?: string | undefined;
   repositorySignals?: TaskDescriptorSignals | undefined;
+}
+
+/**
+ * A partial task descriptor. Values are strings except `complexity`, which the
+ * descriptor contract declares as a numeric score.
+ */
+export type TaskDescriptorFields = Record<string, string | number>;
+
+/**
+ * Map a reasoning depth onto the numeric complexity score the descriptor
+ * contract declares (`HokusaiTaskDescriptor.complexity: number`).
+ *
+ * The values line up with the server's own string vocabulary in
+ * `_complexity_number` (`low`/`small` = 3, `medium`/`moderate` = 5,
+ * `high`/`large` = 8) and with wavemill's `complexityToHokusaiScore`, which
+ * emits 1-9 on the same scale. Emitting `'shallow' | 'standard' | 'deep'`
+ * instead — as this module used to — matched none of them, so the server fell
+ * through to its default of 5.0 and every task looked equally complex.
+ */
+export const REASONING_DEPTH_COMPLEXITY: Record<ReasoningDepth, number> = {
+  shallow: 3,
+  standard: 5,
+  deep: 8,
+};
+
+/** Extra string spellings the server's `_complexity_number` understands. */
+const COMPLEXITY_ALIASES: Record<string, number> = {
+  low: 3,
+  small: 3,
+  medium: 5,
+  moderate: 5,
+  high: 8,
+  large: 8,
+  very_high: 10,
+  ...REASONING_DEPTH_COMPLEXITY,
+};
+
+/**
+ * Coerce a complexity value — numeric, a reasoning depth, or one of the
+ * server's string aliases — into a numeric score. Returns `undefined` for a
+ * value with no defined meaning rather than defaulting, so the caller can omit
+ * the field instead of asserting a complexity it never derived.
+ */
+export function normalizeComplexity(value: string | number | undefined): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  const alias = COMPLEXITY_ALIASES[normalized];
+  if (alias !== undefined) {
+    return alias;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Map a display language label (`summarizeLanguageSignals` returns `TypeScript`,
+ * `Python`, ...) onto the closed `HokusaiLanguage` vocabulary. Labels outside
+ * the vocabulary become `unknown` rather than leaking an unmodeled category.
+ */
+const HOKUSAI_LANGUAGE_BY_LABEL: Record<string, HokusaiLanguage> = {
+  python: 'python',
+  typescript: 'typescript',
+  javascript: 'javascript',
+  go: 'go',
+  rust: 'rust',
+  java: 'java',
+  shell: 'bash',
+  bash: 'bash',
+};
+
+export function normalizeHokusaiLanguage(label: string | undefined): HokusaiLanguage {
+  if (typeof label !== 'string') {
+    return 'unknown';
+  }
+
+  return HOKUSAI_LANGUAGE_BY_LABEL[label.trim().toLowerCase()] ?? 'unknown';
 }
 
 /** Map a deterministic TaskFamily label onto the server's HokusaiTaskType set. */
@@ -88,13 +177,13 @@ function dominantLanguage(extensionCounts: Record<string, number>): string | und
  * rejects an empty descriptor, so callers that cannot derive anything should
  * fall back to `{ task_type: 'unknown' }` rather than fabricate labels.
  */
-export function deriveTaskDescriptor(input: TaskDescriptorInput): Record<string, string> {
-  const derived: Record<string, string> = {};
+export function deriveTaskDescriptor(input: TaskDescriptorInput): TaskDescriptorFields {
+  const derived: TaskDescriptorFields = {};
 
   const taskText = input.taskText?.trim();
   if (taskText && taskText.length > 0) {
     derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
-    derived.complexity = inferReasoningDepth({ text: taskText });
+    derived.complexity = REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
   }
 
   const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
@@ -106,7 +195,7 @@ export function deriveTaskDescriptor(input: TaskDescriptorInput): Record<string,
   if (extensionCounts) {
     const dominant = dominantLanguage(extensionCounts);
     if (dominant) {
-      derived.language = dominant;
+      derived.language = normalizeHokusaiLanguage(dominant);
     }
   }
 

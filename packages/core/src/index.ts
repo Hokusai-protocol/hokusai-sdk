@@ -254,8 +254,12 @@ export {
   type TaskFamilyClassificationInput,
 } from './task-signals.js';
 export {
+  REASONING_DEPTH_COMPLEXITY,
   TASK_FAMILY_TO_HOKUSAI_TYPE,
   deriveTaskDescriptor,
+  normalizeComplexity,
+  normalizeHokusaiLanguage,
+  type TaskDescriptorFields,
   type TaskDescriptorInput,
   type TaskDescriptorSignals,
 } from './task-descriptor.js';

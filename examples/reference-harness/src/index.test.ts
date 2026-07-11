@@ -53,7 +53,10 @@ describe('runReferenceFlow', () => {
 
     expect(descriptor).toMatchObject({
       task_type: 'tests',
-      complexity: 'standard',
+      // Numeric score and lowercase language: the descriptor contract's types,
+      // and what the server's featurizer actually understands.
+      complexity: 5,
+      language: 'typescript',
       repo_size_bucket: 'medium',
     });
     expect(JSON.stringify(descriptor)).not.toContain('checkout');

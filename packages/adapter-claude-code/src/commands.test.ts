@@ -529,7 +529,7 @@ describe('routeTask descriptor enrichment', () => {
     );
     const routeContext = JSON.parse(
       persisted?.metadata?.routeContext ?? '{}',
-    ) as { taskDescriptor: Record<string, string>; budgetUsd?: number };
+    ) as { taskDescriptor: Record<string, string | number>; budgetUsd?: number };
     return { routeContext, rawOnDisk };
   }
 
@@ -540,7 +540,9 @@ describe('routeTask descriptor enrichment', () => {
 
     expect(routeContext.taskDescriptor).toMatchObject({
       task_type: 'feature',
-      complexity: 'standard',
+      // Numeric score. The server's _complexity_number defaults any word it does
+      // not recognize to 5.0, so emitting 'standard' erased the signal.
+      complexity: 5,
     });
     // Privacy: only categorical labels are persisted; never the raw task text.
     expect(rawOnDisk).not.toContain('exporting reports');
@@ -557,8 +559,18 @@ describe('routeTask descriptor enrichment', () => {
 
     expect(routeContext.taskDescriptor).toMatchObject({
       task_type: 'bugfix',
-      complexity: 'deep',
+      // A harness may still supply a word; it is normalized to the score.
+      complexity: 8,
     });
+  });
+
+  it('normalizes a numeric complexity supplied by the harness', async () => {
+    const { routeContext } = await routeAndReadContext({
+      taskText: 'Implement a new feature',
+      metadata: { complexity: '7' },
+    });
+
+    expect(routeContext.taskDescriptor.complexity).toBe(7);
   });
 
   it('derives repo_size_bucket and dominant language from repository signals', async () => {
@@ -573,7 +585,8 @@ describe('routeTask descriptor enrichment', () => {
     expect(routeContext.taskDescriptor).toMatchObject({
       task_type: 'refactor',
       repo_size_bucket: 'medium',
-      language: 'TypeScript',
+      // Lowercase HokusaiLanguage enum value, not the display label.
+      language: 'typescript',
     });
   });
 });
@@ -928,8 +941,8 @@ describe('contribution row training-eligibility', () => {
   const richRouteContext = {
     taskDescriptor: {
       task_type: 'feature',
-      complexity: 'standard',
-      language: 'TypeScript',
+      complexity: 5,
+      language: 'typescript',
       repo_size_bucket: 'medium',
     },
     allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
@@ -957,8 +970,8 @@ describe('contribution row training-eligibility', () => {
     expect(result.value.contributionRow).toMatchObject({
       task_descriptor: {
         task_type: 'feature',
-        complexity: 'standard',
-        language: 'TypeScript',
+        complexity: 5,
+        language: 'typescript',
         repo_size_bucket: 'medium',
       },
       allowed_models: ['claude-sonnet-4-6', 'claude-opus-4-8'],
