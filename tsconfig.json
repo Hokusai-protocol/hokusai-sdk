@@ -5,6 +5,7 @@
     { "path": "./packages/adapter-claude-code" },
     { "path": "./packages/adapter-codex" },
     { "path": "./packages/adapter-wavemill" },
+    { "path": "./packages/router" },
     { "path": "./examples/reference-harness" }
   ]
 }

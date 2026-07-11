@@ -1,0 +1,35 @@
+{
+  "name": "@hokusai/router",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "description": "Thin, zero-config façade over @hokusai/core for routing a task to a model and reporting the outcome.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hokusai-protocol/hokusai-sdk",
+    "directory": "packages/router"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@hokusai/core": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json --pretty false",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --pretty false"
+  }
+}
