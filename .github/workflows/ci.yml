@@ -12,6 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Check out shared data-pipeline schemas
+        run: |
+          git clone --depth 1 --branch tim/hok-2498-one-task-descriptor-schema-shared-by-the-sdk-and-the \
+            https://github.com/Hokusai-protocol/hokusai-data-pipeline.git ../hokusai-data-pipeline \
+          || git clone --depth 1 --branch main \
+            https://github.com/Hokusai-protocol/hokusai-data-pipeline.git ../hokusai-data-pipeline
       - uses: pnpm/action-setup@v6
         with:
           version: 10.11.0
