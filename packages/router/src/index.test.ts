@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   HokusaiClient,
   HokusaiValidationError,
@@ -220,5 +220,66 @@ describe('route default export', () => {
       expect(typeof route).toBe('function');
       expect(typeof route.reportOutcome).toBe('function');
     });
+  });
+});
+
+interface CapturedAuth {
+  authorization?: string | undefined;
+}
+
+describe('api key resolution', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** Capture the Authorization header the client actually puts on the wire. */
+  function stubFetchCapturingAuth(captured: CapturedAuth): void {
+    vi.stubGlobal('fetch', (input: string, init: FetchTransportRequestInit) => {
+      const headers = init.headers ?? {};
+      captured.authorization =
+        headers['Authorization'] ?? headers['authorization'];
+      return Promise.resolve(
+        jsonResponse(200, {
+          routeId: 'route-1',
+          taskId: 'task-1',
+          status: 'accepted',
+          recommendation: { model: 'claude-sonnet-4-6', confidence: 0.9 },
+        }),
+      );
+    });
+  }
+
+  it('reads HOKUSAI_API_KEY from the environment when no apiKey is given', async () => {
+    vi.stubEnv('HOKUSAI_API_KEY', 'hk_live_from_env');
+    const captured: CapturedAuth = {};
+    stubFetchCapturingAuth(captured);
+
+    const router = createRouter();
+    await router({ task: 'Refactor billing webhook retry handling.' });
+
+    expect(captured.authorization).toBe('Bearer hk_live_from_env');
+  });
+
+  it('prefers an explicit apiKey over the environment', async () => {
+    vi.stubEnv('HOKUSAI_API_KEY', 'hk_live_from_env');
+    const captured: CapturedAuth = {};
+    stubFetchCapturingAuth(captured);
+
+    const router = createRouter({ apiKey: 'hk_live_explicit' });
+    await router({ task: 'Refactor billing webhook retry handling.' });
+
+    expect(captured.authorization).toBe('Bearer hk_live_explicit');
+  });
+
+  it('ignores a blank HOKUSAI_API_KEY rather than sending an empty bearer', async () => {
+    vi.stubEnv('HOKUSAI_API_KEY', '   ');
+    stubFetchCapturingAuth({});
+
+    const router = createRouter();
+
+    await expect(
+      router({ task: 'Refactor billing webhook retry handling.' }),
+    ).rejects.toThrow(/API key is required/);
   });
 });
