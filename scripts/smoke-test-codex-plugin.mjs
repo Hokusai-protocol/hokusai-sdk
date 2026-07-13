@@ -147,14 +147,31 @@ async function main() {
     const extractedRoot = path.join(extractDir, expectedRootName);
     const pluginRoot = path.join(extractedRoot, 'plugins', 'hokusai');
     const manifestPath = path.join(pluginRoot, '.codex-plugin', 'plugin.json');
-    const marketplacePath = path.join(extractedRoot, 'marketplace.json');
+    // Codex reads the marketplace manifest from `.agents/plugins/` and nowhere
+    // else. Asserting it at the archive root is what let a zip that `codex
+    // plugin marketplace add` rejects ship through a green CI run.
+    const marketplacePath = path.join(
+      extractedRoot,
+      '.agents',
+      'plugins',
+      'marketplace.json',
+    );
     const mcpConfigPath = path.join(pluginRoot, '.mcp.json');
     const binPath = path.join(pluginRoot, 'bin', 'hokusai-codex-mcp');
 
     assertFileExists(manifestPath, 'plugin manifest exists');
-    assertFileExists(marketplacePath, 'marketplace exists');
+    assertFileExists(marketplacePath, 'marketplace manifest is at .agents/plugins/');
     assertFileExists(mcpConfigPath, 'mcp config exists');
     assertFileExists(binPath, 'mcp launcher exists');
+
+    assert(
+      !existsSync(path.join(extractedRoot, 'marketplace.json')),
+      'no stray marketplace.json at the archive root',
+    );
+    assert(
+      !existsSync(path.join(pluginRoot, 'marketplace.json')),
+      'no stray marketplace.json inside the plugin dir',
+    );
 
     const manifest = readJson(manifestPath, 'plugin manifest');
     const marketplace = readJson(marketplacePath, 'marketplace');
@@ -176,6 +193,13 @@ async function main() {
       assert(
         Array.isArray(marketplace.plugins) && marketplace.plugins.length === 1,
         'marketplace exposes exactly one plugin',
+      );
+      // The install id is `<plugin>@<marketplace>`, so this name is public
+      // surface: it makes the documented command `codex plugin add
+      // hokusai@hokusai`.
+      assert(
+        marketplace.name === 'hokusai',
+        'marketplace is named hokusai (install id is hokusai@hokusai)',
       );
     }
     if (mcpConfig) {

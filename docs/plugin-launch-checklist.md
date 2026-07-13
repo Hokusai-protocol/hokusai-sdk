@@ -4,7 +4,8 @@
 
 - Download `hokusai-codex-plugin-latest.zip` and its `.sha256` companion from the GitHub release.
 - Verify the checksum, unzip the archive, and run `codex plugin marketplace add <unzipped-dir>`.
-- Run `codex plugin add hokusai`.
+- Run `codex plugin add hokusai@hokusai` (install id is `<plugin>@<marketplace>`).
+- Confirm `codex plugin list` reports `hokusai@hokusai  installed, enabled`.
 - Confirm the installed plugin exposes `$hokusai-route`, `$hokusai-report`, `$hokusai-privacy`, and `$hokusai-doctor`.
 - Confirm `hokusai_preview_route_payload` works without `HOKUSAI_API_KEY` or consent.
 - Confirm routing fails with a structured `E_MISSING_API_KEY` or `E_MISSING_CONSENT` response until the corresponding env var is set.

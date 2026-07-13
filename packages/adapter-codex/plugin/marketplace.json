@@ -1,7 +1,7 @@
 {
-  "name": "hokusai-local",
+  "name": "hokusai",
   "interface": {
-    "displayName": "Hokusai Local"
+    "displayName": "Hokusai"
   },
   "plugins": [
     {
