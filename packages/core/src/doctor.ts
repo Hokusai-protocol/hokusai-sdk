@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { HokusaiPluginConfig, RedactedPluginConfig } from './config.js';
 import { redactPluginConfig, summarizeAllowlist } from './config.js';
 import {
+  DEFAULT_ROUTER_MODEL_ID,
   HokusaiClient,
   type FetchTransport,
   type FetchTransportResponse,
@@ -426,6 +427,110 @@ export async function checkApiReachability(
   }
 }
 
+/**
+ * Verify the API key is actually accepted, not merely present.
+ *
+ * `checkApiKey` only proves the variable is set, and `checkApiReachability`
+ * probes an unauthenticated health path where a 401 means "the API is up and
+ * auth-gated" — so an expired key produced a fully green doctor while every
+ * route failed. This sends a real authenticated request instead.
+ *
+ * The probe is a GET against the route path. Auth runs before method dispatch,
+ * so a live key comes back 405 (Method Not Allowed) and a dead one comes back
+ * 401 — the key is validated without creating a routing row or spending
+ * anything. Anything that is not 401/403 means auth succeeded.
+ */
+export async function checkApiKeyAccepted(
+  config: HokusaiPluginConfig,
+  transport: FetchTransport,
+  options?: { timeoutMs?: number; requestId?: string; routeModelId?: string },
+): Promise<DoctorCheckResult> {
+  const id = 'api-key-accepted';
+
+  const apiKey = config.apiKey?.trim();
+  if (!apiKey) {
+    return {
+      id,
+      label: id,
+      status: 'skipped',
+      summary: 'No API key configured, so it cannot be verified.',
+      nextAction: 'Set HOKUSAI_API_KEY, then re-run the doctor.',
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => controller.abort(),
+    options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  const requestId = options?.requestId ?? new Date().toISOString();
+  const modelId = options?.routeModelId ?? DEFAULT_ROUTER_MODEL_ID;
+
+  try {
+    const response = await transport(
+      buildReachabilityUrl(
+        config.apiBaseUrl,
+        `/api/v1/models/${modelId}/predict`,
+      ),
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'X-Request-ID': requestId,
+          'X-Hokusai-Request-Id': requestId,
+        },
+        signal: controller.signal,
+      },
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        id,
+        label: id,
+        status: 'fail',
+        summary: `Hokusai rejected the API key (HTTP ${response.status}): it is invalid or expired.`,
+        nextAction:
+          'Generate a new key at hokus.ai and set HOKUSAI_API_KEY to it. A stale key in your shell or .env is the usual cause.',
+      };
+    }
+
+    if (response.status >= 500) {
+      return {
+        id,
+        label: id,
+        status: 'warn',
+        summary: `Could not verify the API key: Hokusai returned HTTP ${response.status}.`,
+        nextAction: 'Retry the doctor once the Hokusai API recovers.',
+      };
+    }
+
+    return {
+      id,
+      label: id,
+      status: 'pass',
+      summary: 'API key was accepted by the Hokusai API.',
+    };
+  } catch (error) {
+    const reason =
+      error instanceof Error
+        ? error.name === 'AbortError'
+          ? 'timeout'
+          : error.name
+        : 'network-error';
+
+    return {
+      id,
+      label: id,
+      status: 'warn',
+      summary: `Could not verify the API key (${reason}).`,
+      nextAction:
+        'Confirm network access to the Hokusai API and retry in network mode.',
+    };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 export async function runPluginDoctor(
   input: RunPluginDoctorInput,
 ): Promise<PluginDoctorReport> {
@@ -473,6 +578,14 @@ export async function runPluginDoctor(
         reachabilityOptions,
       ),
     );
+    checks.push(
+      await checkApiKeyAccepted(input.config, input.transport, {
+        requestId: checkedAt,
+        ...(input.reachabilityTimeoutMs !== undefined
+          ? { timeoutMs: input.reachabilityTimeoutMs }
+          : {}),
+      }),
+    );
   } else {
     checks.push({
       id: 'api-reachability',
@@ -485,6 +598,12 @@ export async function runPluginDoctor(
               'Provide a network transport to run the API reachability check.',
           }
         : {}),
+    });
+    checks.push({
+      id: 'api-key-accepted',
+      label: 'api-key-accepted',
+      status: 'skipped',
+      summary: 'Skipped API key verification (offline mode).',
     });
   }
 

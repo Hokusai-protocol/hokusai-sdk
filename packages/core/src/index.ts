@@ -183,6 +183,7 @@ export type {
 } from './harness-profile.js';
 export {
   checkApiKey,
+  checkApiKeyAccepted,
   checkApiReachability,
   checkDryRunRoute,
   checkModelAllowlist,

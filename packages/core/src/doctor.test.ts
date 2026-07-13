@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ANTHROPIC_MODELS, InMemoryModelRegistry } from './model-registry.js';
 import {
   checkApiKey,
+  checkApiKeyAccepted,
   checkApiReachability,
   checkDryRunRoute,
   checkModelAllowlist,
@@ -294,6 +295,91 @@ describe('plugin doctor checks', () => {
     expect(failResult.summary).not.toContain('/private/secret/path');
   });
 
+  /**
+   * An expired key used to sail through: `api-key` only proves the variable is
+   * set, and `api-reachability` probes an unauthenticated path where 401 means
+   * "the API is up". Doctor reported "ready to use" while every route failed.
+   */
+  it('fails when the API rejects the key, and passes when it accepts it', async () => {
+    const config = {
+      apiKey: 'hk_live_secret',
+      apiBaseUrl: 'https://api.hokus.ai',
+      routingConsentEnabled: true,
+      outcomeSubmissionEnabled: false,
+      modelAllowlist: ['claude-sonnet-4-6'],
+    };
+
+    const respondWith = (status: number) => () =>
+      Promise.resolve({
+        status,
+        headers: { get: () => null },
+        text: () => Promise.resolve(''),
+      });
+
+    const rejected = await checkApiKeyAccepted(config, respondWith(401));
+    expect(rejected.status).toBe('fail');
+    expect(rejected.summary).toMatch(/invalid or expired/i);
+    expect(rejected.nextAction).toMatch(/HOKUSAI_API_KEY/);
+
+    // Auth runs before method dispatch, so a live key answers the GET probe
+    // with 405 Method Not Allowed. Anything that is not 401/403 means the key
+    // was accepted.
+    await expect(
+      checkApiKeyAccepted(config, respondWith(405)),
+    ).resolves.toMatchObject({ status: 'pass' });
+
+    await expect(
+      checkApiKeyAccepted(config, respondWith(403)),
+    ).resolves.toMatchObject({ status: 'fail' });
+
+    await expect(
+      checkApiKeyAccepted(config, respondWith(503)),
+    ).resolves.toMatchObject({ status: 'warn' });
+  });
+
+  it('sends the key as a bearer token to the route path', async () => {
+    let seenUrl = '';
+    let seenAuth: string | undefined;
+
+    await checkApiKeyAccepted(
+      {
+        apiKey: 'hk_live_secret',
+        apiBaseUrl: 'https://api.hokus.ai',
+        routingConsentEnabled: true,
+        outcomeSubmissionEnabled: false,
+        modelAllowlist: ['claude-sonnet-4-6'],
+      },
+      (input, init) => {
+        seenUrl = String(input);
+        seenAuth = (init.headers as Record<string, string>).Authorization;
+        return Promise.resolve({
+          status: 405,
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        });
+      },
+    );
+
+    expect(seenUrl).toBe('https://api.hokus.ai/api/v1/models/30/predict');
+    expect(seenAuth).toBe('Bearer hk_live_secret');
+  });
+
+  it('skips verification when no key is configured', async () => {
+    await expect(
+      checkApiKeyAccepted(
+        {
+          apiBaseUrl: 'https://api.hokus.ai',
+          routingConsentEnabled: true,
+          outcomeSubmissionEnabled: false,
+          modelAllowlist: ['claude-sonnet-4-6'],
+        },
+        () => {
+          throw new Error('must not call the API without a key');
+        },
+      ),
+    ).resolves.toMatchObject({ status: 'skipped' });
+  });
+
   it('checks API reachability outcomes', async () => {
     const config = {
       apiKey: 'hk_live_secret',
@@ -412,7 +498,17 @@ describe('runPluginDoctor', () => {
     ).toMatchObject({
       status: 'fail',
     });
-    expect(transportCalls).toEqual(['https://api.hokus.ai/api/health']);
+    // Network mode now probes twice: reachability, then whether the API
+    // actually accepts the key.
+    expect(
+      report.checks.find((check) => check.id === 'api-key-accepted'),
+    ).toMatchObject({
+      status: 'warn',
+    });
+    expect(transportCalls).toEqual([
+      'https://api.hokus.ai/api/health',
+      'https://api.hokus.ai/api/v1/models/30/predict',
+    ]);
   });
 
   it('runs network mode when routing is configured and transport is available', async () => {
