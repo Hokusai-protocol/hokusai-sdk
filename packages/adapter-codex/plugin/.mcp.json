@@ -1,7 +1,9 @@
 {
   "mcpServers": {
     "hokusai": {
-      "command": "./bin/hokusai-codex-mcp"
+      "command": "node",
+      "args": ["./bin/hokusai-codex-mcp"],
+      "cwd": "."
     }
   }
 }

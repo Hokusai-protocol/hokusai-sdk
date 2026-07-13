@@ -181,6 +181,35 @@ async function main() {
       'no hooks/ directory (design D3: the MVP ships no hooks)',
     );
 
+    // Codex refuses to load a SKILL.md without YAML frontmatter carrying `name`
+    // and `description` ("Skipped loading N skill(s) due to invalid SKILL.md
+    // files"). It skips them at startup and the plugin looks installed but inert.
+    for (const skill of [
+      'hokusai-route',
+      'hokusai-report',
+      'hokusai-privacy',
+      'hokusai-doctor',
+    ]) {
+      const skillFile = path.join(pluginRoot, 'skills', skill, 'SKILL.md');
+      if (!assertFileExists(skillFile, `skill ${skill} exists`)) {
+        continue;
+      }
+      const body = readFileSync(skillFile, 'utf8');
+      const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(body);
+      assert(
+        frontmatter !== null,
+        `skill ${skill} has YAML frontmatter delimited by ---`,
+      );
+      assert(
+        frontmatter !== null && /^name:\s*\S/m.test(frontmatter[1]),
+        `skill ${skill} declares a name`,
+      );
+      assert(
+        frontmatter !== null && /^description:\s*\S/m.test(frontmatter[1]),
+        `skill ${skill} declares a description`,
+      );
+    }
+
     const manifest = readJson(manifestPath, 'plugin manifest');
     const marketplace = readJson(marketplacePath, 'marketplace');
     const mcpConfig = readJson(mcpConfigPath, 'mcp config');
@@ -220,12 +249,16 @@ async function main() {
         Boolean(server),
         'mcp config exposes the hokusai server under mcpServers',
       );
-      // Codex performs no variable substitution; a `${PLUGIN_ROOT}` command is
-      // launched literally and never resolves. Real plugins use plugin-relative
-      // paths.
+      // Codex performs no variable substitution, and does not spawn the server
+      // from the plugin root by default: a bare `./bin/...` command dies with
+      // "MCP startup failed: No such file or directory". Working plugins pin
+      // `cwd: "."` and pass the script as a relative arg.
       assert(
-        server?.command === './bin/hokusai-codex-mcp',
-        'mcp command is a plugin-relative path, not a ${...} template',
+        server?.command === 'node' &&
+          Array.isArray(server?.args) &&
+          server.args[0] === './bin/hokusai-codex-mcp' &&
+          server?.cwd === '.',
+        'mcp server is launched as node ./bin/hokusai-codex-mcp with cwd "."',
       );
       assert(
         server !== undefined && !('env_vars' in server),
