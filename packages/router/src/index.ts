@@ -156,6 +156,16 @@ const BUILT_IN_MODELS: ModelDefinition[] = [
   ...OPENAI_MODELS,
 ];
 
+/** Not every runtime that can `fetch` has a `process` global (edge, browser). */
+function apiKeyFromEnv(): string | undefined {
+  if (typeof process === 'undefined') {
+    return undefined;
+  }
+
+  const value = process.env?.HOKUSAI_API_KEY?.trim();
+  return value ? value : undefined;
+}
+
 function resolveModels(models: RouterModel[]): ModelDefinition[] {
   const byId = new Map(BUILT_IN_MODELS.map((model) => [model.id, model]));
   const resolved: ModelDefinition[] = [];
@@ -240,10 +250,12 @@ export function createRouter(options: RouterOptions = {}): Router {
     redactionConfig: DEFAULT_REDACTION_CONFIG,
   });
 
+  const apiKey = options.apiKey ?? apiKeyFromEnv();
+
   const client =
     options.client ??
     new HokusaiClient({
-      ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+      ...(apiKey !== undefined ? { apiKey } : {}),
       ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
       ...(options.routeModelId !== undefined
         ? { routeModelId: options.routeModelId }
