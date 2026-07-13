@@ -6,14 +6,21 @@
  * ```ts
  * import { route } from '@hokusai/router';
  *
- * const { model, reasoning } = await route({ task, context });
+ * const { model, reasoning } = await route({ task, context, maxCostUsd });
  * const result = await models[model].run(task);
- * await route.reportOutcome({ status: 'succeeded', latency, cost, tokens });
+ * await route.reportOutcome({ status: 'succeeded', actualCostUsd: result.cost });
  * ```
  *
  * This package makes that real. `route` is a zero-config callable that reads
  * `HOKUSAI_API_KEY` from the environment and ranks across the default model
- * pool; `route.reportOutcome` submits the outcome that trains the router.
+ * pool; `route.reportOutcome` submits the contribution row that trains the
+ * router.
+ *
+ * Outcomes are submitted as Model 30 contribution rows, not to the legacy
+ * `/outcomes` endpoint — that surface patches an inference log and bypasses
+ * training and reward attribution entirely. Pass `actualCostUsd` (and a
+ * `maxCostUsd` budget when routing): without both, the server files the row as
+ * telemetry and it earns nothing.
  *
  * The façade owns the wiring the common case should not have to: the
  * `HokusaiClient`, the `HokusaiDispatchBuilder`, the consent snapshot, and the
@@ -33,18 +40,20 @@ import {
   HokusaiDispatchBuilder,
   InMemoryModelRegistry,
   OPENAI_MODELS,
-  buildOutcomeReport,
+  SDK_VERSION,
+  buildHarnessOutcomeRow,
+  deriveTaskDescriptor,
   routingObjectiveToApiValue,
-  type CoarseBucket,
   type CompletionStatus,
   type ConsentConfig,
+  type ContributionAcceptedResponse,
   type HokusaiTaskInput,
   type ModelDefinition,
-  type OutcomeResponse,
   type RouteResponse,
   type RouteRoutingInput,
   type RoutingMode,
   type RoutingObjective,
+  type TaskDescriptorFields,
 } from '@hokusai/core';
 
 /** A model this router may recommend: a full definition or just its id. */
@@ -123,24 +132,53 @@ export interface ReportOutcomeInput {
   correlationId?: string;
   /** The model actually run. Defaults to the recommended model. */
   model?: string;
-  /** Whether the recommendation was accepted. Defaults to `true`. */
-  accepted?: boolean;
   /** How the task ended. */
   status: CompletionStatus;
-  /** Coarse latency bucket. */
-  latency: CoarseBucket;
-  /** Coarse cost bucket. */
-  cost: CoarseBucket;
-  /** Coarse token bucket. */
-  tokens: CoarseBucket;
+  /**
+   * What the run actually cost, in USD.
+   *
+   * Required for a **training-eligible** contribution: the server scores the
+   * outcome against the budget from `route({ maxCostUsd })`, and a row without
+   * a cost is filed as telemetry — it neither trains the router nor earns
+   * rewards.
+   */
+  actualCostUsd?: number;
+  /** Wall-clock duration of the run, in seconds. */
+  wallClockSeconds?: number;
   /** Optional free-text notes (redacted before submission). */
   notes?: string;
+}
+
+/** What the server did with a submitted contribution. */
+export interface ContributionResult {
+  accepted: boolean;
+  /** The route this outcome was attributed to. */
+  correlationId: string;
+  /**
+   * The server's classification. Only `training_eligible` trains the router and
+   * earns rewards; anything else is stored as telemetry. Server-authoritative —
+   * never compute it locally.
+   */
+  fidelityTier?: string;
+  submissionId?: string;
+  tokenReward?: number;
+}
+
+/** The route a later outcome is attributed to. */
+interface RoutedTask {
+  correlationId: string;
+  inferenceLogId: string;
+  recommendedModel: string;
+  allowedModels: string[];
+  taskText: string;
+  context?: Record<string, string>;
+  budgetUsd?: number;
 }
 
 /** The callable `route` surface: `route(input)` plus `route.reportOutcome(...)`. */
 export interface Router {
   (input: RouteInput): Promise<RouteResult>;
-  reportOutcome(input: ReportOutcomeInput): Promise<OutcomeResponse>;
+  reportOutcome(input: ReportOutcomeInput): Promise<ContributionResult>;
 }
 
 export class RouterError extends Error {
@@ -264,8 +302,10 @@ export function createRouter(options: RouterOptions = {}): Router {
 
   const defaultObjective = options.objective ?? DEFAULT_ROUTING_OBJECTIVE;
 
-  let lastCorrelationId: string | undefined;
-  let lastRecommendedModel: string | undefined;
+  // A contribution row is built from the route it belongs to, so the route has
+  // to be remembered: the server ties the row to its decision through
+  // `inference_log_id`, and a row without one is not attributable.
+  let lastRoute: RoutedTask | undefined;
 
   const router = async (input: RouteInput): Promise<RouteResult> => {
     const task = normalizeTask(input.task);
@@ -309,8 +349,17 @@ export function createRouter(options: RouterOptions = {}): Router {
       );
     }
 
-    lastCorrelationId = payload.correlation.correlationId;
-    lastRecommendedModel = recommendation.model;
+    lastRoute = {
+      correlationId: payload.correlation.correlationId,
+      inferenceLogId: response.routeId,
+      recommendedModel: recommendation.model,
+      allowedModels: input.availableModels ?? models.map((model) => model.id),
+      taskText: task.prompt,
+      ...(input.context ? { context: input.context } : {}),
+      ...(input.maxCostUsd !== undefined
+        ? { budgetUsd: input.maxCostUsd }
+        : {}),
+    };
 
     return {
       model: recommendation.model,
@@ -326,39 +375,103 @@ export function createRouter(options: RouterOptions = {}): Router {
     };
   };
 
+  const warn = options.onWarning ?? defaultWarning;
+
   const reportOutcome = async (
     input: ReportOutcomeInput,
-  ): Promise<OutcomeResponse> => {
-    const correlationId = input.correlationId ?? lastCorrelationId;
-    if (!correlationId) {
+  ): Promise<ContributionResult> => {
+    const routed = lastRoute;
+    if (!routed) {
       throw new RouterError(
-        'reportOutcome needs a correlationId. Call route() first, or pass one explicitly.',
+        'reportOutcome needs a route to attribute the outcome to. Call route() first.',
       );
     }
 
-    const recommendedModel = lastRecommendedModel ?? input.model;
-    if (!recommendedModel) {
+    if (
+      input.correlationId !== undefined &&
+      input.correlationId !== routed.correlationId
+    ) {
       throw new RouterError(
-        'reportOutcome needs a model. Call route() first, or pass `model` explicitly.',
+        `reportOutcome can only report the most recent route (${routed.correlationId}). ` +
+          'Report each route before starting the next one.',
       );
     }
 
-    const report = buildOutcomeReport({
-      correlationId,
-      recommendedModel,
-      actualModel: input.model ?? recommendedModel,
-      recommendationAccepted: input.accepted ?? true,
-      completionStatus: input.status,
-      latencyBucket: input.latency,
-      costBucket: input.cost,
-      tokenBucket: input.tokens,
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+    // A row without an actual cost cannot be scored against its budget, so the
+    // server files it as telemetry and it earns nothing. Say so rather than let
+    // the caller discover it in the fidelity tier.
+    if (input.actualCostUsd === undefined) {
+      warn(
+        'reportOutcome was called without `actualCostUsd`, so this contribution is telemetry-only ' +
+          'and is not training-eligible. Pass the run cost in USD to make it count.',
+      );
+    }
+
+    const actualModel = input.model ?? routed.recommendedModel;
+    const row = buildHarnessOutcomeRow({
+      inferenceLogId: routed.inferenceLogId,
+      taskDescriptor: describeTask(routed),
+      allowedModels: routed.allowedModels,
+      selectedModels: { coder: actualModel, reviewer: actualModel },
+      completionResult: input.status === 'succeeded' ? 'success' : 'failure',
+      ...(routed.budgetUsd !== undefined
+        ? { budgetUsd: routed.budgetUsd }
+        : {}),
+      ...(input.actualCostUsd !== undefined
+        ? { actualCostUsd: input.actualCostUsd }
+        : {}),
+      ...(input.wallClockSeconds !== undefined
+        ? { wallClockSeconds: input.wallClockSeconds }
+        : {}),
+      harness: 'hokusai-router',
+      sdkVersion: SDK_VERSION,
+      observedAt: new Date().toISOString(),
     });
 
-    return (await client.reportOutcome(report)) as OutcomeResponse;
+    const response = (await client.submitContribution({
+      rows: [row],
+      metadata: { idempotency_key: routed.correlationId },
+    })) as ContributionAcceptedResponse;
+
+    const fidelityTier = response.rowFidelityTiers?.[0];
+    if (fidelityTier && fidelityTier !== 'training_eligible') {
+      warn(
+        `The contribution was accepted but the server classified it as \`${fidelityTier}\`, ` +
+          'not `training_eligible`, so it does not train the router or earn rewards.',
+      );
+    }
+
+    return {
+      accepted: response.accepted,
+      correlationId: routed.correlationId,
+      ...(fidelityTier ? { fidelityTier } : {}),
+      ...(response.submissionId !== undefined
+        ? { submissionId: response.submissionId }
+        : {}),
+      ...(response.tokenReward !== undefined
+        ? { tokenReward: response.tokenReward }
+        : {}),
+    };
   };
 
   return Object.assign(router, { reportOutcome });
+}
+
+/**
+ * The router only ever sees the task text and the caller's categorical context,
+ * so the descriptor is derived from those. `buildHarnessOutcomeRow` rejects an
+ * empty descriptor; fall back rather than fabricate labels we did not derive.
+ */
+function describeTask(routed: RoutedTask): TaskDescriptorFields {
+  const derived = deriveTaskDescriptor({ taskText: routed.taskText });
+  const descriptor: TaskDescriptorFields = {
+    ...routed.context,
+    ...derived,
+  };
+
+  return Object.keys(descriptor).length > 0
+    ? descriptor
+    : { task_type: 'unknown' };
 }
 
 function defaultWarning(message: string): void {
@@ -380,7 +493,7 @@ function getDefaultRouter(): Router {
 export const route: Router = Object.assign(
   (input: RouteInput): Promise<RouteResult> => getDefaultRouter()(input),
   {
-    reportOutcome: (input: ReportOutcomeInput): Promise<OutcomeResponse> =>
+    reportOutcome: (input: ReportOutcomeInput): Promise<ContributionResult> =>
       getDefaultRouter().reportOutcome(input),
   },
 );
