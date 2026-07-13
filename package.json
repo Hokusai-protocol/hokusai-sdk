@@ -14,7 +14,9 @@
     "release": "changeset publish",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "version-packages": "changeset version"
+    "version-packages": "changeset version && node scripts/sync-versions.mjs",
+    "sync:versions": "node scripts/sync-versions.mjs",
+    "check:versions": "node scripts/sync-versions.mjs --check"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.6",

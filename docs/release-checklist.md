@@ -27,9 +27,22 @@ Use this checklist before publishing SDK package or adapter changes.
 
 - [ ] Run `pnpm changeset` and describe the public change.
 - [ ] Choose `major`, `minor`, or `patch` according to [Versioning Policy](versioning-policy.md).
-- [ ] Run `pnpm version-packages` to apply the release versions.
+- [ ] Run `pnpm version-packages` to apply the release versions. This runs
+      `changeset version` and then `pnpm sync:versions`, which propagates the new
+      version into the two plugin manifests, the marketplace entry, and
+      `SDK_VERSION` — none of which changesets touches.
+- [ ] Commit the result, **including the rebundled
+      `packages/adapter-claude-code/plugin/dist/index.js`** (`pnpm -r build && pnpm --filter @hokusai/adapter-claude-code bundle:plugin`).
+      The marketplace serves that file from `main` HEAD.
+- [ ] Confirm `pnpm check:versions` passes. It is also enforced in CI on every PR.
 - [ ] Ensure repository secrets are configured: `NPM_TOKEN`, `GPG_PRIVATE_KEY`, and `GPG_PASSPHRASE`.
-- [ ] Push a matching `v*` tag to publish npm packages and plugin artifacts through GitHub Actions.
+- [ ] Push a `v*` tag **matching the new package version** to publish npm packages
+      and plugin artifacts through GitHub Actions.
+
+> All `@hokusai/*` packages are versioned together (`fixed` in
+> `.changeset/config.json`), so one tag equals one version across every package
+> and both plugin manifests. The release build asserts the manifest against the
+> tag and aborts if they differ.
 
 ## Claude Code Plugin Release
 
@@ -39,8 +52,8 @@ Use this checklist before publishing SDK package or adapter changes.
 
 ## Post-release Verification
 
-- [ ] Confirm `npm view @hokusai/core version` and each adapter package return the published version.
-- [ ] Confirm `npm install @hokusai/core @hokusai/adapter-claude-code @hokusai/adapter-codex @hokusai/adapter-wavemill` succeeds in a clean temporary project.
+- [ ] Confirm `npm view @hokusai/router version`, `npm view @hokusai/core version`, and each adapter package return the published version.
+- [ ] Confirm `npm install @hokusai/router @hokusai/core @hokusai/adapter-claude-code @hokusai/adapter-codex @hokusai/adapter-wavemill` succeeds in a clean temporary project.
 - [ ] Reinstall the published packages in `examples/reference-harness` and rerun its tests.
 - [ ] Run the [Claude Code Plugin Launch Smoke Checklist](plugin-launch-checklist.md) against the published plugin zip.
 - [ ] Update [Release Notes](release-notes.md) with the release summary.
