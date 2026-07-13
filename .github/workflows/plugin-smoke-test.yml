@@ -91,6 +91,35 @@ jobs:
       - name: Smoke test packaged Codex plugin
         run: node scripts/smoke-test-codex-plugin.mjs
 
+      # Structural assertions cannot tell us whether Codex accepts the archive.
+      # v0.2.0 shipped a zip that `codex plugin marketplace add` rejects outright
+      # ("marketplace root does not contain a supported manifest") through a
+      # fully green CI run, because nothing here had ever run the real binary.
+      - name: Install packaged Codex plugin with the real codex CLI
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          set -euo pipefail
+          npm install -g @openai/codex
+          codex --version
+
+          mkdir -p "$CODEX_HOME"
+          workdir="$(mktemp -d)"
+          unzip -q dist-zip/hokusai-codex-plugin-latest.zip -d "$workdir"
+
+          codex plugin marketplace add "$workdir/hokusai-codex-plugin"
+          codex plugin add hokusai@hokusai
+
+          # `plugin add` can report success while leaving the plugin unusable,
+          # so assert the end state rather than trusting the exit code.
+          codex plugin list | tee /tmp/codex-plugins.txt
+          grep -qE 'hokusai@hokusai\s+installed, enabled' /tmp/codex-plugins.txt
+
+          codex mcp list | tee /tmp/codex-mcp.txt
+          grep -q 'hokusai' /tmp/codex-mcp.txt
+
+          echo "Codex accepted the packaged plugin and registered its MCP server."
+
       - name: Check deterministic plugin zips
         run: |
           first_claude="$(shasum -a 256 dist-zip/hokusai-claude-code-plugin-latest.zip | awk '{print $1}')"

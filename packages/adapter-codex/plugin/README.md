@@ -4,7 +4,8 @@ Install from an extracted release zip:
 
 1. Verify the published checksum.
 2. Run `codex plugin marketplace add <dir>`.
-3. Run `codex plugin add hokusai`.
+3. Run `codex plugin add hokusai@hokusai` (the install id is
+   `<plugin>@<marketplace>`; a bare `hokusai` is rejected).
 
 Required environment variables:
 

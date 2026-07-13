@@ -210,10 +210,20 @@ function main() {
     path.join(pluginSourceDir, 'README.md'),
     path.join(archiveRootDir, 'README.md'),
   );
+
+  // Codex discovers a marketplace only at `.agents/plugins/marketplace.json`
+  // relative to the marketplace root. At the archive root it is invisible:
+  // `codex plugin marketplace add` fails with "marketplace root does not
+  // contain a supported manifest".
+  const marketplaceManifestDir = path.join(archiveRootDir, '.agents', 'plugins');
+  mkdirSync(marketplaceManifestDir, { recursive: true });
   cpSync(
     path.join(pluginSourceDir, 'marketplace.json'),
-    path.join(archiveRootDir, 'marketplace.json'),
+    path.join(marketplaceManifestDir, 'marketplace.json'),
   );
+  // The manifest describes the marketplace, not the plugin; copying the plugin
+  // source dir wholesale drags a stray copy into plugins/hokusai/.
+  rmSync(path.join(stagedPluginDir, 'marketplace.json'), { force: true });
   writeMinimalPackageJson(version, path.join(archiveRootDir, 'package.json'));
   chmodSync(path.join(stagedPluginDir, 'bin', 'hokusai-codex-mcp'), 0o755);
   chmodSync(

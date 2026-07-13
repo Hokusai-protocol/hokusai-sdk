@@ -175,7 +175,14 @@ curl -L -o hokusai-codex-plugin-latest.zip.sha256 https://github.com/Hokusai-pro
 sha256sum -c hokusai-codex-plugin-latest.zip.sha256 && \
 unzip hokusai-codex-plugin-latest.zip && \
 codex plugin marketplace add ./hokusai-codex-plugin && \
-codex plugin add hokusai
+codex plugin add hokusai@hokusai
+```
+
+The install id is `<plugin>@<marketplace>`; a bare `codex plugin add hokusai`
+is rejected. Confirm the plugin registered:
+
+```sh
+codex plugin list
 ```
 
 Configure Hokusai and verify the install from Codex:
