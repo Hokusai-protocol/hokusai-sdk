@@ -172,6 +172,14 @@ async function main() {
       !existsSync(path.join(pluginRoot, 'marketplace.json')),
       'no stray marketplace.json inside the plugin dir',
     );
+    // Codex auto-discovers hooks/hooks.json by convention, regardless of what
+    // the manifest declares, and trust-gates it on install. Design decision D3
+    // is that the MVP ships no hooks; shipping the directory anyway prompted
+    // users to trust two hooks that never ran.
+    assert(
+      !existsSync(path.join(pluginRoot, 'hooks')),
+      'no hooks/ directory (design D3: the MVP ships no hooks)',
+    );
 
     const manifest = readJson(manifestPath, 'plugin manifest');
     const marketplace = readJson(marketplacePath, 'marketplace');
@@ -203,9 +211,25 @@ async function main() {
       );
     }
     if (mcpConfig) {
+      // Codex reads servers from an `mcpServers` map. Declaring them at the
+      // top level parses without error but exposes no tools to the session:
+      // the model sees the skill, cannot find `hokusai_route`, and falls back
+      // to guessing — the exact thing SKILL.md forbids.
+      const server = mcpConfig.mcpServers?.hokusai;
       assert(
-        Boolean(mcpConfig.hokusai),
-        'mcp config exposes the hokusai server',
+        Boolean(server),
+        'mcp config exposes the hokusai server under mcpServers',
+      );
+      // Codex performs no variable substitution; a `${PLUGIN_ROOT}` command is
+      // launched literally and never resolves. Real plugins use plugin-relative
+      // paths.
+      assert(
+        server?.command === './bin/hokusai-codex-mcp',
+        'mcp command is a plugin-relative path, not a ${...} template',
+      );
+      assert(
+        server !== undefined && !('env_vars' in server),
+        'mcp config does not use env_vars (not a Codex key)',
       );
     }
 

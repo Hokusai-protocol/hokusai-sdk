@@ -1,13 +1,7 @@
 {
-  "hokusai": {
-    "command": "${PLUGIN_ROOT}/bin/hokusai-codex-mcp",
-    "env_vars": [
-      "HOKUSAI_API_KEY",
-      "HOKUSAI_ROUTING_CONSENT",
-      "HOKUSAI_OUTCOME_OPT_IN",
-      "HOKUSAI_API_BASE_URL",
-      "HOKUSAI_CONFIG_DIR",
-      "HOKUSAI_RETENTION_DAYS"
-    ]
+  "mcpServers": {
+    "hokusai": {
+      "command": "./bin/hokusai-codex-mcp"
+    }
   }
 }
