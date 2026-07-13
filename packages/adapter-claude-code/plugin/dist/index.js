@@ -3365,6 +3365,78 @@ async function checkApiReachability(config, transport, options) {
     clearTimeout(timeoutHandle);
   }
 }
+async function checkApiKeyAccepted(config, transport, options) {
+  const id = "api-key-accepted";
+  const apiKey = config.apiKey?.trim();
+  if (!apiKey) {
+    return {
+      id,
+      label: id,
+      status: "skipped",
+      summary: "No API key configured, so it cannot be verified.",
+      nextAction: "Set HOKUSAI_API_KEY, then re-run the doctor."
+    };
+  }
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => controller.abort(),
+    options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
+  );
+  const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
+  const modelId = options?.routeModelId ?? DEFAULT_ROUTER_MODEL_ID;
+  try {
+    const response = await transport(
+      buildReachabilityUrl(
+        config.apiBaseUrl,
+        `/api/v1/models/${modelId}/predict`
+      ),
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "X-Request-ID": requestId,
+          "X-Hokusai-Request-Id": requestId
+        },
+        signal: controller.signal
+      }
+    );
+    if (response.status === 401 || response.status === 403) {
+      return {
+        id,
+        label: id,
+        status: "fail",
+        summary: `Hokusai rejected the API key (HTTP ${response.status}): it is invalid or expired.`,
+        nextAction: "Generate a new key at hokus.ai and set HOKUSAI_API_KEY to it. A stale key in your shell or .env is the usual cause."
+      };
+    }
+    if (response.status >= 500) {
+      return {
+        id,
+        label: id,
+        status: "warn",
+        summary: `Could not verify the API key: Hokusai returned HTTP ${response.status}.`,
+        nextAction: "Retry the doctor once the Hokusai API recovers."
+      };
+    }
+    return {
+      id,
+      label: id,
+      status: "pass",
+      summary: "API key was accepted by the Hokusai API."
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.name === "AbortError" ? "timeout" : error.name : "network-error";
+    return {
+      id,
+      label: id,
+      status: "warn",
+      summary: `Could not verify the API key (${reason}).`,
+      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
+    };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
 async function runPluginDoctor(input) {
   const registry = input.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
   const checkedAt = (input.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
@@ -3401,6 +3473,12 @@ async function runPluginDoctor(input) {
         reachabilityOptions
       )
     );
+    checks.push(
+      await checkApiKeyAccepted(input.config, input.transport, {
+        requestId: checkedAt,
+        ...input.reachabilityTimeoutMs !== void 0 ? { timeoutMs: input.reachabilityTimeoutMs } : {}
+      })
+    );
   } else {
     checks.push({
       id: "api-reachability",
@@ -3410,6 +3488,12 @@ async function runPluginDoctor(input) {
       ...mode === "network" && !input.transport ? {
         nextAction: "Provide a network transport to run the API reachability check."
       } : {}
+    });
+    checks.push({
+      id: "api-key-accepted",
+      label: "api-key-accepted",
+      status: "skipped",
+      summary: "Skipped API key verification (offline mode)."
     });
   }
   return {
