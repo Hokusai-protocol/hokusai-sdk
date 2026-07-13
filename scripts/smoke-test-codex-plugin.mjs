@@ -260,9 +260,20 @@ async function main() {
           server?.cwd === '.',
         'mcp server is launched as node ./bin/hokusai-codex-mcp with cwd "."',
       );
+      // Codex starts a stdio MCP server with a sanitized allowlist, NOT the
+      // parent environment (`create_env_for_mcp_server` in rmcp-client). Without
+      // naming HOKUSAI_API_KEY in `env_vars`, the server starts, the tools work,
+      // and every route fails with "HOKUSAI_API_KEY is not configured" even
+      // though the user exported it.
       assert(
-        server !== undefined && !('env_vars' in server),
-        'mcp config does not use env_vars (not a Codex key)',
+        Array.isArray(server?.env_vars) &&
+          server.env_vars.includes('HOKUSAI_API_KEY'),
+        'mcp config forwards HOKUSAI_API_KEY via env_vars',
+      );
+      assert(
+        Array.isArray(server?.env_vars) &&
+          !server.env_vars.includes('HOKUSAI_ROUTING_CONSENT'),
+        'mcp config does not forward the dead HOKUSAI_ROUTING_CONSENT var',
       );
     }
 

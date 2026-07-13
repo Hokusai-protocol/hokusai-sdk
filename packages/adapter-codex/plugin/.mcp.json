@@ -3,7 +3,14 @@
     "hokusai": {
       "command": "node",
       "args": ["./bin/hokusai-codex-mcp"],
-      "cwd": "."
+      "cwd": ".",
+      "env_vars": [
+        "HOKUSAI_API_KEY",
+        "HOKUSAI_OUTCOME_OPT_IN",
+        "HOKUSAI_API_BASE_URL",
+        "HOKUSAI_CONFIG_DIR",
+        "HOKUSAI_RETENTION_DAYS"
+      ]
     }
   }
 }
