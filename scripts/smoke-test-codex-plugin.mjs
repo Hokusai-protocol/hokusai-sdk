@@ -172,6 +172,43 @@ async function main() {
       !existsSync(path.join(pluginRoot, 'marketplace.json')),
       'no stray marketplace.json inside the plugin dir',
     );
+    // Codex auto-discovers hooks/hooks.json by convention, regardless of what
+    // the manifest declares, and trust-gates it on install. Design decision D3
+    // is that the MVP ships no hooks; shipping the directory anyway prompted
+    // users to trust two hooks that never ran.
+    assert(
+      !existsSync(path.join(pluginRoot, 'hooks')),
+      'no hooks/ directory (design D3: the MVP ships no hooks)',
+    );
+
+    // Codex refuses to load a SKILL.md without YAML frontmatter carrying `name`
+    // and `description` ("Skipped loading N skill(s) due to invalid SKILL.md
+    // files"). It skips them at startup and the plugin looks installed but inert.
+    for (const skill of [
+      'hokusai-route',
+      'hokusai-report',
+      'hokusai-privacy',
+      'hokusai-doctor',
+    ]) {
+      const skillFile = path.join(pluginRoot, 'skills', skill, 'SKILL.md');
+      if (!assertFileExists(skillFile, `skill ${skill} exists`)) {
+        continue;
+      }
+      const body = readFileSync(skillFile, 'utf8');
+      const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(body);
+      assert(
+        frontmatter !== null,
+        `skill ${skill} has YAML frontmatter delimited by ---`,
+      );
+      assert(
+        frontmatter !== null && /^name:\s*\S/m.test(frontmatter[1]),
+        `skill ${skill} declares a name`,
+      );
+      assert(
+        frontmatter !== null && /^description:\s*\S/m.test(frontmatter[1]),
+        `skill ${skill} declares a description`,
+      );
+    }
 
     const manifest = readJson(manifestPath, 'plugin manifest');
     const marketplace = readJson(marketplacePath, 'marketplace');
@@ -203,9 +240,40 @@ async function main() {
       );
     }
     if (mcpConfig) {
+      // Codex reads servers from an `mcpServers` map. Declaring them at the
+      // top level parses without error but exposes no tools to the session:
+      // the model sees the skill, cannot find `hokusai_route`, and falls back
+      // to guessing — the exact thing SKILL.md forbids.
+      const server = mcpConfig.mcpServers?.hokusai;
       assert(
-        Boolean(mcpConfig.hokusai),
-        'mcp config exposes the hokusai server',
+        Boolean(server),
+        'mcp config exposes the hokusai server under mcpServers',
+      );
+      // Codex performs no variable substitution, and does not spawn the server
+      // from the plugin root by default: a bare `./bin/...` command dies with
+      // "MCP startup failed: No such file or directory". Working plugins pin
+      // `cwd: "."` and pass the script as a relative arg.
+      assert(
+        server?.command === 'node' &&
+          Array.isArray(server?.args) &&
+          server.args[0] === './bin/hokusai-codex-mcp' &&
+          server?.cwd === '.',
+        'mcp server is launched as node ./bin/hokusai-codex-mcp with cwd "."',
+      );
+      // Codex starts a stdio MCP server with a sanitized allowlist, NOT the
+      // parent environment (`create_env_for_mcp_server` in rmcp-client). Without
+      // naming HOKUSAI_API_KEY in `env_vars`, the server starts, the tools work,
+      // and every route fails with "HOKUSAI_API_KEY is not configured" even
+      // though the user exported it.
+      assert(
+        Array.isArray(server?.env_vars) &&
+          server.env_vars.includes('HOKUSAI_API_KEY'),
+        'mcp config forwards HOKUSAI_API_KEY via env_vars',
+      );
+      assert(
+        Array.isArray(server?.env_vars) &&
+          !server.env_vars.includes('HOKUSAI_ROUTING_CONSENT'),
+        'mcp config does not forward the dead HOKUSAI_ROUTING_CONSENT var',
       );
     }
 

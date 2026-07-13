@@ -1,3 +1,12 @@
+---
+name: hokusai-report
+description: >-
+    Reports the outcome of a Hokusai-routed task via the `hokusai_submit_outcome`
+    MCP tool, previewing the anonymized payload before anything is sent. Use when
+    the user wants to report, submit, or contribute the result of a routed task,
+    or runs $hokusai-report.
+---
+
 Use this skill when the user wants to report the outcome of a routed Codex task.
 
 If `hokusai_prompt_outcome_contribution` produced a report command from a successful hook event, treat that as the user starting the normal report flow, not as approval to send.

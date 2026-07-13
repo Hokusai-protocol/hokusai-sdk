@@ -1,4 +1,5 @@
 import readline from 'node:readline';
+import { HokusaiApiError } from '@hokusai/core';
 import {
   latestRouteWithCodex,
   previewOutcomeWithCodex,
@@ -269,15 +270,56 @@ export async function runMcpServer() {
       continue;
     }
 
+    let request: JsonRpcRequest | undefined;
     try {
-      const request = JSON.parse(line) as JsonRpcRequest;
+      request = JSON.parse(line) as JsonRpcRequest;
       await handleRequest(request);
     } catch (error) {
-      process.stderr.write(
-        `hokusai-codex-mcp: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      const failure = describeUnhandledError(error);
+      process.stderr.write(`hokusai-codex-mcp: ${failure.message}\n`);
+
+      // An unanswered request is worse than a failed one: the client blocks
+      // until its own tool timeout (300s in Codex) and shows nothing. Any error
+      // that escapes handleRequest — `executeRouteCommand` rethrows every
+      // HokusaiApiError — must still come back as a response carrying this
+      // request's id, or a rejected API key looks exactly like a hang.
+      const id = request?.id;
+      if (id !== undefined && id !== null) {
+        writeResult(id, asToolResult({ ...failure }, true));
+      }
     }
   }
+}
+
+export function describeUnhandledError(error: unknown): {
+  code: string;
+  message: string;
+  remediation: string;
+} {
+  if (error instanceof HokusaiApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return {
+        code: 'E_INVALID_API_KEY',
+        message: `Hokusai rejected the API key (HTTP ${error.status}).`,
+        remediation:
+          'HOKUSAI_API_KEY is set but the API rejected it as invalid or expired. Check the key, then restart Codex so the MCP server picks up the new value.',
+      };
+    }
+    return {
+      code: 'E_API',
+      message: error.message,
+      remediation: `The Hokusai API returned an error${
+        error.status ? ` (HTTP ${error.status})` : ''
+      }. Retry, and include request id ${error.requestId} if it persists.`,
+    };
+  }
+
+  return {
+    code: 'E_INTERNAL',
+    message: error instanceof Error ? error.message : String(error),
+    remediation:
+      'The Hokusai MCP server failed to handle the request. Check HOKUSAI_API_KEY and network access, then retry.',
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
