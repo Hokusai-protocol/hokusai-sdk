@@ -20,28 +20,60 @@ npm install @hokusai/router
 ```ts
 import { route } from '@hokusai/router';
 
-// Reads HOKUSAI_API_KEY from the environment. Ranks across the default
-// Anthropic model pool unless you pass your own.
+// Your own model runners. Hokusai never calls a model — it only tells you which
+// one to call, ranked across the pool you give it.
+const models = {
+  'claude-sonnet-4-6': { run: async (task: string) => ({ ok: true, costUsd: 0.42 }) },
+  'claude-opus-4-8': { run: async (task: string) => ({ ok: true, costUsd: 1.10 }) },
+};
+
+const task = 'Refactor the billing webhook retry handling.';
+
+// Reads HOKUSAI_API_KEY from the environment.
 const { model, reasoning } = await route({
-  task: 'Refactor the billing webhook retry handling.',
-  context: { domain: 'payments', repoType: 'monorepo' },
+  task,
+  context: { domain: 'payments', repo_type: 'monorepo' },
+  availableModels: Object.keys(models),
+  maxCostUsd: 1,
 });
 
 const result = await models[model].run(task);
 
-// Reporting the outcome is what improves the router.
+// Reporting the outcome is what trains the router.
 await route.reportOutcome({
-  status: 'succeeded',
-  latency: 'medium',
-  cost: 'low',
-  tokens: 'medium',
+  status: result.ok ? 'succeeded' : 'failed',
+  actualCostUsd: result.costUsd,
 });
 ```
 
 `route(...)` returns the recommended `model`, the router's `reasoning`, a
-`confidence`, ranked `alternatives`, and a `correlationId`. `route.reportOutcome`
-defaults its `correlationId` to the most recent `route()` call, so the common
-single-flight loop needs nothing threaded through.
+`confidence`, ranked `alternatives`, a `routeId`, and a `correlationId`.
+`route.reportOutcome` attributes the outcome to the most recent `route()` call,
+so the common single-flight loop needs nothing threaded through.
+
+### Make the contribution count
+
+`reportOutcome` submits a **contribution row** — the record the router actually
+trains on. The server scores it and returns a `fidelityTier`, and **only
+`training_eligible` rows train the router or earn rewards**:
+
+```ts
+const { fidelityTier } = await route.reportOutcome({ status: 'succeeded', actualCostUsd: 0.42 });
+// 'training_eligible'
+```
+
+To reach that tier the server needs to score the cost against the budget, so it
+needs **both**:
+
+| You must pass | Where |
+| --- | --- |
+| `maxCostUsd` — the budget | `route({ ... })` |
+| `actualCostUsd` — what it really cost | `route.reportOutcome({ ... })` |
+
+Omit either and the row is accepted but classified `partial`: stored as
+telemetry, trains nothing, earns nothing. The router warns when this happens
+rather than letting you discover it in the tier. The tier is
+**server-authoritative** — never compute it locally.
 
 ## Configuration
 
@@ -112,12 +144,17 @@ const client = new HokusaiClient({
           ),
       });
     }
+    // Outcomes are submitted as contribution rows.
     return Promise.resolve({
       status: 200,
       headers: { get: () => null },
       text: () =>
         Promise.resolve(
-          JSON.stringify({ taskId: 'task-1', status: 'recorded' }),
+          JSON.stringify({
+            accepted: true,
+            rows_accepted: 1,
+            row_fidelity_tiers: ['training_eligible'],
+          }),
         ),
     });
   },
