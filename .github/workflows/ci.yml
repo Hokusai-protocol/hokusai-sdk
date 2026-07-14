@@ -39,6 +39,8 @@ jobs:
       - name: Plugin zips build at a release tag
         run: |
           set -euo pipefail
+          # The Codex zip is assembled from the esbuild bundle, not from dist/.
+          pnpm --filter @hokusai/adapter-codex bundle:plugin
           GITHUB_REF_NAME="v$(node -p "require('./packages/adapter-claude-code/package.json').version")" \
             node scripts/build-plugin-zip.mjs
           GITHUB_REF_NAME="v$(node -p "require('./packages/adapter-codex/package.json').version")" \
