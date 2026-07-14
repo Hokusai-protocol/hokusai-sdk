@@ -184,7 +184,7 @@ function parseMetadataList(value: string | undefined): string[] | undefined {
  * descriptor field is absent from metadata it is derived from the task text and
  * repository signals where a deterministic signal exists.
  */
-function buildRouteContextProjection(
+export function buildRouteContextProjection(
   metadata: Record<string, string> | undefined,
   modelConstraints: string[] | undefined,
   signals: {
@@ -268,7 +268,7 @@ function buildRouteContextProjection(
   };
 }
 
-function parseRouteContext(value: string | undefined): RouteContextProjection | undefined {
+export function parseRouteContext(value: string | undefined): RouteContextProjection | undefined {
   if (!value) {
     return undefined;
   }
@@ -526,7 +526,7 @@ function buildContributionPreviewLines(row: HarnessOutcomeRowV1): string[] {
  * when the required routing signals (inference log id / allowed models) are
  * unavailable, mirroring how the report CLI fails on missing correlation ids.
  */
-function buildReportContributionRow(input: {
+export function buildReportContributionRow(input: {
   report: OutcomeReport;
   routeContext: RouteContextProjection | undefined;
   inferenceLogId: string | undefined;

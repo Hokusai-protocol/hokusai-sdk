@@ -206,17 +206,46 @@ describe('submitOutcome', () => {
     ]);
   });
 
-  it('submits once and records a submitted audit entry', async () => {
-    const reportOutcome = vi.fn(() =>
-      Promise.resolve({
+  /**
+   * A route must be persisted first: the contribution row is attributed to its
+   * decision through inference_log_id, and is scored on the models and
+   * descriptor the route actually used.
+   */
+  async function seedRoute(store: InMemoryLocalStore, correlationId: string) {
+    await store.putCorrelation({
+      correlationId: correlationId.replace(/[:.]/g, '_'),
+      packetHash: 'task-1',
+      createdAt: Date.parse('2026-06-08T00:00:00.000Z'),
+      metadata: {
         taskId: 'task-1',
-        status: 'recorded',
-      }),
+        originalCorrelationId: correlationId,
+        inferenceLogId: 'inference-1',
+        routeContext: JSON.stringify({
+          taskDescriptor: { task_type: 'refactor', complexity: 2 },
+          allowedModels: ['gpt-5-codex', 'gpt-5'],
+          budgetUsd: 1,
+        }),
+      },
+    });
+  }
+
+  it('submits a contribution row, not a legacy outcome', async () => {
+    const submitContribution = vi.fn(
+      (request: { rows: Array<Record<string, unknown>> }) => {
+        void request;
+        return Promise.resolve({
+          accepted: true,
+          rowFidelityTiers: ['training_eligible'],
+        });
+      },
     );
+    const reportOutcome = vi.fn();
     const client = {
+      submitContribution,
       reportOutcome,
     } as unknown as HokusaiClient;
     const store = new InMemoryLocalStore();
+    await seedRoute(store, 'corr-1');
 
     const result = await submitOutcome({
       client,
@@ -231,19 +260,32 @@ describe('submitOutcome', () => {
         costBucket: 'low',
         tokenBucket: 'low',
       },
+      actualCostUsd: 0.42,
+      wallClockSeconds: 74.5,
       store,
       auditId: 'audit-2',
       clock: () => new Date('2026-06-08T00:00:00.000Z'),
     });
 
-    expect(result).toEqual({
-      ok: true,
-      value: {
-        taskId: 'task-1',
-        status: 'recorded',
-      },
+    expect(result.ok).toBe(true);
+    // The legacy endpoint 404s and earns nothing; it must not be called.
+    expect(reportOutcome).not.toHaveBeenCalled();
+    expect(submitContribution).toHaveBeenCalledTimes(1);
+
+    const request = submitContribution.mock.calls[0]![0];
+    const row = request.rows[0]!;
+    expect(row.schema_version).toBe('harness_outcome_row/v1');
+    expect(row.inference_log_id).toBe('inference-1');
+    expect(row.completion_result).toBe('success');
+    expect(row.allowed_models).toEqual(['gpt-5-codex', 'gpt-5']);
+    expect(row.selected_models).toEqual({
+      coder: 'gpt-5-codex',
+      reviewer: 'gpt-5-codex',
     });
-    expect(reportOutcome).toHaveBeenCalledTimes(1);
+    expect(row.budget_usd).toBe(1);
+    expect(row.actual_cost_usd).toBe(0.42);
+    expect(row.harness).toBe('codex');
+
     await expect(store.listAudit()).resolves.toEqual([
       {
         id: 'audit-2',
@@ -255,13 +297,42 @@ describe('submitOutcome', () => {
     ]);
   });
 
+  it('refuses to submit an outcome it cannot attribute to a route', async () => {
+    const submitContribution = vi.fn();
+    const client = { submitContribution } as unknown as HokusaiClient;
+    const store = new InMemoryLocalStore();
+
+    const result = await submitOutcome({
+      client,
+      consent,
+      outcome: {
+        correlationId: 'corr-orphan',
+        recommendedModel: 'gpt-5-codex',
+        actualModel: 'gpt-5-codex',
+        recommendationAccepted: true,
+        completionStatus: 'succeeded',
+        latencyBucket: 'low',
+        costBucket: 'low',
+        tokenBucket: 'low',
+      },
+      store,
+      auditId: 'audit-orphan',
+      clock: () => new Date('2026-06-08T00:00:00.000Z'),
+    });
+
+    expect(result.ok).toBe(false);
+    // Sending a row the server cannot score is worse than failing loudly.
+    expect(submitContribution).not.toHaveBeenCalled();
+  });
+
   it('records a failed audit entry on transport error', async () => {
     const client = {
-      reportOutcome: vi.fn(() => {
+      submitContribution: vi.fn(() => {
         throw new Error('network down');
       }),
     } as unknown as HokusaiClient;
     const store = new InMemoryLocalStore();
+    await seedRoute(store, 'corr-2');
 
     const result = await submitOutcome({
       client,

@@ -42,6 +42,11 @@ export const TOOLS: ToolDefinition[] = [
         task: { type: 'string' },
         taskId: { type: 'string' },
         currentModel: { type: 'string' },
+        maxCostUsd: {
+          type: 'number',
+          description:
+            'Budget ceiling in USD. The outcome is scored against it; without a budget the eventual contribution is telemetry-only and earns nothing.',
+        },
       },
     },
   },
@@ -57,6 +62,11 @@ export const TOOLS: ToolDefinition[] = [
         task: { type: 'string' },
         taskId: { type: 'string' },
         currentModel: { type: 'string' },
+        maxCostUsd: {
+          type: 'number',
+          description:
+            'Budget ceiling in USD. The outcome is scored against it; without a budget the eventual contribution is telemetry-only and earns nothing.',
+        },
       },
     },
   },
@@ -90,6 +100,12 @@ export const TOOLS: ToolDefinition[] = [
         userRating: { type: 'number' },
         notes: { type: 'string' },
         approve: { type: 'boolean' },
+        actualCostUsd: {
+          type: 'number',
+          description:
+            'What the run cost in USD. Required for a training-eligible contribution; without it the outcome is stored as telemetry and earns nothing.',
+        },
+        wallClockSeconds: { type: 'number' },
       },
     },
   },

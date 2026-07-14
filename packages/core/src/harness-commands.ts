@@ -10,12 +10,18 @@ import {
   mapRecommendation,
   ModelMappingError,
 } from './model-registry.js';
+import {
+  buildReportContributionRow,
+  buildRouteContextProjection,
+  parseRouteContext,
+} from './plugin-commands/commands.js';
+import type { RouteContextProjection } from './plugin-commands/types.js';
+import type { ContributionAcceptedResponse } from './client.js';
 import { buildOutcomeReport } from './outcome.js';
 import {
   validateRouteRequest,
   type HokusaiDispatchPayload,
   type OutcomeReportInput,
-  type OutcomeResponse,
   type RouteResponse,
 } from './schemas.js';
 import {
@@ -100,11 +106,18 @@ export interface SubmitOutcomeCommandInput extends PreviewOutcomeCommandInput {
   outcomeOptIn: boolean;
   approve?: boolean | undefined;
   clock?: (() => Date) | undefined;
+  /**
+   * What the run actually cost. The server scores it against the route's budget;
+   * a row without it is filed as telemetry and trains nothing.
+   */
+  actualCostUsd?: number | undefined;
+  wallClockSeconds?: number | undefined;
 }
 
 export interface SubmitOutcomeCommandValue extends PreviewOutcomeCommandValue {
   submitted: boolean;
-  response?: OutcomeResponse;
+  /** Server-authoritative: only `training_eligible` rows train and earn. */
+  contribution?: ContributionAcceptedResponse;
 }
 
 export interface LatestRouteCommandValue {
@@ -495,12 +508,23 @@ export async function executeRouteCommand(
     recommendation,
     ...(input.currentModelId ? { currentModelId: input.currentModelId } : {}),
   });
+  // Built here rather than in each profile: a contribution row needs the models
+  // the route was actually allowed to choose from and the descriptor it was
+  // judged on, and only this function knows both.
+  const routeContext = buildRouteContextProjection(
+    input.metadata,
+    taskInput.modelConstraints,
+    { taskText },
+  );
+
   await input.profile.storeCorrelationMetadata?.({
     payload,
     recommendation,
     payloadHash,
     now: getNow(input.clock).toISOString(),
     store: input.store,
+    routeContext,
+    ...(route?.routeId ? { inferenceLogId: route.routeId } : {}),
   });
   await appendAudit(input.store, {
     id: `${normalizeCorrelationId(payload.correlation.correlationId)}-route`,
@@ -616,6 +640,36 @@ export async function previewOutcomeCommand(
   }
 }
 
+/**
+ * The route an outcome belongs to, as persisted at route time. A contribution
+ * row is attributed to its decision through `inference_log_id`, and is scored on
+ * the models and descriptor the route actually used — none of which can be
+ * reconstructed after the fact.
+ */
+async function loadRoutedTask(
+  store: LocalStore,
+  correlationId: string,
+): Promise<
+  | { routeContext: RouteContextProjection | undefined; inferenceLogId?: string }
+  | undefined
+> {
+  const record =
+    (await store.getCorrelation(normalizeCorrelationId(correlationId))) ??
+    (await store.listCorrelations()).find(
+      (entry) => entry.metadata?.originalCorrelationId === correlationId,
+    );
+
+  if (!record) {
+    return undefined;
+  }
+
+  const inferenceLogId = record.metadata?.inferenceLogId;
+  return {
+    routeContext: parseRouteContext(record.metadata?.routeContext),
+    ...(inferenceLogId ? { inferenceLogId } : {}),
+  };
+}
+
 export async function submitOutcomeCommand(
   input: SubmitOutcomeCommandInput,
 ): Promise<HarnessCommandResult<SubmitOutcomeCommandValue>> {
@@ -649,10 +703,51 @@ export async function submitOutcomeCommand(
   const timestamp = getNow(input.clock).getTime();
   await input.store.putPayloadHash(toPayloadHashRecord(preview.value.report, input.clock));
 
+  // The legacy /outcomes endpoint patches an inference log and bypasses training
+  // and reward attribution entirely, so an outcome submitted there earns nothing
+  // — and its path (`/v1/outcomes`) 404s besides. Send a contribution row.
+  //
+  // Built before the network call: a route we cannot attribute should fail with
+  // a clear message rather than submit something the server cannot score.
+  const routed = await loadRoutedTask(
+    input.store,
+    preview.value.correlationId,
+  );
+  const rowResult = buildReportContributionRow({
+    report: preview.value.report,
+    routeContext: routed?.routeContext,
+    inferenceLogId: routed?.inferenceLogId,
+    harness: input.profile.harnessName,
+    observedAt: new Date(timestamp).toISOString(),
+    ...(input.actualCostUsd !== undefined
+      ? { actualCostUsd: input.actualCostUsd }
+      : {}),
+    ...(input.wallClockSeconds !== undefined
+      ? { wallClockSeconds: input.wallClockSeconds }
+      : {}),
+  });
+
+  if (!rowResult.ok) {
+    await appendAudit(input.store, {
+      id: `${normalizeCorrelationId(preview.value.correlationId)}-outcome`,
+      kind: 'outcome',
+      correlationId: preview.value.correlationId,
+      status: 'failed',
+      timestamp,
+      error: rowResult.error.message,
+    });
+    return fail(
+      'E_INVALID_INPUT',
+      rowResult.error.message,
+      'Route a task with this harness before reporting its outcome.',
+    );
+  }
+
   try {
-    const response = (await input.client?.reportOutcome(
-      preview.value.report,
-    )) as OutcomeResponse | undefined;
+    const response = (await input.client?.submitContribution({
+      rows: [rowResult.value],
+      metadata: { idempotency_key: preview.value.correlationId },
+    })) as ContributionAcceptedResponse | undefined;
     await appendAudit(input.store, {
       id: `${normalizeCorrelationId(preview.value.correlationId)}-outcome`,
       kind: 'outcome',
@@ -663,7 +758,7 @@ export async function submitOutcomeCommand(
     return ok({
       ...preview.value,
       submitted: true,
-      ...(response ? { response } : {}),
+      ...(response ? { contribution: response } : {}),
     });
   } catch (error) {
     await appendAudit(input.store, {

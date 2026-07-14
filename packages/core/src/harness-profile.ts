@@ -11,6 +11,7 @@ import type {
   HarnessPayloadPreview,
   HarnessRecommendation,
 } from './adapter.js';
+import type { RouteContextProjection } from './plugin-commands/types.js';
 
 export interface HarnessRoutingProfile {
   harnessName: string;
@@ -42,6 +43,15 @@ export interface HarnessRoutingProfile {
     payloadHash: string;
     now: string;
     store: LocalStore;
+    /**
+     * The routing decision's server id, and the categorical context it was made
+     * from. A harness that does not persist these cannot later build a
+     * contribution row: the row is attributed to its decision through
+     * `inference_log_id`, and needs the allowed models and task descriptor the
+     * route actually used.
+     */
+    routeContext: RouteContextProjection;
+    inferenceLogId?: string | undefined;
   }): Promise<void>;
 }
 

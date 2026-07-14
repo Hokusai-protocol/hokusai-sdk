@@ -97,7 +97,15 @@ export function createCodexHarnessProfile(options?: {
     buildHandoff({ recommendation, currentModelId }) {
       return createDefaultHandoff(recommendation, currentModelId, 'codex');
     },
-    async storeCorrelationMetadata({ payload, recommendation, payloadHash, now, store }) {
+    async storeCorrelationMetadata({
+      payload,
+      recommendation,
+      payloadHash,
+      now,
+      store,
+      routeContext,
+      inferenceLogId,
+    }) {
       const existing =
         (await store.getCorrelation(payload.correlation.correlationId.replace(/[:.]/g, '_'))) ??
         (await store.listCorrelations()).find(
@@ -119,6 +127,11 @@ export function createCodexHarnessProfile(options?: {
           ),
           reasonPreview: recommendation.reason.slice(0, 120),
           payloadHash,
+          // Without these a later outcome cannot become a contribution row: the
+          // row is attributed to its decision through inference_log_id, and is
+          // scored on the models and descriptor the route actually used.
+          routeContext: JSON.stringify(routeContext),
+          ...(inferenceLogId ? { inferenceLogId } : {}),
           status: 'pending',
           decisionAt: now,
         },

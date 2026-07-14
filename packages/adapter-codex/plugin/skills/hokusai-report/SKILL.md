@@ -14,3 +14,7 @@ If `hokusai_prompt_outcome_contribution` produced a report command from a succes
 Always call `hokusai_submit_outcome` once without `approve: true` to preview the anonymized payload first.
 
 Only call `hokusai_submit_outcome` with `approve: true` after the user explicitly approves sending the previewed report.
+
+Pass `actualCostUsd` — what the run actually cost in USD. The server scores it against the budget the task was routed under, and an outcome without it is stored as telemetry: it trains nothing and earns nothing. If you do not know the cost, ask the user rather than omitting it or guessing.
+
+The outcome is submitted as a contribution row against the route it belongs to, so a task must be routed with `$hokusai-route` before its outcome can be reported.

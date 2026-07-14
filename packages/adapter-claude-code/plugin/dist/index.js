@@ -2997,6 +2997,67 @@ function buildHandoffInstructions(input) {
   };
 }
 
+// ../core/src/plugin-commands/commands.ts
+import { rm as rm3 } from "node:fs/promises";
+
+// ../core/src/plugin-commands/harness-profile.ts
+function toModelSelection(model) {
+  return {
+    id: model.id,
+    provider: model.provider,
+    capabilities: model.capabilities
+  };
+}
+function buildDefaultRecommendation(profile, model, registry = profile.modelCatalog.registry) {
+  const allowedProviders = profile.modelCatalog.allowedProviders;
+  return {
+    model: toModelSelection(model),
+    reason: profile.defaultRecommendationReason,
+    alternatives: registry.listAvailable().filter(
+      (candidate) => allowedProviders?.includes(candidate.provider) ?? true
+    ).filter((candidate) => candidate.id !== model.id).map((candidate) => ({
+      model: toModelSelection(candidate)
+    }))
+  };
+}
+function buildPayloadPreview(payload) {
+  return {
+    summary: `Task ${payload.task.id} (model: ${payload.model.id})`,
+    promptPreview: payload.prompt,
+    redactionCount: payload.redactions.length
+  };
+}
+function displayTaskRecommendation(recommendation) {
+  const lines = [
+    `Recommended model: ${recommendation.model.id}`,
+    `Provider: ${recommendation.model.provider}`,
+    `Reason: ${recommendation.reason}`
+  ];
+  if (recommendation.confidence !== void 0) {
+    lines.push(`Confidence: ${Math.round(recommendation.confidence * 100)}%`);
+  }
+  if (recommendation.alternatives && recommendation.alternatives.length > 0) {
+    lines.push(
+      `Alternatives: ${recommendation.alternatives.map((entry) => entry.model.id).join(", ")}`
+    );
+    for (const alternative of recommendation.alternatives) {
+      const parts = [alternative.model.id];
+      if (alternative.reason) {
+        parts.push(alternative.reason);
+      }
+      if (alternative.confidence !== void 0) {
+        parts.push(`${Math.round(alternative.confidence * 100)}%`);
+      }
+      lines.push(`- ${parts.join(" - ")}`);
+    }
+  }
+  return {
+    lines,
+    model: recommendation.model.id,
+    provider: recommendation.model.provider
+  };
+}
+
 // ../core/src/onboarding-funnel.ts
 var STORE_ID = "onboarding-funnel";
 async function recordOnboardingFunnelSignal(input) {
@@ -3086,1336 +3147,6 @@ function createInstallationId(now) {
     return cryptoObject.randomUUID();
   }
   return `install-${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// ../core/src/doctor.ts
-import { mkdir as mkdir3, rm as rm3, writeFile as writeFile3 } from "node:fs/promises";
-import { join as join3 } from "node:path";
-import { randomUUID } from "node:crypto";
-var DEFAULT_REACHABILITY_PATH = "/api/health";
-var DEFAULT_TIMEOUT_MS2 = 5e3;
-var DEFAULT_NODE_MIN_VERSION = "18.0.0";
-async function runDoctor(input) {
-  const registry = input.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
-  const allowlistSummary = summarizeAllowlist(input.config, registry);
-  const checkedAt = (input.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
-  return {
-    auth: input.config.apiKey ? "configured" : "missing",
-    routingConsent: input.config.routingConsentEnabled,
-    outcomeConsent: input.config.outcomeSubmissionEnabled,
-    apiReachable: await checkReachability(input, checkedAt),
-    allowlistCount: allowlistSummary.validModelIds.length,
-    allowlistValid: allowlistSummary.unknownEntries.length === 0,
-    unknownAllowlistEntries: allowlistSummary.unknownEntries,
-    redactedConfig: redactPluginConfig(input.config),
-    checkedAt
-  };
-}
-function renderDoctorReport(report) {
-  const unknownEntries = report.unknownAllowlistEntries.length > 0 ? report.unknownAllowlistEntries.join(", ") : "none";
-  return [
-    "Hokusai doctor",
-    `checkedAt: ${report.checkedAt}`,
-    `auth: ${report.auth}`,
-    `routingConsent: ${report.routingConsent ? "enabled" : "disabled"}`,
-    `outcomeConsent: ${report.outcomeConsent ? "enabled" : "disabled"}`,
-    `apiReachable: ${report.apiReachable}`,
-    `allowlistCount: ${report.allowlistCount}`,
-    `allowlistValid: ${report.allowlistValid ? "yes" : "no"}`,
-    `unknownAllowlistEntries: ${unknownEntries}`,
-    `apiKey: ${report.redactedConfig.apiKey}`,
-    ...report.redactedConfig.apiKeyFingerprint ? [`apiKeyFingerprint: ${report.redactedConfig.apiKeyFingerprint}`] : [],
-    `apiBaseUrl: ${report.redactedConfig.apiBaseUrl}`
-  ].join("\n");
-}
-function checkNodeRuntime(current, minimum) {
-  const parsedCurrent = parseSemver(current);
-  const parsedMinimum = parseSemver(minimum);
-  if (!parsedCurrent || !parsedMinimum) {
-    return {
-      id: "node-runtime",
-      label: "node-runtime",
-      status: "warn",
-      summary: `Unable to verify Node.js runtime (${current}) against minimum (${minimum}).`,
-      nextAction: `Use Node.js ${minimum} or newer.`
-    };
-  }
-  return compareSemver(parsedCurrent, parsedMinimum) >= 0 ? {
-    id: "node-runtime",
-    label: "node-runtime",
-    status: "pass",
-    summary: `Node.js v${current} meets minimum v${minimum}.`
-  } : {
-    id: "node-runtime",
-    label: "node-runtime",
-    status: "fail",
-    summary: `Node.js v${current} is below minimum v${minimum}.`,
-    nextAction: `Upgrade Node.js to ${minimum} or newer.`
-  };
-}
-function checkApiKey(config) {
-  return config.apiKey?.trim() ? {
-    id: "api-key",
-    label: "api-key",
-    status: "pass",
-    summary: "API key is configured."
-  } : {
-    id: "api-key",
-    label: "api-key",
-    status: "fail",
-    summary: "API key is not configured.",
-    nextAction: "Set HOKUSAI_API_KEY=hk_live_... to enable routing."
-  };
-}
-function checkOutcomeConsent(config) {
-  return config.outcomeSubmissionEnabled ? {
-    id: "outcome-consent",
-    label: "outcome-consent",
-    status: "pass",
-    summary: "Outcome submission consent is enabled."
-  } : {
-    id: "outcome-consent",
-    label: "outcome-consent",
-    status: "warn",
-    summary: "Outcome submission consent is not enabled.",
-    nextAction: 'Run "hokusai-privacy reporting on" to opt into outcome submission persistently, or set HOKUSAI_OUTCOME_OPT_IN=1 for the current shell only.'
-  };
-}
-function checkModelAllowlist(config, registry) {
-  const summary = summarizeAllowlist(config, registry);
-  const validCount = summary.validModelIds.length;
-  if (validCount > 0) {
-    return {
-      id: "model-allowlist",
-      label: "model-allowlist",
-      status: "pass",
-      summary: `${validCount} Anthropic model${validCount === 1 ? "" : "s"} configured in allowlist.`
-    };
-  }
-  return {
-    id: "model-allowlist",
-    label: "model-allowlist",
-    status: "fail",
-    summary: summary.unknownEntries.length > 0 ? `No valid Anthropic models found in allowlist: ${summary.unknownEntries.join(", ")}.` : "No Anthropic models configured in allowlist.",
-    nextAction: "Configure at least one supported Anthropic model in the Hokusai allowlist."
-  };
-}
-async function checkDryRunRoute(config, registry, options) {
-  if (!config.apiKey?.trim()) {
-    return {
-      id: "dry-run-route",
-      label: "dry-run-route",
-      status: "skipped",
-      summary: "Skipped dry-run route because API key is not configured.",
-      nextAction: "Configure HOKUSAI_API_KEY, then rerun the doctor."
-    };
-  }
-  const allowlistSummary = summarizeAllowlist(config, registry);
-  const modelId = allowlistSummary.validModelIds[0];
-  const model = modelId ? registry.get(modelId) : void 0;
-  if (!model) {
-    return {
-      id: "dry-run-route",
-      label: "dry-run-route",
-      status: "fail",
-      summary: "Dry-run route failed because no supported model is configured.",
-      nextAction: "Configure at least one supported model in the Hokusai allowlist."
-    };
-  }
-  const checkedAt = (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
-  const client = options?.client ?? new HokusaiClient({
-    apiKey: config.apiKey,
-    baseUrl: config.apiBaseUrl,
-    transport: () => Promise.reject(
-      new Error("dry-run route must not use network transport")
-    )
-  });
-  try {
-    await client.route(
-      {
-        task: {
-          id: "hokusai-doctor-dry-run",
-          prompt: "Hokusai doctor dry-run route verification."
-        },
-        prompt: "Hokusai doctor dry-run route verification.",
-        consent: {
-          subjectId: "hokusai-doctor",
-          grantedScopes: ["task-execution"]
-        },
-        model: {
-          id: model.id,
-          provider: model.provider,
-          capabilities: [...model.capabilities]
-        },
-        correlation: {
-          taskId: "hokusai-doctor-dry-run",
-          correlationId: `hokusai-doctor-dry-run:${checkedAt}`,
-          createdAt: checkedAt
-        },
-        redactions: [],
-        createdAt: checkedAt
-      },
-      { dryRun: true, requestId: checkedAt }
-    );
-    return {
-      id: "dry-run-route",
-      label: "dry-run-route",
-      status: "pass",
-      summary: "Dry-run route payload validated successfully."
-    };
-  } catch (error) {
-    return {
-      id: "dry-run-route",
-      label: "dry-run-route",
-      status: "fail",
-      summary: `Dry-run route failed (${sanitizeDryRunError(error)}).`,
-      nextAction: "Fix the routing configuration and rerun the doctor before sending tasks."
-    };
-  }
-}
-async function checkStateDirWritable(stateDir, probe) {
-  try {
-    await probe(stateDir);
-    return {
-      id: "state-dir-writable",
-      label: "state-dir-writable",
-      status: "pass",
-      summary: "State directory is writable."
-    };
-  } catch (error) {
-    return {
-      id: "state-dir-writable",
-      label: "state-dir-writable",
-      status: "fail",
-      summary: `State directory is not writable (${sanitizeStateDirError(error, stateDir)}).`,
-      nextAction: "Ensure the Hokusai state directory exists and is writable by the current user."
-    };
-  }
-}
-async function checkApiReachability(config, transport, options) {
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(
-    () => controller.abort(),
-    options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
-  );
-  const path4 = options?.path ?? DEFAULT_REACHABILITY_PATH;
-  const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
-  const isDefaultHealthProbe = path4 === DEFAULT_REACHABILITY_PATH;
-  const headers = {
-    "X-Request-ID": requestId,
-    "X-Hokusai-Request-Id": requestId
-  };
-  if (!isDefaultHealthProbe) {
-    headers.Authorization = `Bearer ${config.apiKey ?? ""}`;
-  }
-  try {
-    const response = await transport(
-      buildReachabilityUrl(
-        config.apiBaseUrl,
-        path4
-      ),
-      {
-        method: "GET",
-        headers,
-        signal: controller.signal
-      }
-    );
-    if (response.status >= 200 && response.status < 300) {
-      return {
-        id: "api-reachability",
-        label: "api-reachability",
-        status: "pass",
-        summary: `API reachability check succeeded (HTTP ${response.status}).`
-      };
-    }
-    if (response.status === 401 || response.status === 403) {
-      if (isDefaultHealthProbe) {
-        return {
-          id: "api-reachability",
-          label: "api-reachability",
-          status: "pass",
-          summary: `API reachability check reached an auth-protected health endpoint (HTTP ${response.status}).`
-        };
-      }
-      return {
-        id: "api-reachability",
-        label: "api-reachability",
-        status: "fail",
-        summary: `API reachability check failed with auth error (HTTP ${response.status}).`,
-        nextAction: "Verify HOKUSAI_API_KEY and retry the doctor in network mode."
-      };
-    }
-    return {
-      id: "api-reachability",
-      label: "api-reachability",
-      status: "fail",
-      summary: `API reachability check failed (HTTP ${response.status}).`,
-      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
-    };
-  } catch (error) {
-    const reason = error instanceof Error ? error.name === "AbortError" ? "timeout" : error.name : "network-error";
-    return {
-      id: "api-reachability",
-      label: "api-reachability",
-      status: "fail",
-      summary: `API reachability check failed (${reason}).`,
-      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
-    };
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
-}
-async function checkApiKeyAccepted(config, transport, options) {
-  const id = "api-key-accepted";
-  const apiKey = config.apiKey?.trim();
-  if (!apiKey) {
-    return {
-      id,
-      label: id,
-      status: "skipped",
-      summary: "No API key configured, so it cannot be verified.",
-      nextAction: "Set HOKUSAI_API_KEY, then re-run the doctor."
-    };
-  }
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(
-    () => controller.abort(),
-    options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
-  );
-  const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
-  const modelId = options?.routeModelId ?? DEFAULT_ROUTER_MODEL_ID;
-  try {
-    const response = await transport(
-      buildReachabilityUrl(
-        config.apiBaseUrl,
-        `/api/v1/models/${modelId}/predict`
-      ),
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "X-Request-ID": requestId,
-          "X-Hokusai-Request-Id": requestId
-        },
-        signal: controller.signal
-      }
-    );
-    if (response.status === 401 || response.status === 403) {
-      return {
-        id,
-        label: id,
-        status: "fail",
-        summary: `Hokusai rejected the API key (HTTP ${response.status}): it is invalid or expired.`,
-        nextAction: "Generate a new key at hokus.ai and set HOKUSAI_API_KEY to it. A stale key in your shell or .env is the usual cause."
-      };
-    }
-    if (response.status >= 500) {
-      return {
-        id,
-        label: id,
-        status: "warn",
-        summary: `Could not verify the API key: Hokusai returned HTTP ${response.status}.`,
-        nextAction: "Retry the doctor once the Hokusai API recovers."
-      };
-    }
-    return {
-      id,
-      label: id,
-      status: "pass",
-      summary: "API key was accepted by the Hokusai API."
-    };
-  } catch (error) {
-    const reason = error instanceof Error ? error.name === "AbortError" ? "timeout" : error.name : "network-error";
-    return {
-      id,
-      label: id,
-      status: "warn",
-      summary: `Could not verify the API key (${reason}).`,
-      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
-    };
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
-}
-async function runPluginDoctor(input) {
-  const registry = input.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
-  const checkedAt = (input.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
-  const mode = input.mode ?? (input.config.apiKey?.trim() ? "network" : "offline");
-  const checks = [
-    checkNodeRuntime(
-      input.nodeVersion ?? process.versions.node,
-      input.nodeMinVersion ?? DEFAULT_NODE_MIN_VERSION
-    ),
-    checkApiKey(input.config),
-    checkOutcomeConsent(input.config),
-    checkModelAllowlist(input.config, registry),
-    await checkDryRunRoute(input.config, registry, {
-      ...input.routeDryRunClient ? { client: input.routeDryRunClient } : {},
-      ...input.clock ? { clock: input.clock } : {}
-    }),
-    await checkStateDirWritable(
-      input.stateDir ?? ".",
-      input.storageProber ?? probeStateDirWritable
-    )
-  ];
-  if (mode === "network" && input.transport) {
-    const reachabilityOptions = { requestId: checkedAt };
-    if (input.reachabilityPath !== void 0) {
-      reachabilityOptions.path = input.reachabilityPath;
-    }
-    if (input.reachabilityTimeoutMs !== void 0) {
-      reachabilityOptions.timeoutMs = input.reachabilityTimeoutMs;
-    }
-    checks.push(
-      await checkApiReachability(
-        input.config,
-        input.transport,
-        reachabilityOptions
-      )
-    );
-    checks.push(
-      await checkApiKeyAccepted(input.config, input.transport, {
-        requestId: checkedAt,
-        ...input.reachabilityTimeoutMs !== void 0 ? { timeoutMs: input.reachabilityTimeoutMs } : {}
-      })
-    );
-  } else {
-    checks.push({
-      id: "api-reachability",
-      label: "api-reachability",
-      status: "skipped",
-      summary: "Skipped API reachability check (offline mode).",
-      ...mode === "network" && !input.transport ? {
-        nextAction: "Provide a network transport to run the API reachability check."
-      } : {}
-    });
-    checks.push({
-      id: "api-key-accepted",
-      label: "api-key-accepted",
-      status: "skipped",
-      summary: "Skipped API key verification (offline mode)."
-    });
-  }
-  return {
-    checks,
-    ok: checks.every((check) => check.status !== "fail"),
-    mode,
-    checkedAt
-  };
-}
-async function checkReachability(input, requestId) {
-  if (!input.config.apiKey || !input.transport) {
-    return "skipped";
-  }
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(
-    () => controller.abort(),
-    input.reachabilityTimeoutMs ?? DEFAULT_TIMEOUT_MS2
-  );
-  try {
-    const response = await input.transport(
-      buildReachabilityUrl(
-        input.config.apiBaseUrl,
-        input.reachabilityPath ?? DEFAULT_REACHABILITY_PATH
-      ),
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${input.config.apiKey}`,
-          "X-Request-ID": requestId,
-          "X-Hokusai-Request-Id": requestId
-        },
-        signal: controller.signal
-      }
-    );
-    return mapReachabilityStatus(response);
-  } catch {
-    return "unreachable";
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
-}
-function buildReachabilityUrl(baseUrl, path4) {
-  const normalizedBase = new URL(baseUrl);
-  if (!normalizedBase.pathname.endsWith("/")) {
-    normalizedBase.pathname = `${normalizedBase.pathname}/`;
-  }
-  return new URL(path4.replace(/^\/+/, ""), normalizedBase).toString();
-}
-function mapReachabilityStatus(response) {
-  if (response.status === 401 || response.status === 403) {
-    return "unauthorized";
-  }
-  if (response.status >= 200 && response.status < 300) {
-    return "ok";
-  }
-  return "unreachable";
-}
-function parseSemver(value) {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
-  if (!match) {
-    return void 0;
-  }
-  return [
-    Number.parseInt(match[1] ?? "", 10),
-    Number.parseInt(match[2] ?? "", 10),
-    Number.parseInt(match[3] ?? "", 10)
-  ];
-}
-function compareSemver(left, right) {
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) {
-      return left[index] - right[index];
-    }
-  }
-  return 0;
-}
-async function probeStateDirWritable(dir) {
-  const probePath = join3(dir, `.hokusai-doctor-${randomUUID()}.tmp`);
-  await mkdir3(dir, { recursive: true });
-  try {
-    await writeFile3(probePath, "ok", "utf8");
-  } finally {
-    await rm3(probePath, { force: true }).catch(() => void 0);
-  }
-}
-function sanitizeStateDirError(error, stateDir) {
-  const raw = error instanceof Error ? error.message || error.name : typeof error === "string" ? error : "unknown error";
-  const escapedStateDir = escapeRegExp2(stateDir);
-  const withoutStateDir = raw.replace(
-    new RegExp(escapedStateDir, "g"),
-    "<state-dir>"
-  );
-  const withoutAbsolutePaths = withoutStateDir.replace(
-    /(?:[A-Za-z]:)?\/[^\s:'"]+/g,
-    "<path>"
-  );
-  return withoutAbsolutePaths.trim() || "unknown error";
-}
-function sanitizeDryRunError(error) {
-  const raw = error instanceof Error ? error.message || error.name : typeof error === "string" ? error : "unknown error";
-  return raw.replace(/hk_[A-Za-z0-9_/-]+/g, "<api-key>");
-}
-function escapeRegExp2(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// ../core/src/task-packet.ts
-var TASK_FAMILIES = [
-  "bugfix",
-  "feature",
-  "migration",
-  "refactor",
-  "test",
-  "docs",
-  "infra",
-  "mixed",
-  "chore",
-  "investigation"
-];
-var REASONING_DEPTHS = ["shallow", "standard", "deep"];
-var REPOSITORY_SCALES = ["small", "medium", "large", "xlarge"];
-var TASK_PACKET_SCHEMA_VERSION = "1.1.0";
-var TASK_PACKET_KEYS = [
-  "schemaVersion",
-  "userIntent",
-  "taskFamily",
-  "reasoningDepth",
-  "repositoryScale",
-  "languageSignals",
-  "frameworkSignals",
-  "availableTools",
-  "constraints",
-  "modelConstraints",
-  "providerConstraints"
-];
-var ARRAY_FIELDS = [
-  "languageSignals",
-  "frameworkSignals",
-  "availableTools",
-  "constraints",
-  "modelConstraints",
-  "providerConstraints"
-];
-var TASK_PACKET_KEY_SET = new Set(TASK_PACKET_KEYS);
-var TaskPacketBuildError = class extends Error {
-  errors;
-  constructor(message, errors) {
-    super(message);
-    this.name = "TaskPacketBuildError";
-    this.errors = errors;
-  }
-};
-function validateTaskPacket(input) {
-  const errors = [];
-  if (!isPlainObject2(input)) {
-    return {
-      ok: false,
-      errors: [{ path: "", message: "Task packet must be a non-null object." }]
-    };
-  }
-  const packet = input;
-  for (const key of Object.keys(packet)) {
-    if (!TASK_PACKET_KEY_SET.has(key)) {
-      errors.push({
-        path: key,
-        message: `Unknown field "${key}" is not allowed in task packets.`
-      });
-    }
-  }
-  validateLiteralString2(
-    packet.schemaVersion,
-    "schemaVersion",
-    TASK_PACKET_SCHEMA_VERSION,
-    errors
-  );
-  validateNonEmptyString3(packet.userIntent, "userIntent", errors);
-  validateEnum2(packet.taskFamily, "taskFamily", TASK_FAMILIES, errors);
-  validateEnum2(packet.reasoningDepth, "reasoningDepth", REASONING_DEPTHS, errors);
-  if (packet.repositoryScale !== void 0) {
-    validateEnum2(
-      packet.repositoryScale,
-      "repositoryScale",
-      REPOSITORY_SCALES,
-      errors
-    );
-  }
-  for (const field of ARRAY_FIELDS) {
-    const value = packet[field];
-    if (value !== void 0) {
-      validateStringArray(value, field, errors);
-    }
-  }
-  if (errors.length > 0) {
-    return { ok: false, errors };
-  }
-  const validatedPacket = {
-    schemaVersion: TASK_PACKET_SCHEMA_VERSION,
-    userIntent: packet.userIntent,
-    taskFamily: packet.taskFamily,
-    reasoningDepth: packet.reasoningDepth
-  };
-  if (packet.repositoryScale !== void 0) {
-    validatedPacket.repositoryScale = packet.repositoryScale;
-  }
-  for (const field of ARRAY_FIELDS) {
-    const value = packet[field];
-    if (value !== void 0) {
-      validatedPacket[field] = [...value];
-    }
-  }
-  return { ok: true, packet: validatedPacket };
-}
-function buildTaskPacket(context) {
-  const candidate = {
-    schemaVersion: TASK_PACKET_SCHEMA_VERSION,
-    userIntent: context?.userIntent,
-    taskFamily: context?.taskFamily,
-    reasoningDepth: context?.reasoningDepth ?? "standard",
-    repositoryScale: context?.repositoryScale
-  };
-  for (const field of ARRAY_FIELDS) {
-    const value = context?.[field];
-    if (value !== void 0) {
-      candidate[field] = value;
-    }
-  }
-  const result = validateTaskPacket(candidate);
-  if (!result.ok) {
-    throw new TaskPacketBuildError(
-      formatBuildErrorMessage2(result.errors),
-      result.errors
-    );
-  }
-  return result.packet;
-}
-function validateLiteralString2(value, path4, expected, errors) {
-  if (typeof value !== "string" || value.length === 0) {
-    errors.push({
-      path: path4,
-      message: `Expected "${path4}" to be "${expected}".`
-    });
-    return;
-  }
-  if (value !== expected) {
-    errors.push({
-      path: path4,
-      message: `Unsupported schema version "${value}". Expected "${expected}".`
-    });
-  }
-}
-function validateNonEmptyString3(value, path4, errors) {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    errors.push({
-      path: path4,
-      message: `"${path4}" must be a non-empty string.`
-    });
-  }
-}
-function validateEnum2(value, path4, allowedValues, errors) {
-  if (typeof value !== "string" || !allowedValues.includes(value)) {
-    errors.push({
-      path: path4,
-      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
-    });
-  }
-}
-function validateStringArray(value, path4, errors) {
-  if (!Array.isArray(value)) {
-    errors.push({
-      path: path4,
-      message: `"${path4}" must be an array of strings.`
-    });
-    return;
-  }
-  const entries = value;
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (typeof entry !== "string" || entry.trim().length === 0) {
-      errors.push({
-        path: `${path4}[${index}]`,
-        message: `"${path4}" entries must be non-empty strings.`
-      });
-    }
-  }
-}
-function formatBuildErrorMessage2(errors) {
-  const formatted = errors.map((error) => `${error.path}: ${error.message}`).join("; ");
-  return `Failed to build task packet: ${formatted}`;
-}
-function isPlainObject2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// ../core/src/task-signals.ts
-var LANGUAGE_BY_EXTENSION = {
-  c: "C",
-  cc: "C++",
-  cpp: "C++",
-  cs: "C#",
-  css: "CSS",
-  go: "Go",
-  h: "C/C++ Headers",
-  hpp: "C/C++ Headers",
-  html: "HTML",
-  java: "Java",
-  js: "JavaScript",
-  jsx: "JavaScript",
-  kt: "Kotlin",
-  kts: "Kotlin",
-  md: "Markdown",
-  mjs: "JavaScript",
-  php: "PHP",
-  py: "Python",
-  rb: "Ruby",
-  rs: "Rust",
-  sh: "Shell",
-  sql: "SQL",
-  swift: "Swift",
-  ts: "TypeScript",
-  tsx: "TypeScript",
-  yaml: "YAML",
-  yml: "YAML"
-};
-var FAMILY_KEYWORDS = [
-  {
-    family: "migration",
-    patterns: [/\bmigrat(?:e|ion|ing)\b/i, /\balembic\b/i, /\bbackfill\b/i]
-  },
-  {
-    family: "infra",
-    patterns: [/\binfra(?:structure)?\b/i, /\bci\b/i, /\bdeploy(?:ment)?\b/i, /\bterraform\b/i]
-  },
-  {
-    family: "docs",
-    patterns: [/\bdocs?\b/i, /\breadme\b/i, /\bdocumentation\b/i]
-  },
-  {
-    family: "test",
-    patterns: [/\btests?\b/i, /\bvitest\b/i, /\bjest\b/i, /\bcypress\b/i]
-  },
-  {
-    family: "refactor",
-    patterns: [/\brefactor\b/i, /\brename\b/i, /\brestructure\b/i, /\bcleanup\b/i]
-  },
-  {
-    family: "feature",
-    patterns: [/\bfeature\b/i, /\bimplement\b/i, /\badd support\b/i, /\bsupport\b/i, /\benable\b/i]
-  },
-  {
-    family: "bug",
-    patterns: [
-      /\bbug\b/i,
-      /\bregression\b/i,
-      /\bbroken\b/i,
-      /\bfailing\b/i,
-      /\bfix(?:e[sd])?\b.{0,24}\b(?:bug|regression|failure|crash|timeout)\b/i
-    ]
-  }
-];
-var INVESTIGATION_PATTERNS = [/\binvestigat(?:e|ion)\b/i, /\banaly[sz]e\b/i, /\bdebug\b/i];
-var DEEP_REASONING_PATTERNS = [
-  /\binvestigat(?:e|ion)\b/i,
-  /\banaly[sz]e\b/i,
-  /\bdeep(?:ly)?\b/i,
-  /\broot cause\b/i,
-  /\bcompare\b/i
-];
-function normalizeText(text) {
-  return text.trim().toLowerCase();
-}
-function classifyTaskFamily(input) {
-  const haystack = [input.text, ...input.hints ?? []].join("\n");
-  const matches = /* @__PURE__ */ new Set();
-  for (const entry of FAMILY_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
-      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
-    }
-  }
-  if (matches.size > 1) {
-    return "mixed";
-  }
-  if (matches.size === 1) {
-    return [...matches][0];
-  }
-  if (INVESTIGATION_PATTERNS.some((pattern) => pattern.test(haystack))) {
-    return "investigation";
-  }
-  return "chore";
-}
-function inferReasoningDepth(input) {
-  if (input.reasoningDepth) {
-    return input.reasoningDepth;
-  }
-  const normalized = normalizeText(input.text);
-  if (normalized.length > 0 && normalized.length < 40) {
-    return "shallow";
-  }
-  if (DEEP_REASONING_PATTERNS.some((pattern) => pattern.test(normalized))) {
-    return "deep";
-  }
-  return "standard";
-}
-function bucketRepositoryScale(fileCount) {
-  if (typeof fileCount !== "number" || !Number.isFinite(fileCount) || fileCount < 0) {
-    return void 0;
-  }
-  if (fileCount < 100) {
-    return "small";
-  }
-  if (fileCount < 1e3) {
-    return "medium";
-  }
-  if (fileCount < 1e4) {
-    return "large";
-  }
-  return "xlarge";
-}
-function summarizeLanguageSignals(extensionCounts) {
-  const languages = /* @__PURE__ */ new Set();
-  for (const [extension, count] of Object.entries(extensionCounts)) {
-    if (typeof count !== "number" || count <= 0) {
-      continue;
-    }
-    const normalized = extension.replace(/^\./, "").toLowerCase();
-    const language = LANGUAGE_BY_EXTENSION[normalized];
-    if (language) {
-      languages.add(language);
-    }
-  }
-  return [...languages].sort((left, right) => left.localeCompare(right));
-}
-function summarizeFrameworkSignals(dependencyCategories) {
-  return [...new Set(dependencyCategories.map((entry) => entry.trim()).filter(Boolean))].sort(
-    (left, right) => left.localeCompare(right)
-  );
-}
-
-// ../core/src/task-descriptor.ts
-var REASONING_DEPTH_COMPLEXITY = {
-  shallow: 3,
-  standard: 5,
-  deep: 8
-};
-var COMPLEXITY_ALIASES = {
-  low: 3,
-  small: 3,
-  medium: 5,
-  moderate: 5,
-  high: 8,
-  large: 8,
-  very_high: 10,
-  ...REASONING_DEPTH_COMPLEXITY
-};
-function normalizeComplexity2(value) {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : void 0;
-  }
-  if (typeof value !== "string") {
-    return void 0;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (normalized.length === 0) {
-    return void 0;
-  }
-  const alias = COMPLEXITY_ALIASES[normalized];
-  if (alias !== void 0) {
-    return alias;
-  }
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : void 0;
-}
-var HOKUSAI_LANGUAGE_BY_LABEL = {
-  python: "python",
-  typescript: "typescript",
-  javascript: "javascript",
-  go: "go",
-  rust: "rust",
-  java: "java",
-  shell: "bash",
-  bash: "bash"
-};
-function normalizeHokusaiLanguage(label) {
-  if (typeof label !== "string") {
-    return "unknown";
-  }
-  return HOKUSAI_LANGUAGE_BY_LABEL[label.trim().toLowerCase()] ?? "unknown";
-}
-var TASK_FAMILY_TO_HOKUSAI_TYPE = {
-  bugfix: "bugfix",
-  feature: "feature",
-  migration: "migration",
-  refactor: "refactor",
-  test: "tests",
-  docs: "docs",
-  infra: "infra",
-  chore: "infra",
-  mixed: "unknown",
-  investigation: "unknown"
-};
-function dominantLanguage(extensionCounts) {
-  let bestExtension;
-  let bestCount = 0;
-  for (const [extension, count] of Object.entries(extensionCounts)) {
-    if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
-      continue;
-    }
-    if (count > bestCount || count === bestCount && (bestExtension === void 0 || extension < bestExtension)) {
-      bestExtension = extension;
-      bestCount = count;
-    }
-  }
-  if (bestExtension === void 0) {
-    return void 0;
-  }
-  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
-}
-function deriveTaskDescriptor(input) {
-  const derived = {};
-  const taskText = input.taskText?.trim();
-  if (taskText && taskText.length > 0) {
-    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
-    derived.complexity = REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
-  }
-  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
-  if (repoSizeBucket) {
-    derived.repo_size_bucket = repoSizeBucket;
-  }
-  const extensionCounts = input.repositorySignals?.extensionCounts;
-  if (extensionCounts) {
-    const dominant = dominantLanguage(extensionCounts);
-    if (dominant) {
-      derived.language = normalizeHokusaiLanguage(dominant);
-    }
-  }
-  return derived;
-}
-
-// ../core/src/pricing.ts
-var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
-var CACHE_READ_INPUT_MULTIPLIER = 0.1;
-var ANTHROPIC_MODEL_PRICING = {
-  "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
-  "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
-  "claude-opus-4-7": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
-  "claude-opus-4-6": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
-  "claude-sonnet-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
-  "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
-  "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
-};
-var DATE_SUFFIX = /-\d{8}$/;
-function resolveModelPrice(model) {
-  if (typeof model !== "string") {
-    return void 0;
-  }
-  const normalized = model.trim().toLowerCase();
-  if (normalized.length === 0) {
-    return void 0;
-  }
-  return ANTHROPIC_MODEL_PRICING[normalized] ?? ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, "")];
-}
-function nonNegativeOrNull(value) {
-  if (value === void 0) {
-    return 0;
-  }
-  return Number.isFinite(value) && value >= 0 ? value : null;
-}
-function computeActualCostUsd(input) {
-  const price = resolveModelPrice(input.model);
-  if (!price) {
-    return void 0;
-  }
-  const inputTokens = nonNegativeOrNull(input.inputTokens);
-  const outputTokens = nonNegativeOrNull(input.outputTokens);
-  const cacheCreationTokens = nonNegativeOrNull(input.cacheCreationTokens);
-  const cacheReadTokens = nonNegativeOrNull(input.cacheReadTokens);
-  if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
-    return void 0;
-  }
-  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
-  return Math.round(cost * 1e6) / 1e6;
-}
-
-// ../core/src/session-usage.ts
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-var nodeFs = {
-  readFileSync: (filePath) => readFileSync(filePath, "utf8"),
-  readdirSync: (dirPath) => readdirSync(dirPath),
-  statSync: (filePath) => ({ mtimeMs: statSync(filePath).mtimeMs })
-};
-var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
-function encodeProjectDirKey(cwd) {
-  return cwd.replace(/[^a-zA-Z0-9]/g, "-");
-}
-function resolveClaudeConfigDir(input) {
-  const env = input?.env ?? process.env;
-  const override = env.CLAUDE_CONFIG_DIR?.trim();
-  if (override) {
-    return override;
-  }
-  return path.join(input?.homedir ?? os.homedir(), ".claude");
-}
-function sessionCostSidecarPath(claudeConfigDir) {
-  return path.join(claudeConfigDir, "hokusai", "session-cost.json");
-}
-function sessionTranscriptDir(claudeConfigDir, cwd) {
-  return path.join(claudeConfigDir, "projects", encodeProjectDirKey(cwd));
-}
-function claudeConfigDirFrom(input) {
-  return resolveClaudeConfigDir({
-    ...input.env ? { env: input.env } : {},
-    ...input.homedir ? { homedir: input.homedir } : {}
-  });
-}
-function readSessionCostSidecar(sidecarPath, fs = nodeFs) {
-  let raw;
-  try {
-    raw = fs.readFileSync(sidecarPath);
-  } catch {
-    return void 0;
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return void 0;
-    }
-    const record = parsed;
-    const sessionId = record.session_id;
-    const cost = record.cost_usd;
-    if (typeof sessionId !== "string" || sessionId.length === 0) {
-      return void 0;
-    }
-    if (typeof cost !== "number" || !Number.isFinite(cost)) {
-      return void 0;
-    }
-    return {
-      session_id: sessionId,
-      cost_usd: cost,
-      ...typeof record.updated_at === "string" ? { updated_at: record.updated_at } : {},
-      ...typeof record.input_tokens === "number" && Number.isFinite(record.input_tokens) ? { input_tokens: record.input_tokens } : {},
-      ...typeof record.output_tokens === "number" && Number.isFinite(record.output_tokens) ? { output_tokens: record.output_tokens } : {}
-    };
-  } catch {
-    return void 0;
-  }
-}
-function isSidecarFresh(sidecar, nowIso, freshnessMs) {
-  if (!sidecar.updated_at) {
-    return true;
-  }
-  const updated = Date.parse(sidecar.updated_at);
-  const now = Date.parse(nowIso);
-  if (!Number.isFinite(updated) || !Number.isFinite(now)) {
-    return true;
-  }
-  return Math.abs(now - updated) <= freshnessMs;
-}
-function captureCostBaseline(input) {
-  const snapshot = {
-    baselineAt: input.nowIso,
-    projectDirKey: encodeProjectDirKey(input.cwd)
-  };
-  try {
-    const configDir = claudeConfigDirFrom(input);
-    const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
-    if (sidecar && isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)) {
-      return {
-        ...snapshot,
-        costBaselineUsd: sidecar.cost_usd,
-        sessionId: sidecar.session_id
-      };
-    }
-  } catch {
-  }
-  return snapshot;
-}
-function resolveSidecarCostDiff(input) {
-  const { sidecar, baselineSessionId, costBaselineUsd } = input;
-  if (!sidecar) {
-    return void 0;
-  }
-  if (typeof costBaselineUsd !== "number" || !Number.isFinite(costBaselineUsd)) {
-    return void 0;
-  }
-  if (baselineSessionId !== void 0 && sidecar.session_id !== baselineSessionId) {
-    return void 0;
-  }
-  const diff = sidecar.cost_usd - costBaselineUsd;
-  const clamped = diff > 0 ? diff : 0;
-  return Math.round(clamped * 1e6) / 1e6;
-}
-function toNumericToken(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
-}
-function extractUsage(record) {
-  const message = record.message;
-  if (message && typeof message === "object" && !Array.isArray(message)) {
-    const usage2 = message.usage;
-    if (usage2 && typeof usage2 === "object" && !Array.isArray(usage2)) {
-      return usage2;
-    }
-  }
-  const usage = record.usage;
-  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
-    return usage;
-  }
-  return void 0;
-}
-function parseTranscriptUsageTotals(input) {
-  const afterMs = input.afterIso ? Date.parse(input.afterIso) : Number.NaN;
-  const hasAfter = Number.isFinite(afterMs);
-  let inputTokens = 0;
-  let cacheCreationTokens = 0;
-  let cacheReadTokens = 0;
-  let outputTokens = 0;
-  let turns = 0;
-  for (const line of input.contents.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-    let entry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      continue;
-    }
-    const record = entry;
-    if (hasAfter) {
-      const timestamp = record.timestamp;
-      if (typeof timestamp !== "string") {
-        continue;
-      }
-      const timestampMs = Date.parse(timestamp);
-      if (!Number.isFinite(timestampMs) || timestampMs <= afterMs) {
-        continue;
-      }
-    }
-    const usage = extractUsage(record);
-    if (!usage) {
-      continue;
-    }
-    const inputForTurn = toNumericToken(usage.input_tokens);
-    const cacheCreationForTurn = toNumericToken(usage.cache_creation_input_tokens);
-    const cacheReadForTurn = toNumericToken(usage.cache_read_input_tokens);
-    const outputForTurn = toNumericToken(usage.output_tokens);
-    if (inputForTurn === 0 && cacheCreationForTurn === 0 && cacheReadForTurn === 0 && outputForTurn === 0) {
-      continue;
-    }
-    inputTokens += inputForTurn;
-    cacheCreationTokens += cacheCreationForTurn;
-    cacheReadTokens += cacheReadForTurn;
-    outputTokens += outputForTurn;
-    turns += 1;
-  }
-  return { inputTokens, cacheCreationTokens, cacheReadTokens, outputTokens, turns };
-}
-function locateSessionTranscript(input) {
-  const fs = input.fs ?? nodeFs;
-  let names;
-  try {
-    names = fs.readdirSync(input.dir);
-  } catch {
-    return void 0;
-  }
-  let best;
-  let bestMtime = Number.NEGATIVE_INFINITY;
-  for (const name of names) {
-    if (!name.endsWith(".jsonl")) {
-      continue;
-    }
-    const full = path.join(input.dir, name);
-    let mtime;
-    try {
-      mtime = fs.statSync(full).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (mtime > bestMtime) {
-      bestMtime = mtime;
-      best = full;
-    }
-  }
-  return best;
-}
-function computeTranscriptCostUsd(input) {
-  const totals = parseTranscriptUsageTotals({
-    contents: input.contents,
-    ...input.afterIso ? { afterIso: input.afterIso } : {}
-  });
-  if (totals.turns === 0) {
-    return void 0;
-  }
-  return computeActualCostUsd({
-    model: input.model,
-    inputTokens: totals.inputTokens,
-    outputTokens: totals.outputTokens,
-    cacheCreationTokens: totals.cacheCreationTokens,
-    cacheReadTokens: totals.cacheReadTokens
-  });
-}
-function resolveActualCostUsd(input) {
-  if (typeof input.explicitActualCostUsd === "number" && Number.isFinite(input.explicitActualCostUsd)) {
-    return input.explicitActualCostUsd;
-  }
-  if (input.inputTokens !== void 0 && input.outputTokens !== void 0) {
-    const fromTokens = computeActualCostUsd({
-      model: input.model,
-      inputTokens: input.inputTokens,
-      outputTokens: input.outputTokens
-    });
-    if (fromTokens !== void 0) {
-      return fromTokens;
-    }
-  }
-  const routeContext = input.routeContext;
-  if (routeContext && typeof routeContext.costBaselineUsd === "number") {
-    try {
-      const configDir = claudeConfigDirFrom(input);
-      const sidecar = readSessionCostSidecar(
-        sessionCostSidecarPath(configDir),
-        input.fs ?? nodeFs
-      );
-      const diff = resolveSidecarCostDiff({
-        sidecar,
-        baselineSessionId: routeContext.sessionId,
-        costBaselineUsd: routeContext.costBaselineUsd
-      });
-      if (diff !== void 0) {
-        return diff;
-      }
-    } catch {
-    }
-  }
-  if (routeContext?.baselineAt) {
-    try {
-      const configDir = claudeConfigDirFrom(input);
-      const dir = routeContext.projectDirKey ? path.join(configDir, "projects", routeContext.projectDirKey) : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
-      const transcriptPath = locateSessionTranscript({
-        dir,
-        ...input.fs ? { fs: input.fs } : {}
-      });
-      if (transcriptPath) {
-        const contents = (input.fs ?? nodeFs).readFileSync(transcriptPath);
-        const cost = computeTranscriptCostUsd({
-          contents,
-          model: input.model,
-          afterIso: routeContext.baselineAt
-        });
-        if (cost !== void 0) {
-          return cost;
-        }
-      }
-    } catch {
-    }
-  }
-  return void 0;
-}
-
-// ../core/src/plugin-commands/commands.ts
-import { rm as rm4 } from "node:fs/promises";
-
-// ../core/src/plugin-commands/harness-profile.ts
-function toModelSelection(model) {
-  return {
-    id: model.id,
-    provider: model.provider,
-    capabilities: model.capabilities
-  };
-}
-function buildDefaultRecommendation(profile, model, registry = profile.modelCatalog.registry) {
-  const allowedProviders = profile.modelCatalog.allowedProviders;
-  return {
-    model: toModelSelection(model),
-    reason: profile.defaultRecommendationReason,
-    alternatives: registry.listAvailable().filter(
-      (candidate) => allowedProviders?.includes(candidate.provider) ?? true
-    ).filter((candidate) => candidate.id !== model.id).map((candidate) => ({
-      model: toModelSelection(candidate)
-    }))
-  };
-}
-function buildPayloadPreview(payload) {
-  return {
-    summary: `Task ${payload.task.id} (model: ${payload.model.id})`,
-    promptPreview: payload.prompt,
-    redactionCount: payload.redactions.length
-  };
-}
-function displayTaskRecommendation(recommendation) {
-  const lines = [
-    `Recommended model: ${recommendation.model.id}`,
-    `Provider: ${recommendation.model.provider}`,
-    `Reason: ${recommendation.reason}`
-  ];
-  if (recommendation.confidence !== void 0) {
-    lines.push(`Confidence: ${Math.round(recommendation.confidence * 100)}%`);
-  }
-  if (recommendation.alternatives && recommendation.alternatives.length > 0) {
-    lines.push(
-      `Alternatives: ${recommendation.alternatives.map((entry) => entry.model.id).join(", ")}`
-    );
-    for (const alternative of recommendation.alternatives) {
-      const parts = [alternative.model.id];
-      if (alternative.reason) {
-        parts.push(alternative.reason);
-      }
-      if (alternative.confidence !== void 0) {
-        parts.push(`${Math.round(alternative.confidence * 100)}%`);
-      }
-      lines.push(`- ${parts.join(" - ")}`);
-    }
-  }
-  return {
-    lines,
-    model: recommendation.model.id,
-    provider: recommendation.model.provider
-  };
 }
 
 // ../core/src/plugin-commands/commands.ts
@@ -5383,9 +4114,9 @@ function createClearLocalState(profile) {
     const store = new FsLocalStore(config.dir);
     await store.clear();
     if (profile.getStateFilePath) {
-      await rm4(profile.getStateFilePath(config.dir), { force: true });
+      await rm3(profile.getStateFilePath(config.dir), { force: true });
     }
-    await rm4(config.dir, { recursive: true, force: true });
+    await rm3(config.dir, { recursive: true, force: true });
     return ok({ ok: true });
   };
 }
@@ -5546,6 +4277,1275 @@ function createGetReportingStatus(profile) {
       source: (options?.env ?? process.env).HOKUSAI_OUTCOME_OPT_IN !== void 0 ? "env" : stored?.outcomeSubmissionEnabled !== void 0 ? "stored" : "default"
     });
   };
+}
+
+// ../core/src/doctor.ts
+import { mkdir as mkdir3, rm as rm4, writeFile as writeFile3 } from "node:fs/promises";
+import { join as join3 } from "node:path";
+import { randomUUID } from "node:crypto";
+var DEFAULT_REACHABILITY_PATH = "/api/health";
+var DEFAULT_TIMEOUT_MS2 = 5e3;
+var DEFAULT_NODE_MIN_VERSION = "18.0.0";
+async function runDoctor(input) {
+  const registry = input.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
+  const allowlistSummary = summarizeAllowlist(input.config, registry);
+  const checkedAt = (input.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
+  return {
+    auth: input.config.apiKey ? "configured" : "missing",
+    routingConsent: input.config.routingConsentEnabled,
+    outcomeConsent: input.config.outcomeSubmissionEnabled,
+    apiReachable: await checkReachability(input, checkedAt),
+    allowlistCount: allowlistSummary.validModelIds.length,
+    allowlistValid: allowlistSummary.unknownEntries.length === 0,
+    unknownAllowlistEntries: allowlistSummary.unknownEntries,
+    redactedConfig: redactPluginConfig(input.config),
+    checkedAt
+  };
+}
+function renderDoctorReport(report) {
+  const unknownEntries = report.unknownAllowlistEntries.length > 0 ? report.unknownAllowlistEntries.join(", ") : "none";
+  return [
+    "Hokusai doctor",
+    `checkedAt: ${report.checkedAt}`,
+    `auth: ${report.auth}`,
+    `routingConsent: ${report.routingConsent ? "enabled" : "disabled"}`,
+    `outcomeConsent: ${report.outcomeConsent ? "enabled" : "disabled"}`,
+    `apiReachable: ${report.apiReachable}`,
+    `allowlistCount: ${report.allowlistCount}`,
+    `allowlistValid: ${report.allowlistValid ? "yes" : "no"}`,
+    `unknownAllowlistEntries: ${unknownEntries}`,
+    `apiKey: ${report.redactedConfig.apiKey}`,
+    ...report.redactedConfig.apiKeyFingerprint ? [`apiKeyFingerprint: ${report.redactedConfig.apiKeyFingerprint}`] : [],
+    `apiBaseUrl: ${report.redactedConfig.apiBaseUrl}`
+  ].join("\n");
+}
+function checkNodeRuntime(current, minimum) {
+  const parsedCurrent = parseSemver(current);
+  const parsedMinimum = parseSemver(minimum);
+  if (!parsedCurrent || !parsedMinimum) {
+    return {
+      id: "node-runtime",
+      label: "node-runtime",
+      status: "warn",
+      summary: `Unable to verify Node.js runtime (${current}) against minimum (${minimum}).`,
+      nextAction: `Use Node.js ${minimum} or newer.`
+    };
+  }
+  return compareSemver(parsedCurrent, parsedMinimum) >= 0 ? {
+    id: "node-runtime",
+    label: "node-runtime",
+    status: "pass",
+    summary: `Node.js v${current} meets minimum v${minimum}.`
+  } : {
+    id: "node-runtime",
+    label: "node-runtime",
+    status: "fail",
+    summary: `Node.js v${current} is below minimum v${minimum}.`,
+    nextAction: `Upgrade Node.js to ${minimum} or newer.`
+  };
+}
+function checkApiKey(config) {
+  return config.apiKey?.trim() ? {
+    id: "api-key",
+    label: "api-key",
+    status: "pass",
+    summary: "API key is configured."
+  } : {
+    id: "api-key",
+    label: "api-key",
+    status: "fail",
+    summary: "API key is not configured.",
+    nextAction: "Set HOKUSAI_API_KEY=hk_live_... to enable routing."
+  };
+}
+function checkOutcomeConsent(config) {
+  return config.outcomeSubmissionEnabled ? {
+    id: "outcome-consent",
+    label: "outcome-consent",
+    status: "pass",
+    summary: "Outcome submission consent is enabled."
+  } : {
+    id: "outcome-consent",
+    label: "outcome-consent",
+    status: "warn",
+    summary: "Outcome submission consent is not enabled.",
+    nextAction: 'Run "hokusai-privacy reporting on" to opt into outcome submission persistently, or set HOKUSAI_OUTCOME_OPT_IN=1 for the current shell only.'
+  };
+}
+function checkModelAllowlist(config, registry) {
+  const summary = summarizeAllowlist(config, registry);
+  const validCount = summary.validModelIds.length;
+  if (validCount > 0) {
+    return {
+      id: "model-allowlist",
+      label: "model-allowlist",
+      status: "pass",
+      summary: `${validCount} Anthropic model${validCount === 1 ? "" : "s"} configured in allowlist.`
+    };
+  }
+  return {
+    id: "model-allowlist",
+    label: "model-allowlist",
+    status: "fail",
+    summary: summary.unknownEntries.length > 0 ? `No valid Anthropic models found in allowlist: ${summary.unknownEntries.join(", ")}.` : "No Anthropic models configured in allowlist.",
+    nextAction: "Configure at least one supported Anthropic model in the Hokusai allowlist."
+  };
+}
+async function checkDryRunRoute(config, registry, options) {
+  if (!config.apiKey?.trim()) {
+    return {
+      id: "dry-run-route",
+      label: "dry-run-route",
+      status: "skipped",
+      summary: "Skipped dry-run route because API key is not configured.",
+      nextAction: "Configure HOKUSAI_API_KEY, then rerun the doctor."
+    };
+  }
+  const allowlistSummary = summarizeAllowlist(config, registry);
+  const modelId = allowlistSummary.validModelIds[0];
+  const model = modelId ? registry.get(modelId) : void 0;
+  if (!model) {
+    return {
+      id: "dry-run-route",
+      label: "dry-run-route",
+      status: "fail",
+      summary: "Dry-run route failed because no supported model is configured.",
+      nextAction: "Configure at least one supported model in the Hokusai allowlist."
+    };
+  }
+  const checkedAt = (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
+  const client = options?.client ?? new HokusaiClient({
+    apiKey: config.apiKey,
+    baseUrl: config.apiBaseUrl,
+    transport: () => Promise.reject(
+      new Error("dry-run route must not use network transport")
+    )
+  });
+  try {
+    await client.route(
+      {
+        task: {
+          id: "hokusai-doctor-dry-run",
+          prompt: "Hokusai doctor dry-run route verification."
+        },
+        prompt: "Hokusai doctor dry-run route verification.",
+        consent: {
+          subjectId: "hokusai-doctor",
+          grantedScopes: ["task-execution"]
+        },
+        model: {
+          id: model.id,
+          provider: model.provider,
+          capabilities: [...model.capabilities]
+        },
+        correlation: {
+          taskId: "hokusai-doctor-dry-run",
+          correlationId: `hokusai-doctor-dry-run:${checkedAt}`,
+          createdAt: checkedAt
+        },
+        redactions: [],
+        createdAt: checkedAt
+      },
+      { dryRun: true, requestId: checkedAt }
+    );
+    return {
+      id: "dry-run-route",
+      label: "dry-run-route",
+      status: "pass",
+      summary: "Dry-run route payload validated successfully."
+    };
+  } catch (error) {
+    return {
+      id: "dry-run-route",
+      label: "dry-run-route",
+      status: "fail",
+      summary: `Dry-run route failed (${sanitizeDryRunError(error)}).`,
+      nextAction: "Fix the routing configuration and rerun the doctor before sending tasks."
+    };
+  }
+}
+async function checkStateDirWritable(stateDir, probe) {
+  try {
+    await probe(stateDir);
+    return {
+      id: "state-dir-writable",
+      label: "state-dir-writable",
+      status: "pass",
+      summary: "State directory is writable."
+    };
+  } catch (error) {
+    return {
+      id: "state-dir-writable",
+      label: "state-dir-writable",
+      status: "fail",
+      summary: `State directory is not writable (${sanitizeStateDirError(error, stateDir)}).`,
+      nextAction: "Ensure the Hokusai state directory exists and is writable by the current user."
+    };
+  }
+}
+async function checkApiReachability(config, transport, options) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => controller.abort(),
+    options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
+  );
+  const path4 = options?.path ?? DEFAULT_REACHABILITY_PATH;
+  const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
+  const isDefaultHealthProbe = path4 === DEFAULT_REACHABILITY_PATH;
+  const headers = {
+    "X-Request-ID": requestId,
+    "X-Hokusai-Request-Id": requestId
+  };
+  if (!isDefaultHealthProbe) {
+    headers.Authorization = `Bearer ${config.apiKey ?? ""}`;
+  }
+  try {
+    const response = await transport(
+      buildReachabilityUrl(
+        config.apiBaseUrl,
+        path4
+      ),
+      {
+        method: "GET",
+        headers,
+        signal: controller.signal
+      }
+    );
+    if (response.status >= 200 && response.status < 300) {
+      return {
+        id: "api-reachability",
+        label: "api-reachability",
+        status: "pass",
+        summary: `API reachability check succeeded (HTTP ${response.status}).`
+      };
+    }
+    if (response.status === 401 || response.status === 403) {
+      if (isDefaultHealthProbe) {
+        return {
+          id: "api-reachability",
+          label: "api-reachability",
+          status: "pass",
+          summary: `API reachability check reached an auth-protected health endpoint (HTTP ${response.status}).`
+        };
+      }
+      return {
+        id: "api-reachability",
+        label: "api-reachability",
+        status: "fail",
+        summary: `API reachability check failed with auth error (HTTP ${response.status}).`,
+        nextAction: "Verify HOKUSAI_API_KEY and retry the doctor in network mode."
+      };
+    }
+    return {
+      id: "api-reachability",
+      label: "api-reachability",
+      status: "fail",
+      summary: `API reachability check failed (HTTP ${response.status}).`,
+      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.name === "AbortError" ? "timeout" : error.name : "network-error";
+    return {
+      id: "api-reachability",
+      label: "api-reachability",
+      status: "fail",
+      summary: `API reachability check failed (${reason}).`,
+      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
+    };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+async function checkApiKeyAccepted(config, transport, options) {
+  const id = "api-key-accepted";
+  const apiKey = config.apiKey?.trim();
+  if (!apiKey) {
+    return {
+      id,
+      label: id,
+      status: "skipped",
+      summary: "No API key configured, so it cannot be verified.",
+      nextAction: "Set HOKUSAI_API_KEY, then re-run the doctor."
+    };
+  }
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => controller.abort(),
+    options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
+  );
+  const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
+  const modelId = options?.routeModelId ?? DEFAULT_ROUTER_MODEL_ID;
+  try {
+    const response = await transport(
+      buildReachabilityUrl(
+        config.apiBaseUrl,
+        `/api/v1/models/${modelId}/predict`
+      ),
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "X-Request-ID": requestId,
+          "X-Hokusai-Request-Id": requestId
+        },
+        signal: controller.signal
+      }
+    );
+    if (response.status === 401 || response.status === 403) {
+      return {
+        id,
+        label: id,
+        status: "fail",
+        summary: `Hokusai rejected the API key (HTTP ${response.status}): it is invalid or expired.`,
+        nextAction: "Generate a new key at hokus.ai and set HOKUSAI_API_KEY to it. A stale key in your shell or .env is the usual cause."
+      };
+    }
+    if (response.status >= 500) {
+      return {
+        id,
+        label: id,
+        status: "warn",
+        summary: `Could not verify the API key: Hokusai returned HTTP ${response.status}.`,
+        nextAction: "Retry the doctor once the Hokusai API recovers."
+      };
+    }
+    return {
+      id,
+      label: id,
+      status: "pass",
+      summary: "API key was accepted by the Hokusai API."
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.name === "AbortError" ? "timeout" : error.name : "network-error";
+    return {
+      id,
+      label: id,
+      status: "warn",
+      summary: `Could not verify the API key (${reason}).`,
+      nextAction: "Confirm network access to the Hokusai API and retry in network mode."
+    };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+async function runPluginDoctor(input) {
+  const registry = input.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
+  const checkedAt = (input.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString();
+  const mode = input.mode ?? (input.config.apiKey?.trim() ? "network" : "offline");
+  const checks = [
+    checkNodeRuntime(
+      input.nodeVersion ?? process.versions.node,
+      input.nodeMinVersion ?? DEFAULT_NODE_MIN_VERSION
+    ),
+    checkApiKey(input.config),
+    checkOutcomeConsent(input.config),
+    checkModelAllowlist(input.config, registry),
+    await checkDryRunRoute(input.config, registry, {
+      ...input.routeDryRunClient ? { client: input.routeDryRunClient } : {},
+      ...input.clock ? { clock: input.clock } : {}
+    }),
+    await checkStateDirWritable(
+      input.stateDir ?? ".",
+      input.storageProber ?? probeStateDirWritable
+    )
+  ];
+  if (mode === "network" && input.transport) {
+    const reachabilityOptions = { requestId: checkedAt };
+    if (input.reachabilityPath !== void 0) {
+      reachabilityOptions.path = input.reachabilityPath;
+    }
+    if (input.reachabilityTimeoutMs !== void 0) {
+      reachabilityOptions.timeoutMs = input.reachabilityTimeoutMs;
+    }
+    checks.push(
+      await checkApiReachability(
+        input.config,
+        input.transport,
+        reachabilityOptions
+      )
+    );
+    checks.push(
+      await checkApiKeyAccepted(input.config, input.transport, {
+        requestId: checkedAt,
+        ...input.reachabilityTimeoutMs !== void 0 ? { timeoutMs: input.reachabilityTimeoutMs } : {}
+      })
+    );
+  } else {
+    checks.push({
+      id: "api-reachability",
+      label: "api-reachability",
+      status: "skipped",
+      summary: "Skipped API reachability check (offline mode).",
+      ...mode === "network" && !input.transport ? {
+        nextAction: "Provide a network transport to run the API reachability check."
+      } : {}
+    });
+    checks.push({
+      id: "api-key-accepted",
+      label: "api-key-accepted",
+      status: "skipped",
+      summary: "Skipped API key verification (offline mode)."
+    });
+  }
+  return {
+    checks,
+    ok: checks.every((check) => check.status !== "fail"),
+    mode,
+    checkedAt
+  };
+}
+async function checkReachability(input, requestId) {
+  if (!input.config.apiKey || !input.transport) {
+    return "skipped";
+  }
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => controller.abort(),
+    input.reachabilityTimeoutMs ?? DEFAULT_TIMEOUT_MS2
+  );
+  try {
+    const response = await input.transport(
+      buildReachabilityUrl(
+        input.config.apiBaseUrl,
+        input.reachabilityPath ?? DEFAULT_REACHABILITY_PATH
+      ),
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${input.config.apiKey}`,
+          "X-Request-ID": requestId,
+          "X-Hokusai-Request-Id": requestId
+        },
+        signal: controller.signal
+      }
+    );
+    return mapReachabilityStatus(response);
+  } catch {
+    return "unreachable";
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+function buildReachabilityUrl(baseUrl, path4) {
+  const normalizedBase = new URL(baseUrl);
+  if (!normalizedBase.pathname.endsWith("/")) {
+    normalizedBase.pathname = `${normalizedBase.pathname}/`;
+  }
+  return new URL(path4.replace(/^\/+/, ""), normalizedBase).toString();
+}
+function mapReachabilityStatus(response) {
+  if (response.status === 401 || response.status === 403) {
+    return "unauthorized";
+  }
+  if (response.status >= 200 && response.status < 300) {
+    return "ok";
+  }
+  return "unreachable";
+}
+function parseSemver(value) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
+  if (!match) {
+    return void 0;
+  }
+  return [
+    Number.parseInt(match[1] ?? "", 10),
+    Number.parseInt(match[2] ?? "", 10),
+    Number.parseInt(match[3] ?? "", 10)
+  ];
+}
+function compareSemver(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
+}
+async function probeStateDirWritable(dir) {
+  const probePath = join3(dir, `.hokusai-doctor-${randomUUID()}.tmp`);
+  await mkdir3(dir, { recursive: true });
+  try {
+    await writeFile3(probePath, "ok", "utf8");
+  } finally {
+    await rm4(probePath, { force: true }).catch(() => void 0);
+  }
+}
+function sanitizeStateDirError(error, stateDir) {
+  const raw = error instanceof Error ? error.message || error.name : typeof error === "string" ? error : "unknown error";
+  const escapedStateDir = escapeRegExp2(stateDir);
+  const withoutStateDir = raw.replace(
+    new RegExp(escapedStateDir, "g"),
+    "<state-dir>"
+  );
+  const withoutAbsolutePaths = withoutStateDir.replace(
+    /(?:[A-Za-z]:)?\/[^\s:'"]+/g,
+    "<path>"
+  );
+  return withoutAbsolutePaths.trim() || "unknown error";
+}
+function sanitizeDryRunError(error) {
+  const raw = error instanceof Error ? error.message || error.name : typeof error === "string" ? error : "unknown error";
+  return raw.replace(/hk_[A-Za-z0-9_/-]+/g, "<api-key>");
+}
+function escapeRegExp2(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ../core/src/task-packet.ts
+var TASK_FAMILIES = [
+  "bugfix",
+  "feature",
+  "migration",
+  "refactor",
+  "test",
+  "docs",
+  "infra",
+  "mixed",
+  "chore",
+  "investigation"
+];
+var REASONING_DEPTHS = ["shallow", "standard", "deep"];
+var REPOSITORY_SCALES = ["small", "medium", "large", "xlarge"];
+var TASK_PACKET_SCHEMA_VERSION = "1.1.0";
+var TASK_PACKET_KEYS = [
+  "schemaVersion",
+  "userIntent",
+  "taskFamily",
+  "reasoningDepth",
+  "repositoryScale",
+  "languageSignals",
+  "frameworkSignals",
+  "availableTools",
+  "constraints",
+  "modelConstraints",
+  "providerConstraints"
+];
+var ARRAY_FIELDS = [
+  "languageSignals",
+  "frameworkSignals",
+  "availableTools",
+  "constraints",
+  "modelConstraints",
+  "providerConstraints"
+];
+var TASK_PACKET_KEY_SET = new Set(TASK_PACKET_KEYS);
+var TaskPacketBuildError = class extends Error {
+  errors;
+  constructor(message, errors) {
+    super(message);
+    this.name = "TaskPacketBuildError";
+    this.errors = errors;
+  }
+};
+function validateTaskPacket(input) {
+  const errors = [];
+  if (!isPlainObject2(input)) {
+    return {
+      ok: false,
+      errors: [{ path: "", message: "Task packet must be a non-null object." }]
+    };
+  }
+  const packet = input;
+  for (const key of Object.keys(packet)) {
+    if (!TASK_PACKET_KEY_SET.has(key)) {
+      errors.push({
+        path: key,
+        message: `Unknown field "${key}" is not allowed in task packets.`
+      });
+    }
+  }
+  validateLiteralString2(
+    packet.schemaVersion,
+    "schemaVersion",
+    TASK_PACKET_SCHEMA_VERSION,
+    errors
+  );
+  validateNonEmptyString3(packet.userIntent, "userIntent", errors);
+  validateEnum2(packet.taskFamily, "taskFamily", TASK_FAMILIES, errors);
+  validateEnum2(packet.reasoningDepth, "reasoningDepth", REASONING_DEPTHS, errors);
+  if (packet.repositoryScale !== void 0) {
+    validateEnum2(
+      packet.repositoryScale,
+      "repositoryScale",
+      REPOSITORY_SCALES,
+      errors
+    );
+  }
+  for (const field of ARRAY_FIELDS) {
+    const value = packet[field];
+    if (value !== void 0) {
+      validateStringArray(value, field, errors);
+    }
+  }
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  const validatedPacket = {
+    schemaVersion: TASK_PACKET_SCHEMA_VERSION,
+    userIntent: packet.userIntent,
+    taskFamily: packet.taskFamily,
+    reasoningDepth: packet.reasoningDepth
+  };
+  if (packet.repositoryScale !== void 0) {
+    validatedPacket.repositoryScale = packet.repositoryScale;
+  }
+  for (const field of ARRAY_FIELDS) {
+    const value = packet[field];
+    if (value !== void 0) {
+      validatedPacket[field] = [...value];
+    }
+  }
+  return { ok: true, packet: validatedPacket };
+}
+function buildTaskPacket(context) {
+  const candidate = {
+    schemaVersion: TASK_PACKET_SCHEMA_VERSION,
+    userIntent: context?.userIntent,
+    taskFamily: context?.taskFamily,
+    reasoningDepth: context?.reasoningDepth ?? "standard",
+    repositoryScale: context?.repositoryScale
+  };
+  for (const field of ARRAY_FIELDS) {
+    const value = context?.[field];
+    if (value !== void 0) {
+      candidate[field] = value;
+    }
+  }
+  const result = validateTaskPacket(candidate);
+  if (!result.ok) {
+    throw new TaskPacketBuildError(
+      formatBuildErrorMessage2(result.errors),
+      result.errors
+    );
+  }
+  return result.packet;
+}
+function validateLiteralString2(value, path4, expected, errors) {
+  if (typeof value !== "string" || value.length === 0) {
+    errors.push({
+      path: path4,
+      message: `Expected "${path4}" to be "${expected}".`
+    });
+    return;
+  }
+  if (value !== expected) {
+    errors.push({
+      path: path4,
+      message: `Unsupported schema version "${value}". Expected "${expected}".`
+    });
+  }
+}
+function validateNonEmptyString3(value, path4, errors) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    errors.push({
+      path: path4,
+      message: `"${path4}" must be a non-empty string.`
+    });
+  }
+}
+function validateEnum2(value, path4, allowedValues, errors) {
+  if (typeof value !== "string" || !allowedValues.includes(value)) {
+    errors.push({
+      path: path4,
+      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
+    });
+  }
+}
+function validateStringArray(value, path4, errors) {
+  if (!Array.isArray(value)) {
+    errors.push({
+      path: path4,
+      message: `"${path4}" must be an array of strings.`
+    });
+    return;
+  }
+  const entries = value;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (typeof entry !== "string" || entry.trim().length === 0) {
+      errors.push({
+        path: `${path4}[${index}]`,
+        message: `"${path4}" entries must be non-empty strings.`
+      });
+    }
+  }
+}
+function formatBuildErrorMessage2(errors) {
+  const formatted = errors.map((error) => `${error.path}: ${error.message}`).join("; ");
+  return `Failed to build task packet: ${formatted}`;
+}
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// ../core/src/task-signals.ts
+var LANGUAGE_BY_EXTENSION = {
+  c: "C",
+  cc: "C++",
+  cpp: "C++",
+  cs: "C#",
+  css: "CSS",
+  go: "Go",
+  h: "C/C++ Headers",
+  hpp: "C/C++ Headers",
+  html: "HTML",
+  java: "Java",
+  js: "JavaScript",
+  jsx: "JavaScript",
+  kt: "Kotlin",
+  kts: "Kotlin",
+  md: "Markdown",
+  mjs: "JavaScript",
+  php: "PHP",
+  py: "Python",
+  rb: "Ruby",
+  rs: "Rust",
+  sh: "Shell",
+  sql: "SQL",
+  swift: "Swift",
+  ts: "TypeScript",
+  tsx: "TypeScript",
+  yaml: "YAML",
+  yml: "YAML"
+};
+var FAMILY_KEYWORDS = [
+  {
+    family: "migration",
+    patterns: [/\bmigrat(?:e|ion|ing)\b/i, /\balembic\b/i, /\bbackfill\b/i]
+  },
+  {
+    family: "infra",
+    patterns: [/\binfra(?:structure)?\b/i, /\bci\b/i, /\bdeploy(?:ment)?\b/i, /\bterraform\b/i]
+  },
+  {
+    family: "docs",
+    patterns: [/\bdocs?\b/i, /\breadme\b/i, /\bdocumentation\b/i]
+  },
+  {
+    family: "test",
+    patterns: [/\btests?\b/i, /\bvitest\b/i, /\bjest\b/i, /\bcypress\b/i]
+  },
+  {
+    family: "refactor",
+    patterns: [/\brefactor\b/i, /\brename\b/i, /\brestructure\b/i, /\bcleanup\b/i]
+  },
+  {
+    family: "feature",
+    patterns: [/\bfeature\b/i, /\bimplement\b/i, /\badd support\b/i, /\bsupport\b/i, /\benable\b/i]
+  },
+  {
+    family: "bug",
+    patterns: [
+      /\bbug\b/i,
+      /\bregression\b/i,
+      /\bbroken\b/i,
+      /\bfailing\b/i,
+      /\bfix(?:e[sd])?\b.{0,24}\b(?:bug|regression|failure|crash|timeout)\b/i
+    ]
+  }
+];
+var INVESTIGATION_PATTERNS = [/\binvestigat(?:e|ion)\b/i, /\banaly[sz]e\b/i, /\bdebug\b/i];
+var DEEP_REASONING_PATTERNS = [
+  /\binvestigat(?:e|ion)\b/i,
+  /\banaly[sz]e\b/i,
+  /\bdeep(?:ly)?\b/i,
+  /\broot cause\b/i,
+  /\bcompare\b/i
+];
+function normalizeText(text) {
+  return text.trim().toLowerCase();
+}
+function classifyTaskFamily(input) {
+  const haystack = [input.text, ...input.hints ?? []].join("\n");
+  const matches = /* @__PURE__ */ new Set();
+  for (const entry of FAMILY_KEYWORDS) {
+    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
+      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
+    }
+  }
+  if (matches.size > 1) {
+    return "mixed";
+  }
+  if (matches.size === 1) {
+    return [...matches][0];
+  }
+  if (INVESTIGATION_PATTERNS.some((pattern) => pattern.test(haystack))) {
+    return "investigation";
+  }
+  return "chore";
+}
+function inferReasoningDepth(input) {
+  if (input.reasoningDepth) {
+    return input.reasoningDepth;
+  }
+  const normalized = normalizeText(input.text);
+  if (normalized.length > 0 && normalized.length < 40) {
+    return "shallow";
+  }
+  if (DEEP_REASONING_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return "deep";
+  }
+  return "standard";
+}
+function bucketRepositoryScale(fileCount) {
+  if (typeof fileCount !== "number" || !Number.isFinite(fileCount) || fileCount < 0) {
+    return void 0;
+  }
+  if (fileCount < 100) {
+    return "small";
+  }
+  if (fileCount < 1e3) {
+    return "medium";
+  }
+  if (fileCount < 1e4) {
+    return "large";
+  }
+  return "xlarge";
+}
+function summarizeLanguageSignals(extensionCounts) {
+  const languages = /* @__PURE__ */ new Set();
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== "number" || count <= 0) {
+      continue;
+    }
+    const normalized = extension.replace(/^\./, "").toLowerCase();
+    const language = LANGUAGE_BY_EXTENSION[normalized];
+    if (language) {
+      languages.add(language);
+    }
+  }
+  return [...languages].sort((left, right) => left.localeCompare(right));
+}
+function summarizeFrameworkSignals(dependencyCategories) {
+  return [...new Set(dependencyCategories.map((entry) => entry.trim()).filter(Boolean))].sort(
+    (left, right) => left.localeCompare(right)
+  );
+}
+
+// ../core/src/task-descriptor.ts
+var REASONING_DEPTH_COMPLEXITY = {
+  shallow: 3,
+  standard: 5,
+  deep: 8
+};
+var COMPLEXITY_ALIASES = {
+  low: 3,
+  small: 3,
+  medium: 5,
+  moderate: 5,
+  high: 8,
+  large: 8,
+  very_high: 10,
+  ...REASONING_DEPTH_COMPLEXITY
+};
+function normalizeComplexity2(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : void 0;
+  }
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return void 0;
+  }
+  const alias = COMPLEXITY_ALIASES[normalized];
+  if (alias !== void 0) {
+    return alias;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+var HOKUSAI_LANGUAGE_BY_LABEL = {
+  python: "python",
+  typescript: "typescript",
+  javascript: "javascript",
+  go: "go",
+  rust: "rust",
+  java: "java",
+  shell: "bash",
+  bash: "bash"
+};
+function normalizeHokusaiLanguage(label) {
+  if (typeof label !== "string") {
+    return "unknown";
+  }
+  return HOKUSAI_LANGUAGE_BY_LABEL[label.trim().toLowerCase()] ?? "unknown";
+}
+var TASK_FAMILY_TO_HOKUSAI_TYPE = {
+  bugfix: "bugfix",
+  feature: "feature",
+  migration: "migration",
+  refactor: "refactor",
+  test: "tests",
+  docs: "docs",
+  infra: "infra",
+  chore: "infra",
+  mixed: "unknown",
+  investigation: "unknown"
+};
+function dominantLanguage(extensionCounts) {
+  let bestExtension;
+  let bestCount = 0;
+  for (const [extension, count] of Object.entries(extensionCounts)) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
+      continue;
+    }
+    if (count > bestCount || count === bestCount && (bestExtension === void 0 || extension < bestExtension)) {
+      bestExtension = extension;
+      bestCount = count;
+    }
+  }
+  if (bestExtension === void 0) {
+    return void 0;
+  }
+  return summarizeLanguageSignals({ [bestExtension]: bestCount })[0];
+}
+function deriveTaskDescriptor(input) {
+  const derived = {};
+  const taskText = input.taskText?.trim();
+  if (taskText && taskText.length > 0) {
+    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity = REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
+  }
+  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  if (repoSizeBucket) {
+    derived.repo_size_bucket = repoSizeBucket;
+  }
+  const extensionCounts = input.repositorySignals?.extensionCounts;
+  if (extensionCounts) {
+    const dominant = dominantLanguage(extensionCounts);
+    if (dominant) {
+      derived.language = normalizeHokusaiLanguage(dominant);
+    }
+  }
+  return derived;
+}
+
+// ../core/src/pricing.ts
+var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
+var CACHE_READ_INPUT_MULTIPLIER = 0.1;
+var ANTHROPIC_MODEL_PRICING = {
+  "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
+  "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-opus-4-7": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-opus-4-6": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-sonnet-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
+};
+var DATE_SUFFIX = /-\d{8}$/;
+function resolveModelPrice(model) {
+  if (typeof model !== "string") {
+    return void 0;
+  }
+  const normalized = model.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return void 0;
+  }
+  return ANTHROPIC_MODEL_PRICING[normalized] ?? ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, "")];
+}
+function nonNegativeOrNull(value) {
+  if (value === void 0) {
+    return 0;
+  }
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+function computeActualCostUsd(input) {
+  const price = resolveModelPrice(input.model);
+  if (!price) {
+    return void 0;
+  }
+  const inputTokens = nonNegativeOrNull(input.inputTokens);
+  const outputTokens = nonNegativeOrNull(input.outputTokens);
+  const cacheCreationTokens = nonNegativeOrNull(input.cacheCreationTokens);
+  const cacheReadTokens = nonNegativeOrNull(input.cacheReadTokens);
+  if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
+    return void 0;
+  }
+  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
+  return Math.round(cost * 1e6) / 1e6;
+}
+
+// ../core/src/session-usage.ts
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+var nodeFs = {
+  readFileSync: (filePath) => readFileSync(filePath, "utf8"),
+  readdirSync: (dirPath) => readdirSync(dirPath),
+  statSync: (filePath) => ({ mtimeMs: statSync(filePath).mtimeMs })
+};
+var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
+function encodeProjectDirKey(cwd) {
+  return cwd.replace(/[^a-zA-Z0-9]/g, "-");
+}
+function resolveClaudeConfigDir(input) {
+  const env = input?.env ?? process.env;
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  if (override) {
+    return override;
+  }
+  return path.join(input?.homedir ?? os.homedir(), ".claude");
+}
+function sessionCostSidecarPath(claudeConfigDir) {
+  return path.join(claudeConfigDir, "hokusai", "session-cost.json");
+}
+function sessionTranscriptDir(claudeConfigDir, cwd) {
+  return path.join(claudeConfigDir, "projects", encodeProjectDirKey(cwd));
+}
+function claudeConfigDirFrom(input) {
+  return resolveClaudeConfigDir({
+    ...input.env ? { env: input.env } : {},
+    ...input.homedir ? { homedir: input.homedir } : {}
+  });
+}
+function readSessionCostSidecar(sidecarPath, fs = nodeFs) {
+  let raw;
+  try {
+    raw = fs.readFileSync(sidecarPath);
+  } catch {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return void 0;
+    }
+    const record = parsed;
+    const sessionId = record.session_id;
+    const cost = record.cost_usd;
+    if (typeof sessionId !== "string" || sessionId.length === 0) {
+      return void 0;
+    }
+    if (typeof cost !== "number" || !Number.isFinite(cost)) {
+      return void 0;
+    }
+    return {
+      session_id: sessionId,
+      cost_usd: cost,
+      ...typeof record.updated_at === "string" ? { updated_at: record.updated_at } : {},
+      ...typeof record.input_tokens === "number" && Number.isFinite(record.input_tokens) ? { input_tokens: record.input_tokens } : {},
+      ...typeof record.output_tokens === "number" && Number.isFinite(record.output_tokens) ? { output_tokens: record.output_tokens } : {}
+    };
+  } catch {
+    return void 0;
+  }
+}
+function isSidecarFresh(sidecar, nowIso, freshnessMs) {
+  if (!sidecar.updated_at) {
+    return true;
+  }
+  const updated = Date.parse(sidecar.updated_at);
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(updated) || !Number.isFinite(now)) {
+    return true;
+  }
+  return Math.abs(now - updated) <= freshnessMs;
+}
+function captureCostBaseline(input) {
+  const snapshot = {
+    baselineAt: input.nowIso,
+    projectDirKey: encodeProjectDirKey(input.cwd)
+  };
+  try {
+    const configDir = claudeConfigDirFrom(input);
+    const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
+    if (sidecar && isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)) {
+      return {
+        ...snapshot,
+        costBaselineUsd: sidecar.cost_usd,
+        sessionId: sidecar.session_id
+      };
+    }
+  } catch {
+  }
+  return snapshot;
+}
+function resolveSidecarCostDiff(input) {
+  const { sidecar, baselineSessionId, costBaselineUsd } = input;
+  if (!sidecar) {
+    return void 0;
+  }
+  if (typeof costBaselineUsd !== "number" || !Number.isFinite(costBaselineUsd)) {
+    return void 0;
+  }
+  if (baselineSessionId !== void 0 && sidecar.session_id !== baselineSessionId) {
+    return void 0;
+  }
+  const diff = sidecar.cost_usd - costBaselineUsd;
+  const clamped = diff > 0 ? diff : 0;
+  return Math.round(clamped * 1e6) / 1e6;
+}
+function toNumericToken(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+function extractUsage(record) {
+  const message = record.message;
+  if (message && typeof message === "object" && !Array.isArray(message)) {
+    const usage2 = message.usage;
+    if (usage2 && typeof usage2 === "object" && !Array.isArray(usage2)) {
+      return usage2;
+    }
+  }
+  const usage = record.usage;
+  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
+    return usage;
+  }
+  return void 0;
+}
+function parseTranscriptUsageTotals(input) {
+  const afterMs = input.afterIso ? Date.parse(input.afterIso) : Number.NaN;
+  const hasAfter = Number.isFinite(afterMs);
+  let inputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
+  let outputTokens = 0;
+  let turns = 0;
+  for (const line of input.contents.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let entry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry;
+    if (hasAfter) {
+      const timestamp = record.timestamp;
+      if (typeof timestamp !== "string") {
+        continue;
+      }
+      const timestampMs = Date.parse(timestamp);
+      if (!Number.isFinite(timestampMs) || timestampMs <= afterMs) {
+        continue;
+      }
+    }
+    const usage = extractUsage(record);
+    if (!usage) {
+      continue;
+    }
+    const inputForTurn = toNumericToken(usage.input_tokens);
+    const cacheCreationForTurn = toNumericToken(usage.cache_creation_input_tokens);
+    const cacheReadForTurn = toNumericToken(usage.cache_read_input_tokens);
+    const outputForTurn = toNumericToken(usage.output_tokens);
+    if (inputForTurn === 0 && cacheCreationForTurn === 0 && cacheReadForTurn === 0 && outputForTurn === 0) {
+      continue;
+    }
+    inputTokens += inputForTurn;
+    cacheCreationTokens += cacheCreationForTurn;
+    cacheReadTokens += cacheReadForTurn;
+    outputTokens += outputForTurn;
+    turns += 1;
+  }
+  return { inputTokens, cacheCreationTokens, cacheReadTokens, outputTokens, turns };
+}
+function locateSessionTranscript(input) {
+  const fs = input.fs ?? nodeFs;
+  let names;
+  try {
+    names = fs.readdirSync(input.dir);
+  } catch {
+    return void 0;
+  }
+  let best;
+  let bestMtime = Number.NEGATIVE_INFINITY;
+  for (const name of names) {
+    if (!name.endsWith(".jsonl")) {
+      continue;
+    }
+    const full = path.join(input.dir, name);
+    let mtime;
+    try {
+      mtime = fs.statSync(full).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (mtime > bestMtime) {
+      bestMtime = mtime;
+      best = full;
+    }
+  }
+  return best;
+}
+function computeTranscriptCostUsd(input) {
+  const totals = parseTranscriptUsageTotals({
+    contents: input.contents,
+    ...input.afterIso ? { afterIso: input.afterIso } : {}
+  });
+  if (totals.turns === 0) {
+    return void 0;
+  }
+  return computeActualCostUsd({
+    model: input.model,
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens,
+    cacheCreationTokens: totals.cacheCreationTokens,
+    cacheReadTokens: totals.cacheReadTokens
+  });
+}
+function resolveActualCostUsd(input) {
+  if (typeof input.explicitActualCostUsd === "number" && Number.isFinite(input.explicitActualCostUsd)) {
+    return input.explicitActualCostUsd;
+  }
+  if (input.inputTokens !== void 0 && input.outputTokens !== void 0) {
+    const fromTokens = computeActualCostUsd({
+      model: input.model,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens
+    });
+    if (fromTokens !== void 0) {
+      return fromTokens;
+    }
+  }
+  const routeContext = input.routeContext;
+  if (routeContext && typeof routeContext.costBaselineUsd === "number") {
+    try {
+      const configDir = claudeConfigDirFrom(input);
+      const sidecar = readSessionCostSidecar(
+        sessionCostSidecarPath(configDir),
+        input.fs ?? nodeFs
+      );
+      const diff = resolveSidecarCostDiff({
+        sidecar,
+        baselineSessionId: routeContext.sessionId,
+        costBaselineUsd: routeContext.costBaselineUsd
+      });
+      if (diff !== void 0) {
+        return diff;
+      }
+    } catch {
+    }
+  }
+  if (routeContext?.baselineAt) {
+    try {
+      const configDir = claudeConfigDirFrom(input);
+      const dir = routeContext.projectDirKey ? path.join(configDir, "projects", routeContext.projectDirKey) : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
+      const transcriptPath = locateSessionTranscript({
+        dir,
+        ...input.fs ? { fs: input.fs } : {}
+      });
+      if (transcriptPath) {
+        const contents = (input.fs ?? nodeFs).readFileSync(transcriptPath);
+        const cost = computeTranscriptCostUsd({
+          contents,
+          model: input.model,
+          afterIso: routeContext.baselineAt
+        });
+        if (cost !== void 0) {
+          return cost;
+        }
+      }
+    } catch {
+    }
+  }
+  return void 0;
 }
 
 // ../core/src/plugin-commands/cli.ts

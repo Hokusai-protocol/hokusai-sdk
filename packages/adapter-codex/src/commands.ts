@@ -5,19 +5,22 @@ import {
   HokusaiNetworkError,
   HokusaiRateLimitError,
   HokusaiValidationError,
+  buildReportContributionRow,
   isConsentGranted,
+  parseRouteContext,
   type AdapterError,
   type AdapterResult,
   type ConsentConfig,
   type ConsentScope,
+  type ContributionAcceptedResponse,
+  type ContributionRequest,
   type HokusaiClient,
   type HokusaiDispatchBuilder,
   type HokusaiDispatchPayload,
   type HokusaiValidationSuccess,
   type LocalStore,
-  type OutcomeReport,
   type OutcomeReportInput,
-  type OutcomeResponse,
+  type RouteContextProjection,
   type RouteResponse,
   type SubmissionAuditEntry,
 } from '@hokusai/core';
@@ -79,6 +82,43 @@ export interface SubmitOutcomeArgs {
   store?: LocalStore;
   auditId: string;
   clock?: () => Date;
+  /** What the run cost. Without it the contribution is telemetry, not training data. */
+  actualCostUsd?: number | undefined;
+  wallClockSeconds?: number | undefined;
+}
+
+/**
+ * The route this outcome belongs to, as persisted at route time. A contribution
+ * row is attributed to its decision through `inference_log_id` and scored on the
+ * models and descriptor the route actually used, so all of it has to be read
+ * back from the store rather than reconstructed.
+ */
+async function loadRoutedTask(
+  store: LocalStore | undefined,
+  correlationId: string,
+): Promise<
+  | { routeContext: RouteContextProjection | undefined; inferenceLogId?: string }
+  | undefined
+> {
+  if (!store) {
+    return undefined;
+  }
+
+  const record =
+    (await store.getCorrelation(correlationId.replace(/[:.]/g, '_'))) ??
+    (await store.listCorrelations()).find(
+      (entry) => entry.metadata?.originalCorrelationId === correlationId,
+    );
+
+  if (!record) {
+    return undefined;
+  }
+
+  const inferenceLogId = record.metadata?.inferenceLogId;
+  return {
+    routeContext: parseRouteContext(record.metadata?.routeContext),
+    ...(inferenceLogId ? { inferenceLogId } : {}),
+  };
 }
 
 export async function requestRecommendation(
@@ -128,7 +168,9 @@ export async function previewRoutePayload(
 export async function submitOutcome(
   args: SubmitOutcomeArgs,
 ): Promise<
-  AdapterResult<OutcomeResponse | HokusaiValidationSuccess<OutcomeReport>>
+  AdapterResult<
+    ContributionAcceptedResponse | HokusaiValidationSuccess<ContributionRequest>
+  >
 > {
   const timestamp = (args.clock ?? (() => new Date()))().getTime();
 
@@ -163,10 +205,44 @@ export async function submitOutcome(
     );
   }
 
+  const report = buildCodexOutcomeReport(args.outcome);
+  const routed = await loadRoutedTask(args.store, args.outcome.correlationId);
+
+  // The legacy /outcomes endpoint patches an inference log and bypasses training
+  // and reward attribution entirely, so an outcome that does not become a
+  // contribution row earns nothing. Build the row before the network call: a
+  // route we cannot attribute should fail loudly, not submit something useless.
+  const rowResult = buildReportContributionRow({
+    report,
+    routeContext: routed?.routeContext,
+    inferenceLogId: routed?.inferenceLogId,
+    harness: 'codex',
+    observedAt: new Date(timestamp).toISOString(),
+    ...(args.actualCostUsd !== undefined
+      ? { actualCostUsd: args.actualCostUsd }
+      : {}),
+    ...(args.wallClockSeconds !== undefined
+      ? { wallClockSeconds: args.wallClockSeconds }
+      : {}),
+  });
+
+  if (!rowResult.ok) {
+    await appendAudit(args.store, {
+      id: args.auditId,
+      kind: 'outcome',
+      correlationId: args.outcome.correlationId,
+      status: 'failed',
+      timestamp,
+      error: rowResult.error.message,
+    });
+    return fail('contribution_unavailable', rowResult.error.message);
+  }
+
   try {
-    const response = await args.client.reportOutcome(
-      buildCodexOutcomeReport(args.outcome),
-    );
+    const response = await args.client.submitContribution({
+      rows: [rowResult.value],
+      metadata: { idempotency_key: args.outcome.correlationId },
+    });
 
     await appendAudit(args.store, {
       id: args.auditId,

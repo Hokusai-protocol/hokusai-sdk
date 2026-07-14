@@ -1,4 +1,10 @@
 export {
+  // Harness-agnostic contribution plumbing. Any harness that routes must persist
+  // the route context and its inference log id, or it cannot later build an
+  // attributable contribution row — which is exactly why Codex could not.
+  buildReportContributionRow,
+  buildRouteContextProjection,
+  parseRouteContext,
   createClearLocalState,
   createClearPrivacyState,
   createDeclineRecommendation,
@@ -82,3 +88,4 @@ export type {
   RoutingDecisionSummary,
   SharedCommandOptions,
 } from './types.js';
+export type { RouteContextProjection } from './types.js';
