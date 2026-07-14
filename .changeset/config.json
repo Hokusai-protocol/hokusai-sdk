@@ -2,7 +2,15 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": false,
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@hokusai/core",
+      "@hokusai/router",
+      "@hokusai/adapter-claude-code",
+      "@hokusai/adapter-codex",
+      "@hokusai/adapter-wavemill"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
