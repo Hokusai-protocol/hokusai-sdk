@@ -39,6 +39,15 @@ export interface CodexRouteInput {
   taskId?: string;
   currentModel?: string;
   metadata?: Record<string, string>;
+  /**
+   * Budget ceiling in USD for the routed work.
+   *
+   * The server scores the eventual outcome against this. A contribution row with
+   * an actual cost but no budget cannot be scored, so it is filed as `partial` —
+   * telemetry that trains nothing and earns nothing. Route with a budget and
+   * report with `actualCostUsd` to be training-eligible.
+   */
+  maxCostUsd?: number;
 }
 
 export interface CodexOutcomeInput {
@@ -58,6 +67,29 @@ export interface CodexOutcomeInput {
   userRating?: number;
   notes?: string;
   approve?: boolean;
+  /**
+   * What the run actually cost, in USD. The server scores it against the route's
+   * budget; without it the contribution is filed as telemetry and earns nothing.
+   */
+  actualCostUsd?: number;
+  wallClockSeconds?: number;
+}
+
+/**
+ * `buildRouteContextProjection` reads the budget from `max_cost_usd`, so that is
+ * where it has to land for the contribution row to carry a `budget_usd`.
+ */
+function routeMetadata(
+  input: CodexRouteInput,
+): Record<string, string> | undefined {
+  if (input.maxCostUsd === undefined) {
+    return input.metadata;
+  }
+
+  return {
+    ...input.metadata,
+    max_cost_usd: String(input.maxCostUsd),
+  };
 }
 
 export interface CodexOutcomePromptInput {
@@ -143,7 +175,7 @@ export async function routeTaskWithCodex(
     ...(input.currentModel ? { currentModelId: input.currentModel } : {}),
     taskId: createTaskId(input.taskId, options.clock),
     taskText: input.task,
-    ...(input.metadata ? { metadata: input.metadata } : {}),
+    ...(routeMetadata(input) ? { metadata: routeMetadata(input) } : {}),
     store,
     profile,
     ...(options.clock ? { clock: options.clock } : {}),
@@ -173,7 +205,7 @@ export async function previewRoutePayloadWithCodex(
     ...(input.currentModel ? { currentModelId: input.currentModel } : {}),
     taskId: createTaskId(input.taskId, options.clock),
     taskText: input.task,
-    ...(input.metadata ? { metadata: input.metadata } : {}),
+    ...(routeMetadata(input) ? { metadata: routeMetadata(input) } : {}),
     store,
     profile,
     ...(options.clock ? { clock: options.clock } : {}),
@@ -220,6 +252,12 @@ export async function submitOutcomeWithCodex(
     outcomeOptIn: hasOutcomeOptIn(options.env),
     ...(input.approve === undefined ? {} : { approve: input.approve }),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.actualCostUsd === undefined
+      ? {}
+      : { actualCostUsd: input.actualCostUsd }),
+    ...(input.wallClockSeconds === undefined
+      ? {}
+      : { wallClockSeconds: input.wallClockSeconds }),
     currentModelId: input.actualModel,
     input: {
       actualModel: input.actualModel,
