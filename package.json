@@ -16,7 +16,8 @@
     "typecheck": "pnpm -r typecheck",
     "version-packages": "changeset version && node scripts/sync-versions.mjs",
     "sync:versions": "node scripts/sync-versions.mjs",
-    "check:versions": "node scripts/sync-versions.mjs --check"
+    "check:versions": "node scripts/sync-versions.mjs --check",
+    "check:docs": "node scripts/check-docs.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.6",

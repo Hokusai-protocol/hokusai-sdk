@@ -4,6 +4,7 @@ Hokusai is a task routing and outcome-learning SDK for coding harnesses. It prov
 
 This repository currently includes:
 
+- `@hokusai/router` for routing a task from application code — the front door, and where most integrations should start
 - `@hokusai/core` for the harness-agnostic SDK contracts and API client
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
@@ -12,7 +13,30 @@ This repository currently includes:
 
 ## Install Packages
 
-Every integration starts with `@hokusai/core`:
+If you are routing tasks from your own application code, start with
+`@hokusai/router` — a thin façade over `@hokusai/core` that owns the client,
+dispatch builder, consent snapshot, and model registry for you:
+
+```sh
+pnpm add @hokusai/router
+npm install @hokusai/router
+```
+
+```ts
+import { route } from '@hokusai/router';
+
+const { model } = await route({ task, availableModels, maxCostUsd: 1 });
+const result = await models[model].run(task);
+await route.reportOutcome({ status: 'succeeded', actualCostUsd: result.costUsd });
+```
+
+See [packages/router/README.md](packages/router/README.md). Pass `maxCostUsd`
+when routing and `actualCostUsd` when reporting: the server scores one against
+the other, and a contribution missing either is stored as telemetry that trains
+nothing and earns nothing.
+
+If you are building a harness rather than calling one, start with
+`@hokusai/core`:
 
 ```sh
 pnpm add @hokusai/core
@@ -285,7 +309,7 @@ Routing requires an API key. Outcome reporting is separately consent-gated.
 - Shared adapters use `HOKUSAI_OUTCOME_OPT_IN` for outcome submission opt-in.
 - Raw task text, raw code, raw prompts, terminal logs, and customer data should not be stored in local correlation records.
 - Adapter previews expose redacted payloads before submission.
-- Claude Code and Codex plugins include post-run outcome prompt hooks. The hooks detect likely success, then prompt for a report tied to the latest Hokusai route; they never submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit user approval in the report flow.
+- The Claude Code plugin includes post-run outcome prompt hooks. The hooks detect likely success, then prompt for a report tied to the latest Hokusai route; they never submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit user approval in the report flow. The Codex plugin ships no hooks: Codex discovers `hooks/hooks.json` by convention and trust-gates it at install, so the MVP does not ask you to trust one. Report from Codex with `$hokusai-report`.
 
 See [docs/privacy-model.md](docs/privacy-model.md) for the full shared policy, including local storage denylist and retention behavior.
 

@@ -4,7 +4,13 @@
 
 ## Package Installation
 
-Install `@hokusai/core` for every integration:
+Routing a task from your own application code? Install `@hokusai/router`:
+
+```sh
+npm install @hokusai/router
+```
+
+Building a harness? Install `@hokusai/core`:
 
 ```sh
 pnpm add @hokusai/core
@@ -25,7 +31,11 @@ npm install @hokusai/adapter-codex
 npm install @hokusai/adapter-wavemill
 ```
 
-Current published package versions in this repository are `0.2.0` for `@hokusai/core`, `@hokusai/adapter-claude-code`, `@hokusai/adapter-codex`, and `@hokusai/adapter-wavemill`.
+All `@hokusai/*` packages are versioned together and released under one tag, so
+`@hokusai/router`, `@hokusai/core`, `@hokusai/adapter-claude-code`,
+`@hokusai/adapter-codex`, and `@hokusai/adapter-wavemill` always share a version.
+Run `npm view @hokusai/core version` for the current one rather than trusting a
+number written here.
 
 For most plugin quickstarts, the final verification step is the Hokusai doctor after auth is configured:
 
@@ -42,12 +52,13 @@ $hokusai-doctor
 
 ## Package Overview
 
+- `@hokusai/router`: the front-door façade for routing a task from application code. Owns the client, dispatch builder, consent snapshot, and model registry so the common case does not have to. Built entirely on `@hokusai/core`'s public API.
 - `@hokusai/core`: shared client, schemas, validation, model mapping, consent, anonymization, storage, fixtures, and conformance helpers.
 - `@hokusai/adapter-claude-code`: Claude Code plugin-facing adapter, CLI commands, config loading, and doctor helpers built on `@hokusai/core`.
 - `@hokusai/adapter-codex`: Codex plugin, MCP server, task/outcome builders, and OpenAI-only routing helpers built on `@hokusai/core`.
 - `@hokusai/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers built on `@hokusai/core`.
 
-Dependency direction is one-way: `@hokusai/core` does not import adapters; adapters depend on core.
+Dependency direction is one-way: `@hokusai/core` does not import adapters; adapters and `@hokusai/router` depend on core.
 
 ## Core SDK API
 
@@ -207,6 +218,8 @@ This package also ships Claude Code plugin binaries:
 - `hokusai-route`
 - `hokusai-report`
 - `hokusai-privacy`
+- `hokusai-doctor`
+- `hokusai-outcome-hook` (wired to the plugin's Stop and PostToolUse hooks; not invoked directly)
 
 Its adapter layer owns Claude Code config-path resolution, doctor output, plugin command behavior, and Claude-specific model allowlist handling.
 

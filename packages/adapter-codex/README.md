@@ -18,14 +18,18 @@ export HOKUSAI_API_KEY=hk_live_your_key_here
 $hokusai-doctor
 ```
 
-## Command manifest
+## The user surface is skills, not slash commands
 
-`CODEX_COMMAND_MANIFEST` exports four command descriptors for a Codex integration surface:
+Inside Codex, the plugin is driven by skills:
 
-- `hokusai:run`
-- `hokusai:recommend`
-- `hokusai:preview`
-- `hokusai:outcome`
+- `$hokusai-route` — get a routing recommendation
+- `$hokusai-report` — preview and contribute the outcome of the latest route
+- `$hokusai-privacy` — show consent, retention, and stored state
+- `$hokusai-doctor` — diagnose setup problems
+
+`CODEX_COMMAND_MANIFEST` (`hokusai:run`, `hokusai:recommend`, `hokusai:preview`,
+`hokusai:outcome`) is a **library-level** descriptor list for embedders building
+their own Codex surface. It is not what a plugin user types.
 
 ## Core exports
 
@@ -41,7 +45,7 @@ $hokusai-doctor
 - `submitOutcome()`
 - `promptOutcomeContributionWithCodex()`
 
-The installable Codex plugin bundles skills, MCP tooling, and optional outcome prompt hooks. Use `$hokusai-doctor` as the final quickstart verification step before routing tasks. After likely successful work, `hokusai-codex-outcome-hook` can prompt the user to run `$hokusai-report` against the latest route; it does not submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit approval in the report flow.
+The installable Codex plugin bundles skills and an MCP stdio server. It ships **no hooks**: Codex discovers `hooks/hooks.json` by convention and trust-gates it at install, so the MVP never asks you to trust one. Use `$hokusai-doctor` as the final quickstart verification step before routing tasks, and `$hokusai-report` to contribute an outcome — it does not submit without `HOKUSAI_OUTCOME_OPT_IN=true` and explicit approval in the report flow.
 
 ## Privacy and consent
 

@@ -14,9 +14,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check out shared data-pipeline schemas
         run: |
-          git clone --depth 1 --branch tim/hok-2498-one-task-descriptor-schema-shared-by-the-sdk-and-the \
-            https://github.com/Hokusai-protocol/hokusai-data-pipeline.git ../hokusai-data-pipeline \
-          || git clone --depth 1 --branch main \
+          # HOK-2498 is merged, so take the schema from main. The feature branch it
+          # used to clone still exists, which meant the `|| main` fallback never
+          # fired and CI silently validated against a branch nobody maintains.
+          git clone --depth 1 --branch main \
             https://github.com/Hokusai-protocol/hokusai-data-pipeline.git ../hokusai-data-pipeline
       - uses: pnpm/action-setup@v6
         with:
@@ -30,6 +31,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm check:boundaries
       - run: pnpm check:versions
+      - run: pnpm check:docs
       - run: pnpm -r build
       - run: pnpm -r test
 

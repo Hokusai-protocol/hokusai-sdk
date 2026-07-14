@@ -32,8 +32,6 @@ Examples:
 - `$hokusai-privacy Show Hokusai privacy status.`
 - `$hokusai-doctor Diagnose Hokusai setup problems.`
 
-Outcome prompt hooks:
-
-- `hokusai-codex-outcome-hook` inspects Stop/PostToolUse events for likely success.
-- With `HOKUSAI_OUTCOME_OPT_IN=true`, it prints a `$hokusai-report ...` prompt tied to the latest route.
-- Without outcome opt-in, it prints setup remediation and does not provide a submit command.
+The Codex plugin ships **no hooks**. Codex discovers `hooks/hooks.json` by
+convention and trust-gates it at install, so the MVP does not ship one and never
+asks you to trust a hook. Report outcomes with `$hokusai-report`.

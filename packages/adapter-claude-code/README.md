@@ -48,7 +48,7 @@ pnpm --filter @hokusai/adapter-claude-code bundle:plugin
 claude --plugin-dir /path/to/repo/packages/adapter-claude-code/plugin
 ```
 
-After install, Claude Code should show `/hokusai:route`, `/hokusai:report`, and `/hokusai:privacy` in the slash-command menu. The task description may also refer to these as `/hokusai-route`, `/hokusai-report`, and `/hokusai-privacy`, but the `hokusai:*` paths are the canonical Claude Code command paths.
+After install, Claude Code should show `/hokusai:route`, `/hokusai:report`, `/hokusai:privacy`, and `/hokusai:doctor` in the slash-command menu. The task description may also refer to these as `/hokusai-route`, `/hokusai-report`, and `/hokusai-privacy`, but the `hokusai:*` paths are the canonical Claude Code command paths.
 
 ## Configure auth and contribution consent
 
