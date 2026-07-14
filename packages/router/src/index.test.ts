@@ -26,6 +26,7 @@ function jsonResponse(status: number, body: unknown) {
  */
 function createMockClient(overrides?: {
   recommendation?: unknown;
+  fidelityTiers?: string[];
   onCall?: (call: Captured) => void;
 }): HokusaiClient {
   const transport: FetchTransport = (input, init) => {
@@ -43,6 +44,16 @@ function createMockClient(overrides?: {
             confidence: 0.9,
             alternatives: [{ model: 'claude-opus-4-8', reason: 'Deeper.' }],
           },
+        }),
+      );
+    }
+    if (pathname.endsWith('/contributions')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          accepted: true,
+          submission_id: 'sub-1',
+          rows_accepted: 1,
+          row_fidelity_tiers: overrides?.fidelityTiers ?? ['training_eligible'],
         }),
       );
     }
@@ -112,32 +123,129 @@ describe('createRouter', () => {
     expect(routeBody?.inputs.routing.objective).toBe('fastest_completion');
   });
 
-  it('reports an outcome tied to the most recent route', async () => {
+  /**
+   * The legacy `/outcomes` endpoint patches an inference log and bypasses
+   * training and reward attribution entirely (docs/reference-pattern.md). An
+   * outcome must land as a Model 30 contribution row or it earns nothing.
+   */
+  it('submits a contribution row, not a legacy outcome', async () => {
     const calls: Captured[] = [];
     const route = createRouter({
       client: createMockClient({ onCall: (call) => calls.push(call) }),
     });
 
-    const routed = await route({ task: 'Fix a bug.' });
-    await route.reportOutcome({
+    const routed = await route({
+      task: 'Fix a billing bug.',
+      availableModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      maxCostUsd: 1,
+    });
+    const result = await route.reportOutcome({
       status: 'succeeded',
-      latency: 'medium',
-      cost: 'low',
-      tokens: 'medium',
+      actualCostUsd: 0.42,
+      wallClockSeconds: 74.5,
     });
 
-    const outcomeCall = calls.find((call) =>
-      new URL(call.input).pathname.endsWith('/outcomes'),
+    expect(
+      calls.some((call) => new URL(call.input).pathname.endsWith('/outcomes')),
+    ).toBe(false);
+
+    const call = calls.find((entry) =>
+      new URL(entry.input).pathname.endsWith('/contributions'),
     );
-    expect(outcomeCall).toBeDefined();
-    const outcomeBody = JSON.parse(String(outcomeCall!.init.body)) as {
-      correlationId: string;
-      recommendedModel: string;
-      completionStatus: string;
+    expect(call).toBeDefined();
+
+    const body = JSON.parse(String(call!.init.body)) as {
+      rows: Array<Record<string, unknown>>;
     };
-    expect(outcomeBody.correlationId).toBe(routed.correlationId);
-    expect(outcomeBody.recommendedModel).toBe('claude-sonnet-4-6');
-    expect(outcomeBody.completionStatus).toBe('succeeded');
+    const row = body.rows[0]!;
+    expect(row.schema_version).toBe('harness_outcome_row/v1');
+    // The row is only attributable to its decision through inference_log_id.
+    expect(row.inference_log_id).toBe(routed.routeId);
+    expect(row.completion_result).toBe('success');
+    expect(row.allowed_models).toEqual([
+      'claude-sonnet-4-6',
+      'claude-opus-4-8',
+    ]);
+    expect(row.selected_models).toEqual({
+      coder: 'claude-sonnet-4-6',
+      reviewer: 'claude-sonnet-4-6',
+    });
+    expect(row.budget_usd).toBe(1);
+    expect(row.actual_cost_usd).toBe(0.42);
+
+    expect(result.accepted).toBe(true);
+    expect(result.fidelityTier).toBe('training_eligible');
+    expect(result.correlationId).toBe(routed.correlationId);
+  });
+
+  it('maps a failed status onto a failure row', async () => {
+    const calls: Captured[] = [];
+    const route = createRouter({
+      client: createMockClient({ onCall: (call) => calls.push(call) }),
+    });
+
+    await route({ task: 'Fix a bug.' });
+    await route.reportOutcome({ status: 'failed', actualCostUsd: 0.1 });
+
+    const call = calls.find((entry) =>
+      new URL(entry.input).pathname.endsWith('/contributions'),
+    );
+    const body = JSON.parse(String(call!.init.body)) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    expect(body.rows[0]!.completion_result).toBe('failure');
+  });
+
+  /**
+   * A row without an actual cost cannot be scored against its budget, so the
+   * server files it as telemetry. Warn rather than let the caller discover it
+   * in the fidelity tier.
+   */
+  it('warns that an outcome without actualCostUsd is not training-eligible', async () => {
+    const warnings: string[] = [];
+    const route = createRouter({
+      client: createMockClient(),
+      onWarning: (message) => warnings.push(message),
+    });
+
+    await route({ task: 'Fix a bug.' });
+    await route.reportOutcome({ status: 'succeeded' });
+
+    expect(
+      warnings.some((message) => /not training-eligible/i.test(message)),
+    ).toBe(true);
+  });
+
+  it('warns when the server classifies the row below training_eligible', async () => {
+    const warnings: string[] = [];
+    const route = createRouter({
+      client: createMockClient({ fidelityTiers: ['partial'] }),
+      onWarning: (message) => warnings.push(message),
+    });
+
+    await route({ task: 'Fix a bug.' });
+    const result = await route.reportOutcome({
+      status: 'succeeded',
+      actualCostUsd: 0.42,
+    });
+
+    expect(result.fidelityTier).toBe('partial');
+    expect(warnings.some((message) => /partial/.test(message))).toBe(true);
+  });
+
+  it('refuses to report an outcome against a stale correlation id', async () => {
+    const route = createRouter({ client: createMockClient() });
+
+    const first = await route({ task: 'First task.' });
+    await route({ task: 'Second task.' });
+
+    await expect(
+      route.reportOutcome({
+        correlationId: first.correlationId,
+        status: 'succeeded',
+        actualCostUsd: 0.1,
+      }),
+    ).rejects.toBeInstanceOf(RouterError);
   });
 
   it('does not hide a singleton candidate pool — it throws', async () => {
@@ -170,12 +278,7 @@ describe('createRouter', () => {
     const route = createRouter({ client: createMockClient() });
 
     await expect(
-      route.reportOutcome({
-        status: 'succeeded',
-        latency: 'medium',
-        cost: 'low',
-        tokens: 'medium',
-      }),
+      route.reportOutcome({ status: 'succeeded', actualCostUsd: 0.1 }),
     ).rejects.toBeInstanceOf(RouterError);
   });
 
