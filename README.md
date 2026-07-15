@@ -35,6 +35,26 @@ when routing and `actualCostUsd` when reporting: the server scores one against
 the other, and a contribution missing either is stored as telemetry that trains
 nothing and earns nothing.
 
+If a model choice was made outside Hokusai, use the explicit report-only path
+instead of fabricating a route. This opens coverage for Qwen, GLM, Gemini, Grok,
+DeepSeek, Kimi, Llama, Mistral, and other externally routed runs:
+
+```ts
+await route.reportExternalOutcome({
+  task: 'Refactor the auth middleware to use the new policy engine.',
+  allowedModels: ['qwen-3-coder', 'glm-5.2', 'gemini-2.5-pro'],
+  model: 'qwen-3-coder',
+  status: 'succeeded',
+  budgetUsd: 0.5,
+  actualCostUsd: 0.12,
+  harness: 'custom-harness',
+});
+```
+
+The server still assigns the authoritative fidelity tier. Route-less
+observations improve model coverage, but they are not attributed to a Hokusai
+routing decision unless the backend explicitly classifies them that way.
+
 If you are building a harness rather than calling one, start with
 `@hokusai/core`:
 
@@ -118,6 +138,11 @@ const payload = await dispatchBuilder.prepareDispatch(
 
 const route = await client.route(payload);
 ```
+
+The shared model catalog includes the launch-priority OpenRouter-facing models
+from Wavemill: Claude, GPT, DeepSeek, Qwen, Kimi, GLM, Gemini, Llama, Mistral,
+and Grok families. Unknown strings are still accepted by `@hokusai/router` as
+opaque external models when callers provide their own candidate pool.
 
 For a complete offline version of this pattern, run the reference harness:
 

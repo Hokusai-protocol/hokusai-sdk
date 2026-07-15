@@ -86,6 +86,33 @@ a row missing either. A `partial` row is still `accepted: true`, so the tier is
 the only signal that a contribution counted. It is server-authoritative: read it,
 never compute it.
 
+## External observations
+
+Externally chosen runs should still use `submitContribution()`, but they should
+not fabricate an `inferenceLogId`. Build a `harness_outcome_row/v1` with the
+observed task descriptor, candidate pool, selected model, budget, and cost, then
+read the server-assigned fidelity tier:
+
+```ts
+const row = buildHarnessOutcomeRow({
+  taskDescriptor: { task_type: 'feature', language: 'typescript' },
+  allowedModels: ['qwen-3-coder', 'glm-5.2', 'gemini-2.5-pro'],
+  selectedModels: { coder: 'qwen-3-coder', reviewer: 'qwen-3-coder' },
+  completionResult: 'success',
+  budgetUsd: 0.5,
+  actualCostUsd: 0.12,
+  harness: 'custom-harness',
+});
+
+const response = await client.submitContribution({
+  rows: [row],
+  metadata: { idempotency_key: 'external-run-123' },
+});
+```
+
+Use `@hokusai/router`'s `route.reportExternalOutcome()` helper when you want
+this report-only path without manually building rows.
+
 ## What leaves your process
 
 Nothing you did not ask to send. Prompts are redacted before dispatch, task text

@@ -4,6 +4,8 @@ import {
   InMemoryModelRegistry,
   ModelMappingError,
   OPENAI_MODELS,
+  OPENROUTER_PRIORITY_MODELS,
+  PRIORITY_MODELS,
   mapRecommendation,
   type ModelDefinition,
   validateRecommendedModel,
@@ -303,6 +305,27 @@ describe('validateRecommendedModel', () => {
       reason: 'unknown',
       suggestions: ['claude-sonnet-4-6'],
     });
+  });
+});
+
+describe('priority model catalogs', () => {
+  it('resolves launch-priority external models and OpenRouter aliases', () => {
+    const registry = new InMemoryModelRegistry(PRIORITY_MODELS);
+
+    expect(registry.resolve('qwen/qwen3-coder')?.id).toBe('qwen-3-coder');
+    expect(registry.resolve('z-ai/glm-5.2')?.id).toBe('glm-5.2');
+    expect(registry.resolve('google/gemini-2.5-pro')?.provider).toBe('google');
+    expect(registry.resolve('x-ai/grok-code-fast-1')?.family).toBe('grok');
+  });
+
+  it('keeps non-OpenAI and non-Anthropic priority models in a separate catalog', () => {
+    expect(OPENROUTER_PRIORITY_MODELS.every((model) => model.provider !== 'openai')).toBe(true);
+    expect(OPENROUTER_PRIORITY_MODELS.every((model) => model.provider !== 'anthropic')).toBe(true);
+    expect(OPENROUTER_PRIORITY_MODELS.map((model) => model.id)).toContain('qwen-3-coder');
+    expect(PRIORITY_MODELS.map((model) => model.id)).toContain('gpt-5.5');
+    expect(PRIORITY_MODELS.map((model) => model.id)).toContain('claude-sonnet-5');
+    expect(OPENAI_MODELS.map((model) => model.id)).not.toContain('gpt-5.5');
+    expect(ANTHROPIC_MODELS.map((model) => model.id)).not.toContain('claude-sonnet-5');
   });
 });
 

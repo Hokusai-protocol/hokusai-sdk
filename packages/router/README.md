@@ -51,6 +51,30 @@ await route.reportOutcome({
 `route.reportOutcome` attributes the outcome to the most recent `route()` call,
 so the common single-flight loop needs nothing threaded through.
 
+## Report External Outcomes
+
+If your harness already chose the model outside Hokusai, report that as an
+external observation rather than forcing a fake route. This is the path for
+Qwen, GLM, Gemini, Grok, DeepSeek, Kimi, Llama, Mistral, or custom policy runs
+that Hokusai did not decide:
+
+```ts
+await route.reportExternalOutcome({
+  task: 'Fix flaky provider resolution.',
+  allowedModels: ['qwen-3-coder', 'glm-5.2', 'gemini-2.5-pro'],
+  model: 'qwen-3-coder',
+  status: 'succeeded',
+  budgetUsd: 0.5,
+  actualCostUsd: 0.12,
+  harness: 'custom-harness',
+});
+```
+
+This still submits a contribution row to `/contributions`, but without an
+`inference_log_id`. The server's returned `fidelityTier` is authoritative:
+route-less observations may improve coverage without earning route-attributed
+rewards unless the backend policy explicitly classifies them as eligible.
+
 ### Make the contribution count
 
 `reportOutcome` submits a **contribution row** — the record the router actually
@@ -85,7 +109,7 @@ import { createRouter } from '@hokusai/router';
 
 const route = createRouter({
   apiKey: process.env.HOKUSAI_API_KEY,
-  availableModels: ['claude-sonnet-4-6', 'claude-opus-4-8', 'gpt-5-codex'],
+  availableModels: ['claude-sonnet-4-6', 'qwen-3-coder', 'gemini-2.5-pro'],
   objective: 'reliability', // 'speed' | 'cost' | 'reliability'
 });
 ```
