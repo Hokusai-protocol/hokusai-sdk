@@ -171,6 +171,39 @@ describe('computeActualCostUsd', () => {
     );
   });
 
+  it('returns undefined when non-zero cache tokens are supplied for a non-Anthropic model', () => {
+    // OpenAI/Gemini cache pricing is not modeled; refuse to fabricate a cost
+    // by applying Anthropic-specific multipliers.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-4o',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheReadTokens: 500,
+      }),
+    ).toBeUndefined();
+    expect(
+      computeActualCostUsd({
+        model: 'gemini-2.5-pro',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheCreationTokens: 500,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('accepts zero cache token counts for non-Anthropic models', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-4o',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBe(0.0125);
+  });
+
   it('returns undefined for a negative cache token count', () => {
     expect(
       computeActualCostUsd({

@@ -216,8 +216,10 @@ function nonNegativeOrNull(value: number | undefined): number | null {
 /**
  * Compute `actual_cost_usd` from token counts and the resolved model. Cache
  * write/read tokens are billed at their reduced rates relative to input. Returns
- * `undefined` — never a fabricated value — when the model is unknown or any
- * supplied token count is not a finite, non-negative number.
+ * `undefined` — never a fabricated value — when the model is unknown, when any
+ * supplied token count is not a finite, non-negative number, or when non-zero
+ * cache tokens are supplied for a non-Anthropic model (whose cache pricing is
+ * not represented here).
  */
 export function computeActualCostUsd(input: TokenCostInput): number | undefined {
   const price = resolveModelPrice(input.model);
@@ -238,6 +240,13 @@ export function computeActualCostUsd(input: TokenCostInput): number | undefined 
     return undefined;
   }
 
+  if (
+    (cacheCreationTokens > 0 || cacheReadTokens > 0) &&
+    !isAnthropicModel(input.model)
+  ) {
+    return undefined;
+  }
+
   const cost =
     (inputTokens / 1_000_000) * price.inputPerMTokUsd +
     (cacheCreationTokens / 1_000_000) *
@@ -250,4 +259,12 @@ export function computeActualCostUsd(input: TokenCostInput): number | undefined 
 
   // Round to 6 decimal places (micro-dollar) to avoid floating-point noise.
   return Math.round(cost * 1_000_000) / 1_000_000;
+}
+
+function isAnthropicModel(model: string): boolean {
+  const normalized = normalizeModelId(model);
+  if (ANTHROPIC_MODEL_PRICING[normalized]) {
+    return true;
+  }
+  return Boolean(ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]);
 }
