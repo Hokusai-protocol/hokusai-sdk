@@ -64,7 +64,7 @@ function buildModelPredictPath(modelId: string): string {
 function buildModelContributionsPath(modelId: string): string {
   return `/api/v1/models/${modelId}/contributions`;
 }
-export const SDK_VERSION = '0.2.0';
+export const SDK_VERSION = '0.3.0';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
