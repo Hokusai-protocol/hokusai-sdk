@@ -10,12 +10,22 @@
  * @module index
  */
 
-import { FAKE_REPOSITORY_SIGNALS, FAKE_SECRET, createReferenceHarnessAdapter } from './harness/index.js';
-import { runHokusaiLoop, type HokusaiLoopResult } from './hokusai/index.js';
+import {
+  FAKE_REPOSITORY_SIGNALS,
+  FAKE_SECRET,
+  createReferenceHarnessAdapter,
+} from './harness/index.js';
+import {
+  HARNESS_NAME,
+  HARNESS_SDK_VERSION,
+  runHokusaiLoop,
+  type HokusaiLoopResult,
+} from './hokusai/index.js';
 import { createMockHokusaiClient } from './mock-client.js';
 
 const REDACTION_SALT = 'reference-harness-salt';
 const BUDGET_USD = 0.5;
+const OBSERVED_AT = '2026-06-08T00:00:00.000Z';
 
 export interface ReferenceFlowSummary {
   trainingEligible: HokusaiLoopResult;
@@ -31,10 +41,17 @@ export async function runReferenceFlow(
   const shared = {
     adapter,
     client,
-    models: adapter.discoverModels(),
     repositorySignals: FAKE_REPOSITORY_SIGNALS,
-    redactionSalt: REDACTION_SALT,
-    redactionSecret: FAKE_SECRET,
+    harnessName: HARNESS_NAME,
+    sdkVersion: HARNESS_SDK_VERSION,
+    observedAt: OBSERVED_AT,
+    clock: () => new Date(OBSERVED_AT),
+    redactionConfig: {
+      salt: REDACTION_SALT,
+      customRules: [
+        { category: 'secret' as const, pattern: new RegExp(FAKE_SECRET, 'g') },
+      ],
+    },
     log,
   };
 
@@ -47,7 +64,9 @@ export async function runReferenceFlow(
   });
   log('');
   log(`  -> ${trainingEligible.fidelityTier ?? 'unknown'}`);
-  log('     budget_usd and actual_cost_usd are both numeric, so the server can');
+  log(
+    '     budget_usd and actual_cost_usd are both numeric, so the server can',
+  );
   log('     score success-under-budget. This row trains the router.');
 
   log('');
@@ -60,7 +79,9 @@ export async function runReferenceFlow(
   });
   log('');
   log(`  -> ${partial.fidelityTier ?? 'unknown'}`);
-  log('     Without actual_cost_usd the reward scorer cannot decide whether the');
+  log(
+    '     Without actual_cost_usd the reward scorer cannot decide whether the',
+  );
   log('     run came in under budget. The row is accepted and stored as');
   log('     telemetry, excluded from training, and earns no stake.');
   log('');
@@ -71,7 +92,9 @@ export async function runReferenceFlow(
 }
 
 async function main(): Promise<void> {
-  await runReferenceFlow((line) => { console.log(line); });
+  await runReferenceFlow((line) => {
+    console.log(line);
+  });
 }
 
 const isEntrypoint =

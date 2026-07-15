@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { ContributionValidationError, isHarnessOutcomeRowV1 } from '@hokusai/core';
+import {
+  ContributionValidationError,
+  isHarnessOutcomeRowV1,
+} from '@hokusai/core';
 import { FAKE_SECRET, createReferenceHarnessAdapter } from './harness/index.js';
 import { runHokusaiLoop } from './hokusai/index.js';
-import { MOCK_INFERENCE_LOG_ID, createMockHokusaiClient } from './mock-client.js';
+import {
+  MOCK_INFERENCE_LOG_ID,
+  createMockHokusaiClient,
+} from './mock-client.js';
 import { runReferenceFlow } from './index.js';
 
 describe('runReferenceFlow', () => {
@@ -28,8 +34,12 @@ describe('runReferenceFlow', () => {
 
     // Everything else about the two rows is identical.
     expect(partial.row.budget_usd).toBe(trainingEligible.row.budget_usd);
-    expect(partial.row.task_descriptor).toEqual(trainingEligible.row.task_descriptor);
-    expect(partial.row.allowed_models).toEqual(trainingEligible.row.allowed_models);
+    expect(partial.row.task_descriptor).toEqual(
+      trainingEligible.row.task_descriptor,
+    );
+    expect(partial.row.allowed_models).toEqual(
+      trainingEligible.row.allowed_models,
+    );
   });
 
   it('threads inference_log_id from the route response into the row', async () => {
@@ -88,17 +98,30 @@ describe('mock client validation', () => {
     const leaked = await runHokusaiLoop({
       adapter,
       client,
-      models: adapter.discoverModels(),
       budgetUsd: 0.5,
-      redactionSalt: 'salt',
-      redactionSecret: FAKE_SECRET,
+      harnessName: 'reference-harness',
+      sdkVersion: '0.2.0',
+      observedAt: '2026-06-08T00:00:00.000Z',
+      clock: () => new Date('2026-06-08T00:00:00.000Z'),
+      redactionConfig: {
+        salt: 'salt',
+        customRules: [
+          {
+            category: 'secret' as const,
+            pattern: new RegExp(FAKE_SECRET, 'g'),
+          },
+        ],
+      },
       idempotencyKey: 'leak-test',
     });
 
     // Simulate a fork that stuffs raw task text into the descriptor.
     const poisoned = {
       ...leaked.row,
-      task_descriptor: { ...leaked.row.task_descriptor, prompt: 'raw user text' },
+      task_descriptor: {
+        ...leaked.row.task_descriptor,
+        prompt: 'raw user text',
+      },
     };
 
     await expect(
@@ -115,10 +138,20 @@ describe('mock client validation', () => {
     const loop = await runHokusaiLoop({
       adapter,
       client,
-      models: adapter.discoverModels(),
       budgetUsd: 0.5,
-      redactionSalt: 'salt',
-      redactionSecret: FAKE_SECRET,
+      harnessName: 'reference-harness',
+      sdkVersion: '0.2.0',
+      observedAt: '2026-06-08T00:00:00.000Z',
+      clock: () => new Date('2026-06-08T00:00:00.000Z'),
+      redactionConfig: {
+        salt: 'salt',
+        customRules: [
+          {
+            category: 'secret' as const,
+            pattern: new RegExp(FAKE_SECRET, 'g'),
+          },
+        ],
+      },
       idempotencyKey: 'invalid-test',
     });
 
@@ -136,14 +169,14 @@ describe('mock client validation', () => {
 describe('createReferenceHarnessAdapter', () => {
   it('reports models that pricing.ts can actually price', async () => {
     const adapter = createReferenceHarnessAdapter();
-    const models = adapter.discoverModels();
+    const context = await adapter.collectTaskContext();
+    const models = await adapter.discoverRunnableModels(context);
 
     expect(models.length).toBeGreaterThan(0);
     for (const model of models) {
       expect(model.provider).toBe('anthropic');
     }
 
-    const context = await adapter.collectTaskContext();
     expect(context.task.id).toBe('ref-task-001');
   });
 
@@ -151,9 +184,11 @@ describe('createReferenceHarnessAdapter', () => {
     const adapter = createReferenceHarnessAdapter({
       execution: { completionResult: 'failure' },
     });
-    const result = await adapter.executeTask({
-      task: (await adapter.collectTaskContext()).task,
-      model: { id: 'claude-sonnet-4-6', provider: 'anthropic' },
+    const context = await adapter.collectTaskContext();
+    const [model] = await adapter.discoverRunnableModels(context);
+    const result = await adapter.executeWithModel({
+      task: context.task,
+      model: model as NonNullable<typeof model>,
     });
 
     expect(result.completionResult).toBe('failure');

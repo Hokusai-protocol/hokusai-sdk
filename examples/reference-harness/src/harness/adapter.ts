@@ -3,17 +3,24 @@
  *
  * Four things are yours to implement. Everything else — descriptor derivation,
  * anonymization, routing, pricing, row construction, submission — is handled by
- * `../hokusai/loop.ts` and should not need editing.
+ * `@hokusai/core`'s reusable integration kit and should not need editing.
  *
  *   1. collectTaskContext  — where does a task come from in your harness?
- *   2. discoverModels      — which models can you actually run?
- *   3. executeTask         — run the task; return token usage
- *   4. previewPayload      — show the operator what will be sent
+ *   2. discoverRunnableModels — which models can you actually run?
+ *   3. executeWithModel       — run the task; return token usage
+ *   4. previewRedactedPayload — show the operator what will be sent
  *
  * @module harness/adapter
  */
 
-import type { HokusaiDispatchPayload, HokusaiTaskInput, ModelDefinition } from '@hokusai/core';
+import type {
+  HostAdapter,
+  HostExecutionResult,
+  HostPayloadPreview,
+  HostTaskContext,
+  HokusaiDispatchPayload,
+  ModelDefinition,
+} from '@hokusai/core';
 import { FAKE_EXECUTION, FAKE_TASK_CONTEXT } from './fake-data.js';
 
 /**
@@ -44,35 +51,14 @@ export const REFERENCE_MODELS: ModelDefinition[] = [
   },
 ];
 
-export interface HarnessTaskContext {
-  task: HokusaiTaskInput;
-}
+export type HarnessTaskContext = HostTaskContext;
 
 /** What your harness knows after it has actually run the task. */
-export interface HarnessExecutionResult {
-  completionResult: 'success' | 'failure';
-  inputTokens: number;
-  outputTokens: number;
-  /** Prompt-cache tokens, if your provider reports them. Priced below input. */
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
-  wallClockSeconds: number;
-}
+export type HarnessExecutionResult = HostExecutionResult;
 
-export interface PayloadPreview {
-  promptPreview: string;
-  redactionCount: number;
-}
+export type PayloadPreview = HostPayloadPreview;
 
-export interface ReferenceHarnessAdapter {
-  collectTaskContext(): Promise<HarnessTaskContext>;
-  discoverModels(): ModelDefinition[];
-  executeTask(request: {
-    task: HokusaiTaskInput;
-    model: { id: string; provider: string };
-  }): Promise<HarnessExecutionResult>;
-  previewPayload(payload: HokusaiDispatchPayload): PayloadPreview;
-}
+export type ReferenceHarnessAdapter = HostAdapter;
 
 export interface ReferenceHarnessAdapterOptions {
   /** Override the execution result to demonstrate a different fidelity tier. */
@@ -91,7 +77,7 @@ export function createReferenceHarnessAdapter(
     },
 
     // TODO(fork): report the models your harness can actually invoke.
-    discoverModels() {
+    discoverRunnableModels() {
       return REFERENCE_MODELS;
     },
 
@@ -100,13 +86,13 @@ export function createReferenceHarnessAdapter(
     // layered cost capture in `session-usage.ts` does not apply — return the
     // token counts your provider hands back and let `computeActualCostUsd`
     // price them.
-    executeTask() {
+    executeWithModel() {
       return Promise.resolve({ ...FAKE_EXECUTION, ...options.execution });
     },
 
     // TODO(fork): render this however your harness surfaces confirmations.
     // The payload is already redacted by the time it arrives here.
-    previewPayload(payload: HokusaiDispatchPayload) {
+    previewRedactedPayload(payload: HokusaiDispatchPayload) {
       return {
         promptPreview: payload.prompt,
         redactionCount: payload.redactions.length,

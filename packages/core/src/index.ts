@@ -328,5 +328,6 @@ export {
   type ConformanceCheck,
   type ConformanceSubject,
 } from './conformance.js';
+export * from './integration-kit/index.js';
 export * from './plugin-commands/index.js';
 export * from './contribution/index.js';
