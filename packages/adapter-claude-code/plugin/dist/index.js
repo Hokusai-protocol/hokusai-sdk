@@ -1752,7 +1752,7 @@ function buildModelPredictPath(modelId) {
 function buildModelContributionsPath(modelId) {
   return `/api/v1/models/${modelId}/contributions`;
 }
-var SDK_VERSION = "0.3.0";
+var SDK_VERSION = "0.4.0";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
