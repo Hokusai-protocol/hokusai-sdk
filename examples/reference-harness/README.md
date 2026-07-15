@@ -14,10 +14,10 @@ The point of a Hokusai integration is not to route a task. It is to contribute a
 
 So this harness runs the loop twice.
 
-| Run | `actual_cost_usd` | Server tier | Outcome |
-|---|---|---|---|
-| A | reported | `training_eligible` | Trains the router. Earns stake. |
-| B | omitted | `partial` | Stored as telemetry. Excluded from training. Earns nothing. |
+| Run | `actual_cost_usd` | Server tier         | Outcome                                                     |
+| --- | ----------------- | ------------------- | ----------------------------------------------------------- |
+| A   | reported          | `training_eligible` | Trains the router. Earns stake.                             |
+| B   | omitted           | `partial`           | Stored as telemetry. Excluded from training. Earns nothing. |
 
 Everything else about the two rows is identical. Only `rowFidelityTiers` in the response tells them apart. Run it and read the output — that contrast is the whole lesson.
 
@@ -38,7 +38,7 @@ The split is the point. One directory is yours, one is not.
 
 ```
 src/
-  hokusai/     <- the reusable loop. Do not edit.
+  hokusai/     <- thin wrapper around @hokusai/core's reusable loop
   harness/     <- yours. Four TODOs.
   mock-client.ts  <- an offline stand-in for the Hokusai API
   index.ts        <- wires the two together and prints the trace
@@ -47,17 +47,17 @@ src/
 `src/harness/adapter.ts` has exactly four things to implement:
 
 1. `collectTaskContext` — where does a task come from in your harness?
-2. `discoverModels` — which models can you actually run?
-3. `executeTask` — run it; return token usage
-4. `previewPayload` — show the operator what will be sent
+2. `discoverRunnableModels` — which models can you actually run?
+3. `executeWithModel` — run it; return token usage
+4. `previewRedactedPayload` — show the operator what will be sent
 
-Everything else — descriptor derivation, redaction, routing, pricing, row construction, submission — lives in `src/hokusai/loop.ts` and should not need changing.
+Everything else — descriptor derivation, redaction, routing, pricing, row construction, submission — lives in `@hokusai/core`'s integration kit and should not need changing.
 
 ## The step every integrator gets wrong
 
 Route returns an `inference_log_id` (as `RouteResponse.routeId`). It must be threaded into the contribution row. Without it the row cannot be attributed back to the routing decision, so it earns nothing no matter how complete the rest of it is.
 
-The Claude Code plugin shipped this bug: it received the id and dropped it on the floor. `src/hokusai/loop.ts` threads it, and `src/index.test.ts` asserts it.
+The Claude Code plugin shipped this bug: it received the id and dropped it on the floor. `runHokusaiLoop()` in `@hokusai/core` threads it, and `src/index.test.ts` asserts it.
 
 ## Notes for specific harnesses
 
@@ -65,11 +65,11 @@ The Claude Code plugin shipped this bug: it received the id and dropped it on th
 
 Both have their own model-selection surface. `mapRecommendation()` resolves the router's recommended model id against your `InMemoryModelRegistry`; when the router names a model you cannot run, it falls back to a registry default rather than throwing. Either honor the fallback or record a decline — do not silently substitute a model and then report the recommended one, because `selected_models` would no longer describe what actually ran.
 
-Model ids in `discoverModels()` must be real provider ids. `pricing.ts` looks them up; a made-up id yields no cost and drops your row to `partial`.
+Model ids in `discoverRunnableModels()` must be real provider ids. `pricing.ts` looks them up; a made-up id yields no cost and drops your row to `partial`.
 
 ### Cost capture
 
-Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically. **Neither Pi nor OpenHands does**, so that layered fallback does not apply. Return token counts from `executeTask` and let `computeActualCostUsd()` price them, as this harness does.
+Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically. **Neither Pi nor OpenHands does**, so that layered fallback does not apply. Return token counts from `executeWithModel` and let `computeActualCostUsd()` price them, as this harness does.
 
 If your provider reports prompt-cache tokens, pass `cacheCreationTokens` and `cacheReadTokens` too. They are billed at 1.25x and 0.1x the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs.
 
