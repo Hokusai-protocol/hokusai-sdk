@@ -373,6 +373,35 @@ describe('resolveActualCostUsd (layered precedence)', () => {
     ).toBe(0.99);
   });
 
+  it('passes through a host-reported cost for an unknown model', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'some-unknown-model',
+        explicitActualCostUsd: 0.1234,
+      }),
+    ).toBe(0.1234);
+  });
+
+  it('passes through a measured zero cost', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'gpt-4o',
+        explicitActualCostUsd: 0,
+      }),
+    ).toBe(0);
+  });
+
+  it('measured cost wins over token-derived fallback', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'gpt-4o',
+        explicitActualCostUsd: 0.1234,
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.1234);
+  });
+
   it('tier 2: token counts win over auto sources', () => {
     expect(
       resolveActualCostUsd({
@@ -384,6 +413,72 @@ describe('resolveActualCostUsd (layered precedence)', () => {
         fs: makeFs({}),
       }),
     ).toBe(30);
+  });
+
+  it('falls back from invalid measured values to token-derived OpenAI cost', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'gpt-4o',
+        explicitActualCostUsd: -5,
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.0125);
+
+    expect(
+      resolveActualCostUsd({
+        model: 'gpt-4o',
+        explicitActualCostUsd: Number.NaN,
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.0125);
+
+    expect(
+      resolveActualCostUsd({
+        model: 'gpt-4o',
+        explicitActualCostUsd: Number.POSITIVE_INFINITY,
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.0125);
+    expect(
+      resolveActualCostUsd({
+        model: 'gpt-4o',
+        explicitActualCostUsd: '0.10' as unknown as number,
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.0125);
+  });
+
+  it('returns undefined when an invalid measured value cannot fall back to a known model', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'totally-made-up-model',
+        explicitActualCostUsd: -5,
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('supports token-derived multi-provider fallback', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'gemini-2.5-pro',
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.01125);
+
+    expect(
+      resolveActualCostUsd({
+        model: 'openrouter/anthropic/claude-sonnet-4.6',
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.018);
   });
 
   it('tier 3: sidecar diff wins when no explicit input', () => {
@@ -436,6 +531,23 @@ describe('resolveActualCostUsd (layered precedence)', () => {
         model: 'claude-opus-4-8',
         env: ENV,
         fs: makeFs({}),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('degrades unknown or empty model ids to telemetry-only rows', () => {
+    expect(
+      resolveActualCostUsd({
+        model: 'totally-made-up-model',
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveActualCostUsd({
+        model: '',
+        inputTokens: 1000,
+        outputTokens: 1000,
       }),
     ).toBeUndefined();
   });

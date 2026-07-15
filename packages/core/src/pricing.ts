@@ -1,13 +1,13 @@
 /**
- * Minimal Anthropic per-model price table used to derive `actual_cost_usd` for
- * harness contribution rows when a harness reports token counts instead of a
- * measured dollar cost.
+ * Minimal per-model price tables used to derive `actual_cost_usd` for harness
+ * contribution rows when a harness reports token counts instead of a measured
+ * dollar cost.
  *
- * Prices are US dollars per 1,000,000 tokens, taken from Anthropic's published
- * model pricing. Keep this table small and easy to update: add or adjust a row
- * and bump `ANTHROPIC_MODEL_PRICING_AS_OF`. Models absent from the table yield
- * no cost (the caller omits `actual_cost_usd` and the row stays telemetry-only)
- * rather than a fabricated value.
+ * Prices are US dollars per 1,000,000 tokens, taken from provider-published
+ * model pricing. Keep these tables small and easy to update: add or adjust a
+ * row and bump the relevant `*_AS_OF` constant. Models absent from the table
+ * yield no cost (the caller omits `actual_cost_usd` and the row stays
+ * telemetry-only) rather than a fabricated value.
  *
  * @module pricing
  */
@@ -26,7 +26,9 @@ export interface ModelPrice {
  * Prompt-cache pricing multipliers relative to the base input rate, per
  * Anthropic's published pricing. Cache writes (5-minute TTL, which Claude Code
  * uses by default) bill at 1.25x input; cache reads bill at 0.1x input. Applied
- * in {@link computeActualCostUsd} when cache token counts are supplied.
+ * in {@link computeActualCostUsd} when cache token counts are supplied. These
+ * multipliers remain Anthropic-specific; non-Anthropic callers should omit cache
+ * token counts unless they know the same rates apply.
  */
 export const CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
 export const CACHE_READ_INPUT_MULTIPLIER = 0.1;
@@ -46,31 +48,146 @@ export const ANTHROPIC_MODEL_PRICING: Readonly<Record<string, ModelPrice>> = {
   'claude-haiku-4-5': { inputPerMTokUsd: 1, outputPerMTokUsd: 5 },
 };
 
-const DATE_SUFFIX = /-\d{8}$/;
+/**
+ * OpenAI pricing source:
+ * https://developers.openai.com/api/docs/pricing
+ * Individual model pages are used for deprecated but still-practical ids such
+ * as `gpt-4o`, `gpt-4-turbo`, `o1`, and `o3-mini`.
+ *
+ * Some OpenAI models apply higher rates for large prompts. The fallback pricing
+ * logic only sees aggregate token totals, so this table captures the standard
+ * per-token rates; adapters should prefer host-reported measured cost whenever
+ * that is available.
+ */
+export const OPENAI_MODEL_PRICING: Readonly<Record<string, ModelPrice>> = {
+  'gpt-5.5': { inputPerMTokUsd: 5, outputPerMTokUsd: 30 },
+  'gpt-5': { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  'gpt-5-mini': { inputPerMTokUsd: 0.25, outputPerMTokUsd: 2 },
+  'gpt-5-codex': { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  'codex-mini-latest': { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
+  'gpt-4o': { inputPerMTokUsd: 2.5, outputPerMTokUsd: 10 },
+  'gpt-4o-mini': { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.6 },
+  'gpt-4.1': { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
+  'gpt-4.1-mini': { inputPerMTokUsd: 0.4, outputPerMTokUsd: 1.6 },
+  'gpt-4-turbo': { inputPerMTokUsd: 10, outputPerMTokUsd: 30 },
+  o1: { inputPerMTokUsd: 15, outputPerMTokUsd: 60 },
+  'o1-mini': { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
+  o3: { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
+  'o3-mini': { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
+  'o4-mini': { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
+};
+
+/**
+ * Gemini pricing source:
+ * https://ai.google.dev/gemini-api/docs/pricing
+ *
+ * Gemini 2.5 Pro varies by prompt size; the fallback uses the standard <=200k
+ * prompt tier because aggregate token totals do not preserve per-request prompt
+ * boundaries. Hosts with measured billing should pass `explicitActualCostUsd`.
+ */
+export const GOOGLE_MODEL_PRICING: Readonly<Record<string, ModelPrice>> = {
+  'gemini-2.5-pro': { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  'gemini-2.5-flash': { inputPerMTokUsd: 0.3, outputPerMTokUsd: 2.5 },
+  'gemini-2.0-flash': { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 },
+  'gemini-2.0-flash-001': { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 },
+};
+
+export const MODEL_PRICING: Readonly<Record<string, ModelPrice>> = {
+  ...ANTHROPIC_MODEL_PRICING,
+  ...OPENAI_MODEL_PRICING,
+  ...GOOGLE_MODEL_PRICING,
+};
+
+/** ISO date the merged multi-provider price table was last verified. */
+export const MODEL_PRICING_AS_OF = '2026-07-15';
+
+const COMPACT_DATE_SUFFIX = /-\d{8}$/;
+const DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
+const GEMINI_STABLE_SUFFIX = /-001$/;
+
+/**
+ * Provider prefixes stripped by {@link normalizeModelId}. Case-insensitive, and
+ * applied repeatedly so nested ids such as `openrouter/anthropic/...` collapse
+ * to the base model id used in {@link MODEL_PRICING}.
+ */
+const KNOWN_PROVIDER_PREFIXES = [
+  'openrouter/',
+  'litellm/',
+  'openai/',
+  'anthropic/',
+  'google/',
+  'gemini/',
+  'deepseek/',
+  'meta-llama/',
+  'meta/',
+  'mistralai/',
+  'moonshotai/',
+  'qwen/',
+  'x-ai/',
+  'z-ai/',
+] as const;
+
+/**
+ * Normalize a caller-supplied model id to the base key used by
+ * {@link MODEL_PRICING}. Unknown prefixes are preserved so unrelated vendor ids
+ * cannot collide with known table rows.
+ */
+export function normalizeModelId(id: string): string {
+  let normalized = id.trim().toLowerCase();
+
+  for (let index = 0; index < 5; index += 1) {
+    const prefix = KNOWN_PROVIDER_PREFIXES.find((candidate) => normalized.startsWith(candidate));
+    if (!prefix) {
+      break;
+    }
+    normalized = normalized.slice(prefix.length);
+  }
+
+  if (normalized.startsWith('claude-')) {
+    normalized = normalized.replaceAll('.', '-');
+  }
+
+  return normalized;
+}
+
+function stripKnownSnapshotSuffixes(model: string): string {
+  const compactDate = model.replace(COMPACT_DATE_SUFFIX, '');
+  if (compactDate !== model) {
+    return compactDate;
+  }
+
+  const dashedDate = model.replace(DASHED_DATE_SUFFIX, '');
+  if (dashedDate !== model) {
+    return dashedDate;
+  }
+
+  if (model.startsWith('gemini-')) {
+    return model.replace(GEMINI_STABLE_SUFFIX, '');
+  }
+
+  return model;
+}
 
 /**
  * Resolve the price for a model id. Tries an exact match first, then strips a
- * trailing `-YYYYMMDD` snapshot suffix. Returns `undefined` when the model is
- * not in the table.
+ * known snapshot/version suffix. Returns `undefined` when the model is not in
+ * the table.
  */
 export function resolveModelPrice(model: string | undefined): ModelPrice | undefined {
   if (typeof model !== 'string') {
     return undefined;
   }
 
-  const normalized = model.trim().toLowerCase();
+  const normalized = normalizeModelId(model);
   if (normalized.length === 0) {
     return undefined;
   }
 
-  return (
-    ANTHROPIC_MODEL_PRICING[normalized] ??
-    ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, '')]
-  );
+  return MODEL_PRICING[normalized] ?? MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)];
 }
 
 export interface TokenCostInput {
-  /** Resolved model actually run (Anthropic model id). */
+  /** Resolved model actually run. */
   model: string;
   /** Uncached prompt/input tokens consumed. */
   inputTokens: number;

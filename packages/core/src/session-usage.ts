@@ -446,7 +446,8 @@ export interface CostResolutionRouteContext {
 /**
  * Resolve `actual_cost_usd` with layered, graceful fallback (first finite value
  * wins):
- *  1. Explicit operator override (`explicitActualCostUsd`).
+ *  1. Explicit operator override (`explicitActualCostUsd`) when it is finite
+ *     and non-negative.
  *  2. Explicit token counts priced via the core price table.
  *  3. Statusline sidecar diff: `currentCost - costBaselineUsd` when the current
  *     sidecar's session id matches the route baseline (clamped >= 0).
@@ -454,9 +455,10 @@ export interface CostResolutionRouteContext {
  *     turns after `baselineAt`, priced via the price table.
  *  5. Otherwise `undefined` — the row is submitted partial (telemetry-only).
  *
- * Tiers 3 and 4 only engage when the routeContext carries the corresponding
- * baseline (a sidecar cost, or a `baselineAt`), so a missing baseline never
- * triggers filesystem access or an unfiltered transcript sum. Never throws.
+ * Tiers 1 and 2 are provider-agnostic. Tiers 3 and 4 are Claude-Code-specific
+ * and only engage when the routeContext carries the corresponding baseline (a
+ * sidecar cost, or a `baselineAt`), so a missing baseline never triggers
+ * filesystem access or an unfiltered transcript sum. Never throws.
  */
 export function resolveActualCostUsd(input: {
   explicitActualCostUsd?: number | undefined;
@@ -472,7 +474,8 @@ export function resolveActualCostUsd(input: {
   // Tier 1: explicit operator override.
   if (
     typeof input.explicitActualCostUsd === 'number' &&
-    Number.isFinite(input.explicitActualCostUsd)
+    Number.isFinite(input.explicitActualCostUsd) &&
+    input.explicitActualCostUsd >= 0
   ) {
     return input.explicitActualCostUsd;
   }

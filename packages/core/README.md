@@ -113,6 +113,51 @@ const response = await client.submitContribution({
 Use `@hokusai/router`'s `route.reportExternalOutcome()` helper when you want
 this report-only path without manually building rows.
 
+## Attaching cost to a contribution row
+
+Use `resolveActualCostUsd()` from `@hokusai/core` as the shared entry point when
+your harness wants to attach `actual_cost_usd` without duplicating pricing
+logic:
+
+```ts
+import { resolveActualCostUsd } from '@hokusai/core';
+
+const measured = resolveActualCostUsd({
+  model: 'openrouter/anthropic/claude-sonnet-4.6',
+  explicitActualCostUsd: 0.1234,
+});
+
+const derived = resolveActualCostUsd({
+  model: 'litellm/google/gemini-2.5-pro',
+  inputTokens: 12_345,
+  outputTokens: 678,
+});
+```
+
+When the host exposes a measured cost, prefer `explicitActualCostUsd`. When it
+does not, pass `inputTokens`, `outputTokens`, and the resolved model id so the
+SDK can try token-derived fallback pricing.
+
+Unknown or malformed model ids resolve to `undefined`, not a fabricated cost. In
+that case the contribution row simply omits `actual_cost_usd` and remains
+telemetry-only.
+
+Model id normalization accepts:
+
+- Bare ids such as `gpt-4o`, `gpt-5-codex`, `claude-sonnet-4-6`, and `gemini-2.5-pro`
+- Provider-prefixed ids such as `openai/gpt-4o`, `anthropic/claude-sonnet-4.6`, and `google/gemini-2.0-flash-001`
+- Nested OpenRouter/LiteLLM ids such as `openrouter/anthropic/claude-sonnet-4.6` and `litellm/google/gemini-2.5-pro`
+- Dated snapshots such as `claude-haiku-4.5-20251001` and `gpt-4o-2024-08-06`
+
+Known stripped prefixes are `openrouter/`, `litellm/`, `openai/`, `anthropic/`,
+`google/`, `gemini/`, `deepseek/`, `meta-llama/`, `meta/`, `mistralai/`,
+`moonshotai/`, `qwen/`, `x-ai/`, and `z-ai/`. Unknown prefixes are preserved on
+purpose so unrelated vendor ids cannot accidentally collide with a priced model.
+
+Anthropic prompt-cache multipliers are the only cache rates built into the
+fallback. Non-Anthropic callers should omit cache token counts unless they know
+the same pricing applies.
+
 ## What leaves your process
 
 Nothing you did not ask to send. Prompts are redacted before dispatch, task text

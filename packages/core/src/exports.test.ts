@@ -42,6 +42,16 @@ describe('core public surface', () => {
     expect(Array.isArray(core.OPENAI_MODELS)).toBe(true);
     expect(Array.isArray(core.OPENROUTER_PRIORITY_MODELS)).toBe(true);
     expect(Array.isArray(core.PRIORITY_MODELS)).toBe(true);
+    expect(core.ANTHROPIC_MODEL_PRICING).toBeDefined();
+    expect(core.ANTHROPIC_MODEL_PRICING_AS_OF).toBeDefined();
+    expect(core.OPENAI_MODEL_PRICING).toBeDefined();
+    expect(core.GOOGLE_MODEL_PRICING).toBeDefined();
+    expect(core.MODEL_PRICING).toBeDefined();
+    expect(core.MODEL_PRICING_AS_OF).toBeDefined();
+    expect(core.normalizeModelId).toBeDefined();
+    expect(core.resolveModelPrice).toBeDefined();
+    expect(core.computeActualCostUsd).toBeDefined();
+    expect(core.resolveActualCostUsd).toBeDefined();
     expect(core.runDoctor).toBeDefined();
     expect(core.runPluginDoctor).toBeDefined();
     expect(core.renderDoctorReport).toBeDefined();
