@@ -10,6 +10,7 @@ import {
   HokusaiNetworkError,
   HokusaiRateLimitError,
   HokusaiValidationError,
+  SDK_VERSION,
   createGatedClient,
   type ConsentRequiredError,
   type ContributionAcceptedResponse,
@@ -366,7 +367,9 @@ describe('HokusaiClient', () => {
         },
         metadata: {
           external_task_id: routeRequest.task.id,
-          integration_version: '0.2.0',
+          // Assert against the constant, not a literal, so a version bump does
+          // not break this test at every release.
+          integration_version: SDK_VERSION,
         },
       },
     });

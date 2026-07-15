@@ -9,13 +9,17 @@
       "name": "hokusai",
       "displayName": "Hokusai",
       "description": "Hokusai task routing for Claude Code - get an Anthropic model recommendation before you spend inference budget.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Hokusai"
       },
       "homepage": "https://hokus.ai",
       "repository": "https://github.com/Hokusai-protocol/hokusai-sdk",
-      "tags": ["routing", "model-routing", "claude-code"],
+      "tags": [
+        "routing",
+        "model-routing",
+        "claude-code"
+      ],
       "category": "development",
       "source": {
         "source": "git-subdir",
