@@ -124,6 +124,9 @@ Use core helpers to build and validate the public wire payloads:
 Use the registry exports to map harness model labels onto Hokusai model ids:
 
 - `ANTHROPIC_MODELS`
+- `OPENAI_MODELS`
+- `OPENROUTER_PRIORITY_MODELS`
+- `PRIORITY_MODELS`
 - `InMemoryModelRegistry`
 - `ModelMappingError`
 - `mapRecommendation()`
@@ -382,7 +385,16 @@ Example:
 
 ## Model Mapping
 
-`@hokusai/core` publishes the Anthropic allowlist as `ANTHROPIC_MODELS` and exposes two mapping helpers:
+`@hokusai/core` publishes first-class catalogs for the built-in Anthropic and
+OpenAI models plus Wavemill's launch-priority OpenRouter-facing models:
+`ANTHROPIC_MODELS`, `OPENAI_MODELS`, `OPENROUTER_PRIORITY_MODELS`, and the
+combined `PRIORITY_MODELS`.
+
+These catalogs include Claude, GPT, DeepSeek, Qwen, Kimi, GLM, Gemini, Llama,
+Mistral, and Grok families. OpenRouter ids are aliases, so both
+`qwen-3-coder` and `qwen/qwen3-coder` resolve to the same model definition.
+
+Core exposes two mapping helpers:
 
 - `mapRecommendation()` maps a recommended Hokusai model id onto a concrete model definition from a registry.
 - `validateRecommendedModel()` verifies that a harness-selected model is allowed and returns suggestions when it is not.

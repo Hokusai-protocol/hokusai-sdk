@@ -178,6 +178,66 @@ describe('createRouter', () => {
     expect(result.correlationId).toBe(routed.correlationId);
   });
 
+  it('submits a report-only external observation without a Hokusai route id', async () => {
+    const calls: Captured[] = [];
+    const warnings: string[] = [];
+    const route = createRouter({
+      client: createMockClient({
+        fidelityTiers: ['passthrough'],
+        onCall: (call) => calls.push(call),
+      }),
+      onWarning: (message) => warnings.push(message),
+    });
+
+    const result = await route.reportExternalOutcome({
+      task: 'Fix provider selection for externally routed coding tasks.',
+      context: { domain: 'routing' },
+      allowedModels: ['qwen-3-coder', 'glm-5.2', 'gemini-2.5-pro'],
+      model: 'qwen-3-coder',
+      status: 'succeeded',
+      budgetUsd: 0.5,
+      actualCostUsd: 0.12,
+      wallClockSeconds: 180,
+      harness: 'custom-harness',
+      idempotencyKey: 'external-1',
+    });
+
+    expect(
+      calls.some((call) => new URL(call.input).pathname.endsWith('/predict')),
+    ).toBe(false);
+
+    const call = calls.find((entry) =>
+      new URL(entry.input).pathname.endsWith('/contributions'),
+    );
+    expect(call).toBeDefined();
+
+    const body = JSON.parse(String(call!.init.body)) as {
+      metadata: { idempotency_key: string };
+      rows: Array<Record<string, unknown>>;
+    };
+    const row = body.rows[0]!;
+    expect(body.metadata.idempotency_key).toBe('external-1');
+    expect(row.schema_version).toBe('harness_outcome_row/v1');
+    expect(row).not.toHaveProperty('inference_log_id');
+    expect(row.allowed_models).toEqual([
+      'qwen-3-coder',
+      'glm-5.2',
+      'gemini-2.5-pro',
+    ]);
+    expect(row.selected_models).toEqual({
+      coder: 'qwen-3-coder',
+      reviewer: 'qwen-3-coder',
+    });
+    expect(row.harness).toBe('custom-harness');
+    expect(row.budget_usd).toBe(0.5);
+    expect(row.actual_cost_usd).toBe(0.12);
+
+    expect(result.accepted).toBe(true);
+    expect(result.fidelityTier).toBe('passthrough');
+    expect(result.correlationId).toBe('external-1');
+    expect(warnings.some((message) => /route-less observations/i.test(message))).toBe(true);
+  });
+
   it('maps a failed status onto a failure row', async () => {
     const calls: Captured[] = [];
     const route = createRouter({

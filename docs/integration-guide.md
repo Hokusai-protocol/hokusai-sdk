@@ -117,6 +117,36 @@ Harness-specific adapter methods:
 
 The boundary is deliberate: core owns schemas, validation, anonymization, routing, reporting, and generic persistence primitives; the adapter owns runtime discovery, UX, and harness-specific execution details.
 
+## Outcome-only integrations
+
+You do not have to make Hokusai choose the model before contributing an
+observed run. If your harness, a human, or another policy picked Qwen, GLM,
+Gemini, Grok, DeepSeek, Kimi, Llama, Mistral, or another model, submit the run
+as an external observation.
+
+For application code, use the router façade:
+
+```ts
+import { route } from '@hokusai/router';
+
+await route.reportExternalOutcome({
+  task: 'Repair provider selection for external model runs.',
+  allowedModels: ['qwen-3-coder', 'glm-5.2', 'gemini-2.5-pro'],
+  model: 'qwen-3-coder',
+  status: 'succeeded',
+  budgetUsd: 0.5,
+  actualCostUsd: 0.12,
+  harness: 'custom-harness',
+});
+```
+
+For harness code, build `harness_outcome_row/v1` directly with
+`buildHarnessOutcomeRow()` and omit `inferenceLogId`. Do not send these rows to
+the legacy `/outcomes` endpoint. The contribution endpoint will accept or reject
+the row and assign the fidelity tier. Route-less observations improve coverage,
+but they are not route-attributed unless the backend explicitly classifies them
+that way.
+
 ## Minimal adapter implementation
 
 Core owns Hokusai task, payload, consent, validation, anonymization, outcome, and persistence contracts. Adapters stay responsible for harness-specific command surfaces, config paths, model labels, execution telemetry, and user-facing rendering.

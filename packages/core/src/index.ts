@@ -136,6 +136,8 @@ export {
   InMemoryModelRegistry,
   ModelMappingError,
   OPENAI_MODELS,
+  OPENROUTER_PRIORITY_MODELS,
+  PRIORITY_MODELS,
   listSupportedModelIds,
   mapRecommendation,
   validateRecommendedModel,

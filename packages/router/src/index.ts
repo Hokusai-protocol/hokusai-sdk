@@ -40,6 +40,7 @@ import {
   HokusaiDispatchBuilder,
   InMemoryModelRegistry,
   OPENAI_MODELS,
+  PRIORITY_MODELS,
   SDK_VERSION,
   buildHarnessOutcomeRow,
   deriveTaskDescriptor,
@@ -149,10 +150,37 @@ export interface ReportOutcomeInput {
   notes?: string;
 }
 
+export interface ReportExternalOutcomeInput {
+  /** The task that was run outside Hokusai routing. */
+  task: string | HokusaiTaskInput;
+  /** Opaque categorical context, merged into the derived task descriptor. */
+  context?: Record<string, string>;
+  /** Candidate pool available to the external policy or human chooser. */
+  allowedModels: string[];
+  /** Model that actually ran. */
+  model: string;
+  /** How the task ended. */
+  status: CompletionStatus;
+  /** Optional budget used by the external policy. */
+  budgetUsd?: number;
+  /** Actual measured cost in USD. Required for the richest server tier. */
+  actualCostUsd?: number;
+  /** Wall-clock duration of the run, in seconds. */
+  wallClockSeconds?: number;
+  /** Harness or decision source name, e.g. `openhands`, `manual`, `wavemill`. */
+  harness?: string;
+  /** Stable idempotency key. Defaults to a generated observation id. */
+  idempotencyKey?: string;
+  /** Optional external task id to carry through to the row. */
+  taskId?: string;
+  /** Override the row observation timestamp. Defaults to now. */
+  observedAt?: string;
+}
+
 /** What the server did with a submitted contribution. */
 export interface ContributionResult {
   accepted: boolean;
-  /** The route this outcome was attributed to. */
+  /** The route or observation this outcome was attributed to locally. */
   correlationId: string;
   /**
    * The server's classification. Only `training_eligible` trains the router and
@@ -179,6 +207,7 @@ interface RoutedTask {
 export interface Router {
   (input: RouteInput): Promise<RouteResult>;
   reportOutcome(input: ReportOutcomeInput): Promise<ContributionResult>;
+  reportExternalOutcome(input: ReportExternalOutcomeInput): Promise<ContributionResult>;
 }
 
 export class RouterError extends Error {
@@ -192,6 +221,7 @@ export class RouterError extends Error {
 const BUILT_IN_MODELS: ModelDefinition[] = [
   ...ANTHROPIC_MODELS,
   ...OPENAI_MODELS,
+  ...PRIORITY_MODELS,
 ];
 
 /** Not every runtime that can `fetch` has a `process` global (edge, browser). */
@@ -454,7 +484,77 @@ export function createRouter(options: RouterOptions = {}): Router {
     };
   };
 
-  return Object.assign(router, { reportOutcome });
+  const reportExternalOutcome = async (
+    input: ReportExternalOutcomeInput,
+  ): Promise<ContributionResult> => {
+    const task = normalizeTask(input.task);
+    const allowedModels = normalizeModelIds(input.allowedModels);
+    const actualModel = input.model.trim();
+    if (!actualModel) {
+      throw new RouterError('model must be a non-empty string.');
+    }
+    if (allowedModels.length === 0) {
+      throw new RouterError('allowedModels must contain at least one model.');
+    }
+
+    if (input.actualCostUsd === undefined || input.budgetUsd === undefined) {
+      warn(
+        'reportExternalOutcome was called without both `budgetUsd` and `actualCostUsd`, ' +
+          'so the server may classify this observation below the richest fidelity tier.',
+      );
+    }
+
+    const observationId = input.idempotencyKey ?? createObservationId();
+    const row = buildHarnessOutcomeRow({
+      taskDescriptor: describeExternalTask(task, input.context),
+      allowedModels,
+      selectedModels: { coder: actualModel, reviewer: actualModel },
+      completionResult: input.status === 'succeeded' ? 'success' : 'failure',
+      ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}),
+      ...(input.actualCostUsd !== undefined
+        ? { actualCostUsd: input.actualCostUsd }
+        : {}),
+      ...(input.wallClockSeconds !== undefined
+        ? { wallClockSeconds: input.wallClockSeconds }
+        : {}),
+      harness: input.harness ?? 'external-observation',
+      sdkVersion: SDK_VERSION,
+      taskId: input.taskId ?? task.id,
+      observedAt: input.observedAt ?? new Date().toISOString(),
+    });
+
+    const response = (await client.submitContribution({
+      rows: [row],
+      metadata: { idempotency_key: observationId },
+    })) as ContributionAcceptedResponse;
+
+    const fidelityTier = response.rowFidelityTiers?.[0];
+    if (fidelityTier && fidelityTier === 'training_eligible') {
+      warn(
+        'The server classified a report-only observation as `training_eligible`. ' +
+          'Confirm the backend attribution policy is intended for route-less rows.',
+      );
+    } else if (fidelityTier) {
+      warn(
+        `The external observation was accepted with fidelity tier \`${fidelityTier}\`. ` +
+          'Route-less observations improve coverage but may not earn route-attributed rewards.',
+      );
+    }
+
+    return {
+      accepted: response.accepted,
+      correlationId: observationId,
+      ...(fidelityTier ? { fidelityTier } : {}),
+      ...(response.submissionId !== undefined
+        ? { submissionId: response.submissionId }
+        : {}),
+      ...(response.tokenReward !== undefined
+        ? { tokenReward: response.tokenReward }
+        : {}),
+    };
+  };
+
+  return Object.assign(router, { reportOutcome, reportExternalOutcome });
 }
 
 /**
@@ -472,6 +572,40 @@ function describeTask(routed: RoutedTask): TaskDescriptorFields {
   return Object.keys(descriptor).length > 0
     ? descriptor
     : { task_type: 'unknown' };
+}
+
+function describeExternalTask(
+  task: HokusaiTaskInput,
+  context?: Record<string, string>,
+): TaskDescriptorFields {
+  const derived = deriveTaskDescriptor({ taskText: task.prompt });
+  const descriptor: TaskDescriptorFields = {
+    ...context,
+    ...derived,
+  };
+
+  return Object.keys(descriptor).length > 0
+    ? descriptor
+    : { task_type: 'unknown' };
+}
+
+function normalizeModelIds(models: readonly string[]): string[] {
+  const seen = new Set<string>();
+  for (const model of models) {
+    const trimmed = model.trim();
+    if (trimmed) {
+      seen.add(trimmed);
+    }
+  }
+  return [...seen];
+}
+
+function createObservationId(): string {
+  const cryptoObject = Reflect.get(globalThis, 'crypto') as
+    | { randomUUID?: () => string }
+    | undefined;
+  const suffix = cryptoObject?.randomUUID?.() ?? `${Date.now()}`;
+  return `external-observation-${suffix}`;
 }
 
 function defaultWarning(message: string): void {
@@ -495,5 +629,9 @@ export const route: Router = Object.assign(
   {
     reportOutcome: (input: ReportOutcomeInput): Promise<ContributionResult> =>
       getDefaultRouter().reportOutcome(input),
+    reportExternalOutcome: (
+      input: ReportExternalOutcomeInput,
+    ): Promise<ContributionResult> =>
+      getDefaultRouter().reportExternalOutcome(input),
   },
 );
