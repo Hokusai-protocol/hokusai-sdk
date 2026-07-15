@@ -38,7 +38,7 @@ The split is the point. One directory is yours, one is not.
 
 ```
 src/
-  hokusai/     <- the reusable loop. Do not edit.
+  hokusai/     <- re-exports the shared loop from @hokusai/core. Do not edit.
   harness/     <- yours. Four TODOs.
   mock-client.ts  <- an offline stand-in for the Hokusai API
   index.ts        <- wires the two together and prints the trace
@@ -51,13 +51,13 @@ src/
 3. `executeTask` — run it; return token usage
 4. `previewPayload` — show the operator what will be sent
 
-Everything else — descriptor derivation, redaction, routing, pricing, row construction, submission — lives in `src/hokusai/loop.ts` and should not need changing.
+Everything else — descriptor derivation, redaction, routing, pricing, row construction, submission — lives in `runHokusaiLoop()` from `@hokusai/core`, re-exported by `src/hokusai/loop.ts`, and should not need changing.
 
 ## The step every integrator gets wrong
 
 Route returns an `inference_log_id` (as `RouteResponse.routeId`). It must be threaded into the contribution row. Without it the row cannot be attributed back to the routing decision, so it earns nothing no matter how complete the rest of it is.
 
-The Claude Code plugin shipped this bug: it received the id and dropped it on the floor. `src/hokusai/loop.ts` threads it, and `src/index.test.ts` asserts it.
+The Claude Code plugin shipped this bug: it received the id and dropped it on the floor. The shared core loop threads it, and `src/index.test.ts` asserts it.
 
 ## Notes for specific harnesses
 

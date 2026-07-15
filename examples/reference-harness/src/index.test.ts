@@ -1,9 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { ContributionValidationError, isHarnessOutcomeRowV1 } from '@hokusai/core';
+import {
+  ContributionValidationError,
+  DEFAULT_REDACTION_CONFIG,
+  isHarnessOutcomeRowV1,
+  type ConsentConfig,
+} from '@hokusai/core';
 import { FAKE_SECRET, createReferenceHarnessAdapter } from './harness/index.js';
+import { HARNESS_NAME, HARNESS_SDK_VERSION } from './hokusai/loop.js';
 import { runHokusaiLoop } from './hokusai/index.js';
 import { MOCK_INFERENCE_LOG_ID, createMockHokusaiClient } from './mock-client.js';
 import { runReferenceFlow } from './index.js';
+
+const OBSERVED_AT = '2026-06-08T00:00:00.000Z';
+const REFERENCE_CONSENT: ConsentConfig = {
+  subjectId: HARNESS_NAME,
+  grantedScopes: ['task-execution'],
+};
+
+function createLoopOptions() {
+  const adapter = createReferenceHarnessAdapter();
+
+  return {
+    adapter,
+    client: createMockHokusaiClient(),
+    models: adapter.discoverModels(),
+    harness: HARNESS_NAME,
+    sdkVersion: HARNESS_SDK_VERSION,
+    consent: REFERENCE_CONSENT,
+    redactionConfig: {
+      ...DEFAULT_REDACTION_CONFIG,
+      salt: 'salt',
+      customRules: [
+        { category: 'secret' as const, pattern: new RegExp(FAKE_SECRET, 'g') },
+      ],
+    },
+    clock: () => new Date(OBSERVED_AT),
+    observedAt: OBSERVED_AT,
+  };
+}
 
 describe('runReferenceFlow', () => {
   it('submits one training_eligible row and one partial row', async () => {
@@ -82,16 +116,9 @@ describe('runReferenceFlow', () => {
 
 describe('mock client validation', () => {
   it('rejects a row that leaks prompt text, offline', async () => {
-    const client = createMockHokusaiClient();
-    const adapter = createReferenceHarnessAdapter();
-
     const leaked = await runHokusaiLoop({
-      adapter,
-      client,
-      models: adapter.discoverModels(),
+      ...createLoopOptions(),
       budgetUsd: 0.5,
-      redactionSalt: 'salt',
-      redactionSecret: FAKE_SECRET,
       idempotencyKey: 'leak-test',
     });
 
@@ -102,7 +129,7 @@ describe('mock client validation', () => {
     };
 
     await expect(
-      client.submitContribution({
+      createMockHokusaiClient().submitContribution({
         rows: [poisoned as typeof leaked.row],
         metadata: { idempotency_key: 'leak-test-2' },
       }),
@@ -110,19 +137,13 @@ describe('mock client validation', () => {
   });
 
   it('classifies a row with no model selection as invalid', async () => {
-    const client = createMockHokusaiClient();
-    const adapter = createReferenceHarnessAdapter();
     const loop = await runHokusaiLoop({
-      adapter,
-      client,
-      models: adapter.discoverModels(),
+      ...createLoopOptions(),
       budgetUsd: 0.5,
-      redactionSalt: 'salt',
-      redactionSecret: FAKE_SECRET,
       idempotencyKey: 'invalid-test',
     });
 
-    const response = await client.submitContribution({
+    const response = await createMockHokusaiClient().submitContribution({
       rows: [{ ...loop.row, allowed_models: [] }],
       metadata: { idempotency_key: 'invalid-test-2' },
     });

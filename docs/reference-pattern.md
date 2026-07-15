@@ -18,7 +18,7 @@ const packet = buildTaskPacket({
 });
 ```
 
-The task packet is the routing-side view of a task. The runnable loop lives in [`examples/reference-harness/src/hokusai/loop.ts`](../examples/reference-harness/src/hokusai/loop.ts).
+The task packet is the routing-side view of a task. New host integrations should use `runHokusaiLoop()` from [`packages/core/src/host-kit/loop.ts`](../packages/core/src/host-kit/loop.ts); the reference harness re-exports that shared loop from [`examples/reference-harness/src/hokusai/loop.ts`](../examples/reference-harness/src/hokusai/loop.ts).
 
 ### 2. Derive the task descriptor
 
@@ -66,7 +66,7 @@ The reference harness uses a mock client in [`examples/reference-harness/src/moc
 
 ### 5. Execute in the host harness
 
-Execution is adapter-owned. `mapRecommendation()` from [`packages/core/src/model-registry.ts`](../packages/core/src/model-registry.ts) resolves the recommended model id into a concrete model definition, and then the host harness runs the task with its own UX and execution controls. Claude Code renders a manual handoff with `buildHandoffInstructions()` from [`packages/core/src/handoff.ts`](../packages/core/src/handoff.ts) and presents it through [`packages/adapter-claude-code/src/commands.ts`](../packages/adapter-claude-code/src/commands.ts).
+Execution is adapter-owned. In the reusable host-kit path, the adapter surface is just four methods: `collectTaskContext()`, `discoverModels()`, `executeTask()`, and `previewPayload()`. `runHokusaiLoop()` keeps descriptor derivation, anonymization, routing, recommendation mapping, pricing, row construction, submission, and fidelity-tier reading in shared code. Claude Code renders a manual handoff with `buildHandoffInstructions()` from [`packages/core/src/handoff.ts`](../packages/core/src/handoff.ts) and presents it through [`packages/adapter-claude-code/src/commands.ts`](../packages/adapter-claude-code/src/commands.ts).
 
 ```ts
 const mapped = mapRecommendation(
@@ -173,6 +173,8 @@ The example suite validates these files with `validateTaskPacket()` and `validat
 ## Verifying a new adapter
 
 Use `runAdapterConformance()` from [`packages/core/src/conformance.ts`](../packages/core/src/conformance.ts) as the executable contract for a new harness adapter. The existing per-adapter tests such as [`packages/adapter-claude-code/src/conformance.test.ts`](../packages/adapter-claude-code/src/conformance.test.ts), [`packages/adapter-codex/src/conformance.test.ts`](../packages/adapter-codex/src/conformance.test.ts), and [`packages/adapter-wavemill/src/conformance.test.ts`](../packages/adapter-wavemill/src/conformance.test.ts) show the expected usage.
+
+If you are building a new route/contribute loop rather than a plugin-commands adapter, import `HostAdapter` and `runHokusaiLoop()` from `@hokusai/core` and keep the host-specific work to those four adapter methods instead of copying the reference harness loop.
 
 ## Where Wavemill fits
 

@@ -13,7 +13,14 @@
  * @module harness/adapter
  */
 
-import type { HokusaiDispatchPayload, HokusaiTaskInput, ModelDefinition } from '@hokusai/core';
+import type {
+  HostAdapter,
+  HostExecutionResult,
+  HostPayloadPreview,
+  HostTaskContext,
+  HokusaiDispatchPayload,
+  ModelDefinition,
+} from '@hokusai/core';
 import { FAKE_EXECUTION, FAKE_TASK_CONTEXT } from './fake-data.js';
 
 /**
@@ -44,35 +51,14 @@ export const REFERENCE_MODELS: ModelDefinition[] = [
   },
 ];
 
-export interface HarnessTaskContext {
-  task: HokusaiTaskInput;
-}
+export type HarnessTaskContext = HostTaskContext;
 
 /** What your harness knows after it has actually run the task. */
-export interface HarnessExecutionResult {
-  completionResult: 'success' | 'failure';
-  inputTokens: number;
-  outputTokens: number;
-  /** Prompt-cache tokens, if your provider reports them. Priced below input. */
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
-  wallClockSeconds: number;
-}
+export type HarnessExecutionResult = HostExecutionResult;
 
-export interface PayloadPreview {
-  promptPreview: string;
-  redactionCount: number;
-}
+export type PayloadPreview = HostPayloadPreview;
 
-export interface ReferenceHarnessAdapter {
-  collectTaskContext(): Promise<HarnessTaskContext>;
-  discoverModels(): ModelDefinition[];
-  executeTask(request: {
-    task: HokusaiTaskInput;
-    model: { id: string; provider: string };
-  }): Promise<HarnessExecutionResult>;
-  previewPayload(payload: HokusaiDispatchPayload): PayloadPreview;
-}
+export type ReferenceHarnessAdapter = HostAdapter;
 
 export interface ReferenceHarnessAdapterOptions {
   /** Override the execution result to demonstrate a different fidelity tier. */

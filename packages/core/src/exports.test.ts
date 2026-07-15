@@ -56,6 +56,8 @@ describe('core public surface', () => {
     expect(core.preview).toBeDefined();
     expect(core.hashPayload).toBeDefined();
     expect(core.DEFAULT_REDACTION_CONFIG).toBeDefined();
+    expect(core.runHokusaiLoop).toBeDefined();
+    expect(core.asHokusaiLoopClient).toBeDefined();
     expect(core.TASK_PACKET_SCHEMA_VERSION).toBe('1.1.0');
     expect(core.OUTCOME_REPORT_SCHEMA_VERSION).toBe('1');
     expect(core.buildTaskPacket).toBeDefined();

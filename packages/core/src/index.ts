@@ -154,6 +154,7 @@ export {
   type BuildHandoffInstructionsInput,
   type HandoffInstructions,
 } from './handoff.js';
+export * from './host-kit/index.js';
 export {
   createDefaultHandoff,
   createDefaultOutcomeReport,
