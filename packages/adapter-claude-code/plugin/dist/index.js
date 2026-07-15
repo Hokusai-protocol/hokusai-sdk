@@ -5503,16 +5503,90 @@ var ANTHROPIC_MODEL_PRICING = {
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
-var DATE_SUFFIX = /-\d{8}$/;
+var OPENAI_MODEL_PRICING = {
+  "gpt-5.5": { inputPerMTokUsd: 5, outputPerMTokUsd: 30 },
+  "gpt-5": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "gpt-5-mini": { inputPerMTokUsd: 0.25, outputPerMTokUsd: 2 },
+  "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
+  "gpt-4o": { inputPerMTokUsd: 2.5, outputPerMTokUsd: 10 },
+  "gpt-4o-mini": { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.6 },
+  "gpt-4.1": { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
+  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, outputPerMTokUsd: 1.6 },
+  "gpt-4-turbo": { inputPerMTokUsd: 10, outputPerMTokUsd: 30 },
+  o1: { inputPerMTokUsd: 15, outputPerMTokUsd: 60 },
+  "o1-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
+  o3: { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
+  "o3-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
+  "o4-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 }
+};
+var GOOGLE_MODEL_PRICING = {
+  "gemini-2.5-pro": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "gemini-2.5-flash": { inputPerMTokUsd: 0.3, outputPerMTokUsd: 2.5 },
+  "gemini-2.0-flash": { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 },
+  "gemini-2.0-flash-001": { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 }
+};
+var MODEL_PRICING = {
+  ...ANTHROPIC_MODEL_PRICING,
+  ...OPENAI_MODEL_PRICING,
+  ...GOOGLE_MODEL_PRICING
+};
+var COMPACT_DATE_SUFFIX = /-\d{8}$/;
+var DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
+var GEMINI_STABLE_SUFFIX = /-001$/;
+var KNOWN_PROVIDER_PREFIXES = [
+  "openrouter/",
+  "litellm/",
+  "openai/",
+  "anthropic/",
+  "google/",
+  "gemini/",
+  "deepseek/",
+  "meta-llama/",
+  "meta/",
+  "mistralai/",
+  "moonshotai/",
+  "qwen/",
+  "x-ai/",
+  "z-ai/"
+];
+function normalizeModelId(id) {
+  let normalized = id.trim().toLowerCase();
+  for (let index = 0; index < 5; index += 1) {
+    const prefix = KNOWN_PROVIDER_PREFIXES.find((candidate) => normalized.startsWith(candidate));
+    if (!prefix) {
+      break;
+    }
+    normalized = normalized.slice(prefix.length);
+  }
+  if (normalized.startsWith("claude-")) {
+    normalized = normalized.replaceAll(".", "-");
+  }
+  return normalized;
+}
+function stripKnownSnapshotSuffixes(model) {
+  const compactDate = model.replace(COMPACT_DATE_SUFFIX, "");
+  if (compactDate !== model) {
+    return compactDate;
+  }
+  const dashedDate = model.replace(DASHED_DATE_SUFFIX, "");
+  if (dashedDate !== model) {
+    return dashedDate;
+  }
+  if (model.startsWith("gemini-")) {
+    return model.replace(GEMINI_STABLE_SUFFIX, "");
+  }
+  return model;
+}
 function resolveModelPrice(model) {
   if (typeof model !== "string") {
     return void 0;
   }
-  const normalized = model.trim().toLowerCase();
+  const normalized = normalizeModelId(model);
   if (normalized.length === 0) {
     return void 0;
   }
-  return ANTHROPIC_MODEL_PRICING[normalized] ?? ANTHROPIC_MODEL_PRICING[normalized.replace(DATE_SUFFIX, "")];
+  return MODEL_PRICING[normalized] ?? MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)];
 }
 function nonNegativeOrNull(value) {
   if (value === void 0) {
@@ -5532,8 +5606,18 @@ function computeActualCostUsd(input) {
   if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
     return void 0;
   }
+  if ((cacheCreationTokens > 0 || cacheReadTokens > 0) && !isAnthropicModel(input.model)) {
+    return void 0;
+  }
   const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
   return Math.round(cost * 1e6) / 1e6;
+}
+function isAnthropicModel(model) {
+  const normalized = normalizeModelId(model);
+  if (ANTHROPIC_MODEL_PRICING[normalized]) {
+    return true;
+  }
+  return Boolean(ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]);
 }
 
 // ../core/src/session-usage.ts
@@ -5760,7 +5844,7 @@ function computeTranscriptCostUsd(input) {
   });
 }
 function resolveActualCostUsd(input) {
-  if (typeof input.explicitActualCostUsd === "number" && Number.isFinite(input.explicitActualCostUsd)) {
+  if (typeof input.explicitActualCostUsd === "number" && Number.isFinite(input.explicitActualCostUsd) && input.explicitActualCostUsd >= 0) {
     return input.explicitActualCostUsd;
   }
   if (input.inputTokens !== void 0 && input.outputTokens !== void 0) {

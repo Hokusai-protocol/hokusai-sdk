@@ -2,9 +2,40 @@ import { describe, expect, it } from 'vitest';
 import {
   ANTHROPIC_MODEL_PRICING,
   ANTHROPIC_MODEL_PRICING_AS_OF,
+  GOOGLE_MODEL_PRICING,
+  MODEL_PRICING_AS_OF,
+  OPENAI_MODEL_PRICING,
   computeActualCostUsd,
+  normalizeModelId,
   resolveModelPrice,
 } from './pricing.js';
+
+describe('normalizeModelId', () => {
+  it('lowercases and trims base ids', () => {
+    expect(normalizeModelId(' GPT-4O ')).toBe('gpt-4o');
+  });
+
+  it('strips known provider prefixes', () => {
+    expect(normalizeModelId('openai/gpt-4o')).toBe('gpt-4o');
+    expect(normalizeModelId('anthropic/claude-sonnet-4.6')).toBe('claude-sonnet-4-6');
+  });
+
+  it('strips nested provider prefixes', () => {
+    expect(normalizeModelId('openrouter/anthropic/claude-sonnet-4.6')).toBe(
+      'claude-sonnet-4-6',
+    );
+    expect(normalizeModelId('litellm/google/gemini-2.5-pro')).toBe('gemini-2.5-pro');
+  });
+
+  it('preserves empty and garbage inputs without throwing', () => {
+    expect(normalizeModelId('')).toBe('');
+    expect(normalizeModelId('///')).toBe('///');
+  });
+
+  it('does not strip unknown vendor prefixes', () => {
+    expect(normalizeModelId('unknownvendor/foo')).toBe('unknownvendor/foo');
+  });
+});
 
 describe('resolveModelPrice', () => {
   it('resolves a known base model id', () => {
@@ -14,8 +45,8 @@ describe('resolveModelPrice', () => {
     });
   });
 
-  it('strips a date snapshot suffix to resolve the base model', () => {
-    expect(resolveModelPrice('claude-haiku-4-5-20251001')).toEqual(
+  it('strips an Anthropic snapshot suffix to resolve the base model', () => {
+    expect(resolveModelPrice('anthropic/claude-haiku-4.5-20251001')).toEqual(
       ANTHROPIC_MODEL_PRICING['claude-haiku-4-5'],
     );
   });
@@ -27,8 +58,30 @@ describe('resolveModelPrice', () => {
     });
   });
 
+  it('resolves known OpenAI and Gemini models', () => {
+    expect(resolveModelPrice('gpt-4o')).toEqual(OPENAI_MODEL_PRICING['gpt-4o']);
+    expect(resolveModelPrice('gemini-2.5-pro')).toEqual(GOOGLE_MODEL_PRICING['gemini-2.5-pro']);
+  });
+
+  it('treats provider-prefixed aliases the same as the bare model id', () => {
+    expect(resolveModelPrice('openrouter/anthropic/claude-sonnet-4.6')).toEqual(
+      resolveModelPrice('claude-sonnet-4-6'),
+    );
+    expect(resolveModelPrice('OPENAI/GPT-4O-mini')).toEqual(
+      OPENAI_MODEL_PRICING['gpt-4o-mini'],
+    );
+    expect(resolveModelPrice('google/gemini-2.0-flash-001')).toEqual(
+      GOOGLE_MODEL_PRICING['gemini-2.0-flash'],
+    );
+  });
+
+  it('strips an OpenAI dashed snapshot suffix when present', () => {
+    expect(resolveModelPrice('gpt-4o-2024-08-06')).toEqual(OPENAI_MODEL_PRICING['gpt-4o']);
+  });
+
   it('returns undefined for an unknown model', () => {
-    expect(resolveModelPrice('gpt-5-codex')).toBeUndefined();
+    expect(resolveModelPrice('totally-made-up-model')).toBeUndefined();
+    expect(resolveModelPrice('openrouter/vendor/model-not-mapped')).toBeUndefined();
     expect(resolveModelPrice(undefined)).toBeUndefined();
     expect(resolveModelPrice('')).toBeUndefined();
   });
@@ -82,6 +135,75 @@ describe('computeActualCostUsd', () => {
     ).toBe(5);
   });
 
+  it('computes cost from token counts for a known OpenAI model', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-4o',
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.0125);
+  });
+
+  it('computes cost from token counts for a known Gemini model', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'gemini-2.5-pro',
+        inputTokens: 1000,
+        outputTokens: 1000,
+      }),
+    ).toBe(0.01125);
+  });
+
+  it('prices provider-prefixed Anthropic aliases the same as the bare id', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'openrouter/anthropic/claude-sonnet-4.6',
+        inputTokens: 1234,
+        outputTokens: 567,
+      }),
+    ).toBe(
+      computeActualCostUsd({
+        model: 'claude-sonnet-4-6',
+        inputTokens: 1234,
+        outputTokens: 567,
+      }),
+    );
+  });
+
+  it('returns undefined when non-zero cache tokens are supplied for a non-Anthropic model', () => {
+    // OpenAI/Gemini cache pricing is not modeled; refuse to fabricate a cost
+    // by applying Anthropic-specific multipliers.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-4o',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheReadTokens: 500,
+      }),
+    ).toBeUndefined();
+    expect(
+      computeActualCostUsd({
+        model: 'gemini-2.5-pro',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheCreationTokens: 500,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('accepts zero cache token counts for non-Anthropic models', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-4o',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBe(0.0125);
+  });
+
   it('returns undefined for a negative cache token count', () => {
     expect(
       computeActualCostUsd({
@@ -120,7 +242,8 @@ describe('computeActualCostUsd', () => {
     ).toBeUndefined();
   });
 
-  it('documents an asOf date', () => {
+  it('documents asOf dates', () => {
     expect(ANTHROPIC_MODEL_PRICING_AS_OF).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(MODEL_PRICING_AS_OF).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

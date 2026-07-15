@@ -269,7 +269,12 @@ export {
 export {
   ANTHROPIC_MODEL_PRICING,
   ANTHROPIC_MODEL_PRICING_AS_OF,
+  GOOGLE_MODEL_PRICING,
+  MODEL_PRICING,
+  MODEL_PRICING_AS_OF,
+  OPENAI_MODEL_PRICING,
   computeActualCostUsd,
+  normalizeModelId,
   resolveModelPrice,
   type ModelPrice,
   type TokenCostInput,
