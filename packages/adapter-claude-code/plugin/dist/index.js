@@ -5817,6 +5817,461 @@ function resolveActualCostUsd(input) {
   return void 0;
 }
 
+// ../core/src/contribution/schema.ts
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
+var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
+var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  "prompt",
+  "messages",
+  "task_text",
+  "raw_input",
+  "eval_record",
+  "originalprompt",
+  "original_prompt",
+  "description",
+  "issue_body"
+]);
+var ContributionValidationError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "ContributionValidationError";
+    this.code = code;
+  }
+};
+function isPlainObject3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isFiniteNonNegativeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+function isIsoDateString(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+function hasOnlyAllowedKeys(value, keys) {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+function isTechnicalTaskRouterSelectedModels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["planner", "coder", "reviewer"])) {
+    return false;
+  }
+  if (typeof value.coder !== "string" || typeof value.reviewer !== "string") {
+    return false;
+  }
+  return value.planner === void 0 || typeof value.planner === "string";
+}
+function isRoleAvailableModels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["planner_models", "coder_models", "reviewer_models"])) {
+    return false;
+  }
+  return isStringArray(value.planner_models) && isStringArray(value.coder_models) && isStringArray(value.reviewer_models);
+}
+function isOutcomeLabels(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["budget_label", "cost_label", "time_label", "success_label"])) {
+    return false;
+  }
+  return (value.budget_label === "under_budget" || value.budget_label === "over_budget" || value.budget_label === "unknown") && (value.cost_label === "free" || value.cost_label === "low" || value.cost_label === "medium" || value.cost_label === "high" || value.cost_label === "unknown") && (value.time_label === "fast" || value.time_label === "medium" || value.time_label === "slow" || value.time_label === "unknown") && (value.success_label === "success" || value.success_label === "failure");
+}
+function isCandidatePoolMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["scenario_id", "scenario_kind", "pool_size", "baseline_model"])) {
+    return false;
+  }
+  return typeof value.scenario_id === "string" && typeof value.scenario_kind === "string" && isFiniteNonNegativeNumber(value.pool_size) && (value.baseline_model === void 0 || typeof value.baseline_model === "string");
+}
+function isSparseCellMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["cell_id", "descriptor_signature", "observed_count", "is_sparse"])) {
+    return false;
+  }
+  return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
+}
+function assertNoForbiddenKeys(value, path4 = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertNoForbiddenKeys(item, [...path4, String(index)]);
+    }
+    return;
+  }
+  if (!isPlainObject3(value)) {
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    if (FORBIDDEN_KEYS.has(normalizedKey)) {
+      throw new ContributionValidationError(
+        "forbidden_field",
+        `Forbidden field at ${[...path4, key].join(".")}`
+      );
+    }
+    assertNoForbiddenKeys(child, [...path4, key]);
+  }
+}
+var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
+  "eligible",
+  "ineligible_missing_outcome",
+  "ineligible_failed_outcome",
+  "unknown"
+]);
+var OUTCOME_SOURCE_VALUES = /* @__PURE__ */ new Set([
+  "feature_outcome_artifact",
+  "reconstructed",
+  "unknown"
+]);
+function isSubmitDataContributionRow(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "success_under_budget",
+    "inputs",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "task_id",
+    "harness",
+    "outcome_diagnostic",
+    "outcome_source",
+    "outcome_artifact_present",
+    "outcome_artifact_valid",
+    "outcome_artifact_used",
+    "outcome_missing_fields",
+    "outcome_invalid_fields",
+    "outcome_failure_reason"
+  ])) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.inputs !== void 0 && !isPlainObject3(value.inputs)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  if (value.outcome_diagnostic !== void 0 && !OUTCOME_DIAGNOSTIC_VALUES.has(value.outcome_diagnostic)) {
+    return false;
+  }
+  if (value.outcome_source !== void 0 && !OUTCOME_SOURCE_VALUES.has(value.outcome_source)) {
+    return false;
+  }
+  if (value.outcome_artifact_present !== void 0 && typeof value.outcome_artifact_present !== "boolean") {
+    return false;
+  }
+  if (value.outcome_artifact_valid !== void 0 && typeof value.outcome_artifact_valid !== "boolean") {
+    return false;
+  }
+  if (value.outcome_artifact_used !== void 0 && typeof value.outcome_artifact_used !== "boolean") {
+    return false;
+  }
+  if (value.outcome_missing_fields !== void 0 && !isStringArray(value.outcome_missing_fields)) {
+    return false;
+  }
+  if (value.outcome_invalid_fields !== void 0 && !isStringArray(value.outcome_invalid_fields)) {
+    return false;
+  }
+  if (value.outcome_failure_reason !== void 0 && typeof value.outcome_failure_reason !== "string") {
+    return false;
+  }
+  return !("schema_version" in value);
+}
+function isTechnicalTaskRouterContributionRowV1(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "candidate_pools",
+    "current_candidate_pools",
+    "audit_metadata",
+    "scenario",
+    "scenarios"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor)) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models)) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (!isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  return true;
+}
+function isTechnicalTaskRouterContributionRowV2(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "available_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "outcome_labels",
+    "candidate_pool",
+    "sparse_cell",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "candidate_pools",
+    "current_candidate_pools",
+    "audit_metadata",
+    "scenario",
+    "scenarios"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor)) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models)) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (!isRoleAvailableModels(value.available_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (!isOutcomeLabels(value.outcome_labels)) {
+    return false;
+  }
+  if (!isCandidatePoolMetadata(value.candidate_pool)) {
+    return false;
+  }
+  if (!isSparseCellMetadata(value.sparse_cell)) {
+    return false;
+  }
+  if (!isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  return true;
+}
+function isHarnessOutcomeRowMetadata(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, ["harness", "sdk_version"])) {
+    return false;
+  }
+  return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
+}
+function isHarnessOutcomeRowV1(value) {
+  if (!isPlainObject3(value)) {
+    return false;
+  }
+  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!hasOnlyAllowedKeys(value, [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "completion_result",
+    "success_under_budget",
+    "inference_log_id",
+    "harness",
+    "task_id",
+    "observed_at",
+    "harness_metadata"
+  ])) {
+    return false;
+  }
+  if (!isPlainObject3(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
+    return false;
+  }
+  if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
+    return false;
+  }
+  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
+    return false;
+  }
+  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
+    return false;
+  }
+  if (value.actual_cost_usd !== void 0 && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
+    return false;
+  }
+  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
+    return false;
+  }
+  if (value.completion_result !== "success" && value.completion_result !== "failure") {
+    return false;
+  }
+  if (value.success_under_budget !== void 0 && typeof value.success_under_budget !== "boolean") {
+    return false;
+  }
+  if (value.inference_log_id !== void 0 && typeof value.inference_log_id !== "string") {
+    return false;
+  }
+  if (value.harness !== void 0 && typeof value.harness !== "string") {
+    return false;
+  }
+  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
+    return false;
+  }
+  if (value.observed_at !== void 0 && !isIsoDateString(value.observed_at)) {
+    return false;
+  }
+  if (value.harness_metadata !== void 0 && !isHarnessOutcomeRowMetadata(value.harness_metadata)) {
+    return false;
+  }
+  return true;
+}
+function validateContributionRow(row) {
+  assertNoForbiddenKeys(row);
+  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
+    return row;
+  }
+  throw new ContributionValidationError(
+    "schema_validation_failed",
+    "Contribution row does not match a supported redacted schema"
+  );
+}
+
+// ../core/src/contribution/builder.ts
+function buildHarnessOutcomeRow(projection) {
+  if (!projection.taskDescriptor || Object.keys(projection.taskDescriptor).length === 0) {
+    throw new Error("taskDescriptor must be a non-empty object");
+  }
+  if (!projection.allowedModels || projection.allowedModels.length === 0) {
+    throw new Error("allowedModels must be a non-empty array");
+  }
+  if (!projection.selectedModels) {
+    throw new Error("selectedModels is required");
+  }
+  const harnessMetadata = {
+    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
+  };
+  const row = {
+    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+    task_descriptor: { ...projection.taskDescriptor },
+    allowed_models: [...projection.allowedModels],
+    selected_models: { ...projection.selectedModels },
+    completion_result: projection.completionResult,
+    ...projection.budgetUsd !== void 0 ? { budget_usd: projection.budgetUsd } : {},
+    ...projection.actualCostUsd !== void 0 ? { actual_cost_usd: projection.actualCostUsd } : {},
+    ...projection.wallClockSeconds !== void 0 ? { wall_clock_seconds: projection.wallClockSeconds } : {},
+    ...projection.successUnderBudget !== void 0 ? { success_under_budget: projection.successUnderBudget } : {},
+    ...projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {},
+    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.taskId ? { task_id: projection.taskId } : {},
+    ...projection.observedAt ? { observed_at: projection.observedAt } : {},
+    ...Object.keys(harnessMetadata).length > 0 ? { harness_metadata: harnessMetadata } : {}
+  };
+  return validateContributionRow(row);
+}
+
 // ../core/src/plugin-commands/cli.ts
 var CLI_EXIT_CODES = {
   OK: 0,
@@ -7089,461 +7544,6 @@ function createRunBootstrapDoctor(profile) {
       )
     };
   };
-}
-
-// ../core/src/contribution/schema.ts
-var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
-var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
-var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
-var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
-  "prompt",
-  "messages",
-  "task_text",
-  "raw_input",
-  "eval_record",
-  "originalprompt",
-  "original_prompt",
-  "description",
-  "issue_body"
-]);
-var ContributionValidationError = class extends Error {
-  code;
-  constructor(code, message) {
-    super(message);
-    this.name = "ContributionValidationError";
-    this.code = code;
-  }
-};
-function isPlainObject3(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-function isFiniteNonNegativeNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-function isIsoDateString(value) {
-  return typeof value === "string" && !Number.isNaN(Date.parse(value));
-}
-function hasOnlyAllowedKeys(value, keys) {
-  const allowed = new Set(keys);
-  return Object.keys(value).every((key) => allowed.has(key));
-}
-function isStringArray(value) {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
-}
-function isTechnicalTaskRouterSelectedModels(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, ["planner", "coder", "reviewer"])) {
-    return false;
-  }
-  if (typeof value.coder !== "string" || typeof value.reviewer !== "string") {
-    return false;
-  }
-  return value.planner === void 0 || typeof value.planner === "string";
-}
-function isRoleAvailableModels(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, ["planner_models", "coder_models", "reviewer_models"])) {
-    return false;
-  }
-  return isStringArray(value.planner_models) && isStringArray(value.coder_models) && isStringArray(value.reviewer_models);
-}
-function isOutcomeLabels(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, ["budget_label", "cost_label", "time_label", "success_label"])) {
-    return false;
-  }
-  return (value.budget_label === "under_budget" || value.budget_label === "over_budget" || value.budget_label === "unknown") && (value.cost_label === "free" || value.cost_label === "low" || value.cost_label === "medium" || value.cost_label === "high" || value.cost_label === "unknown") && (value.time_label === "fast" || value.time_label === "medium" || value.time_label === "slow" || value.time_label === "unknown") && (value.success_label === "success" || value.success_label === "failure");
-}
-function isCandidatePoolMetadata(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, ["scenario_id", "scenario_kind", "pool_size", "baseline_model"])) {
-    return false;
-  }
-  return typeof value.scenario_id === "string" && typeof value.scenario_kind === "string" && isFiniteNonNegativeNumber(value.pool_size) && (value.baseline_model === void 0 || typeof value.baseline_model === "string");
-}
-function isSparseCellMetadata(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, ["cell_id", "descriptor_signature", "observed_count", "is_sparse"])) {
-    return false;
-  }
-  return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
-}
-function assertNoForbiddenKeys(value, path4 = []) {
-  if (Array.isArray(value)) {
-    for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys(item, [...path4, String(index)]);
-    }
-    return;
-  }
-  if (!isPlainObject3(value)) {
-    return;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    const normalizedKey = key.toLowerCase();
-    if (FORBIDDEN_KEYS.has(normalizedKey)) {
-      throw new ContributionValidationError(
-        "forbidden_field",
-        `Forbidden field at ${[...path4, key].join(".")}`
-      );
-    }
-    assertNoForbiddenKeys(child, [...path4, key]);
-  }
-}
-var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
-  "eligible",
-  "ineligible_missing_outcome",
-  "ineligible_failed_outcome",
-  "unknown"
-]);
-var OUTCOME_SOURCE_VALUES = /* @__PURE__ */ new Set([
-  "feature_outcome_artifact",
-  "reconstructed",
-  "unknown"
-]);
-function isSubmitDataContributionRow(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, [
-    "success_under_budget",
-    "inputs",
-    "actual_cost_usd",
-    "wall_clock_seconds",
-    "task_id",
-    "harness",
-    "outcome_diagnostic",
-    "outcome_source",
-    "outcome_artifact_present",
-    "outcome_artifact_valid",
-    "outcome_artifact_used",
-    "outcome_missing_fields",
-    "outcome_invalid_fields",
-    "outcome_failure_reason"
-  ])) {
-    return false;
-  }
-  if (typeof value.success_under_budget !== "boolean") {
-    return false;
-  }
-  if (value.inputs !== void 0 && !isPlainObject3(value.inputs)) {
-    return false;
-  }
-  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
-    return false;
-  }
-  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
-    return false;
-  }
-  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
-    return false;
-  }
-  if (value.harness !== void 0 && typeof value.harness !== "string") {
-    return false;
-  }
-  if (value.outcome_diagnostic !== void 0 && !OUTCOME_DIAGNOSTIC_VALUES.has(value.outcome_diagnostic)) {
-    return false;
-  }
-  if (value.outcome_source !== void 0 && !OUTCOME_SOURCE_VALUES.has(value.outcome_source)) {
-    return false;
-  }
-  if (value.outcome_artifact_present !== void 0 && typeof value.outcome_artifact_present !== "boolean") {
-    return false;
-  }
-  if (value.outcome_artifact_valid !== void 0 && typeof value.outcome_artifact_valid !== "boolean") {
-    return false;
-  }
-  if (value.outcome_artifact_used !== void 0 && typeof value.outcome_artifact_used !== "boolean") {
-    return false;
-  }
-  if (value.outcome_missing_fields !== void 0 && !isStringArray(value.outcome_missing_fields)) {
-    return false;
-  }
-  if (value.outcome_invalid_fields !== void 0 && !isStringArray(value.outcome_invalid_fields)) {
-    return false;
-  }
-  if (value.outcome_failure_reason !== void 0 && typeof value.outcome_failure_reason !== "string") {
-    return false;
-  }
-  return !("schema_version" in value);
-}
-function isTechnicalTaskRouterContributionRowV1(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, [
-    "schema_version",
-    "task_descriptor",
-    "allowed_models",
-    "selected_models",
-    "budget_usd",
-    "actual_cost_usd",
-    "wall_clock_seconds",
-    "success_under_budget",
-    "completion_result",
-    "scorer_ref",
-    "observed_at",
-    "task_id",
-    "harness",
-    "candidate_pools",
-    "current_candidate_pools",
-    "audit_metadata",
-    "scenario",
-    "scenarios"
-  ])) {
-    return false;
-  }
-  if (!isPlainObject3(value.task_descriptor)) {
-    return false;
-  }
-  if (!isStringArray(value.allowed_models)) {
-    return false;
-  }
-  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
-    return false;
-  }
-  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
-    return false;
-  }
-  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
-    return false;
-  }
-  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
-    return false;
-  }
-  if (typeof value.success_under_budget !== "boolean") {
-    return false;
-  }
-  if (value.completion_result !== "success" && value.completion_result !== "failure") {
-    return false;
-  }
-  if (!isIsoDateString(value.observed_at)) {
-    return false;
-  }
-  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
-    return false;
-  }
-  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
-    return false;
-  }
-  if (value.harness !== void 0 && typeof value.harness !== "string") {
-    return false;
-  }
-  return true;
-}
-function isTechnicalTaskRouterContributionRowV2(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, [
-    "schema_version",
-    "task_descriptor",
-    "allowed_models",
-    "selected_models",
-    "available_models",
-    "budget_usd",
-    "actual_cost_usd",
-    "wall_clock_seconds",
-    "success_under_budget",
-    "completion_result",
-    "outcome_labels",
-    "candidate_pool",
-    "sparse_cell",
-    "scorer_ref",
-    "observed_at",
-    "task_id",
-    "harness",
-    "candidate_pools",
-    "current_candidate_pools",
-    "audit_metadata",
-    "scenario",
-    "scenarios"
-  ])) {
-    return false;
-  }
-  if (!isPlainObject3(value.task_descriptor)) {
-    return false;
-  }
-  if (!isStringArray(value.allowed_models)) {
-    return false;
-  }
-  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
-    return false;
-  }
-  if (!isRoleAvailableModels(value.available_models)) {
-    return false;
-  }
-  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
-    return false;
-  }
-  if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
-    return false;
-  }
-  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
-    return false;
-  }
-  if (typeof value.success_under_budget !== "boolean") {
-    return false;
-  }
-  if (value.completion_result !== "success" && value.completion_result !== "failure") {
-    return false;
-  }
-  if (!isOutcomeLabels(value.outcome_labels)) {
-    return false;
-  }
-  if (!isCandidatePoolMetadata(value.candidate_pool)) {
-    return false;
-  }
-  if (!isSparseCellMetadata(value.sparse_cell)) {
-    return false;
-  }
-  if (!isIsoDateString(value.observed_at)) {
-    return false;
-  }
-  if (value.scorer_ref !== void 0 && typeof value.scorer_ref !== "string") {
-    return false;
-  }
-  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
-    return false;
-  }
-  if (value.harness !== void 0 && typeof value.harness !== "string") {
-    return false;
-  }
-  return true;
-}
-function isHarnessOutcomeRowMetadata(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, ["harness", "sdk_version"])) {
-    return false;
-  }
-  return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
-}
-function isHarnessOutcomeRowV1(value) {
-  if (!isPlainObject3(value)) {
-    return false;
-  }
-  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
-    return false;
-  }
-  if (!hasOnlyAllowedKeys(value, [
-    "schema_version",
-    "task_descriptor",
-    "allowed_models",
-    "selected_models",
-    "budget_usd",
-    "actual_cost_usd",
-    "wall_clock_seconds",
-    "completion_result",
-    "success_under_budget",
-    "inference_log_id",
-    "harness",
-    "task_id",
-    "observed_at",
-    "harness_metadata"
-  ])) {
-    return false;
-  }
-  if (!isPlainObject3(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
-    return false;
-  }
-  if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
-    return false;
-  }
-  if (!isTechnicalTaskRouterSelectedModels(value.selected_models)) {
-    return false;
-  }
-  if (value.budget_usd !== void 0 && !isFiniteNonNegativeNumber(value.budget_usd)) {
-    return false;
-  }
-  if (value.actual_cost_usd !== void 0 && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
-    return false;
-  }
-  if (value.wall_clock_seconds !== void 0 && !isFiniteNonNegativeNumber(value.wall_clock_seconds)) {
-    return false;
-  }
-  if (value.completion_result !== "success" && value.completion_result !== "failure") {
-    return false;
-  }
-  if (value.success_under_budget !== void 0 && typeof value.success_under_budget !== "boolean") {
-    return false;
-  }
-  if (value.inference_log_id !== void 0 && typeof value.inference_log_id !== "string") {
-    return false;
-  }
-  if (value.harness !== void 0 && typeof value.harness !== "string") {
-    return false;
-  }
-  if (value.task_id !== void 0 && typeof value.task_id !== "string") {
-    return false;
-  }
-  if (value.observed_at !== void 0 && !isIsoDateString(value.observed_at)) {
-    return false;
-  }
-  if (value.harness_metadata !== void 0 && !isHarnessOutcomeRowMetadata(value.harness_metadata)) {
-    return false;
-  }
-  return true;
-}
-function validateContributionRow(row) {
-  assertNoForbiddenKeys(row);
-  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
-    return row;
-  }
-  throw new ContributionValidationError(
-    "schema_validation_failed",
-    "Contribution row does not match a supported redacted schema"
-  );
-}
-
-// ../core/src/contribution/builder.ts
-function buildHarnessOutcomeRow(projection) {
-  if (!projection.taskDescriptor || Object.keys(projection.taskDescriptor).length === 0) {
-    throw new Error("taskDescriptor must be a non-empty object");
-  }
-  if (!projection.allowedModels || projection.allowedModels.length === 0) {
-    throw new Error("allowedModels must be a non-empty array");
-  }
-  if (!projection.selectedModels) {
-    throw new Error("selectedModels is required");
-  }
-  const harnessMetadata = {
-    ...projection.harness ? { harness: projection.harness } : {},
-    ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
-  };
-  const row = {
-    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
-    task_descriptor: { ...projection.taskDescriptor },
-    allowed_models: [...projection.allowedModels],
-    selected_models: { ...projection.selectedModels },
-    completion_result: projection.completionResult,
-    ...projection.budgetUsd !== void 0 ? { budget_usd: projection.budgetUsd } : {},
-    ...projection.actualCostUsd !== void 0 ? { actual_cost_usd: projection.actualCostUsd } : {},
-    ...projection.wallClockSeconds !== void 0 ? { wall_clock_seconds: projection.wallClockSeconds } : {},
-    ...projection.successUnderBudget !== void 0 ? { success_under_budget: projection.successUnderBudget } : {},
-    ...projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {},
-    ...projection.harness ? { harness: projection.harness } : {},
-    ...projection.taskId ? { task_id: projection.taskId } : {},
-    ...projection.observedAt ? { observed_at: projection.observedAt } : {},
-    ...Object.keys(harnessMetadata).length > 0 ? { harness_metadata: harnessMetadata } : {}
-  };
-  return validateContributionRow(row);
 }
 
 // src/config-path.ts
