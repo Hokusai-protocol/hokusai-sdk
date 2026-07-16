@@ -130,4 +130,27 @@ describe('runAiderProcess', () => {
 
     await expect(resultPromise).rejects.toBeInstanceOf(AiderBinaryNotFoundError);
   });
+
+  it('includes the attempted path in the error message when --aider-path was provided', async () => {
+    const child = createChild();
+    spawnMock.mockReturnValue(child);
+
+    const resultPromise = runAiderProcess({
+      task: 'task',
+      model: 'gpt-5-mini',
+      cwd: '/tmp/repo',
+      aiderPath: '/custom/aider',
+    });
+
+    child.emit(
+      'error',
+      Object.assign(new Error('spawn /custom/aider ENOENT'), { code: 'ENOENT' }),
+    );
+
+    await expect(resultPromise).rejects.toMatchObject({
+      name: 'AiderBinaryNotFoundError',
+      binary: '/custom/aider',
+      message: expect.stringContaining('/custom/aider'),
+    });
+  });
 });

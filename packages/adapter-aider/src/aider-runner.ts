@@ -3,6 +3,14 @@ import { spawn } from 'node:child_process';
 export const AIDER_INSTALL_MESSAGE =
   'aider not found on PATH — install Aider (https://aider.chat) or set --aider-path';
 
+export function formatAiderNotFoundMessage(binary: string): string {
+  const trimmed = binary.trim();
+  if (trimmed === '' || trimmed === 'aider') {
+    return AIDER_INSTALL_MESSAGE;
+  }
+  return `${AIDER_INSTALL_MESSAGE} (attempted: ${trimmed})`;
+}
+
 export interface RunAiderProcessOptions {
   task: string;
   model: string;
@@ -32,7 +40,7 @@ export class AiderBinaryNotFoundError extends Error {
   readonly binary: string;
 
   constructor(binary: string) {
-    super(AIDER_INSTALL_MESSAGE);
+    super(formatAiderNotFoundMessage(binary));
     this.name = 'AiderBinaryNotFoundError';
     this.binary = binary;
     Object.setPrototypeOf(this, new.target.prototype);
