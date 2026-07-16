@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 export const AIDER_INSTALL_MESSAGE =
-  'Aider was not found. Install it with `pipx install aider-chat` or pass `--aider-path <path>`.';
+  'aider not found on PATH — install Aider (https://aider.chat) or set --aider-path';
 
 export interface RunAiderProcessOptions {
   task: string;

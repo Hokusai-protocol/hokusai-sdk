@@ -381,6 +381,6 @@ Cost: $0.123456
 
     expect(result.exitCode).toBe(CLI_EXIT_CODES.error);
     expect(submitContribution).not.toHaveBeenCalled();
-    expect(result.stderr).toContain('Aider was not found.');
+    expect(result.stderr).toContain('aider not found on PATH');
   });
 });
