@@ -9,6 +9,7 @@ This repository currently includes:
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
+- `@hokusai/adapter-aider` for a vendor-neutral CLI wrapper that routes a task through Hokusai and launches [Aider](https://aider.chat) with the recommended model
 - `examples/reference-harness` for the smallest complete generic integration flow
 
 ## Install Packages
@@ -69,12 +70,14 @@ Add an adapter package when you are targeting a specific harness:
 pnpm add @hokusai/adapter-claude-code
 pnpm add @hokusai/adapter-codex
 pnpm add @hokusai/adapter-wavemill
+pnpm add @hokusai/adapter-aider
 ```
 
 ```sh
 npm install @hokusai/adapter-claude-code
 npm install @hokusai/adapter-codex
 npm install @hokusai/adapter-wavemill
+npm install @hokusai/adapter-aider
 ```
 
 ## What The SDK Provides
@@ -395,6 +398,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 - `packages/adapter-claude-code`: Claude Code plugin, CLI commands, doctor/privacy/report tooling, and Claude-specific adapter
 - `packages/adapter-codex`: Codex command descriptors, task context builders, outcome builders, model provider, and harness adapter
 - `packages/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers and conformance fixtures
+- `packages/adapter-aider`: neutral CLI wrapper (`hokusai-aider`) that routes a task and launches Aider with the recommended model
 - `examples/reference-harness`: minimal offline composition template for generic harness authors
 
 ## Development
