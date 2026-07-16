@@ -83,9 +83,11 @@ export function createReferenceHarnessAdapter(
 
     // TODO(fork): run the task and return real token usage. Neither Pi nor
     // OpenHands exposes a Claude Code-style statusline or transcript, so the
-    // layered cost capture in `session-usage.ts` does not apply — return the
-    // token counts your provider hands back and let `computeActualCostUsd`
-    // price them.
+    // layered cost capture in `session-usage.ts` does not apply. OpenHands
+    // exposes `RouterLLM` plus LLM/conversation token-cost metrics — feed
+    // those into `computeActualCostUsd`. For Pi and simpler harnesses,
+    // return the token counts your provider hands back and let
+    // `computeActualCostUsd` price them.
     executeWithModel() {
       return Promise.resolve({ ...FAKE_EXECUTION, ...options.execution });
     },
