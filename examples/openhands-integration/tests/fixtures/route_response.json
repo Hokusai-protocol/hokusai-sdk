@@ -1,0 +1,11 @@
+{
+  "predictions": {
+    "recommended_strategy": {
+      "coder_model": "gpt-4o-mini",
+      "confidence": 0.82
+    }
+  },
+  "metadata": {
+    "route_id": "route-openhands-1"
+  }
+}

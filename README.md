@@ -12,6 +12,7 @@ This repository currently includes:
 - `@hokusai/adapter-aider` for a vendor-neutral CLI wrapper that routes a task through Hokusai and launches [Aider](https://aider.chat) with the recommended model
 - `examples/reference-harness` for the smallest complete generic integration flow
 - `examples/litellm-integration` for a Python-side LiteLLM metadata-only routing prototype
+- `examples/openhands-integration` for the Python-side `@hokusai/adapter-openhands` equivalent — Hokusai-backed `RouterLLM` plus SDK-metrics contribution rows
 
 ## Install Packages
 
@@ -402,6 +403,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 - `packages/adapter-aider`: neutral CLI wrapper (`hokusai-aider`) that routes a task and launches Aider with the recommended model
 - `examples/reference-harness`: minimal offline composition template for generic harness authors
 - `examples/litellm-integration`: LiteLLM metadata-only routing and contribution example
+- `examples/openhands-integration`: OpenHands `RouterLLM` + SDK-metrics integration (Python-side `@hokusai/adapter-openhands` equivalent)
 
 ## Development
 

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "harness_outcome_row/v1",
+  "fields": [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "completion_result",
+    "success_under_budget",
+    "inference_log_id",
+    "harness",
+    "task_id",
+    "observed_at",
+    "harness_metadata"
+  ],
+  "forbiddenKeys": [
+    "messages",
+    "prompt",
+    "input",
+    "content",
+    "system",
+    "tools",
+    "tool_calls",
+    "tool_choice",
+    "functions",
+    "function_call",
+    "completion",
+    "response",
+    "choices",
+    "text"
+  ]
+}
