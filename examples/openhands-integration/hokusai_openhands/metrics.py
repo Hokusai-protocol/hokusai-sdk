@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any
@@ -70,23 +70,35 @@ def _extract_total_tokens(prompt_tokens: int | None, completion_tokens: int | No
     return prompt_tokens + completion_tokens
 
 
-def _extract_latency_seconds(metrics: Any) -> float | None:
-    response_latencies = _maybe_attr(metrics, "response_latencies")
-    if not isinstance(response_latencies, Sequence):
-        return None
+def _extract_wall_clock_seconds(metrics: Any, conversation: Any | None) -> float | None:
+    sources = (
+        metrics,
+        getattr(conversation, "state", None),
+        conversation,
+    )
+    second_fields = (
+        "wall_clock_seconds",
+        "elapsed_seconds",
+        "duration_seconds",
+        "runtime_seconds",
+    )
+    millisecond_fields = (
+        "wall_clock_ms",
+        "elapsed_ms",
+        "duration_ms",
+        "runtime_ms",
+    )
 
-    total_latency = 0.0
-    seen_latency = False
-    for entry in response_latencies:
-        latency = _coerce_float(_maybe_attr(entry, "latency"))
-        if latency is None:
-            continue
-        total_latency += latency
-        seen_latency = True
-
-    if not seen_latency:
-        return None
-    return total_latency
+    for source in sources:
+        for field in second_fields:
+            seconds = _coerce_float(_maybe_attr(source, field))
+            if seconds is not None:
+                return seconds
+        for field in millisecond_fields:
+            milliseconds = _coerce_float(_maybe_attr(source, field))
+            if milliseconds is not None:
+                return milliseconds / 1000.0
+    return None
 
 
 def _metrics_from_conversation(conversation: Any, usage_id: str | None) -> Any:
@@ -149,7 +161,7 @@ def extract_metrics(
     actual_cost_usd = _coerce_float(_maybe_attr(metrics, "accumulated_cost"))
     prompt_tokens, completion_tokens = _extract_token_usage(metrics)
     total_tokens = _extract_total_tokens(prompt_tokens, completion_tokens)
-    latency_seconds = _extract_latency_seconds(metrics)
+    latency_seconds = _extract_wall_clock_seconds(metrics, conversation)
 
     return OpenHandsMetricsSnapshot(
         actual_cost_usd=actual_cost_usd,

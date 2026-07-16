@@ -145,14 +145,15 @@ class HokusaiRoutingStrategy(CustomRoutingStrategyBase):
     ) -> dict[str, Any]:
         _ = model, messages, input, specific_deployment
         kwargs = dict(request_kwargs or {})
-        routing_metadata = build_routing_metadata(
-            kwargs,
-            candidate_models=self._deployment_names(),
-            latency_budget_ms=self._latency_budget_ms,
-            budget_usd=self._budget_usd,
-        )
+        routing_metadata: Mapping[str, Any] = {"candidate_models": self._deployment_names()}
 
         try:
+            routing_metadata = build_routing_metadata(
+                kwargs,
+                candidate_models=self._deployment_names(),
+                latency_budget_ms=self._latency_budget_ms,
+                budget_usd=self._budget_usd,
+            )
             recommendation = await self._client.select_model(routing_metadata)
             deployment, fallback_used = map_recommendation_to_deployment(
                 recommendation.model,
@@ -171,7 +172,7 @@ class HokusaiRoutingStrategy(CustomRoutingStrategyBase):
             return deployment
         except (RoutingCallFailed, PromptLeakageError) as exc:
             fallback = self._fallback_deployment()
-            self._logger.warning("Hokusai routing failed open: %s", exc)
+            self._logger.warning("Hokusai routing failed open (%s): %s", type(exc).__name__, exc)
             self._stash_metadata(
                 kwargs,
                 deployment=fallback,

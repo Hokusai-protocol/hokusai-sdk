@@ -114,6 +114,7 @@ def main() -> int:
     metrics = SimpleNamespace(
         accumulated_cost=0.0042,
         accumulated_token_usage=token_usage,
+        wall_clock_seconds=1.25,
         response_latencies=[SimpleNamespace(latency=1.25)],
     )
     conversation = SimpleNamespace(

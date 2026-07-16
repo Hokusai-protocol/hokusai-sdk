@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from hokusai_litellm.callback import HokusaiContributionLogger
-from hokusai_litellm.errors import ConfigurationError, RoutingCallFailed
+from hokusai_litellm.errors import ConfigurationError, PromptLeakageError, RoutingCallFailed
 from hokusai_litellm.hokusai_client import HokusaiHttpClient, Recommendation
 from hokusai_litellm.router_strategy import HokusaiRoutingStrategy, map_recommendation_to_deployment
 
@@ -17,8 +17,10 @@ from hokusai_litellm.router_strategy import HokusaiRoutingStrategy, map_recommen
 class FakeClient:
     def __init__(self, recommendation: Recommendation | Exception) -> None:
         self.recommendation = recommendation
+        self.calls: list[dict[str, object]] = []
 
     async def select_model(self, metadata: dict[str, object]) -> Recommendation:
+        self.calls.append(metadata)
         if isinstance(self.recommendation, Exception):
             raise self.recommendation
         return self.recommendation
@@ -97,6 +99,33 @@ async def test_routing_strategy_fails_open_on_client_errors(
     assert deployment["model_name"] == "gpt-4o-mini"
     assert kwargs["metadata"]["hokusai"]["fallback_used"] is True
     assert "failed open" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_routing_strategy_fails_open_on_prompt_leakage(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING)
+    client = FakeClient(Recommendation(model="gpt-4o", inference_log_id="route-1"))
+    strategy = HokusaiRoutingStrategy(
+        client,  # type: ignore[arg-type]
+        DEPLOYMENTS,
+    )
+    kwargs = {"metadata": {"task_type": {"prompt": "SECRET_PROMPT_TOKEN"}}}
+
+    deployment = await strategy.async_get_available_deployment(
+        model="router-group",
+        request_kwargs=kwargs,
+    )
+
+    assert deployment["model_name"] == "gpt-4o-mini"
+    assert client.calls == []
+    assert kwargs["metadata"]["hokusai"]["fallback_used"] is True
+    assert kwargs["metadata"]["hokusai"]["routing_metadata"] == {
+        "candidate_models": ["gpt-4o-mini", "gpt-4o"],
+    }
+    assert "failed open" in caplog.text
+    assert PromptLeakageError.__name__ in caplog.text
 
 
 @pytest.mark.asyncio

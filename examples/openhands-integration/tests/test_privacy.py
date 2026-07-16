@@ -73,6 +73,7 @@ def test_end_to_end_requests_never_send_prompt_or_completion_content(
     metrics = SimpleNamespace(
         accumulated_cost=0.0021,
         accumulated_token_usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        wall_clock_seconds=0.4,
         response_latencies=[SimpleNamespace(latency=0.4)],
     )
     conversation = SimpleNamespace(

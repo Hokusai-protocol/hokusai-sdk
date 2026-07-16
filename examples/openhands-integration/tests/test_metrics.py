@@ -21,6 +21,7 @@ def test_extract_metrics_reads_cost_tokens_and_latency() -> None:
             prompt_tokens=120,
             completion_tokens=45,
         ),
+        wall_clock_seconds=0.6,
         response_latencies=[
             SimpleNamespace(latency=0.2),
             SimpleNamespace(latency=0.4),
@@ -42,8 +43,35 @@ def test_extract_metrics_reads_cost_tokens_and_latency() -> None:
     assert snapshot.prompt_tokens == 120
     assert snapshot.completion_tokens == 45
     assert snapshot.total_tokens == 165
-    assert snapshot.latency_seconds == 0.6000000000000001
+    assert snapshot.latency_seconds == 0.6
     assert snapshot.completion_result == "success"
+
+
+def test_extract_metrics_does_not_treat_response_latency_as_wall_clock() -> None:
+    metrics = SimpleNamespace(
+        accumulated_cost=0.013,
+        accumulated_token_usage=SimpleNamespace(
+            prompt_tokens=120,
+            completion_tokens=45,
+        ),
+        response_latencies=[
+            SimpleNamespace(latency=0.2),
+            SimpleNamespace(latency=0.4),
+        ],
+    )
+    conversation = SimpleNamespace(
+        state=SimpleNamespace(
+            execution_status=SimpleNamespace(value="finished"),
+            stats=FakeConversationStats(metrics),
+        )
+    )
+
+    snapshot = extract_metrics(
+        conversation=conversation,
+        usage_id="agent-fast",
+    )
+
+    assert snapshot.latency_seconds is None
 
 
 def test_extract_metrics_handles_missing_metrics_object() -> None:
