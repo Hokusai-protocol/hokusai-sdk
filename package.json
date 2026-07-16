@@ -14,6 +14,7 @@
     "release": "changeset publish",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "export:schemas": "node scripts/export-harness-row-schema.mjs",
     "version-packages": "changeset version && node scripts/sync-versions.mjs",
     "sync:versions": "node scripts/sync-versions.mjs",
     "check:versions": "node scripts/sync-versions.mjs --check",

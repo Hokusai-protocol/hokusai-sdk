@@ -5905,6 +5905,22 @@ function resolveActualCostUsd(input) {
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
 var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
+var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
+  "schema_version",
+  "task_descriptor",
+  "allowed_models",
+  "selected_models",
+  "budget_usd",
+  "actual_cost_usd",
+  "wall_clock_seconds",
+  "completion_result",
+  "success_under_budget",
+  "inference_log_id",
+  "harness",
+  "task_id",
+  "observed_at",
+  "harness_metadata"
+]);
 var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
   "prompt",
   "messages",
@@ -6252,22 +6268,7 @@ function isHarnessOutcomeRowV1(value) {
   if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
     return false;
   }
-  if (!hasOnlyAllowedKeys(value, [
-    "schema_version",
-    "task_descriptor",
-    "allowed_models",
-    "selected_models",
-    "budget_usd",
-    "actual_cost_usd",
-    "wall_clock_seconds",
-    "completion_result",
-    "success_under_budget",
-    "inference_log_id",
-    "harness",
-    "task_id",
-    "observed_at",
-    "harness_metadata"
-  ])) {
+  if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
     return false;
   }
   if (!isPlainObject3(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {

@@ -69,6 +69,7 @@ describe('core public surface', () => {
     expect(core.DEFAULT_REDACTION_CONFIG).toBeDefined();
     expect(core.TASK_PACKET_SCHEMA_VERSION).toBe('1.1.0');
     expect(core.OUTCOME_REPORT_SCHEMA_VERSION).toBe('1');
+    expect(core.HARNESS_OUTCOME_ROW_FIELDS).toContain('inference_log_id');
     expect(core.buildTaskPacket).toBeDefined();
     expect(core.buildOutcomeReport).toBeDefined();
     expect(core.previewOutcomePayload).toBeDefined();

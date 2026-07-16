@@ -11,6 +11,7 @@ This repository currently includes:
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
 - `@hokusai/adapter-aider` for a vendor-neutral CLI wrapper that routes a task through Hokusai and launches [Aider](https://aider.chat) with the recommended model
 - `examples/reference-harness` for the smallest complete generic integration flow
+- `examples/litellm-integration` for a Python-side LiteLLM metadata-only routing prototype
 
 ## Install Packages
 
@@ -400,6 +401,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 - `packages/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers and conformance fixtures
 - `packages/adapter-aider`: neutral CLI wrapper (`hokusai-aider`) that routes a task and launches Aider with the recommended model
 - `examples/reference-harness`: minimal offline composition template for generic harness authors
+- `examples/litellm-integration`: LiteLLM metadata-only routing and contribution example
 
 ## Development
 
@@ -427,3 +429,4 @@ pnpm -r test
 - [Claude Code Adapter](packages/adapter-claude-code/README.md) - Claude Code adapter package reference
 - [Wavemill Adapter](packages/adapter-wavemill/README.md) - Wavemill reference adapter package details
 - [Reference Harness](examples/reference-harness/README.md) - minimal offline harness composition example
+- [LiteLLM Metadata-Only Integration](docs/litellm-integration.md) - LiteLLM host integration architecture, privacy boundary, and example entry point

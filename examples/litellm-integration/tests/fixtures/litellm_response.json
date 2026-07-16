@@ -1,0 +1,20 @@
+{
+  "id": "resp-1",
+  "model": "openai/gpt-4o-mini",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "SECRET_COMPLETION_TOKEN"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 120,
+    "completion_tokens": 340,
+    "total_tokens": 460
+  },
+  "_hidden_params": {
+    "response_cost": 0.0021
+  }
+}

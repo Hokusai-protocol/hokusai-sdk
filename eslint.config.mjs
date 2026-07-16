@@ -21,6 +21,8 @@ export default tseslint.config(
       '.typecheck/**',
       'coverage/**',
       'node_modules/**',
+      '.venv/**',
+      '**/.venv/**',
       'features/**',
       '**/*.d.ts',
       '**/*.d.ts.map',

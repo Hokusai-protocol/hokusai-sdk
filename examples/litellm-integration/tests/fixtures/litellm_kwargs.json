@@ -1,0 +1,31 @@
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "SECRET_PROMPT_TOKEN"
+    },
+    {
+      "role": "system",
+      "content": "SECRET_SYSTEM_TOKEN"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup",
+        "parameters": {
+          "query": "SECRET_TOOL_ARG"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "task_type": "bugfix",
+    "task_id": "t-1",
+    "estimated_input_tokens": 250,
+    "custom_prompt_backdoor": "SECRET_BACKDOOR"
+  },
+  "custom_prompt_backdoor": "SECRET_BACKDOOR"
+}
