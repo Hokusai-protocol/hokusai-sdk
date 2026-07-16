@@ -80,8 +80,13 @@ try {
 } catch (error) {
   if (!(error instanceof ModelMappingError)) throw error;
   // `pickFallback` is your host-defined policy — not an SDK export.
-  // Return a runnable model to remap, or null to record a decline.
-  mapped = pickFallback(error.code, allowedModels);
+  // Return a runnable model to remap, or take the decline branch below.
+  const fallback = pickFallback(error.code, allowedModels);
+  if (!fallback) {
+    await recordDecline(ctx, error); // host-defined decline path
+    return;
+  }
+  mapped = fallback;
 }
 const execution = await adapter.executeTask({
   task: ctx.task,
