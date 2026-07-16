@@ -396,7 +396,7 @@ Mistral, and Grok families. OpenRouter ids are aliases, so both
 
 Core exposes two mapping helpers:
 
-- `mapRecommendation()` maps a recommended Hokusai model id onto a concrete model definition from a registry.
+- `mapRecommendation()` maps a recommended Hokusai model id onto a concrete model definition from a registry. It throws `ModelMappingError` with `code` `UNKNOWN_MODEL`, `PROVIDER_NOT_ALLOWED`, or `MODEL_UNAVAILABLE` (and a `suggestions` list) when the recommendation cannot resolve to an allowed, available model; there is no silent registry-default fallback. Hosts should catch the error and either remap to one of `suggestions` that they actually run, or record a decline.
 - `validateRecommendedModel()` verifies that a harness-selected model is allowed and returns suggestions when it is not.
 
 Use these helpers together with `InMemoryModelRegistry` to keep harness model labels separate from the shared routed model ids.

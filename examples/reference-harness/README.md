@@ -63,13 +63,13 @@ The Claude Code plugin shipped this bug: it received the id and dropped it on th
 
 ### Pi and OpenHands
 
-Both have their own model-selection surface. `mapRecommendation()` resolves the router's recommended model id against your `InMemoryModelRegistry`; when the router names a model you cannot run, it falls back to a registry default rather than throwing. Either honor the fallback or record a decline — do not silently substitute a model and then report the recommended one, because `selected_models` would no longer describe what actually ran.
+Both have their own model-selection surface. `mapRecommendation()` resolves the router's recommended model id against your `InMemoryModelRegistry`; when the router names a model you cannot run, it **throws** `ModelMappingError` with `code` `UNKNOWN_MODEL`, `PROVIDER_NOT_ALLOWED`, or `MODEL_UNAVAILABLE` and a `suggestions` list of registered alternatives. Catch it and either remap to a model you actually run (`selected_models` must describe what ran) or record a decline — do not silently substitute a model and then report the recommended one.
 
 Model ids in `discoverRunnableModels()` must be real provider ids. `pricing.ts` looks them up; a made-up id yields no cost and drops your row to `partial`.
 
 ### Cost capture
 
-Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically. **Neither Pi nor OpenHands does**, so that layered fallback does not apply. Return token counts from `executeWithModel` and let `computeActualCostUsd()` price them, as this harness does.
+Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically from those Claude-specific surfaces. OpenHands surfaces its own cost signals — `RouterLLM` plus LLM/conversation metrics report per-turn token counts and (typically) a cost — and Pi and most custom loops carry token counts from the underlying provider. In every case, return token counts from `executeWithModel` and let `computeActualCostUsd()` price them, as this harness does; if your runtime already reports a measured dollar cost, use it directly.
 
 If your provider reports prompt-cache tokens, pass `cacheCreationTokens` and `cacheReadTokens` too. They are billed at 1.25x and 0.1x the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs.
 

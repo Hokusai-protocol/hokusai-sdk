@@ -81,11 +81,13 @@ export function createReferenceHarnessAdapter(
       return REFERENCE_MODELS;
     },
 
-    // TODO(fork): run the task and return real token usage. Neither Pi nor
-    // OpenHands exposes a Claude Code-style statusline or transcript, so the
-    // layered cost capture in `session-usage.ts` does not apply — return the
-    // token counts your provider hands back and let `computeActualCostUsd`
-    // price them.
+    // TODO(fork): run the task and return real token usage. The layered
+    // capture in `session-usage.ts` reads a Claude Code-specific statusline
+    // and session transcript, which Pi and OpenHands do not expose. Read
+    // tokens from whichever surface your runtime already has — OpenHands'
+    // RouterLLM/LLM conversation metrics, Pi's provider response, or your
+    // custom loop's usage counters — and let `computeActualCostUsd` price
+    // them.
     executeWithModel() {
       return Promise.resolve({ ...FAKE_EXECUTION, ...options.execution });
     },
