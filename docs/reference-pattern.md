@@ -81,6 +81,23 @@ const execution = await adapter.executeTask({
 
 When the router names a model the harness cannot run, `mapRecommendation()` throws `ModelMappingError` with code `UNKNOWN_MODEL`, `PROVIDER_NOT_ALLOWED`, or `MODEL_UNAVAILABLE`. Catch it, inspect `error.code`, and either remap to a runnable model or record a decline. Never substitute a model silently, because `selected_models` must describe what actually ran.
 
+```ts
+let mapped;
+try {
+  mapped = mapRecommendation(
+    { model: route.recommendation?.model ?? allowedModels[0] },
+    { registry },
+  );
+} catch (error) {
+  if (error instanceof ModelMappingError) {
+    // remap to a runnable model, or record a decline
+    mapped = pickFallback(error.code, allowedModels);
+  } else {
+    throw error;
+  }
+}
+```
+
 Claude Code's visible entry points for this stage are the routed recommendation output and the copyable `/model ...` handoff generated after `/hokusai:route`.
 
 ### 6. Derive the actual cost
