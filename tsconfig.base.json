@@ -27,6 +27,7 @@
       ],
       "@hokusai/adapter-codex": ["packages/adapter-codex/src/index.ts"],
       "@hokusai/adapter-wavemill": ["packages/adapter-wavemill/src/index.ts"],
+      "@hokusai/adapter-aider": ["packages/adapter-aider/src/index.ts"],
       "@hokusai/router": ["packages/router/src/index.ts"]
     }
   }

@@ -49,6 +49,12 @@ importers:
         specifier: ^4.20.6
         version: 4.22.4
 
+  packages/adapter-aider:
+    dependencies:
+      '@hokusai/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/adapter-claude-code:
     dependencies:
       '@hokusai/core':
