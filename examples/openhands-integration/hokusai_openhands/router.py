@@ -337,18 +337,13 @@ def hokusai_select_llm(
     try:
         decision = state.resolver.route_call_sync(
             message_count=message_count,
+            task_metadata=task_metadata,
         )
     except (RoutingCallFailed, PromptLeakageError) as exc:
         LOGGER.warning("Hokusai routing failed: %s", exc)
         raise
 
     state.last_call_id = decision.call_id
-    if task_metadata is not None:
-        LOGGER.debug(
-            "hokusai_select_llm ignored task_metadata override; "
-            "use resolver.task_metadata_provider"
-        )
-
     return decision.routing_key
 
 

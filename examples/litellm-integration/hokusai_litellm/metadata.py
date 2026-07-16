@@ -107,7 +107,7 @@ def build_routing_metadata(
 ) -> SafeRoutingMetadata:
     metadata = _as_mapping(litellm_kwargs.get("metadata"))
     result: dict[str, Any] = {
-        "task_type": metadata.get("task_type", "unknown"),
+        "task_type": str(metadata.get("task_type", "unknown")),
         "candidate_models": list(candidate_models),
         "integration_version": str(
             metadata.get("integration_version", "hokusai-litellm-example/0.1.0")
