@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+from uuid import uuid4
+
+import httpx
+
+from .contribution import INTEGRATION_VERSION, build_contribution_request
+from .errors import ContributionSubmissionFailed, RoutingUnavailableError
+from .metadata import SafeRoutingMetadata
+
+
+@dataclass(frozen=True)
+class RouteRecommendation:
+    model: str
+    route_id: str
+    confidence: float | None = None
+    raw: dict[str, Any] | None = None
+
+
+def _as_mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+class HokusaiHttpClient:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        *,
+        timeout_ms: int = 500,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.timeout = httpx.Timeout(timeout_ms / 1000.0)
+        self._transport = transport
+
+    def _headers(
+        self,
+        *,
+        request_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, str]:
+        resolved_request_id = request_id or uuid4().hex
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "X-Request-ID": resolved_request_id,
+            "X-Hokusai-Request-Id": resolved_request_id,
+            "X-Hokusai-Sdk-Version": INTEGRATION_VERSION,
+        }
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+        return headers
+
+    @staticmethod
+    def _build_route_request(
+        metadata: SafeRoutingMetadata,
+        request_id: str | None,
+    ) -> dict[str, Any]:
+        routing: dict[str, Any] = {
+            "available_models": list(metadata.get("candidate_models", [])),
+        }
+        if "budget_usd" in metadata:
+            routing["max_cost_usd"] = metadata["budget_usd"]
+        if "latency_budget_ms" in metadata:
+            routing["max_latency_seconds"] = metadata["latency_budget_ms"] / 1000.0
+        if metadata.get("quality_tier") == "high":
+            routing["prioritize_quality"] = True
+        if metadata.get("quality_tier") == "speed":
+            routing["prioritize_speed"] = True
+
+        return {
+            "inputs": {
+                "task": {
+                    "description": "metadata-only OpenHands route",
+                    "task_type": metadata.get("task_type", "unknown"),
+                },
+                "routing": routing,
+                "metadata": {
+                    "external_task_id": request_id or "openhands",
+                    "integration_version": metadata.get("integration_version", INTEGRATION_VERSION),
+                },
+            },
+            "safe_metadata": dict(metadata),
+        }
+
+    @staticmethod
+    def _parse_recommendation(payload: Any) -> RouteRecommendation:
+        body = _as_mapping(payload)
+        predictions = _as_mapping(body.get("predictions"))
+        strategy = _as_mapping(predictions.get("recommended_strategy"))
+        metadata = _as_mapping(body.get("metadata"))
+
+        model_value = (
+            strategy.get("coder_model")
+            or strategy.get("model")
+            or metadata.get("coder_model")
+            or metadata.get("model")
+        )
+        if not isinstance(model_value, str) or not model_value:
+            raise RoutingUnavailableError(
+                "Hokusai routing response did not include a string model recommendation"
+            )
+
+        route_id_value = body.get("routeId") or metadata.get("routeId") or body.get("route_id")
+        if not isinstance(route_id_value, str) or not route_id_value:
+            raise RoutingUnavailableError(
+                "Hokusai routing response did not include routeId"
+            )
+
+        confidence_raw = strategy.get("confidence") or metadata.get("confidence")
+        confidence = None
+        if isinstance(confidence_raw, int | float):
+            confidence = float(confidence_raw)
+        elif isinstance(confidence_raw, str):
+            try:
+                confidence = float(confidence_raw)
+            except ValueError:
+                confidence = None
+
+        return RouteRecommendation(
+            model=model_value,
+            route_id=route_id_value,
+            confidence=confidence,
+            raw=dict(body),
+        )
+
+    def route(
+        self,
+        metadata: SafeRoutingMetadata,
+        *,
+        request_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> RouteRecommendation:
+        request = self._build_route_request(metadata, request_id)
+        try:
+            with httpx.Client(
+                base_url=self.base_url,
+                timeout=self.timeout,
+                transport=self._transport,
+            ) as client:
+                response = client.post(
+                    "/api/v1/models/30/predict",
+                    headers=self._headers(
+                        request_id=request_id,
+                        idempotency_key=idempotency_key,
+                    ),
+                    json=request,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise RoutingUnavailableError("Hokusai routing request timed out") from exc
+        except httpx.HTTPStatusError as exc:
+            raise RoutingUnavailableError(
+                f"Hokusai routing request failed with status {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise RoutingUnavailableError("Hokusai routing request failed") from exc
+
+        try:
+            return self._parse_recommendation(response.json())
+        except ValueError as exc:
+            raise RoutingUnavailableError("Hokusai routing response was not valid JSON") from exc
+
+    def submit_contribution(
+        self,
+        row: Mapping[str, Any],
+        *,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        request = build_contribution_request(row, idempotency_key=idempotency_key)
+        try:
+            with httpx.Client(
+                base_url=self.base_url,
+                timeout=self.timeout,
+                transport=self._transport,
+            ) as client:
+                response = client.post(
+                    "/api/v1/models/30/contributions",
+                    headers=self._headers(idempotency_key=idempotency_key),
+                    json=request,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise ContributionSubmissionFailed("Contribution submission timed out") from exc
+        except httpx.HTTPStatusError as exc:
+            raise ContributionSubmissionFailed(
+                f"Contribution submission failed with status {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ContributionSubmissionFailed("Contribution submission failed") from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ContributionSubmissionFailed("Contribution response was not valid JSON") from exc
+
+        if not isinstance(payload, Mapping):
+            raise ContributionSubmissionFailed("Contribution response was not an object")
+        return dict(payload)
