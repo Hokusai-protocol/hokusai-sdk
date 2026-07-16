@@ -2,6 +2,7 @@
 
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ANTHROPIC_MODELS,
   type ContributionAcceptedResponse,
@@ -677,7 +678,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<CliExitCode> 
 
 const isEntrypoint =
   typeof process.argv[1] === 'string' &&
-  path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
 if (isEntrypoint) {
   void runCli().then((exitCode) => {
