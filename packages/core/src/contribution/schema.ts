@@ -14,6 +14,22 @@ import type {
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = 'technical_task_router_row/v1';
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = 'technical_task_router_row/v2';
 export const HARNESS_OUTCOME_ROW_SCHEMA_VERSION = 'harness_outcome_row/v1';
+export const HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
+  'schema_version',
+  'task_descriptor',
+  'allowed_models',
+  'selected_models',
+  'budget_usd',
+  'actual_cost_usd',
+  'wall_clock_seconds',
+  'completion_result',
+  'success_under_budget',
+  'inference_log_id',
+  'harness',
+  'task_id',
+  'observed_at',
+  'harness_metadata',
+] as const);
 export const COST_BUCKET_THRESHOLDS_USD = {
   lowUpperBound: 1,
   mediumUpperBound: 5,
@@ -611,22 +627,7 @@ export function isHarnessOutcomeRowV1(value: unknown): value is HarnessOutcomeRo
     return false;
   }
 
-  if (!hasOnlyAllowedKeys(value, [
-    'schema_version',
-    'task_descriptor',
-    'allowed_models',
-    'selected_models',
-    'budget_usd',
-    'actual_cost_usd',
-    'wall_clock_seconds',
-    'completion_result',
-    'success_under_budget',
-    'inference_log_id',
-    'harness',
-    'task_id',
-    'observed_at',
-    'harness_metadata',
-  ])) {
+  if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
     return false;
   }
 

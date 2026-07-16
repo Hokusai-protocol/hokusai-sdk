@@ -117,6 +117,10 @@ Harness-specific adapter methods:
 
 The boundary is deliberate: core owns schemas, validation, anonymization, routing, reporting, and generic persistence primitives; the adapter owns runtime discovery, UX, and harness-specific execution details.
 
+## Host integrations
+
+- [LiteLLM Metadata-Only Routing Integration](./litellm-integration.md) - Python-side enterprise routing example using safe metadata for route selection and LiteLLM callback telemetry for contribution rows, without prompt proxying
+
 ## Outcome-only integrations
 
 You do not have to make Hokusai choose the model before contributing an

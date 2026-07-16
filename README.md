@@ -10,6 +10,7 @@ This repository currently includes:
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
 - `examples/reference-harness` for the smallest complete generic integration flow
+- `examples/litellm-integration` for a Python-side LiteLLM metadata-only routing prototype
 
 ## Install Packages
 
@@ -396,6 +397,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 - `packages/adapter-codex`: Codex command descriptors, task context builders, outcome builders, model provider, and harness adapter
 - `packages/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers and conformance fixtures
 - `examples/reference-harness`: minimal offline composition template for generic harness authors
+- `examples/litellm-integration`: LiteLLM metadata-only routing and contribution example
 
 ## Development
 
@@ -423,3 +425,4 @@ pnpm -r test
 - [Claude Code Adapter](packages/adapter-claude-code/README.md) - Claude Code adapter package reference
 - [Wavemill Adapter](packages/adapter-wavemill/README.md) - Wavemill reference adapter package details
 - [Reference Harness](examples/reference-harness/README.md) - minimal offline harness composition example
+- [LiteLLM Metadata-Only Integration](docs/litellm-integration.md) - LiteLLM host integration architecture, privacy boundary, and example entry point

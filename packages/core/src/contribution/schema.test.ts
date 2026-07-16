@@ -3,6 +3,8 @@ import {
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2,
   ContributionValidationError,
+  HARNESS_OUTCOME_ROW_FIELDS,
+  HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
   validateContributionRow,
   isSubmitDataContributionRow,
 } from './schema.js';
@@ -191,6 +193,26 @@ describe('hokusai-contribution-schema', () => {
       },
     }));
     expect('schema_version' in row && row.schema_version).toBe(TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2);
+  });
+
+  it('exports the canonical harness outcome row field list', () => {
+    expect(HARNESS_OUTCOME_ROW_FIELDS).toEqual([
+      'schema_version',
+      'task_descriptor',
+      'allowed_models',
+      'selected_models',
+      'budget_usd',
+      'actual_cost_usd',
+      'wall_clock_seconds',
+      'completion_result',
+      'success_under_budget',
+      'inference_log_id',
+      'harness',
+      'task_id',
+      'observed_at',
+      'harness_metadata',
+    ]);
+    expect(HARNESS_OUTCOME_ROW_SCHEMA_VERSION).toBe('harness_outcome_row/v1');
   });
 
   it('rejects rows missing success_under_budget', () => {
