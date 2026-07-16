@@ -88,12 +88,28 @@ def _coerce_bool(value: Any) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def _coerce_str(value: Any, default: str) -> str:
+    return value if isinstance(value, str) and value else default
+
+
+def _deep_key_scan(value: Any) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            keys.add(str(key))
+            keys.update(_deep_key_scan(child))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for item in value:
+            keys.update(_deep_key_scan(item))
+    return keys
+
+
 def assert_safe_routing_metadata(metadata: Mapping[str, Any]) -> None:
     keys = set(metadata)
     if not keys.issubset(ALLOWED_ROUTING_FIELDS):
         extra = sorted(keys - ALLOWED_ROUTING_FIELDS)
         raise PromptLeakageError(f"Routing metadata contains disallowed keys: {extra}")
-    forbidden = sorted(keys & FORBIDDEN_FIELDS)
+    forbidden = sorted(_deep_key_scan(metadata) & FORBIDDEN_FIELDS)
     if forbidden:
         raise PromptLeakageError(f"Routing metadata contains forbidden keys: {forbidden}")
 
@@ -106,11 +122,16 @@ def build_routing_metadata(
     budget_usd: float | None = None,
 ) -> SafeRoutingMetadata:
     metadata = _as_mapping(litellm_kwargs.get("metadata"))
+    forbidden = sorted(_deep_key_scan(metadata) & FORBIDDEN_FIELDS)
+    if forbidden:
+        raise PromptLeakageError(f"Routing metadata contains forbidden keys: {forbidden}")
+
     result: dict[str, Any] = {
-        "task_type": metadata.get("task_type", "unknown"),
+        "task_type": _coerce_str(metadata.get("task_type"), "unknown"),
         "candidate_models": list(candidate_models),
-        "integration_version": str(
-            metadata.get("integration_version", "hokusai-litellm-example/0.1.0")
+        "integration_version": _coerce_str(
+            metadata.get("integration_version"),
+            "hokusai-litellm-example/0.1.0",
         ),
     }
 

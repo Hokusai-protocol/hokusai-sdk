@@ -53,8 +53,12 @@ def test_map_recommendation_matches_explicit_alias() -> None:
 
 
 def test_map_recommendation_declines_unknown_model_by_default() -> None:
-    with pytest.raises(ModelUnavailableError):
+    with pytest.raises(ModelUnavailableError) as excinfo:
         map_recommendation_to_runnable_model("openhands/unknown-model", LLMS)
+    message = str(excinfo.value)
+    assert "openhands/unknown-model" in message
+    assert "openhands/devstral-small-2507" in message
+    assert "openhands/claude-sonnet-4-5-20250929" in message
 
 
 def test_map_recommendation_uses_configured_fallback() -> None:

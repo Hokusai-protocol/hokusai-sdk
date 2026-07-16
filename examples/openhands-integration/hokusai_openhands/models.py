@@ -112,7 +112,8 @@ def map_recommendation_to_runnable_model(
             recommended_model=recommendation,
         )
 
+    allowed_models = ", ".join(allowed_model_ids(runnable_models))
     raise ModelUnavailableError(
         f"Hokusai recommended model '{recommendation}' which is not in the configured "
-        "OpenHands model set"
+        f"OpenHands model set. Allowed models: {allowed_models}"
     )

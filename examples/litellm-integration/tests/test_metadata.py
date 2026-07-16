@@ -63,6 +63,35 @@ def test_build_routing_metadata_raises_if_forbidden_key_is_injected(
         )
 
 
+def test_build_routing_metadata_raises_if_forbidden_key_is_nested() -> None:
+    with pytest.raises(PromptLeakageError):
+        metadata.build_routing_metadata(
+            {
+                "metadata": {
+                    "task_type": {
+                        "prompt": "SECRET_PROMPT_TOKEN",
+                    },
+                },
+            },
+            candidate_models=["gpt-4o-mini"],
+        )
+
+
+def test_build_routing_metadata_does_not_forward_non_string_task_type() -> None:
+    result = metadata.build_routing_metadata(
+        {
+            "metadata": {
+                "task_type": {"category": "bugfix"},
+                "integration_version": {"version": "local"},
+            },
+        },
+        candidate_models=["gpt-4o-mini"],
+    )
+
+    assert result["task_type"] == "unknown"
+    assert result["integration_version"] == "hokusai-litellm-example/0.1.0"
+
+
 def test_build_routing_metadata_derives_tool_usage_without_reading_tool_payload() -> None:
     result = metadata.build_routing_metadata(
         {
