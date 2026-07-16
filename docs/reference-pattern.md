@@ -79,7 +79,7 @@ const execution = await adapter.executeTask({
 });
 ```
 
-When the router names a model the harness cannot run, `mapRecommendation()` falls back to a registry default rather than throwing. Honor the fallback or record a decline — never substitute a model silently, because `selected_models` must describe what actually ran.
+When the router names a model the harness cannot run, `mapRecommendation()` throws a `ModelMappingError`. The `code` is `UNKNOWN_MODEL` if the id is not in the registry, `PROVIDER_NOT_ALLOWED` if the resolved model's provider is not in `allowedProviders`, and `MODEL_UNAVAILABLE` if `requireAvailable` is set and the model is marked unavailable. Catch it and either remap to something in `error.suggestions` that the harness actually runs, or record a decline / no-run — never fall back silently, because `selected_models` must describe what actually ran. `error.suggestions` are candidates for a host to choose from, not automatic substitutes.
 
 Claude Code's visible entry points for this stage are the routed recommendation output and the copyable `/model ...` handoff generated after `/hokusai:route`.
 
@@ -99,7 +99,7 @@ const actualCostUsd = computeActualCostUsd({
 
 Prompt-cache tokens are billed at 1.25x (writes) and 0.1x (reads) the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs. For an unknown model the function returns `undefined` rather than a fabricated figure, and the row degrades to telemetry.
 
-Claude Code additionally derives cost automatically from its statusline sidecar or session transcript via [`packages/core/src/session-usage.ts`](../packages/core/src/session-usage.ts). Harnesses without those surfaces — Pi, OpenHands, most custom loops — should pass token counts explicitly.
+Claude Code additionally derives cost automatically from its statusline sidecar or session transcript via [`packages/core/src/session-usage.ts`](../packages/core/src/session-usage.ts). Other harnesses read cost from whichever surface their runtime already exposes — OpenHands' `RouterLLM` plus LLM/conversation metrics report per-turn tokens (and typically a cost), and Pi and most custom loops carry token counts from the underlying provider — and pass those counts through `computeActualCostUsd()` to populate `actual_cost_usd`.
 
 ### 7. Submit a contribution row
 
