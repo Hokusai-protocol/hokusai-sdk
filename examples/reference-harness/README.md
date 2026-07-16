@@ -63,13 +63,13 @@ The Claude Code plugin shipped this bug: it received the id and dropped it on th
 
 ### Pi and OpenHands
 
-Both have their own model-selection surface. `mapRecommendation()` resolves the router's recommended model id against your `InMemoryModelRegistry`; when the router names a model you cannot run, it falls back to a registry default rather than throwing. Either honor the fallback or record a decline — do not silently substitute a model and then report the recommended one, because `selected_models` would no longer describe what actually ran.
+Both have their own model-selection surface. `mapRecommendation()` resolves the router's recommended model id against your `InMemoryModelRegistry`; when the router names a model you cannot run, it throws `ModelMappingError` with code `UNKNOWN_MODEL`, `PROVIDER_NOT_ALLOWED`, or `MODEL_UNAVAILABLE`. Catch it, inspect `error.code`, and either remap to a runnable model or record a decline. Do not silently substitute a model and then report the recommended one, because `selected_models` would no longer describe what actually ran.
 
 Model ids in `discoverRunnableModels()` must be real provider ids. `pricing.ts` looks them up; a made-up id yields no cost and drops your row to `partial`.
 
 ### Cost capture
 
-Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically. **Neither Pi nor OpenHands does**, so that layered fallback does not apply. Return token counts from `executeWithModel` and let `computeActualCostUsd()` price them, as this harness does.
+Claude Code exposes a statusline and a session transcript, so `session-usage.ts` can derive cost automatically. OpenHands exposes `RouterLLM` plus LLM and conversation token-cost metrics, so use those token counts with `computeActualCostUsd()` to populate `actual_cost_usd`. Pi and simpler harnesses should return token counts from `executeWithModel` and let `computeActualCostUsd()` price them, as this harness does.
 
 If your provider reports prompt-cache tokens, pass `cacheCreationTokens` and `cacheReadTokens` too. They are billed at 1.25x and 0.1x the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs.
 
