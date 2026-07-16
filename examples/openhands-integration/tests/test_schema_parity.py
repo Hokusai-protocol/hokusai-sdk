@@ -9,7 +9,7 @@ from hokusai_openhands.contribution import (
 )
 
 LITELLM_SCHEMA = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[2]
     / "litellm-integration"
     / "tests"
     / "fixtures"
