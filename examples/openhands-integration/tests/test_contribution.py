@@ -68,6 +68,38 @@ def test_build_harness_outcome_row_failure_omits_missing_cost() -> None:
     assert "wall_clock_seconds" not in row
 
 
+def test_build_harness_outcome_row_omits_missing_route_id_for_fallback() -> None:
+    route_context = RouteContext(
+        route_id=None,
+        selected_model="openhands/devstral-small-2507",
+        selected_key="fast",
+        selected_usage_id="agent-fast",
+        allowed_models=["openhands/devstral-small-2507"],
+        fallback_used=True,
+        recommended_model=None,
+        idempotency_key="idem-fallback",
+        routing_metadata={"task_type": "bugfix"},
+        error_type="RoutingUnavailableError",
+    )
+
+    row = build_harness_outcome_row(
+        task_descriptor={"task_type": "bugfix"},
+        route_context=route_context,
+        metrics=ContributionMetrics(
+            actual_cost_usd=0.001,
+            latency_seconds=0.8,
+            completion_result="success",
+        ),
+    )
+
+    assert row["selected_models"] == {
+        "coder": "openhands/devstral-small-2507",
+        "reviewer": "openhands/devstral-small-2507",
+    }
+    assert row["actual_cost_usd"] == 0.001
+    assert "inference_log_id" not in row
+
+
 def test_build_contribution_request_uses_shared_metadata_shape() -> None:
     request = build_contribution_request(
         {"schema_version": "harness_outcome_row/v1"},

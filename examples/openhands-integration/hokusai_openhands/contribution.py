@@ -125,8 +125,6 @@ def build_harness_outcome_row(
         raise ValueError("task_descriptor must not be empty")
     if not route_context.allowed_models:
         raise ValueError("allowed_models must not be empty")
-    if not route_context.route_id:
-        raise ValueError("route_context.route_id is required to build an attributable row")
     if not route_context.selected_model:
         raise ValueError("route_context.selected_model is required")
 
@@ -140,7 +138,6 @@ def build_harness_outcome_row(
             "reviewer": route_context.selected_model,
         },
         "completion_result": resolved_completion_result,
-        "inference_log_id": route_context.route_id,
         "harness": harness,
         "observed_at": observed_at
         or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -168,6 +165,9 @@ def build_harness_outcome_row(
 
     if task_id:
         row["task_id"] = task_id
+
+    if route_context.route_id:
+        row["inference_log_id"] = route_context.route_id
 
     _ = metrics.prompt_tokens, metrics.completion_tokens, metrics.total_tokens
     assert_safe_contribution_row(row)
