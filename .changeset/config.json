@@ -8,7 +8,8 @@
       "@hokusai/router",
       "@hokusai/adapter-claude-code",
       "@hokusai/adapter-codex",
-      "@hokusai/adapter-wavemill"
+      "@hokusai/adapter-wavemill",
+      "@hokusai/adapter-aider"
     ]
   ],
   "linked": [],

@@ -264,4 +264,91 @@ describe('runHokusaiLoop', () => {
     expect(isHarnessOutcomeRowV1(result.row)).toBe(true);
     expect(() => validateContributionRow(result.row)).not.toThrow();
   });
+
+  it('prefers measured cost over computed token pricing', async () => {
+    const { adapter } = createAdapter({
+      executeWithModel: () =>
+        Promise.resolve({
+          completionResult: 'success',
+          inputTokens: 18_400,
+          outputTokens: 3_200,
+          actualCostUsd: 0.031415,
+          wallClockSeconds: 42,
+        }),
+    });
+    const { client } = createClient();
+
+    const result = await runLoop(adapter, client);
+
+    expect(result.actualCostUsd).toBe(0.031415);
+    expect(result.row.actual_cost_usd).toBe(0.031415);
+  });
+
+  it('submits a valid partial row when tokens and measured cost are unknown', async () => {
+    const log = vi.fn();
+    const { adapter } = createAdapter({
+      executeWithModel: () =>
+        Promise.resolve({
+          completionResult: 'failure',
+          inputTokens: undefined,
+          outputTokens: null,
+          wallClockSeconds: 12,
+        }),
+    });
+    let submittedRow: ContributionRequest['rows'][number] | undefined;
+    const { client } = createClient({
+      submitContribution: vi.fn((request: ContributionRequest) => {
+        submittedRow = request.rows[0];
+        return Promise.resolve({
+          accepted: true,
+          rowsAccepted: 1,
+          rowFidelityTiers: ['partial'],
+        });
+      }),
+    });
+
+    const result = await runLoop(adapter, client, { log });
+
+    expect(result.actualCostUsd).toBeUndefined();
+    expect(result.row.actual_cost_usd).toBeUndefined();
+    expect(submittedRow?.actual_cost_usd).toBeUndefined();
+    expect(result.row.completion_result).toBe('failure');
+    expect(log).toHaveBeenCalledWith(
+      '        token telemetry incomplete: falling back to partial telemetry',
+    );
+    expect(log).toHaveBeenCalledWith(
+      '        actual_cost_usd: (omitted; telemetry only)',
+    );
+  });
+
+  it('omits invalid measured cost instead of coercing it', async () => {
+    const log = vi.fn();
+    const { adapter } = createAdapter({
+      executeWithModel: () =>
+        Promise.resolve({
+          completionResult: 'success',
+          inputTokens: undefined,
+          outputTokens: undefined,
+          actualCostUsd: Number.NaN,
+          wallClockSeconds: 42,
+        }),
+    });
+    const { client } = createClient({
+      submitContribution: vi.fn(() =>
+        Promise.resolve({
+          accepted: true,
+          rowsAccepted: 1,
+          rowFidelityTiers: ['partial'],
+        }),
+      ),
+    });
+
+    const result = await runLoop(adapter, client, { log });
+
+    expect(result.actualCostUsd).toBeUndefined();
+    expect(result.row.actual_cost_usd).toBeUndefined();
+    expect(log).toHaveBeenCalledWith(
+      '        measured cost invalid: omitted from contribution row',
+    );
+  });
 });

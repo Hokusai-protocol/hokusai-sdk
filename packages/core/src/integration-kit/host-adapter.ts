@@ -12,10 +12,11 @@ export interface HostExecuteRequest {
 
 export interface HostExecutionResult {
   completionResult: 'success' | 'failure';
-  inputTokens: number;
-  outputTokens: number;
+  inputTokens?: number | null | undefined;
+  outputTokens?: number | null | undefined;
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  actualCostUsd?: number;
   wallClockSeconds: number;
 }
 

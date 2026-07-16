@@ -66,6 +66,20 @@ function noop(): void {
   /* silent by default */
 }
 
+function formatTokenCount(value: number | null | undefined): string {
+  return Number.isFinite(value) && (value as number) >= 0
+    ? String(value)
+    : '(unknown)';
+}
+
+function isKnownTokenCount(value: number | null | undefined): value is number {
+  return Number.isFinite(value) && (value as number) >= 0;
+}
+
+function isMeasuredCost(value: number | undefined): value is number {
+  return Number.isFinite(value) && (value as number) >= 0;
+}
+
 function createRedactionConfig(config: RedactionConfig): RedactionConfig {
   return {
     ...DEFAULT_REDACTION_CONFIG,
@@ -157,29 +171,60 @@ export async function runHokusaiLoop(
   });
   log(
     `        result: ${execution.completionResult}  ` +
-      `in=${execution.inputTokens} out=${execution.outputTokens}`,
+      `in=${formatTokenCount(execution.inputTokens)} ` +
+      `out=${formatTokenCount(execution.outputTokens)}`,
   );
+  if (
+    !isKnownTokenCount(execution.inputTokens) ||
+    !isKnownTokenCount(execution.outputTokens)
+  ) {
+    log('        token telemetry incomplete: falling back to partial telemetry');
+  }
 
-  log('[7/8] Deriving actual_cost_usd from token usage');
+  log('[7/8] Deriving actual_cost_usd from measured cost or token usage');
   const actualCostUsd =
     options.reportCost === false
       ? undefined
-      : computeActualCostUsd({
-          model: mapped.id,
-          inputTokens: execution.inputTokens,
-          outputTokens: execution.outputTokens,
-          ...(execution.cacheCreationTokens !== undefined
-            ? { cacheCreationTokens: execution.cacheCreationTokens }
-            : {}),
-          ...(execution.cacheReadTokens !== undefined
-            ? { cacheReadTokens: execution.cacheReadTokens }
-            : {}),
-        });
+      : isMeasuredCost(execution.actualCostUsd)
+        ? execution.actualCostUsd
+        : isKnownTokenCount(execution.inputTokens) &&
+            isKnownTokenCount(execution.outputTokens)
+          ? computeActualCostUsd({
+              model: mapped.id,
+              inputTokens: execution.inputTokens,
+              outputTokens: execution.outputTokens,
+              ...(execution.cacheCreationTokens !== undefined
+                ? { cacheCreationTokens: execution.cacheCreationTokens }
+                : {}),
+              ...(execution.cacheReadTokens !== undefined
+                ? { cacheReadTokens: execution.cacheReadTokens }
+                : {}),
+            })
+          : undefined;
   log(
     actualCostUsd === undefined
-      ? '        actual_cost_usd: (omitted)'
+      ? '        actual_cost_usd: (omitted; telemetry only)'
       : `        actual_cost_usd: $${actualCostUsd.toFixed(6)}`,
   );
+  if (
+    options.reportCost !== false &&
+    execution.actualCostUsd !== undefined &&
+    !isMeasuredCost(execution.actualCostUsd)
+  ) {
+    log('        measured cost invalid: omitted from contribution row');
+  } else if (
+    options.reportCost !== false &&
+    actualCostUsd === undefined &&
+    !isKnownTokenCount(execution.inputTokens)
+  ) {
+    log('        cost unavailable because input token telemetry is unknown');
+  } else if (
+    options.reportCost !== false &&
+    actualCostUsd === undefined &&
+    !isKnownTokenCount(execution.outputTokens)
+  ) {
+    log('        cost unavailable because output token telemetry is unknown');
+  }
 
   log('[8/8] Submitting the contribution row');
   const row = buildHarnessOutcomeRow({
