@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any, TypedDict, cast
 
 from .errors import PromptLeakageError
@@ -17,6 +17,7 @@ ALLOWED_ROUTING_FIELDS = frozenset(
         "candidate_models",
         "budget_usd",
         "integration_version",
+        "message_count",
     }
 )
 
@@ -51,18 +52,11 @@ class SafeRoutingMetadata(TypedDict, total=False):
     candidate_models: list[str]
     budget_usd: float
     integration_version: str
+    message_count: int
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
-
-
-def _message_count(messages: Any) -> int:
-    return (
-        len(messages)
-        if isinstance(messages, Sequence) and not isinstance(messages, (str, bytes))
-        else 0
-    )
 
 
 def _coerce_int(value: Any) -> int | None:
@@ -99,63 +93,65 @@ def assert_safe_routing_metadata(metadata: Mapping[str, Any]) -> None:
 
 
 def build_routing_metadata(
-    litellm_kwargs: Mapping[str, Any],
     *,
     candidate_models: list[str],
+    task_metadata: Mapping[str, Any] | None = None,
+    message_count: int | None = None,
     latency_budget_ms: int | None = None,
     budget_usd: float | None = None,
+    integration_version: str,
 ) -> SafeRoutingMetadata:
-    metadata = _as_mapping(litellm_kwargs.get("metadata"))
+    """Build a safe routing payload for Hokusai.
+
+    Never reads message content, tool arguments, or completion text. Only
+    integer counts and allowlisted signals from ``task_metadata``.
+    """
+
+    metadata = _as_mapping(task_metadata)
     result: dict[str, Any] = {
         "task_type": str(metadata.get("task_type", "unknown")),
         "candidate_models": list(candidate_models),
         "integration_version": str(
-            metadata.get("integration_version", "hokusai-litellm-example/0.1.0")
+            metadata.get("integration_version", integration_version)
         ),
     }
 
-    estimated_input_tokens = _coerce_int(metadata.get("estimated_input_tokens")) or 0
-    estimated_input_tokens += _message_count(litellm_kwargs.get("messages")) * 4
-    if estimated_input_tokens > 0:
+    if message_count is not None and message_count > 0:
+        result["message_count"] = int(message_count)
+
+    estimated_input_tokens = _coerce_int(metadata.get("estimated_input_tokens"))
+    if estimated_input_tokens is None and message_count is not None:
+        estimated_input_tokens = max(message_count * 4, 0)
+    if estimated_input_tokens is not None and estimated_input_tokens > 0:
         result["estimated_input_tokens"] = estimated_input_tokens
 
-    for key in ALLOWED_ROUTING_FIELDS:
-        if key in {"candidate_models", "integration_version", "task_type"}:
-            continue
-        if key == "estimated_input_tokens":
-            continue
-        if key == "latency_budget_ms":
-            coerced_latency = latency_budget_ms
-            if coerced_latency is None:
-                coerced_latency = _coerce_int(metadata.get(key))
-            if coerced_latency is not None:
-                result[key] = coerced_latency
-            continue
-        if key == "budget_usd":
-            coerced_budget = budget_usd
-            if coerced_budget is None:
-                coerced_budget = _coerce_float(metadata.get(key))
-            if coerced_budget is not None:
-                result[key] = coerced_budget
-            continue
+    estimated_output_tokens = _coerce_int(metadata.get("estimated_output_tokens"))
+    if estimated_output_tokens is not None and estimated_output_tokens > 0:
+        result["estimated_output_tokens"] = estimated_output_tokens
 
-        value = metadata.get(key)
-        if key == "estimated_output_tokens":
-            coerced = _coerce_int(value)
-        elif key == "requires_tools":
-            coerced = _coerce_bool(value)
-            if coerced is None and "tools" in litellm_kwargs:
-                coerced = bool(litellm_kwargs.get("tools"))
-        elif key == "context_length_needed":
-            coerced = _coerce_int(value)
-        elif key == "quality_tier":
-            coerced_value: Any = str(value) if isinstance(value, str) else None
-            coerced = coerced_value
-        else:
-            coerced = cast(Any, value)
+    resolved_latency = latency_budget_ms
+    if resolved_latency is None:
+        resolved_latency = _coerce_int(metadata.get("latency_budget_ms"))
+    if resolved_latency is not None:
+        result["latency_budget_ms"] = resolved_latency
 
-        if coerced is not None:
-            result[key] = coerced
+    resolved_budget = budget_usd
+    if resolved_budget is None:
+        resolved_budget = _coerce_float(metadata.get("budget_usd"))
+    if resolved_budget is not None:
+        result["budget_usd"] = resolved_budget
+
+    quality_tier = metadata.get("quality_tier")
+    if isinstance(quality_tier, str):
+        result["quality_tier"] = quality_tier
+
+    requires_tools = _coerce_bool(metadata.get("requires_tools"))
+    if requires_tools is not None:
+        result["requires_tools"] = requires_tools
+
+    context_length_needed = _coerce_int(metadata.get("context_length_needed"))
+    if context_length_needed is not None and context_length_needed > 0:
+        result["context_length_needed"] = context_length_needed
 
     assert_safe_routing_metadata(result)
     return cast(SafeRoutingMetadata, result)

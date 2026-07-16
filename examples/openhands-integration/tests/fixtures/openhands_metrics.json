@@ -1,0 +1,9 @@
+{
+  "accumulated_cost": 0.00214,
+  "accumulated_token_usage": {
+    "prompt_tokens": 128,
+    "completion_tokens": 342,
+    "total_tokens": 470
+  },
+  "response_latencies": [0.42, 0.51]
+}
