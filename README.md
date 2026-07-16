@@ -6,6 +6,7 @@ This repository currently includes:
 
 - `@hokusai/router` for routing a task from application code — the front door, and where most integrations should start
 - `@hokusai/core` for the harness-agnostic SDK contracts and API client
+- `@hokusai/adapter-aider` for the Aider wrapper and neutral routing proof point
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
@@ -66,12 +67,14 @@ npm install @hokusai/core
 Add an adapter package when you are targeting a specific harness:
 
 ```sh
+pnpm add @hokusai/adapter-aider
 pnpm add @hokusai/adapter-claude-code
 pnpm add @hokusai/adapter-codex
 pnpm add @hokusai/adapter-wavemill
 ```
 
 ```sh
+npm install @hokusai/adapter-aider
 npm install @hokusai/adapter-claude-code
 npm install @hokusai/adapter-codex
 npm install @hokusai/adapter-wavemill
@@ -392,6 +395,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 ## Package Map
 
 - `packages/core`: shared contracts, schemas, consent/config helpers, redaction, client, model registry, storage, fixtures, and conformance utilities
+- `packages/adapter-aider`: Aider wrapper CLI that routes through Hokusai and reports outcome telemetry
 - `packages/adapter-claude-code`: Claude Code plugin, CLI commands, doctor/privacy/report tooling, and Claude-specific adapter
 - `packages/adapter-codex`: Codex command descriptors, task context builders, outcome builders, model provider, and harness adapter
 - `packages/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers and conformance fixtures
@@ -420,6 +424,7 @@ pnpm -r test
 - [Versioning Policy](docs/versioning-policy.md) - semver rules, schema-version relationship, breaking-change taxonomy, and deprecation policy
 - [Release Checklist](docs/release-checklist.md) - pre-release gating, conformance tests, fixture updates, and release channels
 - [Release Notes](docs/release-notes.md) - version history and release commands
+- [Aider Adapter](packages/adapter-aider/README.md) - Aider wrapper package reference
 - [Claude Code Adapter](packages/adapter-claude-code/README.md) - Claude Code adapter package reference
 - [Wavemill Adapter](packages/adapter-wavemill/README.md) - Wavemill reference adapter package details
 - [Reference Harness](examples/reference-harness/README.md) - minimal offline harness composition example
