@@ -68,17 +68,6 @@ The reference harness uses a mock client in [`examples/reference-harness/src/moc
 
 Execution is adapter-owned. `mapRecommendation()` from [`packages/core/src/model-registry.ts`](../packages/core/src/model-registry.ts) resolves the recommended model id into a concrete model definition, and then the host harness runs the task with its own UX and execution controls. Claude Code renders a manual handoff with `buildHandoffInstructions()` from [`packages/core/src/handoff.ts`](../packages/core/src/handoff.ts) and presents it through [`packages/adapter-claude-code/src/commands.ts`](../packages/adapter-claude-code/src/commands.ts).
 
-```ts
-const mapped = mapRecommendation(
-  { model: route.recommendation?.model ?? allowedModels[0] },
-  { registry },
-);
-const execution = await adapter.executeTask({
-  task: ctx.task,
-  model: { id: mapped.id, provider: mapped.provider },
-});
-```
-
 When the router names a model the harness cannot run, `mapRecommendation()` throws `ModelMappingError` with code `UNKNOWN_MODEL`, `PROVIDER_NOT_ALLOWED`, or `MODEL_UNAVAILABLE`. Catch it, inspect `error.code`, and either remap to a runnable model or record a decline. Never substitute a model silently, because `selected_models` must describe what actually ran.
 
 ```ts
@@ -89,13 +78,15 @@ try {
     { registry },
   );
 } catch (error) {
-  if (error instanceof ModelMappingError) {
-    // remap to a runnable model, or record a decline
-    mapped = pickFallback(error.code, allowedModels);
-  } else {
-    throw error;
-  }
+  if (!(error instanceof ModelMappingError)) throw error;
+  // `pickFallback` is your host-defined policy — not an SDK export.
+  // Return a runnable model to remap, or null to record a decline.
+  mapped = pickFallback(error.code, allowedModels);
 }
+const execution = await adapter.executeTask({
+  task: ctx.task,
+  model: { id: mapped.id, provider: mapped.provider },
+});
 ```
 
 Claude Code's visible entry points for this stage are the routed recommendation output and the copyable `/model ...` handoff generated after `/hokusai:route`.
