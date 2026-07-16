@@ -113,11 +113,13 @@ class HokusaiContributionLogger(CustomLogger):
             total_tokens = prompt_tokens + completion_tokens
 
         latency_ms = self._extract_times(start_time, end_time)
-        budget_usd = (
-            float(metadata["budget_usd"])
-            if isinstance(metadata.get("budget_usd"), (int, float))
-            else None
-        )
+        routing_metadata = _as_mapping(hokusai.get("routing_metadata"))
+        if isinstance(metadata.get("budget_usd"), (int, float)):
+            budget_usd: float | None = float(metadata["budget_usd"])
+        elif isinstance(routing_metadata.get("budget_usd"), (int, float)):
+            budget_usd = float(routing_metadata["budget_usd"])
+        else:
+            budget_usd = None
         inference_log_id = (
             str(hokusai["inference_log_id"])
             if isinstance(hokusai.get("inference_log_id"), str)
