@@ -29,21 +29,7 @@ HARNESS_OUTCOME_ROW_FIELDS_PY = (
     "harness_metadata",
 )
 
-_ALLOWED_HARNESS_METADATA_KEYS = frozenset(
-    {
-        "harness",
-        "sdk_version",
-        "openhands_sdk_version",
-        "routing_key",
-        "recommended_model",
-        "fallback_used",
-        "fallback_reason",
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "error_type",
-    }
-)
+_ALLOWED_HARNESS_METADATA_KEYS = frozenset({"harness", "sdk_version"})
 
 
 class SelectedModels(TypedDict, total=False):
@@ -54,15 +40,6 @@ class SelectedModels(TypedDict, total=False):
 class HarnessMetadata(TypedDict, total=False):
     harness: str
     sdk_version: str
-    openhands_sdk_version: str
-    routing_key: str
-    recommended_model: str
-    fallback_used: bool
-    fallback_reason: str
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    error_type: str
 
 
 class HarnessOutcomeRow(TypedDict, total=False):
@@ -157,17 +134,6 @@ def build_harness_outcome_row(
             if key in _ALLOWED_HARNESS_METADATA_KEYS and value is not None:
                 meta_payload[key] = value
 
-    if prompt_tokens is not None and "prompt_tokens" not in meta_payload:
-        meta_payload["prompt_tokens"] = int(prompt_tokens)
-    if completion_tokens is not None and "completion_tokens" not in meta_payload:
-        meta_payload["completion_tokens"] = int(completion_tokens)
-    if (
-        prompt_tokens is not None
-        and completion_tokens is not None
-        and "total_tokens" not in meta_payload
-    ):
-        meta_payload["total_tokens"] = int(prompt_tokens) + int(completion_tokens)
-
     row: HarnessOutcomeRow = {
         "schema_version": HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
         "task_descriptor": dict(task_descriptor),
@@ -200,6 +166,7 @@ def build_harness_outcome_row(
     if task_id:
         row["task_id"] = task_id
 
+    _ = prompt_tokens, completion_tokens
     assert_safe_contribution_row(row)
     return row
 

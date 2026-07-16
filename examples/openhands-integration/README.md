@@ -117,8 +117,10 @@ If Hokusai recommends a model that is not present in the configured
   `ModelUnavailableError(recommendation, allowed_models)` so the caller can
   surface the mismatch loudly.
 - `unavailable_policy="fallback"` requires `fallback_key`; the resolver picks
-  that routing key, records `fallback_used=True`, and stores the recommended
-  model in `harness_metadata.recommended_model` for auditing.
+  that routing key, records `fallback_used=True`, and exposes the recommended
+  model on `HokusaiOutcomeReporter.last_diagnostics["recommended_model"]` for
+  local auditing (diagnostics stay on the host — they are not sent in the
+  contribution row, which strictly matches the canonical schema).
 
 The runnable model in `selected_models` is always the underlying `model_id` of
 the routing key actually used, never the unavailable recommendation.
@@ -128,7 +130,7 @@ the routing key actually used, never the unavailable recommendation.
 | Payload | Purpose | Includes | Excludes |
 |---|---|---|---|
 | Route request | Pre-call model selection | task_type, message_count, integer input/output token estimates, budget & latency signals, `candidate_models`, integration version | Message content, prompts, tool arguments, completions, response text |
-| Contribution row | Post-call outcome learning | schema_version, task_descriptor, allowed_models, selected_models (routing key + reviewer), actual_cost_usd, wall_clock_seconds, completion_result, success_under_budget, inference_log_id, harness=`openhands`, task_id, harness_metadata (routing_key, fallback flags, prompt/completion/total tokens, error_type) | Message content, prompts, tool arguments, completions, response text |
+| Contribution row | Post-call outcome learning | schema_version, task_descriptor, allowed_models, selected_models (routing key + reviewer), actual_cost_usd, wall_clock_seconds, completion_result, success_under_budget, inference_log_id, harness=`openhands`, task_id, harness_metadata (canonical `{harness, sdk_version}` only) | Message content, prompts, tool arguments, completions, response text, routing/fallback/token diagnostics (kept locally on `HokusaiOutcomeReporter.last_diagnostics`) |
 
 Prompt/response/tool payloads never leave the host. The privacy filter both
 allowlists top-level keys and does a deep key scan against a hard-coded

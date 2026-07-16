@@ -72,8 +72,8 @@ def test_build_harness_outcome_row_success_case() -> None:
     assert row["success_under_budget"] is True
     assert row["harness"] == "openhands"
     assert row["inference_log_id"] == "route-abc"
-    assert row["harness_metadata"]["prompt_tokens"] == 128
-    assert row["harness_metadata"]["total_tokens"] == 470
+    assert set(row["harness_metadata"]) <= {"harness", "sdk_version"}
+    assert row["harness_metadata"]["harness"] == "openhands"
 
 
 def test_build_harness_outcome_row_omits_missing_cost_on_failure() -> None:
@@ -140,8 +140,9 @@ def test_reporter_submits_row_with_inference_log_id(
     assert row["inference_log_id"] == "route-outer"
     assert row["actual_cost_usd"] == 0.0031
     assert row["success_under_budget"] is True
-    assert row["harness_metadata"]["routing_key"] == "gpt-4o-mini"
-    assert row["harness_metadata"]["openhands_sdk_version"] == "1.36.1"
+    assert set(row["harness_metadata"]) <= {"harness", "sdk_version"}
+    assert reporter.last_diagnostics["routing_key"] == "gpt-4o-mini"
+    assert reporter.last_diagnostics["openhands_sdk_version"] == "1.36.1"
 
     contribution_requests = [
         req for req in tracking_transport.requests if req["path"].endswith("/contributions")
@@ -181,8 +182,8 @@ def test_reporter_records_fallback_metadata() -> None:
         completion_result="success",
     )
 
-    assert row["harness_metadata"]["recommended_model"] == "qwen-3-coder"
-    assert row["harness_metadata"]["fallback_used"] is True
+    assert reporter.last_diagnostics["recommended_model"] == "qwen-3-coder"
+    assert reporter.last_diagnostics["fallback_used"] is True
     assert row["selected_models"]["coder"] == "openai/gpt-4o-mini"
 
 
@@ -223,5 +224,5 @@ def test_reporter_failure_metrics_record_error_type() -> None:
         error=RuntimeError("SECRET_PROMPT_TOKEN exploded"),
     )
     assert row["completion_result"] == "failure"
-    assert row["harness_metadata"]["error_type"] == "RuntimeError"
+    assert reporter.last_diagnostics["error_type"] == "RuntimeError"
     assert "SECRET_PROMPT_TOKEN" not in json.dumps(row)

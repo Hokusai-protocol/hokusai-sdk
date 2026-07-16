@@ -43,6 +43,7 @@ class HokusaiOutcomeReporter:
         self._logger = logger or LOGGER
         self.last_row: HarnessOutcomeRow | None = None
         self.last_snapshot: MetricsSnapshot | None = None
+        self.last_diagnostics: dict[str, Any] = {}
 
     def build_row(
         self,
@@ -83,18 +84,26 @@ class HokusaiOutcomeReporter:
         if isinstance(raw_budget, (int, float)) and not isinstance(raw_budget, bool):
             budget_usd = float(raw_budget)
 
-        harness_metadata: dict[str, Any] = {
+        diagnostics: dict[str, Any] = {
             "routing_key": decision.routing_key,
             "fallback_used": decision.fallback_used,
         }
         if decision.recommendation.selected_model:
-            harness_metadata["recommended_model"] = decision.recommendation.selected_model
+            diagnostics["recommended_model"] = decision.recommendation.selected_model
         if decision.fallback_reason:
-            harness_metadata["fallback_reason"] = decision.fallback_reason
+            diagnostics["fallback_reason"] = decision.fallback_reason
         if snapshot.error_type is not None:
-            harness_metadata["error_type"] = snapshot.error_type
+            diagnostics["error_type"] = snapshot.error_type
+        if snapshot.prompt_tokens is not None:
+            diagnostics["prompt_tokens"] = int(snapshot.prompt_tokens)
+        if snapshot.completion_tokens is not None:
+            diagnostics["completion_tokens"] = int(snapshot.completion_tokens)
+        if snapshot.prompt_tokens is not None and snapshot.completion_tokens is not None:
+            diagnostics["total_tokens"] = int(snapshot.prompt_tokens) + int(
+                snapshot.completion_tokens
+            )
         if self._openhands_sdk_version is not None:
-            harness_metadata["openhands_sdk_version"] = self._openhands_sdk_version
+            diagnostics["openhands_sdk_version"] = self._openhands_sdk_version
 
         row = build_harness_outcome_row(
             task_descriptor=descriptor,
@@ -109,12 +118,13 @@ class HokusaiOutcomeReporter:
             inference_log_id=decision.route_id,
             task_id=task_id,
             observed_at=observed_at,
-            harness_metadata=harness_metadata,
             harness=HARNESS_NAME,
             sdk_version=INTEGRATION_VERSION,
         )
         self.last_row = row
         self.last_snapshot = snapshot
+        self.last_diagnostics = diagnostics
+        self._logger.info("hokusai openhands outcome diagnostics: %s", diagnostics)
         return row
 
     def report(
