@@ -23,6 +23,7 @@ The canonical schema versions are exported from `@hokusai/core`:
 
 - `TASK_PACKET_SCHEMA_VERSION = "1.1.0"`
 - `OUTCOME_REPORT_SCHEMA_VERSION = "1"`
+- `CANDIDATE_FEATURES_SCHEMA_VERSION = "candidate_features/v1"`
 
 Rules:
 
@@ -30,6 +31,13 @@ Rules:
 - A task-packet or outcome-schema breaking change requires a `@hokusai/core` MAJOR bump and a schema MAJOR bump.
 - PATCH package releases must not change either schema constant.
 - Runtime validators accept only the exact exported schema version. Callers should use `TASK_PACKET_SCHEMA_VERSION` and `OUTCOME_REPORT_SCHEMA_VERSION` instead of hard-coding literals.
+- Candidate-feature consumers pin the complete `candidate_features/vN`
+  contract. Adding, removing, renaming, retyping, or changing the derivation or
+  null meaning of any feature requires a new `candidate_features/vN` version;
+  v1 is never changed in place after publication.
+- A package release that adds a new candidate schema version is MINOR when the
+  previous version remains exported. Removing a supported candidate schema
+  version is MAJOR.
 
 ## Breaking Change Taxonomy
 
@@ -99,3 +107,6 @@ No pre-release channel is configured today. If a pre-release channel is needed l
 - Import schema version constants from `@hokusai/core` instead of copying literals.
 - Treat adapter majors as contract changes to the harness-specific layer even when the core package major is unchanged.
 - Review changesets and release notes before adopting a new MAJOR or schema version.
+- Pin `CANDIDATE_FEATURES_SCHEMA_VERSION`, validate without coercion, and use
+  the provenance-stamped fixture in `fixtures/arbiter` for cross-repository
+  behavior tests.

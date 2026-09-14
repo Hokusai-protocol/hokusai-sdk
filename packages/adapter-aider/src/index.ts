@@ -17,12 +17,17 @@ import {
   type ModelDefinition,
   type RouteRequest,
   type RouteResponse,
+  type TaskDescriptorFields,
 } from '@hokusai/core';
 import {
   summarizeAiderOutput,
   type AiderAccountingSummary,
 } from './accounting.js';
-import { runAider, type AiderRunOptions, type AiderRunResult } from './aider-runner.js';
+import {
+  runAider,
+  type AiderRunOptions,
+  type AiderRunResult,
+} from './aider-runner.js';
 import {
   DEFAULT_AIDER_MODEL_ID,
   DEFAULT_AIDER_MODEL_POOL,
@@ -146,14 +151,15 @@ function selectDispatchModel(
   if (preferred) {
     const match = pool.find(
       (model) =>
-        model.id === preferred ||
-        (model.aliases ?? []).includes(preferred),
+        model.id === preferred || (model.aliases ?? []).includes(preferred),
     );
     if (match) {
       return match;
     }
   }
-  const defaultMatch = pool.find((model) => model.id === DEFAULT_AIDER_MODEL_ID);
+  const defaultMatch = pool.find(
+    (model) => model.id === DEFAULT_AIDER_MODEL_ID,
+  );
   return defaultMatch ?? firstDefaultOrHead(pool);
 }
 
@@ -180,8 +186,7 @@ export async function runAiderLoop(
   }
 
   const pool =
-    options.modelPool ??
-    buildAiderCandidatePool(options.extraModelIds ?? []);
+    options.modelPool ?? buildAiderCandidatePool(options.extraModelIds ?? []);
   if (pool.length === 0) {
     throw new Error('Aider candidate pool must contain at least one model.');
   }
@@ -214,8 +219,7 @@ export async function runAiderLoop(
   const routeId = route.routeId;
   log(`        route_id: ${routeId}`);
 
-  const recommended =
-    route.recommendation?.model.trim() ?? dispatchModel.id;
+  const recommended = route.recommendation?.model.trim() ?? dispatchModel.id;
   let mapped: ModelDefinition;
   try {
     mapped = mapRecommendation(
@@ -259,9 +263,7 @@ export async function runAiderLoop(
     );
   }
 
-  const accounting = summarizeAiderOutput(
-    `${aider.stdout}\n${aider.stderr}`,
-  );
+  const accounting = summarizeAiderOutput(`${aider.stdout}\n${aider.stderr}`);
   const completionResult: 'success' | 'failure' =
     aider.exitCode === 0 ? 'success' : 'failure';
   const observedAt = clock().toISOString();
@@ -279,7 +281,7 @@ export async function runAiderLoop(
 
   log('[6/6] submitting contribution row');
   const derived = deriveTaskDescriptor({ taskText });
-  const descriptor =
+  const descriptor: TaskDescriptorFields =
     Object.keys(derived).length > 0 ? derived : { task_type: 'unknown' };
 
   const row = buildHarnessOutcomeRow({
@@ -288,7 +290,9 @@ export async function runAiderLoop(
     allowedModels,
     selectedModels: { coder: mapped.id, reviewer: mapped.id },
     completionResult,
-    ...(options.budgetUsd !== undefined ? { budgetUsd: options.budgetUsd } : {}),
+    ...(options.budgetUsd !== undefined
+      ? { budgetUsd: options.budgetUsd }
+      : {}),
     ...(cost.value !== undefined ? { actualCostUsd: cost.value } : {}),
     wallClockSeconds: aider.wallClockSeconds,
     harness: AIDER_HARNESS_NAME,

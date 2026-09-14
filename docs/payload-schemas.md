@@ -292,3 +292,58 @@ const packet: TaskPacket = {
   constraints: ['Do not include raw code in the packet'],
 };
 ```
+
+## Candidate Feature Schema
+
+`candidate_features/v1` is the strict, flat feature vector shared by every
+Implementation Arbiter producer and consumer. `schema_version` must equal
+`candidate_features/v1`; every feature key is required; every value is
+nullable; and unknown keys are rejected. A zero or `false` value is an
+observation. `null` is the only representation of unavailable evidence.
+
+| Group      | Field                        | Type                    | Meaning and null semantics                                                                                              |
+| ---------- | ---------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Shape      | `files_touched`              | integer ≥ 0             | Number of changed files. Null when the diff cannot be enumerated.                                                       |
+| Shape      | `lines_added`                | integer ≥ 0             | Added diff lines. Null when directional diff statistics are unavailable.                                                |
+| Shape      | `lines_deleted`              | integer ≥ 0             | Deleted diff lines. Null when directional diff statistics are unavailable.                                              |
+| Shape      | `loc_touched`                | integer ≥ 0             | Added plus deleted lines. Null when the diff cannot be measured.                                                        |
+| Shape      | `dependency_depth`           | integer ≥ 0             | Maximum dependency depth reached by changed modules. Null when no supported dependency graph can be derived.            |
+| Shape      | `module_hotspot_score`       | number 0–100            | Repository-history hotspot score for changed modules. Null when sufficient history is unavailable.                      |
+| Shape      | `diff_uncertain`             | boolean                 | Whether diff parsing produced suspicious measurements. Null when diff analysis was not attempted.                       |
+| Static     | `type_errors`                | integer ≥ 0             | Reported type-check errors. Null when no supported type checker completes successfully.                                 |
+| Static     | `lint_errors`                | integer ≥ 0             | Reported lint errors. Null when no supported linter completes successfully.                                             |
+| Static     | `build_ok`                   | boolean                 | Whether the configured build completed successfully. Null when no build reaches a terminal result or collection fails.  |
+| Static     | `complexity_delta`           | number                  | Candidate-minus-base change in the configured complexity metric. Null when both revisions cannot be analyzed.           |
+| Test       | `tests_changed`              | boolean                 | Whether test files were added or modified. Null when test files cannot be classified from the diff.                     |
+| Test       | `test_pass_rate`             | number 0–1              | Fraction of executed tests that passed. Null when no supported test result completed with a measurable rate.            |
+| Test       | `test_runtime_seconds`       | number ≥ 0              | Test execution duration. Null when runtime is not reported.                                                             |
+| Intent     | `task_type`                  | closed enum             | Coarse task category. Null when no category can be derived without guessing.                                            |
+| Intent     | `language`                   | closed enum             | Dominant implementation language. Null when no supported dominant language can be derived.                              |
+| Intent     | `domain`                     | closed enum             | Coarse engineering domain. Null when no domain evidence is available; producers must not default to backend.            |
+| Intent     | `complexity`                 | number 0–10             | Normalized estimated task complexity. Null when complexity cannot be derived without a fallback.                        |
+| Intent     | `repo_size_bucket`           | closed enum             | Bucketed repository size. Null when repository size cannot be measured.                                                 |
+| Intent     | `files_touched_bucket`       | closed enum             | Bucketed changed-file count. Null when the diff cannot be enumerated.                                                   |
+| Intent     | `description_length_bucket`  | closed enum             | Bucketed locally inspected task-description length. Null when no task description is available locally.                 |
+| Intent     | `is_greenfield`              | boolean                 | Whether the task creates a new subsystem. Null when change kind cannot be classified.                                   |
+| Intent     | `is_migration`               | boolean                 | Whether the task includes a schema or data migration. Null when migration intent cannot be classified.                  |
+| Intent     | `requires_tests`             | boolean                 | Whether the task intent requires test work. Null when test intent cannot be classified.                                 |
+| Intent     | `cross_service`              | boolean                 | Whether the task spans services or repositories. Null when service scope cannot be classified.                          |
+| Intent     | `ui_heavy`                   | boolean                 | Whether UI work is substantial. Null when UI intent cannot be classified.                                               |
+| Intent     | `risk_level`                 | `low \| medium \| high` | Coarse derived implementation risk. Null when risk cannot be classified from bounded signals.                           |
+| Provenance | `touched_out_of_scope_files` | integer ≥ 0             | Count of changed files outside authoritative task scope. Null when scope authority is absent or the scope guard errors. |
+| Provenance | `human_intervention_count`   | integer ≥ 0             | Recorded human interventions before arbitration. Null when intervention collection is unavailable.                      |
+| Provenance | `review_rounds`              | integer ≥ 0             | Distinct pre-arbitration human review rounds. Null when review history is unavailable.                                  |
+| Provenance | `change_requests`            | integer ≥ 0             | Pre-arbitration change-request reviews. Null when review history is unavailable.                                        |
+| Provenance | `self_review_iterations`     | integer ≥ 0             | Automated self-review repair iterations. Null when self-review telemetry is unavailable.                                |
+| Provenance | `agent_iterations`           | integer ≥ 0             | Recorded implementation iterations before arbitration. Null when iteration telemetry is unavailable.                    |
+
+The exact enum values, producer mappings, and authoritative one-line
+definitions are exported as `CANDIDATE_FEATURE_DEFINITIONS`. The Intent fields
+reuse `HokusaiTaskDescriptor`; `deriveTaskDescriptor()` remains partial for
+Model 30 callers, while `taskDescriptorToCandidateIntent()` adapts its observed
+values and lets finalization encode the rest as null.
+
+The checked-in consumer fixture is
+`fixtures/arbiter/candidate_features.v1.json`. Run
+`pnpm check:candidate-features` to detect schema or fixture drift and
+`pnpm export:candidate-features` to regenerate it from a built core package.

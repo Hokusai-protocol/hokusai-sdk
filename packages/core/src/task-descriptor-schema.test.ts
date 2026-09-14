@@ -1,21 +1,12 @@
 import { Ajv2020, type ErrorObject } from 'ajv/dist/2020.js';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type {
   HokusaiLanguage,
   HokusaiTaskDescriptor,
 } from './contribution/descriptor-types.js';
+import { HOKUSAI_LANGUAGES } from './contribution/descriptor-types.js';
 import { deriveTaskDescriptor } from './task-descriptor.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_SCHEMA_PATH = resolve(
-  __dirname,
-  '../../../../hokusai-data-pipeline/schema/hokusai_task_descriptor.v1.json',
-);
-const SCHEMA_PATH =
-  process.env.HOKUSAI_TASK_DESCRIPTOR_SCHEMA ?? DEFAULT_SCHEMA_PATH;
+import { HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA } from './task-descriptor-schema.js';
 
 const ALL_HOKUSAI_LANGUAGES: Record<HokusaiLanguage, true> = {
   python: true,
@@ -29,13 +20,6 @@ const ALL_HOKUSAI_LANGUAGES: Record<HokusaiLanguage, true> = {
   unknown: true,
 };
 
-function loadTaskDescriptorSchema(): Record<string, unknown> {
-  return JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as Record<
-    string,
-    unknown
-  >;
-}
-
 function languageEnum(schema: Record<string, unknown>): string[] {
   const properties = schema.properties as Record<string, unknown>;
   const language = properties.language as Record<string, unknown>;
@@ -44,14 +28,17 @@ function languageEnum(schema: Record<string, unknown>): string[] {
 
 describe('hokusai_task_descriptor.v1 schema', () => {
   it('keeps the schema language enum aligned with HokusaiLanguage', () => {
-    const schemaLanguages = languageEnum(loadTaskDescriptorSchema()).sort();
+    const schemaLanguages = languageEnum(
+      HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA,
+    ).sort();
     const typeLanguages = Object.keys(ALL_HOKUSAI_LANGUAGES).sort();
 
     expect(schemaLanguages).toEqual(typeLanguages);
+    expect(schemaLanguages).toEqual([...HOKUSAI_LANGUAGES].sort());
   });
 
   it('accepts descriptors emitted by deriveTaskDescriptor', () => {
-    const schema = loadTaskDescriptorSchema();
+    const schema = HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA;
     const validate = new Ajv2020({ allErrors: true }).compile(schema);
     const descriptor = deriveTaskDescriptor({
       taskText: 'Fix the flaky TypeScript integration test.',
@@ -65,7 +52,7 @@ describe('hokusai_task_descriptor.v1 schema', () => {
   });
 
   it('accepts the handwritten HokusaiTaskDescriptor contract', () => {
-    const schema = loadTaskDescriptorSchema();
+    const schema = HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA;
     const validate = new Ajv2020({ allErrors: true }).compile(schema);
     const descriptor: HokusaiTaskDescriptor = {
       task_type: 'feature',
@@ -87,7 +74,7 @@ describe('hokusai_task_descriptor.v1 schema', () => {
   });
 
   it('rejects the pre-HOK-2495 word complexity and display language drift', () => {
-    const schema = loadTaskDescriptorSchema();
+    const schema = HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA;
     const validate = new Ajv2020({ allErrors: true }).compile(schema);
 
     expect(

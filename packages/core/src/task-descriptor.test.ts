@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   REASONING_DEPTH_COMPLEXITY,
+  TASK_DESCRIPTOR_DERIVED_FIELDS,
   deriveTaskDescriptor,
   normalizeComplexity,
   normalizeHokusaiLanguage,
+  taskDescriptorToCandidateIntent,
 } from './task-descriptor.js';
+import {
+  CANDIDATE_FEATURE_INTENT_FIELDS,
+  finalizeCandidateFeaturesV1,
+} from './candidate-features.js';
 
 describe('deriveTaskDescriptor', () => {
   it('derives categorical labels from task text', () => {
@@ -78,6 +84,45 @@ describe('deriveTaskDescriptor', () => {
 
     expect(JSON.stringify(descriptor)).not.toContain('secret-service');
     expect(Object.values(descriptor).join(' ')).not.toContain('launch');
+  });
+
+  it('uses only keys declared by the candidate Intent group', () => {
+    expect(
+      TASK_DESCRIPTOR_DERIVED_FIELDS.every((field) =>
+        CANDIDATE_FEATURE_INTENT_FIELDS.includes(field),
+      ),
+    ).toBe(true);
+  });
+
+  it('adapts only observed descriptor values and finalizes the rest to null', () => {
+    const descriptor = deriveTaskDescriptor({
+      taskText: 'Fix the TypeScript tests.',
+      repositorySignals: { extensionCounts: { ts: 4 } },
+    });
+    const intent = taskDescriptorToCandidateIntent(descriptor);
+    const candidate = finalizeCandidateFeaturesV1(intent);
+
+    expect(candidate.task_type).toBe('tests');
+    expect(candidate.language).toBe('typescript');
+    expect(candidate.domain).toBeNull();
+    expect(candidate.is_greenfield).toBeNull();
+    expect(candidate.touched_out_of_scope_files).toBeNull();
+    expect(JSON.stringify(candidate)).not.toContain('TypeScript tests');
+  });
+
+  it('does not add fallback Intent values for an empty descriptor', () => {
+    expect(
+      finalizeCandidateFeaturesV1(
+        taskDescriptorToCandidateIntent(deriveTaskDescriptor({})),
+      ),
+    ).toMatchObject({
+      task_type: null,
+      complexity: null,
+      repo_size_bucket: null,
+      language: null,
+      domain: null,
+      is_greenfield: null,
+    });
   });
 });
 
