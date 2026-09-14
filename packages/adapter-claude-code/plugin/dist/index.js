@@ -2838,14 +2838,14 @@ function parseApiFieldErrors(value) {
     if (!isFieldErrorLike(entry)) {
       continue;
     }
-    const fieldError = {
+    const fieldError2 = {
       path: entry.path,
       message: entry.message
     };
     if (isFieldErrorCode(entry.code)) {
-      fieldError.code = entry.code;
+      fieldError2.code = entry.code;
     }
-    fieldErrors.push(fieldError);
+    fieldErrors.push(fieldError2);
   }
   return fieldErrors;
 }
@@ -3905,7 +3905,7 @@ function createRouteTask(profile) {
         "Route payload validation failed.",
         {
           fieldErrors: validationErrors.map(
-            (fieldError) => `${fieldError.path}: ${fieldError.message}`
+            (fieldError2) => `${fieldError2.path}: ${fieldError2.message}`
           )
         }
       );
@@ -5391,6 +5391,546 @@ function summarizeFrameworkSignals(dependencyCategories) {
   );
 }
 
+// ../core/src/contribution/descriptor-types.ts
+var HOKUSAI_TASK_TYPES = [
+  "bugfix",
+  "feature",
+  "refactor",
+  "infra",
+  "tests",
+  "migration",
+  "docs",
+  "unknown"
+];
+var HOKUSAI_LANGUAGES = [
+  "python",
+  "typescript",
+  "javascript",
+  "go",
+  "rust",
+  "java",
+  "bash",
+  "multi",
+  "unknown"
+];
+var HOKUSAI_DOMAINS = [
+  "backend",
+  "frontend",
+  "fullstack",
+  "devops",
+  "data",
+  "ml",
+  "mobile",
+  "unknown"
+];
+var HOKUSAI_REPO_SIZE_BUCKETS = [
+  "small",
+  "medium",
+  "large",
+  "xlarge"
+];
+var HOKUSAI_FILES_TOUCHED_BUCKETS = [
+  "1",
+  "2_5",
+  "6_15",
+  "16_plus"
+];
+var HOKUSAI_DESCRIPTION_LENGTH_BUCKETS = [
+  "short",
+  "medium",
+  "long"
+];
+var HOKUSAI_RISK_LEVELS = ["low", "medium", "high"];
+
+// ../core/src/candidate-features.ts
+var CANDIDATE_FEATURES_SCHEMA_VERSION = "candidate_features/v1";
+var CANDIDATE_FEATURE_DEFINITIONS = Object.freeze({
+  // Shape — checkout/PR diff measurements.
+  files_touched: {
+    group: "shape",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of files changed by the candidate.",
+    nullMeaning: "The candidate diff could not be enumerated.",
+    source: "Wavemill DifficultySignals.filesTouched."
+  },
+  lines_added: {
+    group: "shape",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of added lines in the candidate diff.",
+    nullMeaning: "Directional diff statistics were unavailable.",
+    source: "PR additions or git numstat additions."
+  },
+  lines_deleted: {
+    group: "shape",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of deleted lines in the candidate diff.",
+    nullMeaning: "Directional diff statistics were unavailable.",
+    source: "PR deletions or git numstat deletions."
+  },
+  loc_touched: {
+    group: "shape",
+    kind: "integer",
+    minimum: 0,
+    description: "Total added plus deleted lines in the candidate diff.",
+    nullMeaning: "The candidate diff could not be measured.",
+    source: "Wavemill DifficultySignals.locTouched."
+  },
+  dependency_depth: {
+    group: "shape",
+    kind: "integer",
+    minimum: 0,
+    description: "Maximum dependency-graph depth reached by changed modules.",
+    nullMeaning: "No supported dependency graph could be derived.",
+    source: "Wavemill DifficultySignals.dependencyDepth."
+  },
+  module_hotspot_score: {
+    group: "shape",
+    kind: "number",
+    minimum: 0,
+    maximum: 100,
+    description: "Repository-history hotspot score for changed modules.",
+    nullMeaning: "Sufficient repository history was unavailable.",
+    source: "Wavemill DifficultySignals.moduleHotspotScore."
+  },
+  diff_uncertain: {
+    group: "shape",
+    kind: "boolean",
+    description: "Whether diff parsing produced internally suspicious measurements.",
+    nullMeaning: "No diff analysis was attempted.",
+    source: "Wavemill DifficultySignals.diffUncertain."
+  },
+  // Static — tool results, never inferred from tool absence.
+  type_errors: {
+    group: "static",
+    kind: "integer",
+    minimum: 0,
+    description: "Type-check errors reported for the candidate.",
+    nullMeaning: "No supported type checker completed successfully.",
+    source: "HOK-2806 static collector; legacy typecheckPassed is not an error count."
+  },
+  lint_errors: {
+    group: "static",
+    kind: "integer",
+    minimum: 0,
+    description: "Lint errors reported for the candidate.",
+    nullMeaning: "No supported linter completed successfully.",
+    source: "HOK-2806 static collector; legacy lintDelta is not an error count."
+  },
+  build_ok: {
+    group: "static",
+    kind: "boolean",
+    description: "Whether the configured build completed successfully.",
+    nullMeaning: "No build ran to a terminal result or collection failed.",
+    source: "Wavemill CI/build checks; CiOutcome.ran must be true."
+  },
+  complexity_delta: {
+    group: "static",
+    kind: "number",
+    description: "Candidate-minus-base change in the configured code-complexity metric.",
+    nullMeaning: "No supported complexity analyzer completed on both revisions.",
+    source: "HOK-2806 static collector."
+  },
+  // Test — test-diff and execution facts.
+  tests_changed: {
+    group: "test",
+    kind: "boolean",
+    description: "Whether the candidate adds or modifies test files.",
+    nullMeaning: "Test files could not be classified from the diff.",
+    source: "Wavemill TestsOutcome.added (which detects additions or modifications)."
+  },
+  test_pass_rate: {
+    group: "test",
+    kind: "number",
+    minimum: 0,
+    maximum: 1,
+    description: "Fraction of executed tests that passed.",
+    nullMeaning: "No supported test result completed with a measurable rate.",
+    source: "Wavemill TestsOutcome.passRate."
+  },
+  test_runtime_seconds: {
+    group: "test",
+    kind: "number",
+    minimum: 0,
+    description: "Elapsed seconds for the candidate test execution.",
+    nullMeaning: "Test runtime was not reported.",
+    source: "Wavemill TestsOutcome.durationSeconds."
+  },
+  // Intent — exactly the established HokusaiTaskDescriptor vocabulary.
+  task_type: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_TASK_TYPES,
+    description: "Coarse category of the requested change.",
+    nullMeaning: "No task category could be derived without guessing.",
+    source: "SDK deriveTaskDescriptor and Wavemill TaskDescriptor.signals."
+  },
+  language: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_LANGUAGES,
+    description: "Dominant implementation language category.",
+    nullMeaning: "No supported dominant language could be derived.",
+    source: "SDK deriveTaskDescriptor and repository language signals."
+  },
+  domain: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_DOMAINS,
+    description: "Coarse product or engineering domain category.",
+    nullMeaning: "No domain evidence was available; do not default to backend.",
+    source: "Wavemill TaskDescriptor.signals.learned.domain."
+  },
+  complexity: {
+    group: "intent",
+    kind: "number",
+    minimum: 0,
+    maximum: 10,
+    description: "Normalized estimated task complexity on the Hokusai 0\u201310 scale.",
+    nullMeaning: "Complexity could not be derived without a fallback.",
+    source: "SDK deriveTaskDescriptor and normalized Wavemill complexity."
+  },
+  repo_size_bucket: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_REPO_SIZE_BUCKETS,
+    description: "Bucketed repository size.",
+    nullMeaning: "Repository size could not be measured.",
+    source: "SDK bucketRepositoryScale from repository file count."
+  },
+  files_touched_bucket: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_FILES_TOUCHED_BUCKETS,
+    description: "Bucketed number of files changed by the candidate.",
+    nullMeaning: "The candidate diff could not be enumerated.",
+    source: "Existing HokusaiTaskDescriptor projection."
+  },
+  description_length_bucket: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_DESCRIPTION_LENGTH_BUCKETS,
+    description: "Bucketed length of the locally inspected task description.",
+    nullMeaning: "No task description was available to classify locally.",
+    source: "Existing HokusaiTaskDescriptor projection."
+  },
+  is_greenfield: {
+    group: "intent",
+    kind: "boolean",
+    description: "Whether the task creates a new subsystem rather than changing one.",
+    nullMeaning: "The change kind could not be classified.",
+    source: "Wavemill HeuristicSignals.is_greenfield."
+  },
+  is_migration: {
+    group: "intent",
+    kind: "boolean",
+    description: "Whether the task includes a schema or data migration.",
+    nullMeaning: "Migration intent could not be classified.",
+    source: "Wavemill HeuristicSignals.has_migration."
+  },
+  requires_tests: {
+    group: "intent",
+    kind: "boolean",
+    description: "Whether the task intent requires test work.",
+    nullMeaning: "Test intent could not be classified.",
+    source: "Wavemill HeuristicSignals.has_tests and task contract."
+  },
+  cross_service: {
+    group: "intent",
+    kind: "boolean",
+    description: "Whether the task spans multiple services or repositories.",
+    nullMeaning: "Service scope could not be classified.",
+    source: "Wavemill HeuristicSignals.cross_service."
+  },
+  ui_heavy: {
+    group: "intent",
+    kind: "boolean",
+    description: "Whether UI work is a substantial part of the task.",
+    nullMeaning: "UI intent could not be classified.",
+    source: "Wavemill HeuristicSignals.has_ui."
+  },
+  risk_level: {
+    group: "intent",
+    kind: "enum",
+    values: HOKUSAI_RISK_LEVELS,
+    description: "Coarse locally derived implementation-risk category.",
+    nullMeaning: "Risk could not be classified from bounded derived signals.",
+    source: "Existing HokusaiTaskDescriptor risk projection."
+  },
+  // Provenance — bounded pre-arbitration process facts, never identity.
+  touched_out_of_scope_files: {
+    group: "provenance",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of changed files outside the authoritative task scope.",
+    nullMeaning: "No task scope authority existed or the scope guard errored.",
+    source: "Wavemill ReviewScopeGuardResult.outOfScopePaths length."
+  },
+  human_intervention_count: {
+    group: "provenance",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of recorded human interventions before arbitration.",
+    nullMeaning: "Intervention collection was unavailable.",
+    source: "Wavemill interventionCount/interventions."
+  },
+  review_rounds: {
+    group: "provenance",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of distinct pre-arbitration human review rounds.",
+    nullMeaning: "Review history was unavailable.",
+    source: "Wavemill ReviewOutcome.rounds."
+  },
+  change_requests: {
+    group: "provenance",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of pre-arbitration change-request reviews.",
+    nullMeaning: "Review history was unavailable.",
+    source: "Wavemill ReviewOutcome.changeRequests."
+  },
+  self_review_iterations: {
+    group: "provenance",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of recorded automated self-review repair iterations.",
+    nullMeaning: "Self-review iteration telemetry was unavailable.",
+    source: "Wavemill ReviewOutcome.selfReviewIterations."
+  },
+  agent_iterations: {
+    group: "provenance",
+    kind: "integer",
+    minimum: 0,
+    description: "Number of recorded implementation iterations before arbitration.",
+    nullMeaning: "Implementation iteration telemetry was unavailable.",
+    source: "Wavemill ReworkOutcome.agentIterations."
+  }
+});
+function fieldsForGroup(group) {
+  return Object.freeze(
+    Object.entries(CANDIDATE_FEATURE_DEFINITIONS).filter(([, definition]) => definition.group === group).map(([name]) => name)
+  );
+}
+var CANDIDATE_FEATURE_SHAPE_FIELDS = fieldsForGroup("shape");
+var CANDIDATE_FEATURE_STATIC_FIELDS = fieldsForGroup("static");
+var CANDIDATE_FEATURE_TEST_FIELDS = fieldsForGroup("test");
+var CANDIDATE_FEATURE_INTENT_FIELDS = fieldsForGroup("intent");
+var CANDIDATE_FEATURE_PROVENANCE_FIELDS = fieldsForGroup("provenance");
+var CANDIDATE_FEATURE_FIELDS = Object.freeze(
+  Object.keys(CANDIDATE_FEATURE_DEFINITIONS)
+);
+function definitionJsonSchema(definition, nullable) {
+  let valueSchema;
+  if (definition.kind === "enum") {
+    valueSchema = { type: "string", enum: [...definition.values] };
+  } else if (definition.kind === "boolean") {
+    valueSchema = { type: "boolean" };
+  } else {
+    valueSchema = { type: definition.kind };
+    if (definition.minimum !== void 0) {
+      valueSchema.minimum = definition.minimum;
+    }
+    if (definition.maximum !== void 0) {
+      valueSchema.maximum = definition.maximum;
+    }
+  }
+  valueSchema.description = `${definition.description} Null means: ${definition.nullMeaning}`;
+  return nullable ? { anyOf: [valueSchema, { type: "null" }] } : valueSchema;
+}
+var CANDIDATE_FEATURES_V1_JSON_SCHEMA = Object.freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.hokus.ai/candidate_features/v1.json",
+  title: "Hokusai candidate_features/v1",
+  type: "object",
+  additionalProperties: false,
+  required: ["schema_version", ...CANDIDATE_FEATURE_FIELDS],
+  properties: {
+    schema_version: {
+      type: "string",
+      const: CANDIDATE_FEATURES_SCHEMA_VERSION
+    },
+    ...Object.fromEntries(
+      CANDIDATE_FEATURE_FIELDS.map((name) => [
+        name,
+        definitionJsonSchema(CANDIDATE_FEATURE_DEFINITIONS[name], true)
+      ])
+    )
+  }
+});
+var CANDIDATE_FEATURE_FIELD_SET = new Set(CANDIDATE_FEATURE_FIELDS);
+var CANDIDATE_FEATURE_WIRE_FIELD_SET = /* @__PURE__ */ new Set([
+  "schema_version",
+  ...CANDIDATE_FEATURE_FIELDS
+]);
+function isPlainObject3(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+function fieldError(path4, message, code) {
+  return { path: path4, message, code };
+}
+function validateFeatureValue(name, value) {
+  if (value === null) {
+    return void 0;
+  }
+  const definition = CANDIDATE_FEATURE_DEFINITIONS[name];
+  if (definition.kind === "boolean") {
+    return typeof value === "boolean" ? void 0 : fieldError(name, "Expected a boolean or null.", "invalid_type");
+  }
+  if (definition.kind === "enum") {
+    if (typeof value !== "string") {
+      return fieldError(
+        name,
+        "Expected a string enum value or null.",
+        "invalid_type"
+      );
+    }
+    return definition.values.includes(value) ? void 0 : fieldError(
+      name,
+      `Expected one of: ${definition.values.join(", ")}.`,
+      "invalid_value"
+    );
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fieldError(
+      name,
+      "Expected a finite number or null.",
+      "invalid_type"
+    );
+  }
+  if (definition.kind === "integer" && !Number.isInteger(value)) {
+    return fieldError(name, "Expected an integer or null.", "invalid_type");
+  }
+  if (definition.minimum !== void 0 && value < definition.minimum) {
+    return fieldError(
+      name,
+      `Expected a value greater than or equal to ${definition.minimum}.`,
+      "invalid_value"
+    );
+  }
+  if (definition.maximum !== void 0 && value > definition.maximum) {
+    return fieldError(
+      name,
+      `Expected a value less than or equal to ${definition.maximum}.`,
+      "invalid_value"
+    );
+  }
+  return void 0;
+}
+function validateCandidateFeaturesV1(input) {
+  if (!isPlainObject3(input)) {
+    return {
+      ok: false,
+      errors: [
+        fieldError(
+          "$",
+          "Candidate features must be a plain object.",
+          "invalid_type"
+        )
+      ]
+    };
+  }
+  const errors = [];
+  for (const key of Object.keys(input)) {
+    if (!CANDIDATE_FEATURE_WIRE_FIELD_SET.has(key)) {
+      errors.push(
+        fieldError(key, `Unknown candidate feature "${key}".`, "invalid_value")
+      );
+    }
+  }
+  if (!("schema_version" in input)) {
+    errors.push(fieldError("schema_version", "Field is required.", "required"));
+  } else if (input.schema_version !== CANDIDATE_FEATURES_SCHEMA_VERSION) {
+    errors.push(
+      fieldError(
+        "schema_version",
+        `Expected "${CANDIDATE_FEATURES_SCHEMA_VERSION}".`,
+        typeof input.schema_version === "string" ? "invalid_value" : "invalid_type"
+      )
+    );
+  }
+  for (const name of CANDIDATE_FEATURE_FIELDS) {
+    if (!(name in input)) {
+      errors.push(fieldError(name, "Field is required.", "required"));
+      continue;
+    }
+    const error = validateFeatureValue(name, input[name]);
+    if (error) {
+      errors.push(error);
+    }
+  }
+  return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+var CandidateFeaturesBuildError = class extends Error {
+  errors;
+  constructor(errors) {
+    super(
+      `Cannot build ${CANDIDATE_FEATURES_SCHEMA_VERSION}: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`
+    );
+    this.name = "CandidateFeaturesBuildError";
+    this.errors = errors;
+  }
+};
+function finalizeCandidateFeaturesV1(...projections) {
+  const candidate = {
+    schema_version: CANDIDATE_FEATURES_SCHEMA_VERSION
+  };
+  for (const name of CANDIDATE_FEATURE_FIELDS) {
+    candidate[name] = null;
+  }
+  for (const projection of projections) {
+    if (projection === void 0) {
+      continue;
+    }
+    if (!isPlainObject3(projection)) {
+      throw new CandidateFeaturesBuildError([
+        fieldError("$", "Projection must be a plain object.", "invalid_type")
+      ]);
+    }
+    for (const [name, value] of Object.entries(projection)) {
+      if (!CANDIDATE_FEATURE_FIELD_SET.has(name)) {
+        throw new CandidateFeaturesBuildError([
+          fieldError(
+            name,
+            `Unknown candidate feature "${name}".`,
+            "invalid_value"
+          )
+        ]);
+      }
+      candidate[name] = value;
+    }
+  }
+  const result = validateCandidateFeaturesV1(candidate);
+  if (!result.ok) {
+    throw new CandidateFeaturesBuildError(result.errors);
+  }
+  return result.value;
+}
+function candidateFeatureValueJsonSchema(name, nullable = true) {
+  return definitionJsonSchema(CANDIDATE_FEATURE_DEFINITIONS[name], nullable);
+}
+
+// ../core/src/task-descriptor-schema.ts
+var HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA = Object.freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.hokus.ai/hokusai_task_descriptor.v1.json",
+  title: "Hokusai task descriptor v1",
+  type: "object",
+  additionalProperties: false,
+  properties: Object.fromEntries(
+    CANDIDATE_FEATURE_INTENT_FIELDS.map((name) => [
+      name,
+      candidateFeatureValueJsonSchema(name, false)
+    ])
+  )
+});
+
 // ../core/src/task-descriptor.ts
 var REASONING_DEPTH_COMPLEXITY = {
   shallow: 3,
@@ -5477,7 +6017,9 @@ function deriveTaskDescriptor(input) {
     derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
     derived.complexity = REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
   }
-  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  const repoSizeBucket = bucketRepositoryScale(
+    input.repositorySignals?.fileCount
+  );
   if (repoSizeBucket) {
     derived.repo_size_bucket = repoSizeBucket;
   }
@@ -5901,6 +6443,70 @@ function resolveActualCostUsd(input) {
   return void 0;
 }
 
+// ../core/src/fixtures/candidate-features.ts
+var completeCandidateFeaturesV1Fixture = finalizeCandidateFeaturesV1({
+  files_touched: 4,
+  lines_added: 80,
+  lines_deleted: 12,
+  loc_touched: 92,
+  dependency_depth: 2,
+  module_hotspot_score: 37.5,
+  diff_uncertain: false,
+  type_errors: 0,
+  lint_errors: 0,
+  build_ok: true,
+  complexity_delta: -1.25,
+  tests_changed: true,
+  test_pass_rate: 1,
+  test_runtime_seconds: 12.4,
+  task_type: "feature",
+  language: "typescript",
+  domain: "backend",
+  complexity: 5,
+  repo_size_bucket: "medium",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium",
+  touched_out_of_scope_files: 0,
+  human_intervention_count: 0,
+  review_rounds: 1,
+  change_requests: 0,
+  self_review_iterations: 1,
+  agent_iterations: 3
+});
+var sparseCandidateFeaturesV1Fixture = finalizeCandidateFeaturesV1({
+  files_touched: 1,
+  lines_added: 0,
+  lines_deleted: 0,
+  loc_touched: 0,
+  diff_uncertain: true
+});
+var observedZeroCandidateFeaturesV1Fixture = finalizeCandidateFeaturesV1({
+  files_touched: 0,
+  lines_added: 0,
+  lines_deleted: 0,
+  loc_touched: 0,
+  diff_uncertain: false,
+  type_errors: 0,
+  lint_errors: 0,
+  build_ok: false,
+  complexity_delta: 0,
+  tests_changed: false,
+  test_pass_rate: 0,
+  test_runtime_seconds: 0,
+  touched_out_of_scope_files: 0,
+  human_intervention_count: 0,
+  review_rounds: 0,
+  change_requests: 0,
+  self_review_iterations: 0,
+  agent_iterations: 0
+});
+
 // ../core/src/contribution/schema.ts
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
@@ -5940,7 +6546,7 @@ var ContributionValidationError = class extends Error {
     this.code = code;
   }
 };
-function isPlainObject3(value) {
+function isPlainObject4(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isFiniteNonNegativeNumber(value) {
@@ -5957,7 +6563,7 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 function isTechnicalTaskRouterSelectedModels(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["planner", "coder", "reviewer"])) {
@@ -5969,7 +6575,7 @@ function isTechnicalTaskRouterSelectedModels(value) {
   return value.planner === void 0 || typeof value.planner === "string";
 }
 function isRoleAvailableModels(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["planner_models", "coder_models", "reviewer_models"])) {
@@ -5978,7 +6584,7 @@ function isRoleAvailableModels(value) {
   return isStringArray(value.planner_models) && isStringArray(value.coder_models) && isStringArray(value.reviewer_models);
 }
 function isOutcomeLabels(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["budget_label", "cost_label", "time_label", "success_label"])) {
@@ -5987,7 +6593,7 @@ function isOutcomeLabels(value) {
   return (value.budget_label === "under_budget" || value.budget_label === "over_budget" || value.budget_label === "unknown") && (value.cost_label === "free" || value.cost_label === "low" || value.cost_label === "medium" || value.cost_label === "high" || value.cost_label === "unknown") && (value.time_label === "fast" || value.time_label === "medium" || value.time_label === "slow" || value.time_label === "unknown") && (value.success_label === "success" || value.success_label === "failure");
 }
 function isCandidatePoolMetadata(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["scenario_id", "scenario_kind", "pool_size", "baseline_model"])) {
@@ -5996,7 +6602,7 @@ function isCandidatePoolMetadata(value) {
   return typeof value.scenario_id === "string" && typeof value.scenario_kind === "string" && isFiniteNonNegativeNumber(value.pool_size) && (value.baseline_model === void 0 || typeof value.baseline_model === "string");
 }
 function isSparseCellMetadata(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["cell_id", "descriptor_signature", "observed_count", "is_sparse"])) {
@@ -6011,7 +6617,7 @@ function assertNoForbiddenKeys(value, path4 = []) {
     }
     return;
   }
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
@@ -6037,7 +6643,7 @@ var OUTCOME_SOURCE_VALUES = /* @__PURE__ */ new Set([
   "unknown"
 ]);
 function isSubmitDataContributionRow(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, [
@@ -6061,7 +6667,7 @@ function isSubmitDataContributionRow(value) {
   if (typeof value.success_under_budget !== "boolean") {
     return false;
   }
-  if (value.inputs !== void 0 && !isPlainObject3(value.inputs)) {
+  if (value.inputs !== void 0 && !isPlainObject4(value.inputs)) {
     return false;
   }
   if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
@@ -6103,7 +6709,7 @@ function isSubmitDataContributionRow(value) {
   return !("schema_version" in value);
 }
 function isTechnicalTaskRouterContributionRowV1(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION) {
@@ -6131,7 +6737,7 @@ function isTechnicalTaskRouterContributionRowV1(value) {
   ])) {
     return false;
   }
-  if (!isPlainObject3(value.task_descriptor)) {
+  if (!isPlainObject4(value.task_descriptor)) {
     return false;
   }
   if (!isStringArray(value.allowed_models)) {
@@ -6170,7 +6776,7 @@ function isTechnicalTaskRouterContributionRowV1(value) {
   return true;
 }
 function isTechnicalTaskRouterContributionRowV2(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
@@ -6202,7 +6808,7 @@ function isTechnicalTaskRouterContributionRowV2(value) {
   ])) {
     return false;
   }
-  if (!isPlainObject3(value.task_descriptor)) {
+  if (!isPlainObject4(value.task_descriptor)) {
     return false;
   }
   if (!isStringArray(value.allowed_models)) {
@@ -6253,7 +6859,7 @@ function isTechnicalTaskRouterContributionRowV2(value) {
   return true;
 }
 function isHarnessOutcomeRowMetadata(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["harness", "sdk_version"])) {
@@ -6262,7 +6868,7 @@ function isHarnessOutcomeRowMetadata(value) {
   return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
 }
 function isHarnessOutcomeRowV1(value) {
-  if (!isPlainObject3(value)) {
+  if (!isPlainObject4(value)) {
     return false;
   }
   if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
@@ -6271,7 +6877,7 @@ function isHarnessOutcomeRowV1(value) {
   if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
     return false;
   }
-  if (!isPlainObject3(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
+  if (!isPlainObject4(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
     return false;
   }
   if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
@@ -7588,7 +8194,7 @@ function createRunBootstrapDoctor(profile) {
         id: "config-validation",
         label: "config-validation",
         status: "fail",
-        summary: `Plugin configuration is invalid for: ${error.fieldErrors.map((fieldError) => fieldError.path).join(", ")}.`,
+        summary: `Plugin configuration is invalid for: ${error.fieldErrors.map((fieldError2) => fieldError2.path).join(", ")}.`,
         nextAction: "Fix the invalid Hokusai plugin configuration values and rerun the doctor."
       };
     }

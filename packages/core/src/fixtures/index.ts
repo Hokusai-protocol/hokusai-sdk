@@ -1,5 +1,10 @@
 export { claudeCodeTaskPacketFixture } from './claude-code.js';
 export {
+  completeCandidateFeaturesV1Fixture,
+  observedZeroCandidateFeaturesV1Fixture,
+  sparseCandidateFeaturesV1Fixture,
+} from './candidate-features.js';
+export {
   claudeCodeFailureOutcomeFixture,
   claudeCodeSuccessOutcomeFixture,
 } from './outcome-claude-code.js';

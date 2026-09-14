@@ -6,41 +6,68 @@
  * @module contribution/descriptor-types
  */
 
-export type HokusaiTaskType =
-  | 'bugfix'
-  | 'feature'
-  | 'refactor'
-  | 'infra'
-  | 'tests'
-  | 'migration'
-  | 'docs'
-  | 'unknown';
+export const HOKUSAI_TASK_TYPES = [
+  'bugfix',
+  'feature',
+  'refactor',
+  'infra',
+  'tests',
+  'migration',
+  'docs',
+  'unknown',
+] as const;
 
-export type HokusaiLanguage =
-  | 'python'
-  | 'typescript'
-  | 'javascript'
-  | 'go'
-  | 'rust'
-  | 'java'
-  | 'bash'
-  | 'multi'
-  | 'unknown';
+export const HOKUSAI_LANGUAGES = [
+  'python',
+  'typescript',
+  'javascript',
+  'go',
+  'rust',
+  'java',
+  'bash',
+  'multi',
+  'unknown',
+] as const;
 
-export type HokusaiDomain =
-  | 'backend'
-  | 'frontend'
-  | 'fullstack'
-  | 'devops'
-  | 'data'
-  | 'ml'
-  | 'mobile'
-  | 'unknown';
+export const HOKUSAI_DOMAINS = [
+  'backend',
+  'frontend',
+  'fullstack',
+  'devops',
+  'data',
+  'ml',
+  'mobile',
+  'unknown',
+] as const;
 
-export type HokusaiRepoSizeBucket = 'small' | 'medium' | 'large' | 'xlarge';
-export type HokusaiFilesTouchedBucket = '1' | '2_5' | '6_15' | '16_plus';
-export type HokusaiDescriptionLengthBucket = 'short' | 'medium' | 'long';
-export type HokusaiRiskLevel = 'low' | 'medium' | 'high';
+export const HOKUSAI_REPO_SIZE_BUCKETS = [
+  'small',
+  'medium',
+  'large',
+  'xlarge',
+] as const;
+export const HOKUSAI_FILES_TOUCHED_BUCKETS = [
+  '1',
+  '2_5',
+  '6_15',
+  '16_plus',
+] as const;
+export const HOKUSAI_DESCRIPTION_LENGTH_BUCKETS = [
+  'short',
+  'medium',
+  'long',
+] as const;
+export const HOKUSAI_RISK_LEVELS = ['low', 'medium', 'high'] as const;
+
+export type HokusaiTaskType = (typeof HOKUSAI_TASK_TYPES)[number];
+export type HokusaiLanguage = (typeof HOKUSAI_LANGUAGES)[number];
+export type HokusaiDomain = (typeof HOKUSAI_DOMAINS)[number];
+export type HokusaiRepoSizeBucket = (typeof HOKUSAI_REPO_SIZE_BUCKETS)[number];
+export type HokusaiFilesTouchedBucket =
+  (typeof HOKUSAI_FILES_TOUCHED_BUCKETS)[number];
+export type HokusaiDescriptionLengthBucket =
+  (typeof HOKUSAI_DESCRIPTION_LENGTH_BUCKETS)[number];
+export type HokusaiRiskLevel = (typeof HOKUSAI_RISK_LEVELS)[number];
 
 export interface HokusaiTaskDescriptor {
   task_type: HokusaiTaskType;

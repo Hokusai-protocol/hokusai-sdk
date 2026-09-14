@@ -41,16 +41,24 @@ const client = new HokusaiClient({ apiKey: process.env.HOKUSAI_API_KEY });
 const registry = new InMemoryModelRegistry(ANTHROPIC_MODELS);
 
 const builder = new HokusaiDispatchBuilder({
-  consent: { subjectId: 'my-harness', grantedScopes: ['task-execution', 'telemetry'] },
+  consent: {
+    subjectId: 'my-harness',
+    grantedScopes: ['task-execution', 'telemetry'],
+  },
   modelRegistry: registry,
 });
 
 // 1. Route. The prompt is redacted before it leaves the process.
-const payload = await builder.prepareDispatch(task, registry.getDefault()!.id, 'task-execution', {
-  availableModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
-  objective: 'highest_reliability',
-  maxCostUsd: 1,
-});
+const payload = await builder.prepareDispatch(
+  task,
+  registry.getDefault()!.id,
+  'task-execution',
+  {
+    availableModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+    objective: 'highest_reliability',
+    maxCostUsd: 1,
+  },
+);
 const decision = await client.route(payload);
 
 // 2. Run the model yourself. Hokusai never calls a model.
@@ -60,7 +68,10 @@ const row = buildHarnessOutcomeRow({
   inferenceLogId: decision.routeId, // without this the row is unattributable
   taskDescriptor: deriveTaskDescriptor({ taskText: task.prompt }),
   allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
-  selectedModels: { coder: decision.recommendation.model, reviewer: decision.recommendation.model },
+  selectedModels: {
+    coder: decision.recommendation.model,
+    reviewer: decision.recommendation.model,
+  },
   completionResult: 'success',
   budgetUsd: 1,
   actualCostUsd: 0.42,
@@ -165,6 +176,42 @@ is reduced to categorical labels by `deriveTaskDescriptor`, and the API key is
 structurally un-persistable — the config stores throw if you try to write it.
 Outcome submission is off until explicitly enabled. See
 [Privacy Model](../../docs/privacy-model.md).
+
+## Arbiter candidate features
+
+`candidate_features/v1` is the shared, derived-only contract used by Arbiter
+producers and consumers. Build a vector from whichever projections are
+available; the finalizer supplies every missing field as `null` and stamps the
+schema version.
+
+```ts
+import {
+  finalizeCandidateFeaturesV1,
+  taskDescriptorToCandidateIntent,
+  validateCandidateFeaturesV1,
+  deriveTaskDescriptor,
+} from '@hokusai/core';
+
+const intent = taskDescriptorToCandidateIntent(
+  deriveTaskDescriptor({
+    taskText: task.prompt,
+    repositorySignals: { fileCount: 420, extensionCounts: { ts: 180 } },
+  }),
+);
+
+const features = finalizeCandidateFeaturesV1(
+  { files_touched: 4, lines_added: 80, lines_deleted: 12, loc_touched: 92 },
+  { type_errors: 0, lint_errors: 0, build_ok: true },
+  intent,
+);
+
+const validation = validateCandidateFeaturesV1(features);
+if (!validation.ok) throw new Error(JSON.stringify(validation.errors));
+```
+
+Zero and `false` mean a producer ran and observed those values. `null` means
+the documented evidence was unavailable. Producers must never substitute a
+default value for unavailable evidence.
 
 ## Documentation
 
