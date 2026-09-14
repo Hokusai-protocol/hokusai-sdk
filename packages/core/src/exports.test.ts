@@ -67,6 +67,19 @@ describe('core public surface', () => {
     expect(core.preview).toBeDefined();
     expect(core.hashPayload).toBeDefined();
     expect(core.DEFAULT_REDACTION_CONFIG).toBeDefined();
+    expect(core.CANDIDATE_FEATURES_SCHEMA_VERSION).toBe(
+      'candidate_features/v1',
+    );
+    expect(core.CANDIDATE_FEATURE_FIELDS).toHaveLength(33);
+    expect(core.CANDIDATE_FEATURES_V1_JSON_SCHEMA).toBeDefined();
+    expect(core.CANDIDATE_FEATURE_DEFINITIONS).toBeDefined();
+    expect(core.validateCandidateFeaturesV1).toBeDefined();
+    expect(core.finalizeCandidateFeaturesV1).toBeDefined();
+    expect(core.taskDescriptorToCandidateIntent).toBeDefined();
+    expect(core.HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA).toBeDefined();
+    expect(core.completeCandidateFeaturesV1Fixture).toBeDefined();
+    expect(core.sparseCandidateFeaturesV1Fixture).toBeDefined();
+    expect(core.observedZeroCandidateFeaturesV1Fixture).toBeDefined();
     expect(core.TASK_PACKET_SCHEMA_VERSION).toBe('1.1.0');
     expect(core.OUTCOME_REPORT_SCHEMA_VERSION).toBe('1');
     expect(core.HARNESS_OUTCOME_ROW_FIELDS).toContain('inference_log_id');

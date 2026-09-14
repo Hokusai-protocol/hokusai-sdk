@@ -124,7 +124,7 @@ export async function runHokusaiLoop(
       ? { repositorySignals: options.repositorySignals }
       : {}),
   });
-  const taskDescriptor =
+  const taskDescriptor: TaskDescriptorFields =
     Object.keys(derived).length > 0 ? derived : { task_type: 'unknown' };
   for (const [key, value] of Object.entries(taskDescriptor)) {
     log(`        ${key}: ${value}`);

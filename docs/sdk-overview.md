@@ -119,6 +119,22 @@ Use core helpers to build and validate the public wire payloads:
 - `TASK_PACKET_SCHEMA_VERSION`
 - `OUTCOME_REPORT_SCHEMA_VERSION`
 
+Arbiter feature producers and consumers additionally use:
+
+- `CANDIDATE_FEATURES_SCHEMA_VERSION`
+- `CandidateFeaturesV1` and the five partial group projection types
+- `CANDIDATE_FEATURE_DEFINITIONS` and the ordered group/field manifests
+- `CANDIDATE_FEATURES_V1_JSON_SCHEMA`
+- `finalizeCandidateFeaturesV1()`
+- `validateCandidateFeaturesV1()`
+- `taskDescriptorToCandidateIntent()`
+- the complete, sparse, and observed-zero candidate fixture exports
+
+Core owns the wire contract. Wavemill owns the initial checkout/PR extractor
+and maps its existing difficulty, outcome, verification, descriptor, and scope
+guard outputs into these fields. The data pipeline and future `@hokusai/scan`
+package consume the versioned contract rather than defining local field lists.
+
 ### Model Registry
 
 Use the registry exports to map harness model labels onto Hokusai model ids:

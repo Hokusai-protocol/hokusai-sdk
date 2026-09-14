@@ -128,3 +128,22 @@ See [integration-guide.md](integration-guide.md) for integration guidance and [s
 - `redactionSummary` includes counts only.
 - No preview field includes original sensitive values.
 - Task-packet builders should redact user-supplied array fields such as `constraints`, `availableTools`, and provider/model hints entry-by-entry, so customer names and internal identifiers do not survive outside free-text fields.
+
+## Arbiter candidate-feature boundary
+
+`candidate_features/v1` is an explicit allowlist. Only its 33 bounded derived
+fields and `schema_version` may leave a repository as a candidate vector. The
+validator rejects additional properties, so adding a source-like key cannot be
+silently accepted as an extension.
+
+Allowed examples include counts, booleans, bounded numeric measurements, and
+closed categories such as `task_type`. Prohibited examples include source,
+prompts, task text, diffs, patches, paths, SHAs, repository or PR identity,
+free-form findings and rationales, embeddings, user/model/vendor/harness
+identity, trigger source, prices, costs, and survival labels.
+
+Producers may inspect sensitive inputs locally to derive an allowed value, but
+must discard the input. A missing tool, failed collector, pending check, or
+missing task/scope authority is represented as `null`, never as a guessed zero,
+false, or category. In particular, Wavemill's legacy `{ ran: false, passed:
+true }` CI sentinel maps to `build_ok: null`.

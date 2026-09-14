@@ -20,7 +20,14 @@ import {
   summarizeLanguageSignals,
 } from './task-signals.js';
 import type { ReasoningDepth, TaskFamily } from './task-packet.js';
-import type { HokusaiLanguage } from './contribution/descriptor-types.js';
+import type {
+  HokusaiLanguage,
+  HokusaiTaskType,
+} from './contribution/descriptor-types.js';
+import type {
+  CandidateFeatureValues,
+  CandidateIntentFeatures,
+} from './candidate-features.js';
 
 /**
  * Categorical repository signals available at route time. Counts only — never
@@ -40,7 +47,22 @@ export interface TaskDescriptorInput {
  * A partial task descriptor. Values are strings except `complexity`, which the
  * descriptor contract declares as a numeric score.
  */
-export type TaskDescriptorFields = Record<string, string | number>;
+export const TASK_DESCRIPTOR_DERIVED_FIELDS = [
+  'task_type',
+  'complexity',
+  'repo_size_bucket',
+  'language',
+] as const satisfies readonly (keyof CandidateIntentFeatures)[];
+
+type TaskDescriptorDerivedField =
+  (typeof TASK_DESCRIPTOR_DERIVED_FIELDS)[number];
+
+export type TaskDescriptorFields = {
+  [TName in TaskDescriptorDerivedField]?: Exclude<
+    CandidateFeatureValues[TName],
+    null
+  >;
+};
 
 /**
  * Map a reasoning depth onto the numeric complexity score the descriptor
@@ -77,7 +99,9 @@ const COMPLEXITY_ALIASES: Record<string, number> = {
  * value with no defined meaning rather than defaulting, so the caller can omit
  * the field instead of asserting a complexity it never derived.
  */
-export function normalizeComplexity(value: string | number | undefined): number | undefined {
+export function normalizeComplexity(
+  value: string | number | undefined,
+): number | undefined {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : undefined;
   }
@@ -116,7 +140,9 @@ const HOKUSAI_LANGUAGE_BY_LABEL: Record<string, HokusaiLanguage> = {
   bash: 'bash',
 };
 
-export function normalizeHokusaiLanguage(label: string | undefined): HokusaiLanguage {
+export function normalizeHokusaiLanguage(
+  label: string | undefined,
+): HokusaiLanguage {
   if (typeof label !== 'string') {
     return 'unknown';
   }
@@ -125,25 +151,28 @@ export function normalizeHokusaiLanguage(label: string | undefined): HokusaiLang
 }
 
 /** Map a deterministic TaskFamily label onto the server's HokusaiTaskType set. */
-export const TASK_FAMILY_TO_HOKUSAI_TYPE: Record<TaskFamily, string> = {
-  bugfix: 'bugfix',
-  feature: 'feature',
-  migration: 'migration',
-  refactor: 'refactor',
-  test: 'tests',
-  docs: 'docs',
-  infra: 'infra',
-  chore: 'infra',
-  mixed: 'unknown',
-  investigation: 'unknown',
-};
+export const TASK_FAMILY_TO_HOKUSAI_TYPE: Record<TaskFamily, HokusaiTaskType> =
+  {
+    bugfix: 'bugfix',
+    feature: 'feature',
+    migration: 'migration',
+    refactor: 'refactor',
+    test: 'tests',
+    docs: 'docs',
+    infra: 'infra',
+    chore: 'infra',
+    mixed: 'unknown',
+    investigation: 'unknown',
+  };
 
 /**
  * Pick the single dominant language from extension counts. Ties break
  * deterministically by extension name. Returns undefined when no extension maps
  * to a known language.
  */
-function dominantLanguage(extensionCounts: Record<string, number>): string | undefined {
+function dominantLanguage(
+  extensionCounts: Record<string, number>,
+): string | undefined {
   let bestExtension: string | undefined;
   let bestCount = 0;
 
@@ -154,7 +183,8 @@ function dominantLanguage(extensionCounts: Record<string, number>): string | und
 
     if (
       count > bestCount ||
-      (count === bestCount && (bestExtension === undefined || extension < bestExtension))
+      (count === bestCount &&
+        (bestExtension === undefined || extension < bestExtension))
     ) {
       bestExtension = extension;
       bestCount = count;
@@ -177,16 +207,22 @@ function dominantLanguage(extensionCounts: Record<string, number>): string | und
  * rejects an empty descriptor, so callers that cannot derive anything should
  * fall back to `{ task_type: 'unknown' }` rather than fabricate labels.
  */
-export function deriveTaskDescriptor(input: TaskDescriptorInput): TaskDescriptorFields {
+export function deriveTaskDescriptor(
+  input: TaskDescriptorInput,
+): TaskDescriptorFields {
   const derived: TaskDescriptorFields = {};
 
   const taskText = input.taskText?.trim();
   if (taskText && taskText.length > 0) {
-    derived.task_type = TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
-    derived.complexity = REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
+    derived.task_type =
+      TASK_FAMILY_TO_HOKUSAI_TYPE[classifyTaskFamily({ text: taskText })];
+    derived.complexity =
+      REASONING_DEPTH_COMPLEXITY[inferReasoningDepth({ text: taskText })];
   }
 
-  const repoSizeBucket = bucketRepositoryScale(input.repositorySignals?.fileCount);
+  const repoSizeBucket = bucketRepositoryScale(
+    input.repositorySignals?.fileCount,
+  );
   if (repoSizeBucket) {
     derived.repo_size_bucket = repoSizeBucket;
   }
@@ -200,4 +236,24 @@ export function deriveTaskDescriptor(input: TaskDescriptorInput): TaskDescriptor
   }
 
   return derived;
+}
+
+/**
+ * Adapt the SDK's partial Model 30 descriptor into the S1 Intent projection.
+ * Fields the descriptor did not derive stay omitted so finalization can encode
+ * them as null. This helper never invents the other nine Intent values.
+ */
+export function taskDescriptorToCandidateIntent(
+  descriptor: TaskDescriptorFields,
+): CandidateIntentFeatures {
+  const projection: CandidateIntentFeatures = {};
+
+  for (const name of TASK_DESCRIPTOR_DERIVED_FIELDS) {
+    const value = descriptor[name];
+    if (value !== undefined) {
+      Object.assign(projection, { [name]: value });
+    }
+  }
+
+  return projection;
 }
