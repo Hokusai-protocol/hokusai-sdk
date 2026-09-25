@@ -213,11 +213,11 @@ No dependency on `@hokusai/scan` today, and no cycle results from the recommenda
 
 ---
 
-## Pending Linear Updates
+## Handoff Notes for Linear (out of repo scope)
 
-The following writes to Linear are part of REQ-F7/REQ-F8 success criteria for this recon and should be performed alongside PR merge (they are not visible in this repo diff):
+REQ-F7 and REQ-F8 require writes to **Linear** (Program Brief §2 paragraph, Decision Log entry, and downstream-issue confirmations). Those live in the Linear workspace, not in this repository, so they will never appear in this PR's diff. The PR description carries the same handoff checklist and is the authoritative record. This section duplicates the list here so this recon reads standalone. The operator merging this PR is responsible for confirming these are done before closing HOK-2788:
 
-- **Program Brief §2 (Arbiter Program Brief and Decision Log):** append the package-boundary paragraph naming `@hokusai/scan` as the labeller+extractor package and `@hokusai/core` as the schema-only package.
-- **Decision Log entry:** record the call ("scan is a new package; core carries only S1/S2/S3 wire-format shapes; adapter-wavemill stays independent") with a link to this recon.
-- **HOK-2816 (Arbiter S4):** update to reflect that S4 lands the labeller/extractor in `packages/scan/` and the schemas in `packages/core/`.
-- **HOK-2821 (P2.S2), HOK-2820 (P2.S1), HOK-2822 (P2.S3), HOK-2833 (P3.S2):** confirm unchanged per this recon's Downstream Impact section.
+- **Program Brief §2 (Arbiter Program Brief and Decision Log):** paragraph naming `@hokusai/scan` as the labeller+extractor package and `@hokusai/core` as the schema-only package.
+- **Decision Log entry:** the call ("scan is a new package; core carries only S1/S2/S3 wire-format shapes; adapter-wavemill stays independent") with a link to this recon.
+- **HOK-2816 (Arbiter S4):** updated to reflect S4 lands the labeller/extractor in `packages/scan/` and the schemas in `packages/core/`.
+- **HOK-2821 (P2.S2), HOK-2820 (P2.S1), HOK-2822 (P2.S3), HOK-2833 (P3.S2):** confirmed unchanged per this recon's Downstream Impact section.
