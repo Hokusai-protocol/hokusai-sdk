@@ -19,3 +19,4 @@ export {
   wavemillSuccessOutcomeFixture,
 } from './outcome-wavemill.js';
 export { wavemillTaskPacketFixture } from './wavemill.js';
+export * from './task-cost/index.js';

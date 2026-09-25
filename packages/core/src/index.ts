@@ -344,6 +344,10 @@ export {
   wavemillTaskPacketFixture,
 } from './fixtures/index.js';
 export {
+  taskCostFixtures,
+  type TaskCostFixture,
+} from './fixtures/task-cost/index.js';
+export {
   FsLocalStore,
   InMemoryCorrelationStorage,
   InMemoryLocalStore,
@@ -369,3 +373,4 @@ export {
 export * from './integration-kit/index.js';
 export * from './plugin-commands/index.js';
 export * from './contribution/index.js';
+export * from './task-cost/index.js';
