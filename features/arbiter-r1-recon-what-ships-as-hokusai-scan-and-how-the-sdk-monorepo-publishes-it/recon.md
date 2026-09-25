@@ -80,24 +80,26 @@ Six published packages and three examples in the monorepo. Verification: `pnpm-w
 **Citation:** `packages/adapter-claude-code/package.json` lines 13–29 (bin, files, bundle:plugin script), `.github/workflows/ci.yml` lines 42–51.
 
 ### Zip build scripts
-**Deny-list pattern:** Both `scripts/build-plugin-zip.mjs` and `scripts/build-codex-plugin-zip.mjs` exclude `.env`, `node_modules`, `features/`, `.test.*`, and `__fixtures__` from the zip. This pattern must be reused for any scan-side bundling.
+**Deny-list pattern:** Both `scripts/build-plugin-zip.mjs` (lines 28–35) and `scripts/build-codex-plugin-zip.mjs` (lines 28–35) exclude `.env`, `node_modules`, `features/`, `.test.*`, `__fixtures__`, and `worktrees` from the zip. This pattern must be reused for any scan-side bundling.
 
-**Citation:** `.github/workflows/release.yml` lines 68–75 (zip assertion).
+**Citation:** `scripts/build-plugin-zip.mjs:28-35` (regex deny-list); `.github/workflows/release.yml:68-75` holds a separate grep-based zip assertion — note that the grep assertion **omits `worktrees`**, so it is not equivalent coverage to the regex deny-list.
 
 ---
 
 ## Runtime Matrix
 
-| Dimension | GitHub Action (Composite/JS) | `npx @hokusai/scan` |
+All rows in this table describe the intended shape of `@hokusai/scan` and its Action manifest. No `packages/scan/action.yml` exists in the repo yet, so every Action-side cell is **proposed** (target for S4), not observed. `npx` behaviour is standard npm CLI semantics, not a repo fact.
+
+| Dimension | GitHub Action (Composite/JS) — proposed | `npx @hokusai/scan` — proposed |
 |-----------|-----|------|
-| Node runtime | `runs.using: node20` (pinned in `action.yml`) | Whatever user has (README requires Node ≥ 20) |
-| Install step | None — bundled `action/dist/index.js` ships with tag | `npx` fetches from npm registry on demand |
+| Node runtime | `runs.using: node20` (to be pinned in future `packages/scan/action.yml`) | Whatever user has; README will require Node ≥ 20 (**UNVERIFIED**, README not yet drafted) |
+| Install step | None — bundled `action/dist/index.js` will ship with tag | `npx` fetches from npm registry on demand |
 | Auth to GitHub | `GITHUB_TOKEN` from job (default read-only; extendable) | User PAT via `--token` or `GH_TOKEN` env; OAuth for public repos |
 | Git history depth | Must be documented: Actions should use `actions/checkout@v4` with `fetch-depth: 0` | Local clone in user's cwd; user's existing checkout depth |
 | Output channel | Job summary + optional PR comment + artifact + `$GITHUB_OUTPUT` | stdout JSON or piped; optional `--output <path>` to file |
 | Version pinning | `uses: Hokusai-protocol/hokusai-sdk/packages/scan@v0.5.0` | `npx @hokusai/scan@0.5.0` (semver any tag) |
 | One-shot vs. scheduled | `workflow_dispatch` (one-shot) and `schedule:` (nightly) use identical code | Manual; user triggers with cron/launchd/CI of their choice |
-| Rate limiting | Uses `GITHUB_TOKEN` quota (5000 req/hr per repo) | Uses user PAT quota (or 60 req/hr for OAuth public) |
+| Rate limiting | Uses `GITHUB_TOKEN` quota (5000 req/hr per repo — **UNVERIFIED**, standard GitHub docs figure, not a repo fact) | Uses user PAT quota (or 60 req/hr for OAuth public) |
 | Network egress to Hokusai API | Enterprise runner may block; require documented allowlist domain | User's network; same allowlist domain requirement |
 | Filesystem | Ephemeral `$RUNNER_TEMP`; no state persists across runs | User's cwd; can write reports to file system |
 | Report emission | Static file uploaded as artifact + summary rendered inline | Streamed to stdout or written to file; no GitHub artifact API |
@@ -140,6 +142,19 @@ One package per module; wire-format shapes only in `@hokusai/core`, execution on
 
 **Why:** §13.2 and §15.3 require CLI and Action to run the same code. Four repos derive features from S1/S2/S3, so schemas belong in the schema-only package. The labeller must live in exactly one place per §11.3.
 
+### Q2 Verdict: Yes
+
+One package can ship both a `bin` CLI and a composite Action from the same source tree in this monorepo. Precedent: `@hokusai/adapter-claude-code` already publishes a `bin` map alongside a committed `plugin/dist/index.js` bundle regenerated in CI. No package currently ships an `action.yml`, so the Action half is a proposal, not observed; the checks below cover the additional surface.
+
+**Conflicts checked:**
+
+1. **`files` allowlist** — `@hokusai/scan/package.json` must list `["dist", "action"]` so both the CLI-facing `dist/` and the Action-facing `action/` directories publish. Verified pattern in `adapter-claude-code` (`files: ["dist", "plugin"]`). No conflict.
+2. **Committed `action/dist/index.js` bundle** — the Action's JS entry must be committed (Actions cannot run `pnpm install`). CI must regenerate at a hypothetical next version to enforce freshness, mirroring the existing "Plugin zips build at a release tag" step in `.github/workflows/ci.yml`. No conflict.
+3. **Root `action.yml` for Marketplace** — Marketplace requires `action.yml` at the **repo root**. In-repo `uses: Hokusai-protocol/hokusai-sdk/packages/scan@v0.5.0` bypasses this. Marketplace deferred to Phase 3 (see Open Item 2). No blocker for R1.
+4. **Bin shebang vs. Action entry** — CLI uses `#!/usr/bin/env node` per `adapter-aider` precedent; Action entry is invoked by `runs.using: node20` and needs no shebang. Separate files, no conflict.
+5. **Zip deny-list reuse** — `scripts/build-plugin-zip.mjs:28–35` deny-list (`.env`, `node_modules`, `features/`, `.test.*`, `__fixtures__`, `worktrees`) is scan-agnostic and can be reused for any scan-side bundling. No conflict.
+6. **`npm pack --dry-run` on adapter-aider** — **UNVERIFIED for this recon** (tarball composition inspection deferred to S4 when scan's own `package.json` exists). Precedent shape (`files: ["dist", "README.md"]`) is documented in the Workspace Map.
+
 ---
 
 ## Alternatives Rejected
@@ -153,11 +168,19 @@ Create a separate package for the Action that depends on `@hokusai/scan` for the
 ### 3. adapter-wavemill imports `@hokusai/scan`
 Make adapter-wavemill depend on scan so the routing adapter also carries scan. Rejected: adapter-wavemill is a Hokusai-side routing adapter, not a scan consumer. wavemill (the mill repo) has direct access to scan and does not need a middleman. Making adapter-wavemill the import path inverts the direction. Also, forcing adapter-wavemill into the scan dependency graph means any project that only wants the routing adapter must pull scan's deps.
 
+**adapter-wavemill actual imports** (verified via `grep -hE "from '" packages/adapter-wavemill/src/*.ts | sort -u`):
+
+- External: `@hokusai/core`
+- Relative: `./fixtures.js`, `./index.js`, `./outcome.js`, `./task-packet.js`
+- Test-only: `vitest`
+
+No dependency on `@hokusai/scan` today, and no cycle results from the recommendation: scan depends on core (not adapter-wavemill), and adapter-wavemill depends on core (not scan). The two adapters are unrelated peers under core.
+
 ---
 
 ## Open Items (UNVERIFIED)
 
-1. **`@hokusai/adapter-aider` changeset group membership:** Not listed in `.changeset/config.json` `fixed` array (line 11) but shares version 0.4.0. May be intentional (not part of the fixed release) or a bug. Not a decision point for R1.
+1. **`@hokusai/adapter-aider` changeset group membership:** Confirmed absent from the `fixed` array in `.changeset/config.json` (five entries: core, router, adapter-claude-code, adapter-codex, adapter-wavemill). Version 0.4.0 alignment is coincidental. **Intent unknown** (deliberate exclusion vs. omission by mistake) — deferred, not a decision point for R1.
 
 2. **Marketplace listing of the Action:** In-repo `uses: Hokusai-protocol/hokusai-sdk/packages/scan@v0.5.0` works today; Marketplace listing requires `action.yml` at the repo **root**. Phase 3 concern; defer decision on thin root-level wrapper or separate mirror repo.
 
@@ -187,3 +210,14 @@ Make adapter-wavemill depend on scan so the routing adapter also carries scan. R
 - [x] Decision section ≤ 10 lines
 - [x] All non-`UNVERIFIED` claims carry `path:field` citations
 - [x] No secret values in recon doc
+
+---
+
+## Pending Linear Updates
+
+The following writes to Linear are part of REQ-F7/REQ-F8 success criteria for this recon and should be performed alongside PR merge (they are not visible in this repo diff):
+
+- **Program Brief §2 (Arbiter Program Brief and Decision Log):** append the package-boundary paragraph naming `@hokusai/scan` as the labeller+extractor package and `@hokusai/core` as the schema-only package.
+- **Decision Log entry:** record the call ("scan is a new package; core carries only S1/S2/S3 wire-format shapes; adapter-wavemill stays independent") with a link to this recon.
+- **HOK-2816 (Arbiter S4):** update to reflect that S4 lands the labeller/extractor in `packages/scan/` and the schemas in `packages/core/`.
+- **HOK-2821 (P2.S2), HOK-2820 (P2.S1), HOK-2822 (P2.S3), HOK-2833 (P3.S2):** confirm unchanged per this recon's Downstream Impact section.
