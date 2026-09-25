@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { computeActualCostUsd } from '../../pricing.js';
 import {
   aggregateTaskCost,
-  assertNoForbiddenKeys,
   validateTaskCostEventV1,
   validateTaskCostLedgerV1,
   validateTaskCostSummaryV1,
   type TaskCostEventV1,
 } from '../../task-cost/index.js';
+import { assertNoForbiddenKeys } from '../../task-cost/validators.js';
 import { taskCostFixtures } from './index.js';
 
 /** Price an event the way the fixtures' estimates were derived. */

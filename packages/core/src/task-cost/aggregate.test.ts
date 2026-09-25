@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { eventFactory, eventId, tokens, type EventSpec } from '../fixtures/task-cost/builders.js';
+import { TaskCostValidationError } from './validators.js';
+import { addNullable, deriveUsageAvailability, promoteAvailability } from './token-usage.js';
 import {
-  TaskCostValidationError,
-  addNullable,
   aggregateTaskCost,
-  deriveUsageAvailability,
-  promoteAvailability,
   promoteCostSource,
   promoteCoverage,
   reconcileCumulative,
   resolveReplays,
-  type TaskCostEventV1,
-} from './index.js';
+} from './aggregate.js';
+import type { TaskCostEventV1 } from './event.js';
 
 const claude = eventFactory({ harness: 'claude-code', providerContractVersion: 'claude-code/1', harnessVersion: '2.1.0' });
 const codex = eventFactory({ harness: 'codex', providerContractVersion: 'codex/1' });

@@ -3,7 +3,6 @@ import { taskCostFixtures } from '../fixtures/task-cost/index.js';
 import {
   TASK_COST_FORBIDDEN_KEYS,
   TaskCostValidationError,
-  assertNoForbiddenKeys,
   isTaskCostEventV1,
   isTaskCostLedgerV1,
   isTaskCostSummaryV1,
@@ -12,6 +11,7 @@ import {
   validateTaskCostSummaryV1,
   type TaskCostEventV1,
 } from './index.js';
+import { assertNoForbiddenKeys } from './validators.js';
 
 const baseEvent = (): TaskCostEventV1 => {
   const event = taskCostFixtures[0]?.events[0];

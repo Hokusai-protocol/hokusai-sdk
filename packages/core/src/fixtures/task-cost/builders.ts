@@ -25,8 +25,8 @@ import type {
 import {
   TASK_COST_EVENT_SCHEMA_VERSION,
   TASK_COST_LEDGER_SCHEMA_VERSION,
-  deriveUsageAvailability,
 } from '../../task-cost/index.js';
+import { deriveUsageAvailability } from '../../task-cost/token-usage.js';
 
 export const FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 export const FIXTURE_TASK_ID = 'task-0001';
