@@ -3277,11 +3277,11 @@ function toModelSelection(model) {
     capabilities: model.capabilities
   };
 }
-function buildDefaultRecommendation(profile, model, registry = profile.modelCatalog.registry) {
-  const allowedProviders = profile.modelCatalog.allowedProviders;
+function buildDefaultRecommendation(profile16, model, registry = profile16.modelCatalog.registry) {
+  const allowedProviders = profile16.modelCatalog.allowedProviders;
   return {
     model: toModelSelection(model),
-    reason: profile.defaultRecommendationReason,
+    reason: profile16.defaultRecommendationReason,
     alternatives: registry.listAvailable().filter(
       (candidate) => allowedProviders?.includes(candidate.provider) ?? true
     ).filter((candidate) => candidate.id !== model.id).map((candidate) => ({
@@ -3742,11 +3742,11 @@ function buildReportContributionRow(input) {
     );
   }
 }
-function applyProfileConstraints(packet, profile, registry) {
-  const providerConstraints = profile.modelCatalog.providerConstraintLabels ?? profile.modelCatalog.allowedProviders;
-  const modelConstraints = profile.modelCatalog.modelConstraintLabels ?? profile.modelCatalog.allowedModels ?? listSupportedModelIds(registry, {
-    ...profile.modelCatalog.allowedProviders ? { allowedProviders: profile.modelCatalog.allowedProviders } : {},
-    ...profile.modelCatalog.requireAvailable === void 0 ? {} : { requireAvailable: profile.modelCatalog.requireAvailable }
+function applyProfileConstraints(packet, profile16, registry) {
+  const providerConstraints = profile16.modelCatalog.providerConstraintLabels ?? profile16.modelCatalog.allowedProviders;
+  const modelConstraints = profile16.modelCatalog.modelConstraintLabels ?? profile16.modelCatalog.allowedModels ?? listSupportedModelIds(registry, {
+    ...profile16.modelCatalog.allowedProviders ? { allowedProviders: profile16.modelCatalog.allowedProviders } : {},
+    ...profile16.modelCatalog.requireAvailable === void 0 ? {} : { requireAvailable: profile16.modelCatalog.requireAvailable }
   });
   return {
     ...packet,
@@ -3754,18 +3754,18 @@ function applyProfileConstraints(packet, profile, registry) {
     ...modelConstraints && modelConstraints.length > 0 ? { modelConstraints: [...modelConstraints] } : {}
   };
 }
-function buildRecommendationFromRoute(route, profile, registry) {
+function buildRecommendationFromRoute(route, profile16, registry) {
   if (!route.recommendation) {
     return void 0;
   }
   const mapped = mapRecommendation(route.recommendation, {
     registry,
-    ...profile.modelCatalog.allowedProviders ? { allowedProviders: profile.modelCatalog.allowedProviders } : {},
-    requireAvailable: profile.modelCatalog.requireAvailable ?? true
+    ...profile16.modelCatalog.allowedProviders ? { allowedProviders: profile16.modelCatalog.allowedProviders } : {},
+    requireAvailable: profile16.modelCatalog.requireAvailable ?? true
   });
   return {
     model: toModelSelection(mapped),
-    reason: route.recommendation.reason ?? profile.routeRecommendationReason,
+    reason: route.recommendation.reason ?? profile16.routeRecommendationReason,
     ...route.recommendation.confidence === void 0 ? {} : { confidence: route.recommendation.confidence },
     ...route.recommendation.alternatives?.length ? {
       alternatives: route.recommendation.alternatives.map(
@@ -3773,10 +3773,10 @@ function buildRecommendationFromRoute(route, profile, registry) {
           model: toModelSelection(
             mapRecommendation(alternative, {
               registry,
-              ...profile.modelCatalog.allowedProviders ? {
-                allowedProviders: profile.modelCatalog.allowedProviders
+              ...profile16.modelCatalog.allowedProviders ? {
+                allowedProviders: profile16.modelCatalog.allowedProviders
               } : {},
-              requireAvailable: profile.modelCatalog.requireAvailable ?? true
+              requireAvailable: profile16.modelCatalog.requireAvailable ?? true
             })
           ),
           ...alternative.reason === void 0 ? {} : { reason: alternative.reason },
@@ -3786,12 +3786,12 @@ function buildRecommendationFromRoute(route, profile, registry) {
     } : {}
   };
 }
-function resolveCommandContext(profile, options) {
+function resolveCommandContext(profile16, options) {
   const consent = options?.consent ?? {
-    subjectId: profile.defaultSubjectId,
+    subjectId: profile16.defaultSubjectId,
     grantedScopes: ["task-execution", "telemetry", "local-storage"]
   };
-  const config = profile.resolveConfigPath(
+  const config = profile16.resolveConfigPath(
     options?.configPath ? { override: options.configPath } : void 0
   );
   const settings = resolveConsent({
@@ -3799,14 +3799,14 @@ function resolveCommandContext(profile, options) {
     outcomeReportingEnabled: options?.settings?.outcomeReportingEnabled ?? isConsentGranted(consent, "telemetry")
   });
   return {
-    builderOptions: profile.createBuilderOptions(options),
+    builderOptions: profile16.createBuilderOptions(options),
     consent,
     configDir: config.dir,
-    registry: options?.registry ?? profile.modelCatalog.registry,
+    registry: options?.registry ?? profile16.modelCatalog.registry,
     settings
   };
 }
-function createRouteTask(profile) {
+function createRouteTask(profile16) {
   return async function routeTask2(input, options) {
     if (typeof input.taskText !== "string" || input.taskText.trim().length === 0) {
       return fail(
@@ -3814,7 +3814,7 @@ function createRouteTask(profile) {
         'Expected "taskText" to be a non-empty string.'
       );
     }
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     if (!canRoute(context.settings)) {
       return fail(
         "ROUTING_DISABLED",
@@ -3825,7 +3825,7 @@ function createRouteTask(profile) {
     if (!selectedModelId) {
       return fail(
         "UNKNOWN_MODEL",
-        `No ${profile.harnessLabel} model is configured for routing.`
+        `No ${profile16.harnessLabel} model is configured for routing.`
       );
     }
     let recommendation;
@@ -3834,12 +3834,12 @@ function createRouteTask(profile) {
         { model: selectedModelId },
         {
           registry: context.registry,
-          ...profile.modelCatalog.allowedProviders ? { allowedProviders: profile.modelCatalog.allowedProviders } : {},
-          requireAvailable: profile.modelCatalog.requireAvailable ?? true
+          ...profile16.modelCatalog.allowedProviders ? { allowedProviders: profile16.modelCatalog.allowedProviders } : {},
+          requireAvailable: profile16.modelCatalog.requireAvailable ?? true
         }
       );
       recommendation = buildDefaultRecommendation(
-        profile,
+        profile16,
         mapped,
         context.registry
       );
@@ -3851,14 +3851,14 @@ function createRouteTask(profile) {
       }
       throw error;
     }
-    const packetResult = profile.buildTaskPacket(input, context.builderOptions);
+    const packetResult = profile16.buildTaskPacket(input, context.builderOptions);
     packetResult.packet = applyProfileConstraints(
       packetResult.packet,
-      profile,
+      profile16,
       context.registry
     );
     const store = new FsLocalStore(context.configDir);
-    const taskId = profile.toTaskId(input, options?.clock);
+    const taskId = profile16.toTaskId(input, options?.clock);
     const payload = await new HokusaiDispatchBuilder({
       consent: context.consent,
       modelRegistry: context.registry,
@@ -3893,7 +3893,7 @@ function createRouteTask(profile) {
     }).prepareDispatch(
       {
         id: taskId,
-        prompt: profile.toPrompt(packetResult.packet),
+        prompt: profile16.toPrompt(packetResult.packet),
         ...input.metadata ? { metadata: input.metadata } : {}
       },
       recommendation.model.id
@@ -3927,7 +3927,7 @@ function createRouteTask(profile) {
         route = await options.apiClient.route(payload);
         const routeRecommendation = buildRecommendationFromRoute(
           route,
-          profile,
+          profile16,
           context.registry
         );
         if (routeRecommendation) {
@@ -3964,7 +3964,7 @@ function createRouteTask(profile) {
       });
     }
     const currentModelId = selectedModelId;
-    const handoff = profile.buildHandoff({
+    const handoff = profile16.buildHandoff({
       recommendation,
       currentModelId
     });
@@ -4028,7 +4028,7 @@ function createRouteTask(profile) {
         options,
         stage: "first_route",
         store,
-        harness: profile.harness
+        harness: profile16.harness
       });
     }
     return ok({
@@ -4042,7 +4042,7 @@ function createRouteTask(profile) {
     });
   };
 }
-function createDeclineRecommendation(profile) {
+function createDeclineRecommendation(profile16) {
   return async function declineRecommendation2(input, options) {
     if (typeof input.correlationId !== "string" || input.correlationId.trim().length === 0) {
       return fail(
@@ -4050,7 +4050,7 @@ function createDeclineRecommendation(profile) {
         "A correlation id is required to decline a recommendation."
       );
     }
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     const store = new FsLocalStore(context.configDir);
     const resolved = await findStoredCorrelationRecord(
       store,
@@ -4083,13 +4083,13 @@ function createDeclineRecommendation(profile) {
     });
   };
 }
-function createRunDoctor(profile) {
+function createRunDoctor(profile16) {
   return function runDoctor3(options) {
-    const config = profile.resolveConfigPath(
+    const config = profile16.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : void 0
     );
     const consent = options?.consent ?? {
-      subjectId: profile.defaultSubjectId,
+      subjectId: profile16.defaultSubjectId,
       grantedScopes: ["task-execution", "telemetry", "local-storage"]
     };
     const settings = resolveConsent({
@@ -4109,21 +4109,21 @@ function createRunDoctor(profile) {
     };
   };
 }
-function createPreviewTaskPayload(profile) {
+function createPreviewTaskPayload(profile16) {
   return function previewTaskPayload2(input, options) {
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     const packet = applyProfileConstraints(
-      profile.buildTaskPacket(input, context.builderOptions).packet,
-      profile,
+      profile16.buildTaskPacket(input, context.builderOptions).packet,
+      profile16,
       context.registry
     );
-    const previewResult = profile.previewTaskPacket(
+    const previewResult = profile16.previewTaskPacket(
       input,
       context.builderOptions
     );
-    const taskId = profile.toTaskId(input, options?.clock);
+    const taskId = profile16.toTaskId(input, options?.clock);
     const harnessPreview = buildPayloadPreview({
-      task: { id: taskId, prompt: profile.toPrompt(packet) },
+      task: { id: taskId, prompt: profile16.toPrompt(packet) },
       prompt: packet.userIntent,
       consent: {
         subjectId: context.consent.subjectId,
@@ -4133,7 +4133,7 @@ function createPreviewTaskPayload(profile) {
         id: input.modelId ?? context.registry.getDefault()?.id ?? "unconfigured-model",
         provider: context.registry.get(
           input.modelId ?? context.registry.getDefault()?.id ?? ""
-        )?.provider ?? profile.modelCatalog.allowedProviders?.[0] ?? "unknown",
+        )?.provider ?? profile16.modelCatalog.allowedProviders?.[0] ?? "unknown",
         capabilities: context.registry.get(
           input.modelId ?? context.registry.getDefault()?.id ?? ""
         )?.capabilities ?? []
@@ -4143,7 +4143,7 @@ function createPreviewTaskPayload(profile) {
         correlationId: "preview-only",
         createdAt: (/* @__PURE__ */ new Date(0)).toISOString()
       },
-      redactions: profile.buildTaskPacket(input, context.builderOptions).redactionSummary.map((entry) => ({
+      redactions: profile16.buildTaskPacket(input, context.builderOptions).redactionSummary.map((entry) => ({
         label: entry.category,
         count: entry.count,
         category: entry.category,
@@ -4183,9 +4183,9 @@ async function findLatestRoutingDecision(input) {
     ...routeContext ? { routeContext } : {}
   };
 }
-function createPreviewReportOutcome(profile) {
+function createPreviewReportOutcome(profile16) {
   return function previewReportOutcome2(input, options) {
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     if (!canReportOutcome(context.settings)) {
       return fail(
         "OUTCOME_REPORTING_DISABLED",
@@ -4218,7 +4218,7 @@ function createPreviewReportOutcome(profile) {
       report,
       routeContext,
       inferenceLogId,
-      harness: profile.harness,
+      harness: profile16.harness,
       observedAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
       ...actualCostUsd !== void 0 ? { actualCostUsd } : {},
       ...wallClockSeconds !== void 0 ? { wallClockSeconds } : {},
@@ -4239,14 +4239,14 @@ function createPreviewReportOutcome(profile) {
     });
   };
 }
-function createReportTaskOutcome(profile) {
-  const previewReportOutcome2 = createPreviewReportOutcome(profile);
+function createReportTaskOutcome(profile16) {
+  const previewReportOutcome2 = createPreviewReportOutcome(profile16);
   return async function reportTaskOutcome2(input, options) {
     const previewResult = previewReportOutcome2(input, options);
     if (!previewResult.ok) {
       return previewResult;
     }
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     const store = new FsLocalStore(context.configDir);
     const timestamp = (options?.clock ?? (() => /* @__PURE__ */ new Date()))().getTime();
     const observedAt = new Date(timestamp).toISOString();
@@ -4266,7 +4266,7 @@ function createReportTaskOutcome(profile) {
       report: previewResult.value.report,
       routeContext,
       inferenceLogId,
-      harness: profile.harness,
+      harness: profile16.harness,
       observedAt,
       ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
       ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
@@ -4318,7 +4318,7 @@ function createReportTaskOutcome(profile) {
           options,
           stage: "first_contribution",
           store,
-          harness: profile.harness
+          harness: profile16.harness
         });
       } catch (error) {
         await store.appendAudit({
@@ -4375,23 +4375,23 @@ function createReportTaskOutcome(profile) {
     });
   };
 }
-function createClearLocalState(profile) {
+function createClearLocalState(profile16) {
   return async function clearLocalState(options) {
-    const config = profile.resolveConfigPath(
+    const config = profile16.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : void 0
     );
     const store = new FsLocalStore(config.dir);
     await store.clear();
-    if (profile.getStateFilePath) {
-      await rm3(profile.getStateFilePath(config.dir), { force: true });
+    if (profile16.getStateFilePath) {
+      await rm3(profile16.getStateFilePath(config.dir), { force: true });
     }
     await rm3(config.dir, { recursive: true, force: true });
     return ok({ ok: true });
   };
 }
-function createListRoutingDecisions(profile) {
+function createListRoutingDecisions(profile16) {
   return async function listRoutingDecisions2(input = {}, options) {
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     const store = new FsLocalStore(context.configDir);
     const { warnings = [] } = await pruneStoreForPrivacy(
       store,
@@ -4409,12 +4409,12 @@ function createListRoutingDecisions(profile) {
     });
   };
 }
-function createPreviewStoredDecision(profile) {
+function createPreviewStoredDecision(profile16) {
   return async function previewStoredDecision2(input, options) {
     if (typeof input.correlationId !== "string" || input.correlationId.trim().length === 0) {
       return fail("UNKNOWN_CORRELATION", "A correlation id is required.");
     }
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     const store = new FsLocalStore(context.configDir);
     const { warnings = [] } = await pruneStoreForPrivacy(
       store,
@@ -4444,9 +4444,9 @@ function createPreviewStoredDecision(profile) {
     });
   };
 }
-function createListSubmissionAudit(profile) {
+function createListSubmissionAudit(profile16) {
   return async function listSubmissionAudit2(input = {}, options) {
-    const context = resolveCommandContext(profile, options);
+    const context = resolveCommandContext(profile16, options);
     const store = new FsLocalStore(context.configDir);
     const { warnings = [] } = await pruneStoreForPrivacy(
       store,
@@ -4461,10 +4461,10 @@ function createListSubmissionAudit(profile) {
     });
   };
 }
-function createClearPrivacyState(profile) {
-  const clearLocalState = createClearLocalState(profile);
+function createClearPrivacyState(profile16) {
+  const clearLocalState = createClearLocalState(profile16);
   return async function clearPrivacyState2(input, options) {
-    const configDir = input.configDir ?? profile.resolveConfigPath(
+    const configDir = input.configDir ?? profile16.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : void 0
     ).dir;
     const store = new FsLocalStore(configDir);
@@ -4514,9 +4514,9 @@ function createClearPrivacyState(profile) {
     });
   };
 }
-function createSetReportingEnabled(profile) {
+function createSetReportingEnabled(profile16) {
   return async function setReportingEnabled2(input, options) {
-    const configDir = profile.resolveConfigPath(
+    const configDir = profile16.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : void 0
     ).dir;
     const pluginConfigPath = input.configPath ?? defaultPluginConfigPath(configDir);
@@ -4529,9 +4529,9 @@ function createSetReportingEnabled(profile) {
     return ok({ enabled: input.enabled });
   };
 }
-function createGetReportingStatus(profile) {
+function createGetReportingStatus(profile16) {
   return async function getReportingStatus2(options) {
-    const configDir = profile.resolveConfigPath(
+    const configDir = profile16.resolveConfigPath(
       options?.configPath ? { override: options.configPath } : void 0
     ).dir;
     const store = new FilePluginConfigStore(defaultPluginConfigPath(configDir));
@@ -4539,7 +4539,7 @@ function createGetReportingStatus(profile) {
     const config = await loadPluginConfig({
       env: options?.env ?? process.env,
       store,
-      registry: profile.modelCatalog.registry
+      registry: profile16.modelCatalog.registry
     });
     return ok({
       enabled: config.outcomeSubmissionEnabled,
@@ -6073,6 +6073,7 @@ var MODEL_PRICING = {
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
+var MODEL_PRICING_AS_OF = "2026-07-15";
 var COMPACT_DATE_SUFFIX = /-\d{8}$/;
 var DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
 var GEMINI_STABLE_SUFFIX = /-001$/;
@@ -6507,6 +6508,1604 @@ var observedZeroCandidateFeaturesV1Fixture = finalizeCandidateFeaturesV1({
   agent_iterations: 0
 });
 
+// ../core/src/task-cost/schema-version.ts
+var TASK_COST_EVENT_SCHEMA_VERSION = "task_cost_event/v1";
+var TASK_COST_SUMMARY_SCHEMA_VERSION = "task_cost_summary/v1";
+var TASK_COST_LEDGER_SCHEMA_VERSION = "task_cost_ledger/v1";
+var PROVIDER_CONTRACT_VERSIONS = Object.freeze({
+  "claude-code": "claude-code/1",
+  codex: "codex/1",
+  native: "native/1",
+  pi: "pi/1"
+});
+
+// ../core/src/task-cost/enums.ts
+var TASK_COST_FIELD_AVAILABILITIES = [
+  "available",
+  "partial",
+  "unavailable",
+  "known_zero"
+];
+var TASK_COST_COVERAGES = [
+  "complete",
+  "partial",
+  "unavailable",
+  "known_zero"
+];
+var TASK_COST_SOURCES = [
+  "provider_reported",
+  "local_estimate",
+  "mixed",
+  "none"
+];
+var TASK_COST_EVENT_SOURCES = ["provider_reported", "local_estimate", "none"];
+var TASK_COST_BASES = ["per_token_api", "subscription", "unknown"];
+var TASK_COST_JOIN_CONFIDENCES = [
+  "branch_worktree",
+  "timestamp_window",
+  "unattributed"
+];
+var TASK_COST_HARNESSES = [
+  "claude-code",
+  "codex",
+  "native",
+  "pi",
+  "wavemill",
+  "unknown"
+];
+var TASK_COST_USAGE_KINDS = ["delta", "cumulative"];
+var TASK_COST_PRICING_SOURCES = [
+  "local_estimate",
+  "openrouter_api",
+  "mixed",
+  "none"
+];
+var TASK_COST_PRICE_TABLES = [
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "override",
+  "external"
+];
+var TASK_COST_DIAGNOSTIC_CODES = [
+  /** reducer: an event lacks input/output token counts. */
+  "missing_token_usage",
+  /** adapter: source usage was unparseable, negative, or non-finite. */
+  "invalid_token_usage",
+  /** reducer: usage was complete enough to price but no price was applied. */
+  "unpriced_model",
+  /** reducer: summary coverage is `partial`. */
+  "mixed_coverage",
+  /** reducer: at least one event was resolved from a provider-reported charge. */
+  "provider_reported_cost",
+  /** adapter: no price table was available at all. */
+  "no_pricing_data",
+  /** reducer: events exist but none produced a cost. */
+  "no_priced_sessions",
+  /** reducer: events were priced against more than one pricing revision. */
+  "stale_pricing_revision",
+  /** reducer: an event repeating a prior `event_id` was ignored. */
+  "replay_dropped",
+  /** reducer: a cumulative snapshot regressed and its delta was clamped. */
+  "cumulative_backward_jump",
+  /** reducer: subscription-basis events carry no actual charge. */
+  "subscription_basis_no_charge"
+];
+
+// ../core/src/task-cost/token-usage.ts
+var TASK_COST_TOKEN_FIELDS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cache_write_tokens",
+  "reasoning_tokens"
+];
+function deriveUsageAvailability(usage) {
+  const values = TASK_COST_TOKEN_FIELDS.map((field) => usage[field]);
+  if (values.every((value) => value === null)) return "unavailable";
+  if (values.some((value) => value === null)) return "partial";
+  return values.every((value) => value === 0) ? "known_zero" : "available";
+}
+
+// ../core/src/task-cost/validators.ts
+var TaskCostValidationError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "TaskCostValidationError";
+    this.code = code;
+  }
+};
+var TASK_COST_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  // Shared with contribution rows.
+  "prompt",
+  "messages",
+  "tasktext",
+  "rawinput",
+  "evalrecord",
+  "originalprompt",
+  "description",
+  "issuebody",
+  // Transcript / content.
+  "transcript",
+  "content",
+  "text",
+  "prompthash",
+  // Filesystem and repository locations.
+  "path",
+  "filepath",
+  "cwd",
+  "directory",
+  "dir",
+  "repo",
+  "repository",
+  "workspace",
+  "worktree",
+  "branch",
+  // Credentials and identity.
+  "token",
+  "apikey",
+  "secret",
+  "password",
+  "credentials",
+  "authorization",
+  "email",
+  "accountid",
+  "userid",
+  "username",
+  "hostname"
+]);
+function normalizeKey(key) {
+  return key.toLowerCase().replaceAll("_", "").replaceAll("-", "");
+}
+function assertNoForbiddenKeys(value, path4 = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertNoForbiddenKeys(item, [...path4, String(index)]);
+    }
+    return;
+  }
+  if (!isPlainObject4(value)) {
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (TASK_COST_FORBIDDEN_KEYS.has(normalizeKey(key))) {
+      throw new TaskCostValidationError(
+        "forbidden_field",
+        `Forbidden field at ${[...path4, key].join(".")}`
+      );
+    }
+    assertNoForbiddenKeys(child, [...path4, key]);
+  }
+}
+var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+var MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$/;
+var VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
+var PROVIDER_CONTRACT_PATTERN = /^[a-z][a-z0-9-]{0,31}\/[0-9]{1,4}$/;
+var TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
+function isPlainObject4(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function fail2(message, code = "schema_validation_failed") {
+  throw new TaskCostValidationError(code, message);
+}
+function requireObject(value, label) {
+  if (!isPlainObject4(value)) fail2(`${label} must be an object`);
+  return value;
+}
+function requireEnum(value, allowed, label) {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    fail2(`${label} must be one of: ${allowed.join(", ")}`);
+  }
+  return value;
+}
+function requireId(value, label) {
+  if (typeof value !== "string" || !ID_PATTERN.test(value)) {
+    fail2(`${label} must be an identifier matching ${ID_PATTERN}`);
+  }
+  return value;
+}
+function optionalId(value, label) {
+  return value === void 0 ? void 0 : requireId(value, label);
+}
+function requirePattern(value, pattern, label) {
+  if (typeof value !== "string" || !pattern.test(value)) {
+    fail2(`${label} must match ${pattern}`);
+  }
+  return value;
+}
+function requireModel(value, label) {
+  const model = requirePattern(value, MODEL_PATTERN, label);
+  if (model.includes("..") || model.includes("//")) {
+    fail2(`${label} must not contain path-like sequences`);
+  }
+  return model;
+}
+function requireTimestamp(value, label) {
+  if (typeof value !== "string") fail2(`${label} must be an ISO-8601 UTC timestamp`, "invalid_timestamp");
+  const match = TIMESTAMP_PATTERN.exec(value);
+  if (!match) fail2(`${label} must be an ISO-8601 UTC timestamp`, "invalid_timestamp");
+  const [year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const roundTrips = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day && date.getUTCHours() === hour && date.getUTCMinutes() === minute && date.getUTCSeconds() === second;
+  if (!roundTrips) fail2(`${label} is not a real calendar time`, "invalid_timestamp");
+  return value;
+}
+function requireBoolean(value, label) {
+  if (typeof value !== "boolean") fail2(`${label} must be a boolean`);
+  return value;
+}
+function requireCount(value, label) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    fail2(`${label} must be a non-negative integer`, "usage_out_of_range");
+  }
+  return value;
+}
+function requireNullableCount(value, label) {
+  return value === null ? null : requireCount(value, label);
+}
+function requireNullableUsd(value, label) {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    fail2(`${label} must be null or a finite non-negative number`, "usage_out_of_range");
+  }
+  return value;
+}
+function requireDiagnostics(value, label) {
+  if (!Array.isArray(value)) fail2(`${label} must be an array`);
+  for (const [index, code] of value.entries()) {
+    requireEnum(code, TASK_COST_DIAGNOSTIC_CODES, `${label}[${index}]`);
+  }
+}
+function requireStringArray(value, label, item) {
+  if (!Array.isArray(value)) fail2(`${label} must be an array`);
+  return value.map((entry, index) => item(entry, `${label}[${index}]`));
+}
+function requireTokenUsage(value, label) {
+  const record = requireObject(value, label);
+  const usage = {};
+  for (const field of TASK_COST_TOKEN_FIELDS) {
+    if (!(field in record)) fail2(`${label}.${field} is required (use null for missing)`);
+    usage[field] = requireNullableCount(record[field], `${label}.${field}`);
+  }
+  return usage;
+}
+function checkSchemaVersion(record, expected, label) {
+  const version = record.schema_version;
+  if (typeof version !== "string") fail2(`${label}.schema_version is required`);
+  if (version !== expected) {
+    fail2(`${label}.schema_version "${version}" is not supported (expected ${expected})`, "unknown_schema_version");
+  }
+}
+function validateTaskCostEventV1(value) {
+  const record = requireObject(value, "event");
+  assertNoForbiddenKeys(record);
+  checkSchemaVersion(record, TASK_COST_EVENT_SCHEMA_VERSION, "event");
+  const eventId2 = requireId(record.event_id, "event.event_id");
+  requireId(record.task_id, "event.task_id");
+  requireId(record.session_id, "event.session_id");
+  requireId(record.turn_id, "event.turn_id");
+  requireCount(record.sequence, "event.sequence");
+  optionalId(record.parent_event_id, "event.parent_event_id");
+  if (record.is_subagent !== void 0) requireBoolean(record.is_subagent, "event.is_subagent");
+  const replayOf = optionalId(record.replay_of_event_id, "event.replay_of_event_id");
+  if (replayOf === eventId2) fail2("event.replay_of_event_id must not reference the event itself");
+  requireEnum(record.harness, TASK_COST_HARNESSES, "event.harness");
+  if (record.harness_version !== void 0) {
+    requirePattern(record.harness_version, VERSION_PATTERN, "event.harness_version");
+  }
+  requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "event.provider_contract_version");
+  requireModel(record.observed_model, "event.observed_model");
+  requireEnum(record.usage_kind, TASK_COST_USAGE_KINDS, "event.usage_kind");
+  const usage = requireTokenUsage(record.usage, "event.usage");
+  const usageCoverage = requireEnum(record.usage_coverage, TASK_COST_FIELD_AVAILABILITIES, "event.usage_coverage");
+  const derivedCoverage = deriveUsageAvailability(usage);
+  if (usageCoverage !== derivedCoverage) {
+    fail2(`event.usage_coverage is "${usageCoverage}" but usage implies "${derivedCoverage}"`);
+  }
+  const actual = requireNullableUsd(record.actual_cost_usd, "event.actual_cost_usd");
+  const estimated = requireNullableUsd(record.estimated_cost_usd, "event.estimated_cost_usd");
+  const costSource = requireEnum(record.cost_source, TASK_COST_EVENT_SOURCES, "event.cost_source");
+  const expectedSource = actual !== null ? "provider_reported" : estimated !== null ? "local_estimate" : "none";
+  if (costSource !== expectedSource) {
+    fail2(`event.cost_source is "${costSource}" but the cost fields imply "${expectedSource}"`);
+  }
+  const basis = requireEnum(record.cost_basis, TASK_COST_BASES, "event.cost_basis");
+  if (basis === "subscription" && actual !== null) {
+    fail2('event.actual_cost_usd must be null when cost_basis is "subscription"');
+  }
+  const pricingSource = requireEnum(record.pricing_source, TASK_COST_PRICING_SOURCES, "event.pricing_source");
+  if (pricingSource === "mixed") fail2('event.pricing_source "mixed" is only legal on summaries');
+  if (pricingSource === "none" !== (estimated === null)) {
+    fail2('event.pricing_source must be "none" exactly when estimated_cost_usd is null');
+  }
+  if (record.pricing_revision !== void 0) {
+    requirePattern(record.pricing_revision, VERSION_PATTERN, "event.pricing_revision");
+  }
+  if (record.price_table !== void 0) {
+    requireEnum(record.price_table, TASK_COST_PRICE_TABLES, "event.price_table");
+  }
+  requireTimestamp(record.observed_at, "event.observed_at");
+  if (record.diagnostics !== void 0) requireDiagnostics(record.diagnostics, "event.diagnostics");
+}
+function validateTaskCostSummaryV1(value) {
+  const record = requireObject(value, "summary");
+  assertNoForbiddenKeys(record);
+  checkSchemaVersion(record, TASK_COST_SUMMARY_SCHEMA_VERSION, "summary");
+  requireId(record.task_id, "summary.task_id");
+  requireStringArray(record.session_ids, "summary.session_ids", requireId);
+  optionalId(record.root_session_id, "summary.root_session_id");
+  requireEnum(record.harness, TASK_COST_HARNESSES, "summary.harness");
+  if (record.harness_version !== void 0) {
+    requirePattern(record.harness_version, VERSION_PATTERN, "summary.harness_version");
+  }
+  requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "summary.provider_contract_version");
+  requireStringArray(record.models, "summary.models", requireModel);
+  if (!Array.isArray(record.model_segments)) fail2("summary.model_segments must be an array");
+  for (const [index, entry] of record.model_segments.entries()) {
+    const label = `summary.model_segments[${index}]`;
+    const segment = requireObject(entry, label);
+    requireModel(segment.model, `${label}.model`);
+    requireCount(segment.turn_count, `${label}.turn_count`);
+    requireTokenUsage(segment.usage, `${label}.usage`);
+    requireNullableUsd(segment.actual_cost_usd, `${label}.actual_cost_usd`);
+    requireNullableUsd(segment.estimated_cost_usd, `${label}.estimated_cost_usd`);
+    requireEnum(segment.cost_source, TASK_COST_SOURCES, `${label}.cost_source`);
+  }
+  requireCount(record.turn_count, "summary.turn_count");
+  requireBoolean(record.turns_truncated, "summary.turns_truncated");
+  requireTokenUsage(record.usage, "summary.usage");
+  requireNullableUsd(record.actual_cost_usd, "summary.actual_cost_usd");
+  requireNullableUsd(record.estimated_cost_usd, "summary.estimated_cost_usd");
+  requireNullableUsd(record.total_cost_usd, "summary.total_cost_usd");
+  requireEnum(record.cost_source, TASK_COST_SOURCES, "summary.cost_source");
+  requireEnum(record.cost_basis, TASK_COST_BASES, "summary.cost_basis");
+  requireEnum(record.coverage, TASK_COST_COVERAGES, "summary.coverage");
+  const availability = requireObject(record.field_availability, "summary.field_availability");
+  for (const key of ["usage", "actual_cost", "estimated_cost", "pricing"]) {
+    requireEnum(availability[key], TASK_COST_FIELD_AVAILABILITIES, `summary.field_availability.${key}`);
+  }
+  if (record.pricing_revision !== void 0) {
+    requirePattern(record.pricing_revision, VERSION_PATTERN, "summary.pricing_revision");
+  }
+  if (record.pricing_timestamp !== void 0) requireTimestamp(record.pricing_timestamp, "summary.pricing_timestamp");
+  requireEnum(record.pricing_source, TASK_COST_PRICING_SOURCES, "summary.pricing_source");
+  requireEnum(record.join_confidence, TASK_COST_JOIN_CONFIDENCES, "summary.join_confidence");
+  requireTimestamp(record.collected_at, "summary.collected_at");
+  const eventCount = requireCount(record.event_count, "summary.event_count");
+  const eventIds = requireStringArray(record.event_ids, "summary.event_ids", requireId);
+  if (eventIds.length !== eventCount) fail2("summary.event_count must equal event_ids.length");
+  requireDiagnostics(record.diagnostics, "summary.diagnostics");
+}
+function validateTaskCostLedgerV1(value) {
+  const record = requireObject(value, "ledger");
+  assertNoForbiddenKeys(record);
+  checkSchemaVersion(record, TASK_COST_LEDGER_SCHEMA_VERSION, "ledger");
+  const harness = requireEnum(record.harness, TASK_COST_HARNESSES, "ledger.harness");
+  if (record.harness_version !== void 0) {
+    requirePattern(record.harness_version, VERSION_PATTERN, "ledger.harness_version");
+  }
+  const providerContract = requirePattern(
+    record.provider_contract_version,
+    PROVIDER_CONTRACT_PATTERN,
+    "ledger.provider_contract_version"
+  );
+  const sessionId = requireId(record.session_id, "ledger.session_id");
+  const taskIds = requireStringArray(record.task_ids, "ledger.task_ids", requireId);
+  requireTimestamp(record.opened_at, "ledger.opened_at");
+  if (record.closed_at !== void 0) requireTimestamp(record.closed_at, "ledger.closed_at");
+  requireBoolean(record.truncated, "ledger.truncated");
+  const eventCount = requireCount(record.event_count, "ledger.event_count");
+  if (!Array.isArray(record.events)) fail2("ledger.events must be an array");
+  if (record.events.length !== eventCount) fail2("ledger.event_count must equal events.length");
+  const seenTaskIds = /* @__PURE__ */ new Set();
+  for (const [index, event16] of record.events.entries()) {
+    validateTaskCostEventV1(event16);
+    const label = `ledger.events[${index}]`;
+    if (event16.session_id !== sessionId) fail2(`${label}.session_id must match ledger.session_id`);
+    if (event16.harness !== harness) fail2(`${label}.harness must match ledger.harness`);
+    if (event16.provider_contract_version !== providerContract) {
+      fail2(`${label}.provider_contract_version must match ledger.provider_contract_version`);
+    }
+    seenTaskIds.add(event16.task_id);
+  }
+  const expected = [...seenTaskIds].sort();
+  if (taskIds.length !== expected.length || taskIds.some((id, index) => id !== expected[index])) {
+    fail2("ledger.task_ids must be the sorted, de-duplicated task_ids of its events");
+  }
+}
+function makeGuard(validate) {
+  return (value) => {
+    try {
+      validate(value);
+      return true;
+    } catch (error) {
+      if (error instanceof TaskCostValidationError) return false;
+      throw error;
+    }
+  };
+}
+var isTaskCostEventV1 = makeGuard(validateTaskCostEventV1);
+var isTaskCostSummaryV1 = makeGuard(validateTaskCostSummaryV1);
+var isTaskCostLedgerV1 = makeGuard(validateTaskCostLedgerV1);
+
+// ../core/src/fixtures/task-cost/builders.ts
+var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
+var FIXTURE_TASK_ID = "task-0001";
+var FIXTURE_SESSION_ID = "session-0001";
+var FIXTURE_PRICING_REVISION = MODEL_PRICING_AS_OF;
+function isoAt(offsetSeconds) {
+  return new Date(FIXTURE_EPOCH_MS + offsetSeconds * 1e3).toISOString().replace(".000Z", "Z");
+}
+function pad(n, width = 4) {
+  return String(n).padStart(width, "0");
+}
+function tokens(input, output, cacheRead, cacheWrite, reasoning) {
+  return {
+    input_tokens: input,
+    output_tokens: output,
+    cache_read_tokens: cacheRead,
+    cache_write_tokens: cacheWrite,
+    reasoning_tokens: reasoning
+  };
+}
+function eventId(n) {
+  return `01900000-0000-7000-8000-${pad(n, 12)}`;
+}
+function defaultTable(model) {
+  if (model.startsWith("claude-")) return "anthropic";
+  if (model.startsWith("gemini-")) return "google";
+  return "openai";
+}
+function eventFactory(profile16) {
+  return (spec) => {
+    const actual = spec.actual ?? null;
+    const estimated = spec.estimated ?? null;
+    return {
+      schema_version: TASK_COST_EVENT_SCHEMA_VERSION,
+      event_id: eventId(spec.n),
+      task_id: spec.task ?? FIXTURE_TASK_ID,
+      session_id: spec.session ?? FIXTURE_SESSION_ID,
+      turn_id: spec.turn ?? `turn-${pad(spec.n)}`,
+      sequence: spec.sequence ?? spec.n,
+      ...spec.parent !== void 0 ? { parent_event_id: spec.parent } : {},
+      ...spec.isSubagent !== void 0 ? { is_subagent: spec.isSubagent } : {},
+      ...spec.replayOf !== void 0 ? { replay_of_event_id: spec.replayOf } : {},
+      harness: profile16.harness,
+      ...profile16.harnessVersion !== void 0 ? { harness_version: profile16.harnessVersion } : {},
+      provider_contract_version: profile16.providerContractVersion,
+      observed_model: spec.model,
+      usage_kind: spec.kind ?? "delta",
+      usage: spec.usage,
+      usage_coverage: deriveUsageAvailability(spec.usage),
+      actual_cost_usd: actual,
+      estimated_cost_usd: estimated,
+      cost_source: actual !== null ? "provider_reported" : estimated !== null ? "local_estimate" : "none",
+      cost_basis: spec.basis ?? "per_token_api",
+      pricing_source: estimated !== null ? spec.pricingSource ?? "local_estimate" : "none",
+      ...estimated !== null ? {
+        pricing_revision: FIXTURE_PRICING_REVISION,
+        price_table: spec.table ?? defaultTable(spec.model)
+      } : {},
+      observed_at: isoAt(spec.atSeconds ?? spec.n * 60),
+      ...spec.diagnostics !== void 0 ? { diagnostics: spec.diagnostics } : {}
+    };
+  };
+}
+function ledgerFor(profile16, events16, sessionId = FIXTURE_SESSION_ID) {
+  const first = events16[0];
+  const last = events16[events16.length - 1];
+  if (!first || !last) throw new Error("ledgerFor requires at least one event");
+  return {
+    schema_version: TASK_COST_LEDGER_SCHEMA_VERSION,
+    harness: profile16.harness,
+    ...profile16.harnessVersion !== void 0 ? { harness_version: profile16.harnessVersion } : {},
+    provider_contract_version: profile16.providerContractVersion,
+    session_id: sessionId,
+    task_ids: [...new Set(events16.map((event16) => event16.task_id))].sort(),
+    opened_at: first.observed_at,
+    closed_at: last.observed_at,
+    truncated: false,
+    event_count: events16.length,
+    events: [...events16]
+  };
+}
+
+// ../core/src/fixtures/task-cost/claude-code-cache-tiers.ts
+var profile = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event = eventFactory(profile);
+var events = [
+  // 1000 in, 8000 cache write, 500 out
+  event({ n: 1, model: "claude-opus-4-8", usage: tokens(1e3, 500, 0, 8e3, 0), estimated: 0.0675 }),
+  // 200 in, 8000 cache read, 600 out
+  event({ n: 2, model: "claude-opus-4-8", usage: tokens(200, 600, 8e3, 0, 0), estimated: 0.02 }),
+  // 300 in, 8000 cache read, 1000 cache write, 400 out
+  event({ n: 3, model: "claude-opus-4-8", usage: tokens(300, 400, 8e3, 1e3, 0), estimated: 0.02175 })
+];
+var claudeCodeCacheTiersFixture = {
+  name: "claude-code-cache-tiers",
+  description: "Cache writes (1.25x) and reads (0.1x) tallied separately and priced per tier.",
+  events,
+  ledger: ledgerFor(profile, events),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-opus-4-8"],
+      model_segments: [
+        {
+          model: "claude-opus-4-8",
+          turn_count: 3,
+          usage: tokens(1500, 1500, 16e3, 9e3, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.10925,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(1500, 1500, 16e3, 9e3, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.10925,
+      total_cost_usd: 0.10925,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:03:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:03:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000003"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/claude-code-cumulative-snapshot.ts
+var profile2 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event2 = eventFactory(profile2);
+var events2 = [
+  event2({ n: 1, kind: "cumulative", model: "claude-sonnet-5", usage: tokens(1e3, 500, 0, 0, 0), actual: 0.0108, estimated: 0.0105 }),
+  event2({ n: 2, kind: "cumulative", model: "claude-sonnet-5", usage: tokens(2500, 1300, 0, 0, 0), actual: 0.0275, estimated: 0.027 }),
+  event2({ n: 3, kind: "cumulative", model: "claude-sonnet-5", usage: tokens(2400, 1500, 0, 0, 0), actual: 0.027, estimated: 0.0297 }),
+  event2({ n: 4, kind: "cumulative", model: "claude-sonnet-5", usage: tokens(3e3, 1800, 0, 0, 0), actual: 0.033, estimated: 0.036 })
+];
+var claudeCodeCumulativeSnapshotFixture = {
+  name: "claude-code-cumulative-snapshot",
+  description: "Cumulative snapshots are differenced; a backward jump is clamped to zero and flagged.",
+  events: events2,
+  ledger: ledgerFor(profile2, events2),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 4,
+          usage: tokens(3100, 1800, 0, 0, 0),
+          actual_cost_usd: 0.0335,
+          estimated_cost_usd: 0.036,
+          cost_source: "provider_reported"
+        }
+      ],
+      turn_count: 4,
+      turns_truncated: false,
+      usage: tokens(3100, 1800, 0, 0, 0),
+      actual_cost_usd: 0.0335,
+      estimated_cost_usd: 0.036,
+      total_cost_usd: 0.0335,
+      cost_source: "provider_reported",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "available",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:04:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:04:00Z",
+      event_count: 4,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000003",
+        "01900000-0000-7000-8000-000000000004"
+      ],
+      diagnostics: ["provider_reported_cost", "cumulative_backward_jump"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/claude-code-model-switch.ts
+var profile3 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event3 = eventFactory(profile3);
+var events3 = [
+  event3({ n: 1, model: "claude-opus-4-8", usage: tokens(3e3, 1200, 0, 0, 0), estimated: 0.045 }),
+  event3({ n: 2, model: "claude-opus-4-8", usage: tokens(2e3, 800, 0, 0, 0), estimated: 0.03 }),
+  event3({ n: 3, model: "claude-sonnet-5", usage: tokens(4e3, 1500, 0, 0, 0), estimated: 0.0345 }),
+  event3({ n: 4, model: "claude-sonnet-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 9e-3 })
+];
+var claudeCodeModelSwitchFixture = {
+  name: "claude-code-model-switch",
+  description: "Mid-task Opus -> Sonnet switch; model_segments preserve the switch structure.",
+  events: events3,
+  ledger: ledgerFor(profile3, events3),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-opus-4-8", "claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-opus-4-8",
+          turn_count: 2,
+          usage: tokens(5e3, 2e3, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.075,
+          cost_source: "local_estimate"
+        },
+        {
+          model: "claude-sonnet-5",
+          turn_count: 2,
+          usage: tokens(5e3, 1900, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.0435,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 4,
+      turns_truncated: false,
+      usage: tokens(1e4, 3900, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.1185,
+      total_cost_usd: 0.1185,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:04:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:04:00Z",
+      event_count: 4,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000003",
+        "01900000-0000-7000-8000-000000000004"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/claude-code-retry.ts
+var profile4 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event4 = eventFactory(profile4);
+var events4 = [
+  event4({ n: 1, model: "claude-sonnet-5", usage: tokens(1e3, 500, 0, 0, 0), estimated: 0.0105 }),
+  event4({ n: 2, model: "claude-sonnet-5", usage: tokens(2e3, 900, 0, 0, 0), estimated: 0.0195 }),
+  event4({
+    n: 3,
+    turn: "turn-0002",
+    model: "claude-sonnet-5",
+    usage: tokens(2e3, 1100, 0, 0, 0),
+    estimated: 0.0225,
+    replayOf: eventId(2)
+  }),
+  event4({ n: 4, model: "claude-sonnet-5", usage: tokens(800, 300, 0, 0, 0), estimated: 69e-4 })
+];
+var claudeCodeRetryFixture = {
+  name: "claude-code-retry",
+  description: "A retried turn supersedes its first attempt; the superseded usage and cost are not counted.",
+  events: events4,
+  ledger: ledgerFor(profile4, events4),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 3,
+          usage: tokens(3800, 1900, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.0399,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(3800, 1900, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.0399,
+      total_cost_usd: 0.0399,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:04:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:04:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000003",
+        "01900000-0000-7000-8000-000000000004"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/claude-code-simple.ts
+var profile5 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event5 = eventFactory(profile5);
+var events5 = [
+  event5({ n: 1, model: "claude-sonnet-5", usage: tokens(1e3, 500, 0, 0, 0), actual: 0.0108, estimated: 0.0105 }),
+  event5({ n: 2, model: "claude-sonnet-5", usage: tokens(2e3, 1e3, 0, 0, 0), actual: 0.0215, estimated: 0.021 }),
+  event5({ n: 3, model: "claude-sonnet-5", usage: tokens(1500, 800, 0, 0, 0), actual: 0.0166, estimated: 0.0165 })
+];
+var claudeCodeSimpleFixture = {
+  name: "claude-code-simple",
+  description: "Happy path: one model, delta events, provider-reported cost wins over the estimate.",
+  events: events5,
+  ledger: ledgerFor(profile5, events5),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 3,
+          usage: tokens(4500, 2300, 0, 0, 0),
+          actual_cost_usd: 0.0489,
+          estimated_cost_usd: 0.048,
+          cost_source: "provider_reported"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(4500, 2300, 0, 0, 0),
+      actual_cost_usd: 0.0489,
+      estimated_cost_usd: 0.048,
+      total_cost_usd: 0.0489,
+      cost_source: "provider_reported",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "available",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:03:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:03:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000003"
+      ],
+      diagnostics: ["provider_reported_cost"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/claude-code-subscription.ts
+var profile6 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event6 = eventFactory(profile6);
+var events6 = [
+  event6({ n: 1, model: "claude-sonnet-5", basis: "subscription", usage: tokens(5e3, 2e3, 0, 0, 0), estimated: 0.045 }),
+  event6({ n: 2, model: "claude-sonnet-5", basis: "subscription", usage: tokens(3e3, 1500, 0, 0, 0), estimated: 0.0315 })
+];
+var claudeCodeSubscriptionFixture = {
+  name: "claude-code-subscription",
+  description: "Subscription cost basis: no actual charge exists; the estimate is token-equivalent only.",
+  events: events6,
+  ledger: ledgerFor(profile6, events6),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 2,
+          usage: tokens(8e3, 3500, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.0765,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(8e3, 3500, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.0765,
+      total_cost_usd: 0.0765,
+      cost_source: "local_estimate",
+      cost_basis: "subscription",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: ["subscription_basis_no_charge"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/codex-provider-override.ts
+var profile7 = {
+  harness: "codex",
+  providerContractVersion: "codex/1",
+  harnessVersion: "0.50.0"
+};
+var event7 = eventFactory(profile7);
+var events7 = [
+  event7({ n: 1, model: "gpt-5", usage: tokens(1e3, 500, 0, 0, 0), actual: 61e-4, estimated: 625e-5, pricingSource: "openrouter_api", table: "openrouter" }),
+  event7({ n: 2, model: "gpt-5", usage: tokens(2e3, 800, 0, 0, 0), actual: 0.0102, estimated: 0.0105, pricingSource: "openrouter_api", table: "openrouter" })
+];
+var codexProviderOverrideFixture = {
+  name: "codex-provider-override",
+  description: "A provider-reported charge supersedes the local/OpenRouter estimate as the resolved cost.",
+  events: events7,
+  ledger: ledgerFor(profile7, events7),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "codex",
+      harness_version: "0.50.0",
+      provider_contract_version: "codex/1",
+      models: ["gpt-5"],
+      model_segments: [
+        {
+          model: "gpt-5",
+          turn_count: 2,
+          usage: tokens(3e3, 1300, 0, 0, 0),
+          actual_cost_usd: 0.0163,
+          estimated_cost_usd: 0.01675,
+          cost_source: "provider_reported"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(3e3, 1300, 0, 0, 0),
+      actual_cost_usd: 0.0163,
+      estimated_cost_usd: 0.01675,
+      total_cost_usd: 0.0163,
+      cost_source: "provider_reported",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "available",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "openrouter_api",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: ["provider_reported_cost"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/codex-simple.ts
+var profile8 = {
+  harness: "codex",
+  providerContractVersion: "codex/1",
+  harnessVersion: "0.50.0"
+};
+var event8 = eventFactory(profile8);
+var events8 = [
+  event8({ n: 1, model: "gpt-5-codex", usage: tokens(2e3, 600, 0, 0, 150), estimated: 0.01 }),
+  event8({ n: 2, model: "gpt-5-codex", usage: tokens(3e3, 900, 0, 0, 300), estimated: 0.01575 })
+];
+var codexSimpleFixture = {
+  name: "codex-simple",
+  description: "OpenAI-priced happy path; Codex reports no charge, so the estimate stands.",
+  events: events8,
+  ledger: ledgerFor(profile8, events8),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "codex",
+      harness_version: "0.50.0",
+      provider_contract_version: "codex/1",
+      models: ["gpt-5-codex"],
+      model_segments: [
+        {
+          model: "gpt-5-codex",
+          turn_count: 2,
+          usage: tokens(5e3, 1500, 0, 0, 450),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.02575,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(5e3, 1500, 0, 0, 450),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.02575,
+      total_cost_usd: 0.02575,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/codex-unknown-pricing.ts
+var profile9 = {
+  harness: "codex",
+  providerContractVersion: "codex/1",
+  harnessVersion: "0.50.0"
+};
+var event9 = eventFactory(profile9);
+var events9 = [
+  event9({ n: 1, model: "gpt-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 525e-5 }),
+  event9({ n: 2, model: "codex-unlisted-model", usage: tokens(2e3, 700, 0, 0, 0) })
+];
+var codexUnknownPricingFixture = {
+  name: "codex-unknown-pricing",
+  description: "A model missing from the price table yields a null cost, partial coverage, and no total.",
+  events: events9,
+  ledger: ledgerFor(profile9, events9),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "codex",
+      harness_version: "0.50.0",
+      provider_contract_version: "codex/1",
+      models: ["gpt-5", "codex-unlisted-model"],
+      model_segments: [
+        {
+          model: "gpt-5",
+          turn_count: 1,
+          usage: tokens(1e3, 400, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 525e-5,
+          cost_source: "local_estimate"
+        },
+        {
+          model: "codex-unlisted-model",
+          turn_count: 1,
+          usage: tokens(2e3, 700, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: null,
+          cost_source: "none"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(3e3, 1100, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 525e-5,
+      total_cost_usd: null,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "partial",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "partial",
+        pricing: "partial"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: ["unpriced_model", "mixed_coverage"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/concurrent-tasks.ts
+var profile10 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event10 = eventFactory(profile10);
+var events10 = [
+  event10({ n: 1, task: "task-0001", model: "claude-sonnet-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 9e-3 }),
+  event10({ n: 2, task: "task-0002", model: "claude-sonnet-5", usage: tokens(4e3, 1e3, 0, 0, 0), estimated: 0.027 }),
+  event10({ n: 3, task: "task-0001", model: "claude-sonnet-5", usage: tokens(2e3, 600, 0, 0, 0), estimated: 0.015 }),
+  event10({ n: 4, task: "task-0002", model: "claude-sonnet-5", usage: tokens(1500, 500, 0, 0, 0), estimated: 0.012 }),
+  event10({ n: 5, task: "task-0001", model: "claude-sonnet-5", usage: tokens(500, 200, 0, 0, 0), estimated: 45e-4 }),
+  event10({ n: 6, task: "task-0002", model: "claude-sonnet-5", usage: tokens(800, 300, 0, 0, 0), estimated: 69e-4 })
+];
+var concurrentTasksFixture = {
+  name: "concurrent-tasks",
+  description: "One session, two interleaved tasks: one ledger, two disjoint summaries.",
+  events: events10,
+  ledger: ledgerFor(profile10, events10),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 3,
+          usage: tokens(3500, 1200, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.0285,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(3500, 1200, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.0285,
+      total_cost_usd: 0.0285,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:05:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:05:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000003",
+        "01900000-0000-7000-8000-000000000005"
+      ],
+      diagnostics: []
+    },
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0002",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 3,
+          usage: tokens(6300, 1800, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.0459,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(6300, 1800, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.0459,
+      total_cost_usd: 0.0459,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:06:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:06:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000004",
+        "01900000-0000-7000-8000-000000000006"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/mixed-model.ts
+var profile11 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event11 = eventFactory(profile11);
+var events11 = [
+  event11({ n: 1, model: "claude-sonnet-5", usage: tokens(2e3, 1e3, 0, 0, 0), actual: 0.0212, estimated: 0.021 }),
+  event11({ n: 2, model: "claude-sonnet-5", usage: tokens(1e3, 200, 0, 0, 0), actual: 61e-4, estimated: 6e-3 }),
+  event11({ n: 3, model: "gpt-5", usage: tokens(3e3, 1e3, 0, 0, 0), estimated: 0.01375 })
+];
+var mixedModelFixture = {
+  name: "mixed-model",
+  description: "Anthropic (charged) then OpenAI (estimated) turns: cost_source mixed, two model segments.",
+  events: events11,
+  ledger: ledgerFor(profile11, events11),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-sonnet-5", "gpt-5"],
+      model_segments: [
+        {
+          model: "claude-sonnet-5",
+          turn_count: 2,
+          usage: tokens(3e3, 1200, 0, 0, 0),
+          actual_cost_usd: 0.0273,
+          estimated_cost_usd: 0.027,
+          cost_source: "provider_reported"
+        },
+        {
+          model: "gpt-5",
+          turn_count: 1,
+          usage: tokens(3e3, 1e3, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.01375,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(6e3, 2200, 0, 0, 0),
+      actual_cost_usd: 0.0273,
+      estimated_cost_usd: 0.04075,
+      total_cost_usd: 0.04105,
+      cost_source: "mixed",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "partial",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:03:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:03:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000003"
+      ],
+      diagnostics: ["provider_reported_cost"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/native-simple.ts
+var profile12 = {
+  harness: "native",
+  providerContractVersion: "native/1",
+  harnessVersion: "1.0.0"
+};
+var event12 = eventFactory(profile12);
+var events12 = [
+  event12({ n: 1, model: "claude-haiku-4-5", usage: tokens(1200, 300, 0, 0, 0), estimated: 27e-4 }),
+  event12({ n: 2, model: "claude-haiku-4-5", usage: tokens(0, 0, 0, 0, 0), estimated: 0 })
+];
+var nativeSimpleFixture = {
+  name: "native-simple",
+  description: "Native harness: known-zero counters and a known-zero turn stay distinct from missing.",
+  events: events12,
+  ledger: ledgerFor(profile12, events12),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "native",
+      harness_version: "1.0.0",
+      provider_contract_version: "native/1",
+      models: ["claude-haiku-4-5"],
+      model_segments: [
+        {
+          model: "claude-haiku-4-5",
+          turn_count: 2,
+          usage: tokens(1200, 300, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 27e-4,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(1200, 300, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 27e-4,
+      total_cost_usd: 27e-4,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/partial-usage.ts
+var profile13 = {
+  harness: "codex",
+  providerContractVersion: "codex/1",
+  harnessVersion: "0.50.0"
+};
+var event13 = eventFactory(profile13);
+var events13 = [
+  event13({ n: 1, model: "gpt-5", usage: tokens(1e3, null, 0, 0, null) }),
+  event13({ n: 2, model: "gpt-5", usage: tokens(2e3, 500, 0, 0, 0), estimated: 75e-4 })
+];
+var partialUsageFixture = {
+  name: "partial-usage",
+  description: "Missing (null) output tokens stay null, mark usage partial, and block pricing for that turn.",
+  events: events13,
+  ledger: ledgerFor(profile13, events13),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "codex",
+      harness_version: "0.50.0",
+      provider_contract_version: "codex/1",
+      models: ["gpt-5"],
+      model_segments: [
+        {
+          model: "gpt-5",
+          turn_count: 2,
+          usage: tokens(3e3, 500, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 75e-4,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(3e3, 500, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 75e-4,
+      total_cost_usd: null,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "partial",
+      field_availability: {
+        usage: "partial",
+        actual_cost: "unavailable",
+        estimated_cost: "partial",
+        pricing: "partial"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: ["missing_token_usage", "mixed_coverage"]
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/pi-simple.ts
+var profile14 = {
+  harness: "pi",
+  providerContractVersion: "pi/1",
+  harnessVersion: "0.9.0"
+};
+var event14 = eventFactory(profile14);
+var events14 = [
+  event14({ n: 1, model: "gemini-2.5-flash", usage: tokens(1e4, 2e3, 0, 0, 0), estimated: 8e-3 }),
+  event14({
+    n: 2,
+    model: "gemini-2.5-flash",
+    usage: tokens(6e3, 1500, 0, 0, 0),
+    estimated: 555e-5,
+    parent: eventId(1),
+    isSubagent: true
+  })
+];
+var piSimpleFixture = {
+  name: "pi-simple",
+  description: "Pi harness contract (pi/1) with a nested subagent turn.",
+  events: events14,
+  ledger: ledgerFor(profile14, events14),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "pi",
+      harness_version: "0.9.0",
+      provider_contract_version: "pi/1",
+      models: ["gemini-2.5-flash"],
+      model_segments: [
+        {
+          model: "gemini-2.5-flash",
+          turn_count: 2,
+          usage: tokens(16e3, 3500, 0, 0, 0),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.01355,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 2,
+      turns_truncated: false,
+      usage: tokens(16e3, 3500, 0, 0, 0),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.01355,
+      total_cost_usd: 0.01355,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:02:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:02:00Z",
+      event_count: 2,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002"
+      ],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/wavemill-parity.ts
+var profile15 = {
+  harness: "claude-code",
+  providerContractVersion: "claude-code/1",
+  harnessVersion: "2.1.0"
+};
+var event15 = eventFactory(profile15);
+var events15 = [
+  event15({ n: 1, model: "claude-opus-4-8", usage: tokens(2500, 900, 12e3, 3e3, 200), actual: 0.0601, estimated: 0.05975 }),
+  event15({ n: 2, model: "claude-opus-4-8", usage: tokens(1200, 700, 15e3, 0, 100), actual: 0.0312, estimated: 0.031 }),
+  event15({ n: 3, model: "claude-sonnet-4-6", usage: tokens(3e3, 1e3, 2e4, 500, 0), actual: 0.032, estimated: 0.031875 })
+];
+var wavemillParityFixture = {
+  name: "wavemill-parity",
+  description: "Multi-model, cache-tier session with provider-reported cost; matches a real Wavemill golden.",
+  events: events15,
+  ledger: ledgerFor(profile15, events15),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "claude-code",
+      harness_version: "2.1.0",
+      provider_contract_version: "claude-code/1",
+      models: ["claude-opus-4-8", "claude-sonnet-4-6"],
+      model_segments: [
+        {
+          model: "claude-opus-4-8",
+          turn_count: 2,
+          usage: tokens(3700, 1600, 27e3, 3e3, 300),
+          actual_cost_usd: 0.0913,
+          estimated_cost_usd: 0.09075,
+          cost_source: "provider_reported"
+        },
+        {
+          model: "claude-sonnet-4-6",
+          turn_count: 1,
+          usage: tokens(3e3, 1e3, 2e4, 500, 0),
+          actual_cost_usd: 0.032,
+          estimated_cost_usd: 0.031875,
+          cost_source: "provider_reported"
+        }
+      ],
+      turn_count: 3,
+      turns_truncated: false,
+      usage: tokens(6700, 2600, 47e3, 3500, 300),
+      actual_cost_usd: 0.1233,
+      estimated_cost_usd: 0.122625,
+      total_cost_usd: 0.1233,
+      cost_source: "provider_reported",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "available",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:03:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:03:00Z",
+      event_count: 3,
+      event_ids: [
+        "01900000-0000-7000-8000-000000000001",
+        "01900000-0000-7000-8000-000000000002",
+        "01900000-0000-7000-8000-000000000003"
+      ],
+      diagnostics: ["provider_reported_cost"]
+    }
+  ]
+};
+
 // ../core/src/contribution/schema.ts
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
@@ -6546,7 +8145,7 @@ var ContributionValidationError = class extends Error {
     this.code = code;
   }
 };
-function isPlainObject4(value) {
+function isPlainObject5(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isFiniteNonNegativeNumber(value) {
@@ -6563,7 +8162,7 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 function isTechnicalTaskRouterSelectedModels(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["planner", "coder", "reviewer"])) {
@@ -6575,7 +8174,7 @@ function isTechnicalTaskRouterSelectedModels(value) {
   return value.planner === void 0 || typeof value.planner === "string";
 }
 function isRoleAvailableModels(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["planner_models", "coder_models", "reviewer_models"])) {
@@ -6584,7 +8183,7 @@ function isRoleAvailableModels(value) {
   return isStringArray(value.planner_models) && isStringArray(value.coder_models) && isStringArray(value.reviewer_models);
 }
 function isOutcomeLabels(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["budget_label", "cost_label", "time_label", "success_label"])) {
@@ -6593,7 +8192,7 @@ function isOutcomeLabels(value) {
   return (value.budget_label === "under_budget" || value.budget_label === "over_budget" || value.budget_label === "unknown") && (value.cost_label === "free" || value.cost_label === "low" || value.cost_label === "medium" || value.cost_label === "high" || value.cost_label === "unknown") && (value.time_label === "fast" || value.time_label === "medium" || value.time_label === "slow" || value.time_label === "unknown") && (value.success_label === "success" || value.success_label === "failure");
 }
 function isCandidatePoolMetadata(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["scenario_id", "scenario_kind", "pool_size", "baseline_model"])) {
@@ -6602,7 +8201,7 @@ function isCandidatePoolMetadata(value) {
   return typeof value.scenario_id === "string" && typeof value.scenario_kind === "string" && isFiniteNonNegativeNumber(value.pool_size) && (value.baseline_model === void 0 || typeof value.baseline_model === "string");
 }
 function isSparseCellMetadata(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["cell_id", "descriptor_signature", "observed_count", "is_sparse"])) {
@@ -6610,14 +8209,14 @@ function isSparseCellMetadata(value) {
   }
   return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
 }
-function assertNoForbiddenKeys(value, path4 = []) {
+function assertNoForbiddenKeys2(value, path4 = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys(item, [...path4, String(index)]);
+      assertNoForbiddenKeys2(item, [...path4, String(index)]);
     }
     return;
   }
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
@@ -6628,7 +8227,7 @@ function assertNoForbiddenKeys(value, path4 = []) {
         `Forbidden field at ${[...path4, key].join(".")}`
       );
     }
-    assertNoForbiddenKeys(child, [...path4, key]);
+    assertNoForbiddenKeys2(child, [...path4, key]);
   }
 }
 var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
@@ -6643,7 +8242,7 @@ var OUTCOME_SOURCE_VALUES = /* @__PURE__ */ new Set([
   "unknown"
 ]);
 function isSubmitDataContributionRow(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, [
@@ -6667,7 +8266,7 @@ function isSubmitDataContributionRow(value) {
   if (typeof value.success_under_budget !== "boolean") {
     return false;
   }
-  if (value.inputs !== void 0 && !isPlainObject4(value.inputs)) {
+  if (value.inputs !== void 0 && !isPlainObject5(value.inputs)) {
     return false;
   }
   if (value.actual_cost_usd !== void 0 && value.actual_cost_usd !== null && !isFiniteNonNegativeNumber(value.actual_cost_usd)) {
@@ -6709,7 +8308,7 @@ function isSubmitDataContributionRow(value) {
   return !("schema_version" in value);
 }
 function isTechnicalTaskRouterContributionRowV1(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION) {
@@ -6737,7 +8336,7 @@ function isTechnicalTaskRouterContributionRowV1(value) {
   ])) {
     return false;
   }
-  if (!isPlainObject4(value.task_descriptor)) {
+  if (!isPlainObject5(value.task_descriptor)) {
     return false;
   }
   if (!isStringArray(value.allowed_models)) {
@@ -6776,7 +8375,7 @@ function isTechnicalTaskRouterContributionRowV1(value) {
   return true;
 }
 function isTechnicalTaskRouterContributionRowV2(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
@@ -6808,7 +8407,7 @@ function isTechnicalTaskRouterContributionRowV2(value) {
   ])) {
     return false;
   }
-  if (!isPlainObject4(value.task_descriptor)) {
+  if (!isPlainObject5(value.task_descriptor)) {
     return false;
   }
   if (!isStringArray(value.allowed_models)) {
@@ -6859,7 +8458,7 @@ function isTechnicalTaskRouterContributionRowV2(value) {
   return true;
 }
 function isHarnessOutcomeRowMetadata(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, ["harness", "sdk_version"])) {
@@ -6868,7 +8467,7 @@ function isHarnessOutcomeRowMetadata(value) {
   return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
 }
 function isHarnessOutcomeRowV1(value) {
-  if (!isPlainObject4(value)) {
+  if (!isPlainObject5(value)) {
     return false;
   }
   if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
@@ -6877,7 +8476,7 @@ function isHarnessOutcomeRowV1(value) {
   if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
     return false;
   }
-  if (!isPlainObject4(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
+  if (!isPlainObject5(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
     return false;
   }
   if (!isStringArray(value.allowed_models) || value.allowed_models.length === 0) {
@@ -6919,7 +8518,7 @@ function isHarnessOutcomeRowV1(value) {
   return true;
 }
 function validateContributionRow(row) {
-  assertNoForbiddenKeys(row);
+  assertNoForbiddenKeys2(row);
   if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
     return row;
   }
@@ -7035,11 +8634,11 @@ function parseArgs(argv) {
   }
   return parsed;
 }
-function toConfigFilePath(profile, configPath) {
+function toConfigFilePath(profile16, configPath) {
   if (!configPath) {
     return void 0;
   }
-  return configPath.endsWith(".json") ? configPath : defaultPluginConfigPath(profile.resolveConfigPath({ override: configPath }).dir);
+  return configPath.endsWith(".json") ? configPath : defaultPluginConfigPath(profile16.resolveConfigPath({ override: configPath }).dir);
 }
 function toMessage(parsed, message, code) {
   const body = parsed.json ? JSON.stringify(
@@ -7076,7 +8675,7 @@ async function readStdin() {
   }
   return chunks.join("");
 }
-function createRunCli(profile, impls) {
+function createRunCli(profile16, impls) {
   return async function runCli2(argv, env, deps = {}) {
     const parsed = parseArgs(argv);
     let flagObjective;
@@ -7090,7 +8689,7 @@ function createRunCli(profile, impls) {
         );
       }
     }
-    const registry = profile.modelCatalog.registry;
+    const registry = profile16.modelCatalog.registry;
     const loadConfigImpl = deps.loadConfig ?? ((input) => loadPluginConfig({
       env: input.env,
       registry,
@@ -7100,7 +8699,7 @@ function createRunCli(profile, impls) {
     const declineRecommendationImpl = deps.declineRecommendationImpl ?? impls.declineRecommendation;
     let config;
     try {
-      const configPath = toConfigFilePath(profile, parsed.configPath);
+      const configPath = toConfigFilePath(profile16, parsed.configPath);
       config = await loadConfigImpl(
         configPath === void 0 ? { env } : { configPath, env }
       );
@@ -7189,7 +8788,7 @@ function createRunCli(profile, impls) {
         const recommendedModel = extractModelId(result.error.message);
         return toMessage(
           parsed,
-          `Hokusai recommended a model not available in ${profile.harnessLabel} (${recommendedModel}). Suggested fallbacks: ${suggestions}.`,
+          `Hokusai recommended a model not available in ${profile16.harnessLabel} (${recommendedModel}). Suggested fallbacks: ${suggestions}.`,
           CLI_EXIT_CODES.UNSUPPORTED_MODEL
         );
       }
@@ -7230,7 +8829,7 @@ function createRunCli(profile, impls) {
     const lines = [...display.lines];
     lines.push(`Correlation ID: ${result.value.correlationId}`);
     lines.push("");
-    lines.push(...profile.renderHandoff(result.value.handoff));
+    lines.push(...profile16.renderHandoff(result.value.handoff));
     if (result.value.route?.requestId) {
       lines.push(`Request ID: ${result.value.route.requestId}`);
     }
@@ -7350,11 +8949,11 @@ function parseArgs2(argv) {
   }
   return parsed;
 }
-function toConfigFilePath2(profile, configPath) {
+function toConfigFilePath2(profile16, configPath) {
   if (!configPath) {
     return void 0;
   }
-  return configPath.endsWith(".json") ? configPath : defaultPluginConfigPath(profile.resolveConfigPath({ override: configPath }).dir);
+  return configPath.endsWith(".json") ? configPath : defaultPluginConfigPath(profile16.resolveConfigPath({ override: configPath }).dir);
 }
 function toMessage2(parsed, message, code, details) {
   const detailText = !parsed.json && Array.isArray(details?.fieldErrors) ? `
@@ -7472,10 +9071,10 @@ function renderSuccess(parsed, result, stderrNotes) {
 ` : ""
   };
 }
-function createRunReportCli(profile, impls) {
+function createRunReportCli(profile16, impls) {
   return async function runReportCli2(argv, env, deps = {}) {
     const parsed = parseArgs2(argv);
-    const registry = profile.modelCatalog.registry;
+    const registry = profile16.modelCatalog.registry;
     const loadConfigImpl = deps.loadConfig ?? ((input) => loadPluginConfig({
       env: input.env,
       registry,
@@ -7483,7 +9082,7 @@ function createRunReportCli(profile, impls) {
       // `hokusai-privacy reporting on` is honored, not just the
       // HOKUSAI_OUTCOME_OPT_IN env var. Mirrors getReportingStatus.
       store: new FilePluginConfigStore(
-        input.configPath ?? defaultPluginConfigPath(profile.resolveConfigPath().dir)
+        input.configPath ?? defaultPluginConfigPath(profile16.resolveConfigPath().dir)
       )
     }));
     const previewReportOutcomeImpl = deps.previewReportOutcomeImpl ?? impls.previewReportOutcome;
@@ -7491,7 +9090,7 @@ function createRunReportCli(profile, impls) {
     const findLatestRoutingDecisionImpl = deps.findLatestRoutingDecisionImpl ?? impls.findLatestRoutingDecision;
     let config;
     try {
-      const configPath = toConfigFilePath2(profile, parsed.configPath);
+      const configPath = toConfigFilePath2(profile16, parsed.configPath);
       config = await loadConfigImpl(
         configPath === void 0 ? { env } : { configPath, env }
       );
@@ -7528,7 +9127,7 @@ function createRunReportCli(profile, impls) {
         REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
       );
     }
-    const configDir = profile.resolveConfigPath(
+    const configDir = profile16.resolveConfigPath(
       parsed.configPath ? { override: parsed.configPath } : void 0
     ).dir;
     let latest;
@@ -7656,9 +9255,9 @@ var COMPLETION_TERMS = [
   "issue closed",
   "closed issue"
 ];
-function detectOutcomeCompletionSignal(event) {
+function detectOutcomeCompletionSignal(event16) {
   const signals = /* @__PURE__ */ new Set();
-  collectCompletionSignals(event, signals);
+  collectCompletionSignals(event16, signals);
   return {
     shouldPrompt: signals.size > 0,
     signals: [...signals]
@@ -7877,7 +9476,7 @@ function ok2(body, json, payload) {
     stderr: ""
   };
 }
-function fail2(message, code, json) {
+function fail3(message, code, json) {
   const body = json ? JSON.stringify({ error: { code, message } }, null, 2) : message;
   return {
     exitCode: code,
@@ -7894,14 +9493,14 @@ function createRunPrivacyCli(_profile, impls) {
   return async function runPrivacyCli2(argv, env) {
     const parsed = parseArgs3(argv);
     if ("error" in parsed) {
-      return fail2(
+      return fail3(
         parsed.error,
         PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
         argv.includes("--json")
       );
     }
     if ("limit" in parsed && parsed.limit !== void 0 && parsed.limit < 0 || "limit" in parsed && argv.includes("--limit") && parsed.limit === void 0) {
-      return fail2(
+      return fail3(
         "Expected --limit to be a non-negative integer.",
         PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
         parsed.json
@@ -7916,7 +9515,7 @@ function createRunPrivacyCli(_profile, impls) {
         }
       );
       if (!result.ok) {
-        return fail2(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
       if (result.value.decisions.length === 0) {
         return ok2(
@@ -7946,7 +9545,7 @@ function createRunPrivacyCli(_profile, impls) {
     }
     if (parsed.subcommand === "preview") {
       if (!parsed.correlationId) {
-        return fail2(
+        return fail3(
           "Provide a correlation id to preview.",
           PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
           parsed.json
@@ -7960,7 +9559,7 @@ function createRunPrivacyCli(_profile, impls) {
         }
       );
       if (!result.ok) {
-        return fail2(
+        return fail3(
           result.error.message,
           PRIVACY_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
           parsed.json
@@ -7986,7 +9585,7 @@ function createRunPrivacyCli(_profile, impls) {
         }
       );
       if (!result.ok) {
-        return fail2(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
       if (result.value.entries.length === 0) {
         return ok2(
@@ -8016,14 +9615,14 @@ function createRunPrivacyCli(_profile, impls) {
     }
     if (parsed.subcommand === "clear") {
       if (!parsed.scope) {
-        return fail2(
+        return fail3(
           "Specify one of --all, --records, or --audit.",
           PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
           parsed.json
         );
       }
       if (!parsed.yes) {
-        return fail2(
+        return fail3(
           "Re-run with --yes to confirm.",
           PRIVACY_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
           parsed.json
@@ -8037,7 +9636,7 @@ function createRunPrivacyCli(_profile, impls) {
         }
       );
       if (!result.ok) {
-        return fail2(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
       return ok2(`Cleared ${parsed.scope} privacy state.
 `, parsed.json, {
@@ -8047,7 +9646,7 @@ function createRunPrivacyCli(_profile, impls) {
     }
     if (parsed.subcommand === "reporting") {
       if (!parsed.action) {
-        return fail2(
+        return fail3(
           "Specify reporting on, off, or status.",
           PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
           parsed.json
@@ -8059,7 +9658,7 @@ function createRunPrivacyCli(_profile, impls) {
           env
         });
         if (!result2.ok) {
-          return fail2(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+          return fail3(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
         }
         return ok2(
           `Outcome reporting is ${result2.value.enabled ? "enabled" : "disabled"} (${result2.value.source}).
@@ -8076,7 +9675,7 @@ function createRunPrivacyCli(_profile, impls) {
         }
       );
       if (!result.ok) {
-        return fail2(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
       return ok2(
         `Outcome reporting ${result.value.enabled ? "enabled" : "disabled"}.
@@ -8087,7 +9686,7 @@ function createRunPrivacyCli(_profile, impls) {
     }
     if (parsed.subcommand === "debug") {
       if (!parsed.action) {
-        return fail2(
+        return fail3(
           "Specify debug status or off.",
           PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
           parsed.json
@@ -8119,7 +9718,7 @@ function createRunPrivacyCli(_profile, impls) {
       );
     }
     void parsed;
-    return fail2(
+    return fail3(
       "Usage: hokusai-privacy list|preview|audit|clear|reporting|debug",
       PRIVACY_CLI_EXIT_CODES.PRIVACY_USAGE_ERROR,
       argv.includes("--json")
@@ -8128,9 +9727,9 @@ function createRunPrivacyCli(_profile, impls) {
 }
 
 // ../core/src/plugin-commands/doctor.ts
-function buildFallbackAllowlist(profile) {
-  const allowedProviders = profile.modelCatalog.allowedProviders;
-  return profile.modelCatalog.registry.list().filter((model) => allowedProviders?.includes(model.provider) ?? true).map((model) => model.id);
+function buildFallbackAllowlist(profile16) {
+  const allowedProviders = profile16.modelCatalog.allowedProviders;
+  return profile16.modelCatalog.registry.list().filter((model) => allowedProviders?.includes(model.provider) ?? true).map((model) => model.id);
 }
 function renderCheck(check) {
   return [
@@ -8163,14 +9762,14 @@ function renderPluginDoctorReport(report) {
     `Ready to use: ${report.ok ? "yes" : "no"}`
   ].join("\n");
 }
-function createRunBootstrapDoctor(profile) {
+function createRunBootstrapDoctor(profile16) {
   return async function runBootstrapDoctor2(options = {}) {
-    const configPath = profile.resolveConfigPath(
+    const configPath = profile16.resolveConfigPath(
       options.configPath ? { override: options.configPath } : void 0
     );
     const pluginConfigPath = options.pluginConfigPath ?? defaultPluginConfigPath(configPath.dir);
-    const modelAllowlist = buildFallbackAllowlist(profile);
-    let config = profile.createFallbackConfig?.({
+    const modelAllowlist = buildFallbackAllowlist(profile16);
+    let config = profile16.createFallbackConfig?.({
       baseUrl: DEFAULT_HOKUSAI_BASE_URL,
       modelAllowlist
     }) ?? {
@@ -8183,7 +9782,7 @@ function createRunBootstrapDoctor(profile) {
     try {
       config = await loadPluginConfig({
         store: new FilePluginConfigStore(pluginConfigPath),
-        registry: profile.modelCatalog.registry,
+        registry: profile16.modelCatalog.registry,
         ...options.env !== void 0 ? { env: options.env } : {}
       });
     } catch (error) {
@@ -8203,7 +9802,7 @@ function createRunBootstrapDoctor(profile) {
       config,
       mode,
       stateDir: configPath.dir,
-      registry: profile.modelCatalog.registry,
+      registry: profile16.modelCatalog.registry,
       ...options.transport !== void 0 ? { transport: options.transport } : {}
     });
     const report = validationCheck ? {
@@ -8220,7 +9819,7 @@ function createRunBootstrapDoctor(profile) {
             ...options.transport ? { transport: options.transport } : {}
           }),
           enabled: true,
-          harness: profile.harness,
+          harness: profile16.harness,
           now: new Date(report.checkedAt),
           stage: "doctor_pass",
           store: new FsLocalStore(configPath.dir)
@@ -8230,7 +9829,7 @@ function createRunBootstrapDoctor(profile) {
     }
     return {
       report,
-      rendered: (profile.renderDoctorReport ?? renderPluginDoctorReport)(
+      rendered: (profile16.renderDoctorReport ?? renderPluginDoctorReport)(
         report
       )
     };
@@ -8574,10 +10173,10 @@ async function runOutcomePromptHookCli(argv, env, deps = {}) {
       }),
       (deps.readStdin ?? defaultReadStdin2)()
     ]);
-    const event = parseEvent(rawStdin, parsed.eventText);
+    const event16 = parseEvent(rawStdin, parsed.eventText);
     const actualModel = env.HOKUSAI_ACTUAL_MODEL;
     const prompt = buildOutcomeContributionPrompt({
-      event,
+      event: event16,
       ...latestRoute ? { latestRoute } : {},
       outcomeOptIn: config.outcomeSubmissionEnabled,
       reportCommand: "/hokusai:report",
