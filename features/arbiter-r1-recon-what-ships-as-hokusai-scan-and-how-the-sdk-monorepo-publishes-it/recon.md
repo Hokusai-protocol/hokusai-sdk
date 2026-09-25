@@ -4,6 +4,8 @@
 **Issue:** HOK-2788  
 **Repo:** Hokusai/hokusai-sdk
 
+> **Post-merge note (added 2026-09-25):** The Candidate Feature Schema v1 (S1 / HOK-2786) has since landed on `main` via PR #86 (merge commit `0e70726`) — `packages/core/src/candidate-features.ts` and `fixtures/arbiter/candidate_features.v1.json` now exist. The Decision below describes the boundary as a forward-looking call written before S1 landed; the "core gains S1" language should be read as "core has now gained S1 per this decision." S2, S3, and the scan-side execution modules described here are still ahead of the branch base (`015006e`).
+
 ---
 
 ## Assumptions
