@@ -11,7 +11,7 @@
 
 import type { TaskCostHarness } from './enums.js';
 import type { TaskCostEventV1 } from './event.js';
-import { TASK_COST_LEDGER_SCHEMA_VERSION } from './schema-version.js';
+import type { TASK_COST_LEDGER_SCHEMA_VERSION } from './schema-version.js';
 
 export interface TaskCostLedgerV1 {
   schema_version: typeof TASK_COST_LEDGER_SCHEMA_VERSION;

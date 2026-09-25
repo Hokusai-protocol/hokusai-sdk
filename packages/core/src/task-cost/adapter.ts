@@ -13,7 +13,7 @@ import type { TaskCostHarness } from './enums.js';
 import type { TaskCostEventV1 } from './event.js';
 import type { TaskCostLedgerV1 } from './ledger.js';
 import type { TaskCostSummaryV1 } from './summary.js';
-import { TASK_COST_ADAPTER_CONTRACT_VERSION } from './schema-version.js';
+import type { TASK_COST_ADAPTER_CONTRACT_VERSION } from './schema-version.js';
 
 export interface TaskCostAdapterCapabilities {
   supportsActualCost: boolean;

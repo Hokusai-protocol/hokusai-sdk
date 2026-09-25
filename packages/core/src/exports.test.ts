@@ -105,4 +105,19 @@ describe('core public surface', () => {
     expect(core.REPORT_CLI_EXIT_CODES).toBeDefined();
     expect(core.PRIVACY_CLI_EXIT_CODES).toBeDefined();
   });
+
+  it('exposes the task-cost contract', () => {
+    expect(core.TASK_COST_CONTRACT_VERSION).toBe('1.0.0');
+    expect(core.TASK_COST_EVENT_SCHEMA_VERSION).toBe('task_cost_event/v1');
+    expect(core.TASK_COST_SUMMARY_SCHEMA_VERSION).toBe('task_cost_summary/v1');
+    expect(core.TASK_COST_LEDGER_SCHEMA_VERSION).toBe('task_cost_ledger/v1');
+    expect(core.TASK_COST_ADAPTER_CONTRACT_VERSION).toBe('task_cost_adapter/v1');
+    expect(core.PROVIDER_CONTRACT_VERSIONS['claude-code']).toBe('claude-code/1');
+    expect(core.aggregateTaskCost).toBeDefined();
+    expect(core.validateTaskCostEventV1).toBeDefined();
+    expect(core.validateTaskCostSummaryV1).toBeDefined();
+    expect(core.validateTaskCostLedgerV1).toBeDefined();
+    expect(core.TaskCostValidationError).toBeDefined();
+    expect(core.taskCostFixtures).toHaveLength(15);
+  });
 });

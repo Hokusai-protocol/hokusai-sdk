@@ -25,7 +25,7 @@ import type {
   TaskCostSource,
 } from './enums.js';
 import type { TaskCostTokenUsage } from './token-usage.js';
-import { TASK_COST_SUMMARY_SCHEMA_VERSION } from './schema-version.js';
+import type { TASK_COST_SUMMARY_SCHEMA_VERSION } from './schema-version.js';
 
 /** A consecutive same-model run of turns; survives model switches. */
 export interface TaskCostModelSegment {

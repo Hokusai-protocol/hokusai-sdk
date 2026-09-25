@@ -28,7 +28,7 @@ import type {
   TaskCostUsageKind,
 } from './enums.js';
 import type { TaskCostTokenUsage } from './token-usage.js';
-import { TASK_COST_EVENT_SCHEMA_VERSION } from './schema-version.js';
+import type { TASK_COST_EVENT_SCHEMA_VERSION } from './schema-version.js';
 
 export interface TaskCostEventV1 {
   schema_version: typeof TASK_COST_EVENT_SCHEMA_VERSION;
