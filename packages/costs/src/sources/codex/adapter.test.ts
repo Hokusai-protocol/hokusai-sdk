@@ -127,6 +127,48 @@ describe('runCodexAdapter', () => {
     expect(result.events[0]?.pricing_source).toBe('none');
   });
 
+  it('unwraps event_msg-wrapped token_count and turn_context rows', () => {
+    // Codex rollouts encode runtime events as
+    // `{type: 'event_msg', payload: {type: 'token_count', info: {…}}}`.
+    // The adapter must accept the wrapped form.
+    const blob = jsonl([
+      sessionMeta('session-a', '2026-01-01T00:00:00Z'),
+      {
+        type: 'event_msg',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: { type: 'turn_context', model: 'gpt-5' },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-01-01T00:10:00Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 1000,
+              output_tokens: 500,
+              cached_input_tokens: 0,
+              reasoning_output_tokens: 100,
+            },
+            last_token_usage: {
+              input_tokens: 1000,
+              output_tokens: 500,
+              cached_input_tokens: 0,
+              reasoning_output_tokens: 100,
+            },
+          },
+        },
+      },
+    ]);
+    const result = runCodexAdapter({ blobs: [blob], boundary: BOUNDARY });
+    expect(result.events).toHaveLength(1);
+    const event = result.events[0]!;
+    expect(event.observed_model).toBe('gpt-5');
+    expect(event.usage.input_tokens).toBe(1000);
+    expect(event.usage.output_tokens).toBe(500);
+    expect(event.usage.reasoning_tokens).toBe(100);
+  });
+
   it('rejects files whose session_meta id is outside the boundary set', () => {
     const blob = jsonl([
       sessionMeta('session-foreign', '2026-01-01T00:00:00Z'),

@@ -58,10 +58,10 @@ export function runClaudeCodeAdapter(
 ): ClaudeCodeAdapterResult {
   const boundary = buildBoundaryContext(input.boundary);
   const tally = new DiagnosticTally();
-  const seenMessages = new Set<string>();
 
   interface StagedRecord {
     messageId: string;
+    requestId: string | undefined;
     sessionId: string;
     turnId: string;
     observedAt: string;
@@ -76,7 +76,11 @@ export function runClaudeCodeAdapter(
     };
     actualCostUsd: number | null;
   }
-  const staged: StagedRecord[] = [];
+  // Dedupe by (messageId, requestId): Claude Code streams the same message.id
+  // multiple times during a single response, and only the last occurrence
+  // carries the final usage. A retry that reuses the message.id but produces a
+  // new requestId is a distinct event. Keep the LATEST occurrence per key.
+  const staged = new Map<string, StagedRecord>();
 
   for (const blob of input.blobs) {
     const parsed = parseJsonl(blob, input.jsonl ?? {});
@@ -94,31 +98,36 @@ export function runClaudeCodeAdapter(
         tally.bump('record_out_of_boundary');
         continue;
       }
-      if (seenMessages.has(record.messageId)) {
+      const observedAtMs = Date.parse(record.observedAt);
+      const dedupeKey = `${record.messageId}\u0000${record.requestId ?? ''}`;
+      const existing = staged.get(dedupeKey);
+      if (existing !== undefined) {
         tally.bump('duplicate_record');
-        continue;
+        if (existing.observedAtMs > observedAtMs) continue;
       }
-      seenMessages.add(record.messageId);
-      staged.push({
+      staged.set(dedupeKey, {
         messageId: record.messageId,
+        requestId: record.requestId,
         sessionId: record.sessionId,
         turnId: record.turnId,
         observedAt: record.observedAt,
-        observedAtMs: Date.parse(record.observedAt),
+        observedAtMs,
         model: record.model,
         usage: record.usage,
         actualCostUsd: record.actualCostUsd,
       });
     }
   }
+  const stagedRecords: StagedRecord[] = Array.from(staged.values());
 
   // Assign a deterministic monotonic sequence per session, ordered by
   // observation time and then message id as a tie-breaker.
-  staged.sort((a, b) => {
+  stagedRecords.sort((a, b) => {
     if (a.sessionId !== b.sessionId) return a.sessionId < b.sessionId ? -1 : 1;
     if (a.observedAtMs !== b.observedAtMs)
       return a.observedAtMs - b.observedAtMs;
-    return a.messageId < b.messageId ? -1 : 1;
+    if (a.messageId !== b.messageId) return a.messageId < b.messageId ? -1 : 1;
+    return (a.requestId ?? '') < (b.requestId ?? '') ? -1 : 1;
   });
   const sequences = new Map<string, number>();
 
@@ -132,11 +141,15 @@ export function runClaudeCodeAdapter(
       : {}),
   });
 
-  for (const record of staged) {
+  for (const record of stagedRecords) {
     const nextSeq = (sequences.get(record.sessionId) ?? 0) + 1;
     sequences.set(record.sessionId, nextSeq);
+    const eventId =
+      record.requestId !== undefined
+        ? `claude-code:${record.messageId}:${record.requestId}`
+        : `claude-code:${record.messageId}`;
     const result = engine.ingest({
-      eventId: `claude-code:${record.messageId}`,
+      eventId,
       taskId: boundary.taskId,
       sessionId: record.sessionId,
       turnId: record.turnId,

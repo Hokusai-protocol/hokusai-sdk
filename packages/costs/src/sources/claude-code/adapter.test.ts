@@ -71,25 +71,58 @@ describe('runClaudeCodeAdapter', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it('deduplicates streamed and resumed message identities across files', () => {
+  it('deduplicates streamed and resumed message identities across files, keeping the last occurrence', () => {
+    // Same (messageId, requestId) written twice: the later occurrence carries
+    // the final streaming totals and must win.
     const rowA = assistantRow({
       uuid: 'uuid-1',
       timestamp: '2026-01-01T00:10:00Z',
       messageId: 'msg-shared',
+      requestId: 'req-a',
+      usage: { input_tokens: 1000, output_tokens: 100 },
     });
     const rowB = assistantRow({
       uuid: 'uuid-2',
       timestamp: '2026-01-01T00:11:00Z',
       messageId: 'msg-shared',
+      requestId: 'req-a',
+      usage: { input_tokens: 1000, output_tokens: 900 },
     });
     const result = runClaudeCodeAdapter({
       blobs: [jsonl([rowA]), jsonl([rowB])],
       boundary: BOUNDARY,
     });
     expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.usage.output_tokens).toBe(900);
     expect(
       result.diagnostics.find((d) => d.code === 'duplicate_record')?.count,
     ).toBe(1);
+  });
+
+  it('treats a retry with a new requestId under the same messageId as a distinct event', () => {
+    // A retry reuses `message.id` but produces a fresh `requestId`; the
+    // adapter must emit two events, not silently dedupe.
+    const rowA = assistantRow({
+      uuid: 'uuid-a',
+      timestamp: '2026-01-01T00:10:00Z',
+      messageId: 'msg-shared',
+      requestId: 'req-a',
+    });
+    const rowB = assistantRow({
+      uuid: 'uuid-b',
+      timestamp: '2026-01-01T00:20:00Z',
+      messageId: 'msg-shared',
+      requestId: 'req-b',
+    });
+    const result = runClaudeCodeAdapter({
+      blobs: [jsonl([rowA, rowB])],
+      boundary: BOUNDARY,
+    });
+    expect(result.events).toHaveLength(2);
+    expect(result.events.map((e) => e.event_id)).toEqual([
+      'claude-code:msg-shared:req-a',
+      'claude-code:msg-shared:req-b',
+    ]);
   });
 
   it('filters rows outside the boundary window or session set', () => {

@@ -3,8 +3,10 @@
  * information the cost pipeline needs — `session_meta`, `turn_context`, and
  * `token_count` — and rejects everything else without diagnosing it.
  *
- * Codex nests details under `payload`/`info` in different releases; the
- * parser accepts either shape but never exports free-text fields.
+ * Codex nests details under `payload`/`info` in different releases; recent
+ * rollouts additionally wrap runtime events as `{type: 'event_msg', payload:
+ * {type, ...}}`. The parser accepts every shape but never exports free-text
+ * fields.
  *
  * @module sources/codex/parser
  */
@@ -97,7 +99,14 @@ function isEmptyUsage(
  * recognize are ignored.
  */
 export function parseCodexRow(row: Record<string, unknown>): CodexParseOutcome {
-  const type = readString(row['type']);
+  const outerType = readString(row['type']);
+  const outerPayload = readObject(row['payload']);
+  // Codex rollouts wrap runtime events as `{type: 'event_msg', payload: {type: '...', ...}}`.
+  // Unwrap so the row shape matches the older bare-row form used by tests.
+  const type =
+    outerType === 'event_msg' && outerPayload !== undefined
+      ? (readString(outerPayload['type']) ?? outerType)
+      : outerType;
   if (
     type !== 'session_meta' &&
     type !== 'turn_context' &&
@@ -113,7 +122,7 @@ export function parseCodexRow(row: Record<string, unknown>): CodexParseOutcome {
     return { ok: false, reason: 'missing_required_field' };
   }
 
-  const payload = readObject(row['payload']);
+  const payload = outerPayload;
 
   if (type === 'session_meta') {
     // `session_meta` may nest the session id under `payload` (newer rollouts)
