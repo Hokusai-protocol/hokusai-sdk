@@ -20,28 +20,26 @@
 name: hokusai-scan-shadow
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   schedule:
     - cron: '15 6 * * *' # nightly survival backfill
     - cron: '0 12 * * MON' # weekly calibration report
   workflow_dispatch:
     inputs:
       job:
-        description: 'Which scheduled job to run: nightly | report | extract'
+        description: 'Which scheduled job to run: nightly | report'
         required: true
         type: choice
-        options: [nightly, report, extract]
-      pr-number:
-        description: 'PR number to extract features for (required if job=extract)'
-        required: false
-        type: string
+        options: [nightly, report]
 
 # Default: nothing. Each job grants itself the minimum it needs.
 permissions: {}
 
 jobs:
-  # ── Per-PR feature extraction (manual) ───────────────────────────────────
+  # ── Per-PR feature extraction ────────────────────────────────────────────
   shadow-extract:
-    if: github.event_name == 'workflow_dispatch' && inputs.job == 'extract'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,15 +58,15 @@ jobs:
         uses: Hokusai-protocol/hokusai-sdk/packages/scan/action@vX.Y.Z
         with:
           mode: extract
-          pr-number: ${{ inputs.pr-number }}
-          base-ref: origin/auto/integration
+          pr-number: ${{ github.event.pull_request.number }}
+          base-ref: origin/${{ github.event.pull_request.base.ref }}
           # The pr-<n> token in the filename is the aggregator's join key.
-          output-path: hokusai-scan-pr-${{ inputs.pr-number }}.json
+          output-path: hokusai-scan-pr-${{ github.event.pull_request.number }}.json
       - uses: actions/upload-artifact@v4
         if: steps.scan.outcome == 'success'
         continue-on-error: true
         with:
-          name: hokusai-scan-pr-${{ inputs.pr-number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: hokusai-scan-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.scan.outputs.output-path }}
           retention-days: 90
 

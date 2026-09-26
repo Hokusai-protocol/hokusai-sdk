@@ -1,31 +1,24 @@
 # Shadow-mode Survival Check — per-PR feature extraction (HOK-2820, Arbiter
 # P2.S1 / plan-of-record §15.4 step 1).
 #
-# Scores silently: computes candidate_features/v1 for a single PR in this
-# repo's own CI runner and uploads it as a workflow artifact. NOTHING is
-# surfaced on the PR — no check-run status a contributor watches, no comment,
-# no annotation. Mechanical guards (enforced by
+# Scores silently: computes candidate_features/v1 for each PR in this repo's
+# own CI runner and uploads them as workflow artifacts. No PR comment, check
+# run status, or annotation is surfaced. Mechanical guards (enforced by
 # scripts/check-scan-workflow-surfaces.mjs, wired into pnpm check:boundaries):
 #   - read-only permissions: the token cannot post a comment, create a check
 #     run, or set a commit status even if the code tried;
 #   - continue-on-error on the scan step: a failed scan never fails the
-#     workflow, and this workflow is never a required check (CI is `ci.yml`);
-#   - no pull_request triggers (only schedule and workflow_dispatch) to keep
-#     the workflow completely invisible to PR contributors.
+#     workflow, and this workflow is not in branch-protection required checks;
+#   - fork PRs are skipped entirely.
+# The workflow run itself appears in the PR's Actions tab but produces no
+# blocking status, allowing contributors to merge without interference.
 # Advisory by design and forever: flag mode (Phase 3) arrives as a different
 # workflow, never as an edit to this one.
 name: hokusai-scan-pr
 
 on:
-  schedule:
-    # Weekly extraction of recent PRs: covers the ~7-day PR window plus backfill.
-    - cron: '30 6 * * MON'
-  workflow_dispatch:
-    inputs:
-      pr-number:
-        description: 'PR number to scan (empty = scan recent PRs)'
-        required: false
-        type: string
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -33,7 +26,7 @@ permissions:
 
 jobs:
   shadow-extract:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       # Full history: the extractor diffs against the merge-base with the
@@ -58,28 +51,16 @@ jobs:
         uses: ./packages/scan/action
         with:
           mode: extract
-          pr-number: ${{ inputs.pr-number }}
-          base-ref: origin/main
+          pr-number: ${{ github.event.pull_request.number }}
+          base-ref: origin/${{ github.event.pull_request.base.ref }}
           # The pr-<n> token in the filename is the aggregator's join key.
-          output-path: hokusai-scan-pr-${{ inputs.pr-number }}.json
+          output-path: hokusai-scan-pr-${{ github.event.pull_request.number }}.json
       # 90-day retention covers the 60-day survival horizon plus the weekly
       # report window (§15.5 accumulation surface).
       - uses: actions/upload-artifact@v4
         if: steps.scan.outcome == 'success'
         continue-on-error: true
         with:
-          name: hokusai-scan-pr-${{ inputs.pr-number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: hokusai-scan-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.scan.outputs.output-path }}
           retention-days: 90
-
-  validation:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Validate scan workflow setup
-        run: |
-          test -f .github/workflows/hokusai-scan-pr.yml && \
-          test -f packages/scan/action/action.yml && \
-          test -d fixtures/arbiter && \
-          echo "✓ Shadow-mode scan workflow is properly set up"
