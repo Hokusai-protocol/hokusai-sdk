@@ -119,6 +119,27 @@ export {
   sortMergedPrsForEmission,
 } from './serialize.js';
 
+export {
+  DEFAULT_REPORT_HORIZON,
+  PLACEHOLDER_RULE_PHRASE,
+  PRECISION_SUPPRESSION_FLOOR,
+  SHADOW_REPO_REPORT_SCHEMA_VERSION,
+  SHADOW_RULE_DESCRIPTION,
+  SHADOW_RULE_ID,
+  aggregateShadowScans,
+  evaluateShadowRule,
+  parsePrUrl,
+  prNumberFromSource,
+  renderShadowReportMarkdown,
+  serializeShadowReport,
+  type ShadowAggregateOptions,
+  type ShadowAggregateResult,
+  type ShadowFlagVerdict,
+  type ShadowRepoReportV1,
+  type ShadowRepoSummaryV1,
+  type ShadowScanInput,
+} from './shadow-aggregate.js';
+
 // Contract-type re-exports from @hokusai/core, so scan consumers do not need
 // a direct core import for the common wire types.
 export {

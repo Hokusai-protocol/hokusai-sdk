@@ -1,0 +1,61 @@
+{
+  "schema_version": "shadow_repo_report/v1",
+  "generated_at": "2026-09-26T00:00:00.000Z",
+  "horizon_days": 30,
+  "shadow_rule": {
+    "id": "placeholder-untested-risky-change/v1",
+    "description": "flag when risk_level is medium or high, requires_tests is true, and tests_changed is false",
+    "trained_model": false
+  },
+  "inputs_read": 14,
+  "repos": [
+    {
+      "repo": "golden/alpha",
+      "prs_seen": 8,
+      "labelled_prs": 8,
+      "outcomes": {
+        "survived": 2,
+        "followup": 1,
+        "substantially_rewritten": 2,
+        "reverted": 2,
+        "missing": 1
+      },
+      "survival_rate": 0.2857,
+      "reworked_prs": 5,
+      "flags": {
+        "flag": 4,
+        "no_flag": 2,
+        "unknown": 2
+      },
+      "would_flag_rate": 0.6667,
+      "true_positives": 2,
+      "false_positives": 1,
+      "would_be_precision": 0.6667,
+      "precision_suppressed": false
+    },
+    {
+      "repo": "golden/bravo",
+      "prs_seen": 4,
+      "labelled_prs": 4,
+      "outcomes": {
+        "survived": 3,
+        "followup": 0,
+        "substantially_rewritten": 0,
+        "reverted": 1,
+        "missing": 0
+      },
+      "survival_rate": 0.75,
+      "reworked_prs": 1,
+      "flags": {
+        "flag": 2,
+        "no_flag": 1,
+        "unknown": 1
+      },
+      "would_flag_rate": 0.6667,
+      "true_positives": 1,
+      "false_positives": 1,
+      "would_be_precision": null,
+      "precision_suppressed": true
+    }
+  ]
+}

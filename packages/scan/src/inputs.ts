@@ -147,6 +147,29 @@ export function validateMaxPrs(value: string | undefined): number {
   return parsed;
 }
 
+/** Output format of `hokusai-scan report`. */
+export type ShadowReportFormat = 'markdown' | 'json';
+
+export function validateReportFormat(value: string | undefined): ShadowReportFormat {
+  if (value === undefined || value === '') return 'markdown';
+  if (value !== 'markdown' && value !== 'json') {
+    throw new ScanInputError('--format must be markdown or json');
+  }
+  return value;
+}
+
+/** Reporting horizon for `hokusai-scan report`; a single contract horizon. */
+export function validateReportHorizon(value: string | undefined): HorizonDays {
+  if (value === undefined || value === '') return 30;
+  const parsed = Number(value.trim());
+  if (!(HORIZONS as readonly number[]).includes(parsed)) {
+    throw new ScanInputError(
+      `--horizon must be one of ${HORIZONS.join(', ')}`,
+    );
+  }
+  return parsed as HorizonDays;
+}
+
 /** Env-var NAMES must be identifiers; the VALUE is never accepted as an arg. */
 export function validateTokenEnvName(value: string | undefined): string {
   if (value === undefined || value === '') return 'GITHUB_TOKEN';

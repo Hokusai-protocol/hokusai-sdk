@@ -27,6 +27,7 @@ const CORE_FILES = [
   'diff-parsing.ts',
   'inputs.ts',
   'serialize.ts',
+  'shadow-aggregate.ts',
   'shell-utils.ts',
   'static-features.ts',
   'survival-labeller.ts',

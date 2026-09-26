@@ -12,8 +12,8 @@
  *   3 upstream (GitHub) failure.
  */
 
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { ArbiterSurvivalLabelV1, HorizonDays } from '@hokusai/core';
 import { extractCandidateFeatures } from './candidate-features.js';
@@ -33,9 +33,17 @@ import {
   validatePrNumber,
   validatePrUrl,
   validateRepoDir,
+  validateReportFormat,
+  validateReportHorizon,
   validateTokenEnvName,
   type GithubRepoRef,
+  type ShadowReportFormat,
 } from './inputs.js';
+import {
+  aggregateShadowScans,
+  serializeShadowReport,
+  type ShadowScanInput,
+} from './shadow-aggregate.js';
 import {
   serializeCandidateFeatures,
   serializeSurvivalLabels,
@@ -75,7 +83,7 @@ export interface CliRunResult {
   summaryLines: string[];
 }
 
-const USAGE = `usage: hokusai-scan <label|extract|scan> [options]
+const USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
 label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
@@ -83,6 +91,8 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+report   --inputs <dir|file> [--horizon 14|30|60] [--as-of <iso>]
+         [--format markdown|json] [--out <path|->] [--debug]
 `;
 
 const OPTION_SPEC = {
@@ -97,6 +107,9 @@ const OPTION_SPEC = {
   'max-prs': { type: 'string' },
   'as-of': { type: 'string' },
   'token-env': { type: 'string' },
+  'inputs': { type: 'string' },
+  'format': { type: 'string' },
+  'horizon': { type: 'string' },
   'out': { type: 'string' },
   'no-links': { type: 'boolean' },
   'offline': { type: 'boolean' },
@@ -130,8 +143,10 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
       io.writeStderr(USAGE);
       return { exitCode: command === undefined ? EXIT_INVALID_INPUT : EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
     }
-    if (command !== 'label' && command !== 'extract' && command !== 'scan') {
-      throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);
+    if (command !== 'label' && command !== 'extract' && command !== 'scan' && command !== 'report') {
+      throw new ScanInputError(
+        `unknown subcommand ${command}; expected label, extract, scan, or report`,
+      );
     }
 
     let values: Record<string, string | boolean | undefined>;
@@ -149,7 +164,6 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
     const tokenEnvName = validateTokenEnvName(values['token-env'] as string | undefined);
     context.token = io.env[tokenEnvName];
 
-    const repoDir = resolveRepoDir(values.repo as string | undefined);
     const offline = values.offline === true;
     const asOf = validateAsOf(values['as-of'] as string | undefined);
     const outSpec = (values.out as string | undefined) ?? '-';
@@ -157,7 +171,15 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
     let output: string;
     let rowCount: number;
 
-    if (command === 'label') {
+    if (command === 'report') {
+      ({ output, rowCount } = runReport(context, {
+        inputsPath: resolveInputsPath(values.inputs as string | undefined),
+        asOf,
+        horizon: validateReportHorizon(values.horizon as string | undefined),
+        format: validateReportFormat(values.format as string | undefined),
+      }));
+    } else if (command === 'label') {
+      const repoDir = resolveRepoDir(values.repo as string | undefined);
       ({ output, rowCount } = runLabel(context, {
         repoDir,
         offline,
@@ -170,6 +192,7 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         includeLinkedReferences: values['no-links'] === true || offline ? false : undefined,
       }));
     } else if (command === 'extract') {
+      const repoDir = resolveRepoDir(values.repo as string | undefined);
       ({ output, rowCount } = runExtract(context, {
         repoDir,
         offline,
@@ -178,6 +201,7 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         configPath: values['config-path'] as string | undefined,
       }));
     } else {
+      const repoDir = resolveRepoDir(values.repo as string | undefined);
       ({ output, rowCount } = runCombinedScan(context, {
         repoDir,
         offline,
@@ -262,6 +286,82 @@ function requireGithubRepo(
     `github repo detected from origin remote: ${detected.owner}/${detected.repo}`,
   );
   return detected;
+}
+
+function resolveInputsPath(raw: string | undefined): string {
+  if (!raw || !raw.trim()) {
+    throw new ScanInputError('--inputs is required');
+  }
+  const inputsPath = resolve(raw);
+  if (!existsSync(inputsPath)) {
+    throw new ScanInputError('--inputs path does not exist');
+  }
+  return inputsPath;
+}
+
+// ── report (shadow-mode aggregation, HOK-2820) ─────────────────────────────
+
+interface ReportParams {
+  inputsPath: string;
+  asOf: Date | undefined;
+  horizon: ReturnType<typeof validateReportHorizon>;
+  format: ShadowReportFormat;
+}
+
+/**
+ * Collect every `.json` / `.jsonl` file under the inputs path, sorted by
+ * path relative to it, so aggregation order — and therefore the report
+ * bytes — never depends on filesystem enumeration order or on where the
+ * inputs directory lives.
+ */
+function collectShadowInputs(inputsPath: string): ShadowScanInput[] {
+  const stats = statSync(inputsPath);
+  if (!stats.isDirectory()) {
+    return [{ source: basename(inputsPath), content: readFileSync(inputsPath, 'utf-8') }];
+  }
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    )) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.jsonl?$/.test(entry.name)) files.push(full);
+    }
+  };
+  walk(inputsPath);
+  return files.map((file) => ({
+    source: relative(inputsPath, file),
+    content: readFileSync(file, 'utf-8'),
+  }));
+}
+
+function runReport(context: CommandContext, params: ReportParams): { output: string; rowCount: number } {
+  const diag = makeDiagnostics(context);
+  const inputs = collectShadowInputs(params.inputsPath);
+  const result = aggregateShadowScans(inputs, {
+    asOf: params.asOf ?? new Date(),
+    horizonDays: params.horizon,
+  });
+  for (const diagnostic of result.diagnostics) diag.warn(diagnostic);
+
+  let totalPrs = 0;
+  for (const repo of result.report.repos) {
+    totalPrs += repo.prs_seen;
+    const precision = repo.precision_suppressed
+      ? 'precision suppressed'
+      : `precision ${repo.would_be_precision ?? 'n/a'}`;
+    context.summaryLines.push(
+      `${repo.repo}: ${repo.prs_seen} PRs, ${repo.flags.flag} would-be flags, ${precision}`,
+    );
+  }
+  diag.info(
+    `shadow report: ${result.report.repos.length} repo(s), ${totalPrs} PR(s), horizon ${result.report.horizon_days}d`,
+  );
+
+  const output =
+    params.format === 'json' ? serializeShadowReport(result.report) : result.markdown;
+  return { output, rowCount: totalPrs };
 }
 
 // ── label ──────────────────────────────────────────────────────────────────

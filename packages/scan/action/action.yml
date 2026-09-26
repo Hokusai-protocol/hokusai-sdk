@@ -20,7 +20,7 @@ branding:
 
 inputs:
   mode:
-    description: 'What to run: label | extract | scan'
+    description: 'What to run: label | extract | scan | report'
     required: true
   integration-branch:
     description: >-
@@ -56,6 +56,21 @@ inputs:
     default: '14,30,60'
   base-ref:
     description: 'Base ref override for the extract diff (extract/scan modes).'
+    required: false
+  max-prs:
+    description: 'Maximum merged PRs to enumerate (label/scan modes). Positive integer.'
+    required: false
+  inputs-path:
+    description: >-
+      Directory (or single file) of accumulated scan output — label JSONL,
+      candidate-feature JSON, combined scan objects — to aggregate
+      (report mode).
+    required: false
+  report-format:
+    description: 'Report output format: markdown | json (report mode).'
+    required: false
+  report-horizon:
+    description: 'Reporting horizon in days: 14 | 30 | 60 (report mode).'
     required: false
   output-path:
     description: >-

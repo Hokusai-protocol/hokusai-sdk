@@ -36,6 +36,8 @@ import { classifyUpstreamFailure } from './default-deps.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_ROOT = join(__dirname, '../../../fixtures/arbiter/scan');
+const SHADOW_FIXTURES_ROOT = join(__dirname, '../../../fixtures/arbiter/shadow-report');
+const SHADOW_AS_OF = '2026-09-26T00:00:00Z';
 const CLI_DIST = join(__dirname, '../dist/cli.js');
 const ACTION_BUNDLE = join(__dirname, '../action/dist/index.js');
 
@@ -181,6 +183,34 @@ describe('hokusai-scan exit codes (invalid input → 2)', () => {
     expect(result.stderr).toContain('error: integration branch main is rejected (v1.0.0 contract)');
   });
 
+  it('requires --inputs for report', () => {
+    const result = runCli(['report']);
+    expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
+    expect(result.stderr).toContain('error: --inputs is required');
+  });
+
+  it('rejects a nonexistent --inputs path', () => {
+    const result = runCli(['report', '--inputs', '/definitely/not/a/path']);
+    expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
+    expect(result.stderr).toContain('error: --inputs path does not exist');
+  });
+
+  it('rejects an unsupported report --horizon', () => {
+    const result = runCli([
+      'report', '--inputs', join(SHADOW_FIXTURES_ROOT, 'inputs'), '--horizon', '45',
+    ]);
+    expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
+    expect(result.stderr).toContain('error: --horizon must be one of 14, 30, 60');
+  });
+
+  it('rejects an unknown report --format', () => {
+    const result = runCli([
+      'report', '--inputs', join(SHADOW_FIXTURES_ROOT, 'inputs'), '--format', 'html',
+    ]);
+    expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
+    expect(result.stderr).toContain('error: --format must be markdown or json');
+  });
+
   it('rejects a malformed --as-of', () => {
     const { repoDir } = restoreFixture('case-01-simple-merge');
     const result = runCli([
@@ -285,6 +315,28 @@ describe('hokusai-scan output routing', () => {
     const result = runCli([
       'extract', '--repo', repoDir, '--pr', String(inputs.pr_number),
       '--base-ref', inputs.base_ref, '--offline',
+    ]);
+    expect(result.exitCode).toBe(EXIT_OK);
+    expect(result.stdout).toBe(expected);
+    expectPrefixedStderr(result.stderr);
+  });
+
+  it('report emits the golden shadow markdown on stdout', () => {
+    const expected = readFileSync(join(SHADOW_FIXTURES_ROOT, 'expected-report.md'), 'utf-8');
+    const result = runCli([
+      'report', '--inputs', join(SHADOW_FIXTURES_ROOT, 'inputs'), '--as-of', SHADOW_AS_OF,
+    ]);
+    expect(result.exitCode).toBe(EXIT_OK);
+    expect(result.stdout).toBe(expected);
+    expectPrefixedStderr(result.stderr);
+    expect(result.stderr).toContain('info: shadow report: 2 repo(s), 12 PR(s), horizon 30d');
+  });
+
+  it('report --format json emits the golden machine-readable object', () => {
+    const expected = readFileSync(join(SHADOW_FIXTURES_ROOT, 'expected-report.json'), 'utf-8');
+    const result = runCli([
+      'report', '--inputs', join(SHADOW_FIXTURES_ROOT, 'inputs'),
+      '--as-of', SHADOW_AS_OF, '--format', 'json',
     ]);
     expect(result.exitCode).toBe(EXIT_OK);
     expect(result.stdout).toBe(expected);
@@ -397,6 +449,34 @@ describe('scrubbed-environment CLI parity', () => {
     120_000,
   );
 
+  it.skipIf(!distBuilt)(
+    'the built CLI reproduces the golden shadow report with no ambient state',
+    () => {
+      const home = tempDir('scan-report-home-');
+      const cwd = tempDir('scan-report-cwd-');
+      plantHostileState(home);
+      const env = scrubbedEnv(home);
+
+      for (const [format, golden] of [
+        ['markdown', 'expected-report.md'],
+        ['json', 'expected-report.json'],
+      ] as const) {
+        const run = spawnSync(
+          process.execPath,
+          [
+            CLI_DIST, 'report', '--inputs', join(SHADOW_FIXTURES_ROOT, 'inputs'),
+            '--as-of', SHADOW_AS_OF, '--format', format,
+          ],
+          { cwd, env, encoding: 'utf-8' },
+        );
+        expect(run.status, `report ${format} stderr: ${run.stderr}`).toBe(0);
+        expect(run.stdout).toBe(readFileSync(join(SHADOW_FIXTURES_ROOT, golden), 'utf-8'));
+        expectPrefixedStderr(run.stderr);
+      }
+    },
+    60_000,
+  );
+
   it.skipIf(!distBuilt || !existsSync(ACTION_BUNDLE))(
     'the Action bundle produces the same bytes as the CLI for the same inputs',
     () => {
@@ -433,6 +513,37 @@ describe('scrubbed-environment CLI parity', () => {
       const outputs = readFileSync(outputFile, 'utf-8');
       expect(outputs).toContain('contract-version=candidate_features/v1:arbiter_survival_label/v1');
       expect(outputs).toContain('row-count=3');
+    },
+    60_000,
+  );
+
+  it.skipIf(!distBuilt || !existsSync(ACTION_BUNDLE))(
+    'the Action bundle report mode produces the same bytes as the CLI',
+    () => {
+      const home = tempDir('scan-action-report-home-');
+      const cwd = tempDir('scan-action-report-cwd-');
+      const runnerTemp = tempDir('scan-action-report-rt-');
+      const outputFile = join(runnerTemp, 'github-output.txt');
+      writeFileSync(outputFile, '');
+      plantHostileState(home);
+      const run = spawnSync(process.execPath, [ACTION_BUNDLE], {
+        cwd,
+        encoding: 'utf-8',
+        env: {
+          ...scrubbedEnv(home),
+          RUNNER_TEMP: runnerTemp,
+          GITHUB_OUTPUT: outputFile,
+          INPUT_MODE: 'report',
+          'INPUT_INPUTS-PATH': join(SHADOW_FIXTURES_ROOT, 'inputs'),
+          'INPUT_AS-OF': SHADOW_AS_OF,
+          'INPUT_OUTPUT-PATH': 'shadow-report.md',
+        },
+      });
+      expect(run.status, `action stderr: ${run.stderr}`).toBe(0);
+      expect(readFileSync(join(runnerTemp, 'shadow-report.md'), 'utf-8')).toBe(
+        readFileSync(join(SHADOW_FIXTURES_ROOT, 'expected-report.md'), 'utf-8'),
+      );
+      expect(readFileSync(outputFile, 'utf-8')).toContain('row-count=12');
     },
     60_000,
   );

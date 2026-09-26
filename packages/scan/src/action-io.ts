@@ -29,8 +29,11 @@ export function buildActionArgv(env: ActionEnv): { argv: string[]; outputPath: s
   const mode = env.input('mode') ?? '';
   const argv: string[] = [mode];
 
-  const repo = env.input('repo-path') ?? env.workspace ?? '.';
-  argv.push('--repo', repo);
+  // report aggregates already-written scan output; it takes no repo checkout.
+  if (mode !== 'report') {
+    const repo = env.input('repo-path') ?? env.workspace ?? '.';
+    argv.push('--repo', repo);
+  }
 
   const integrationBranch = env.input('integration-branch');
   if (integrationBranch !== undefined) argv.push('--integration-branch', integrationBranch);
@@ -52,6 +55,18 @@ export function buildActionArgv(env: ActionEnv): { argv: string[]; outputPath: s
 
   const baseRef = env.input('base-ref');
   if (baseRef !== undefined) argv.push('--base-ref', baseRef);
+
+  const maxPrs = env.input('max-prs');
+  if (maxPrs !== undefined) argv.push('--max-prs', maxPrs);
+
+  const inputsPath = env.input('inputs-path');
+  if (inputsPath !== undefined) argv.push('--inputs', inputsPath);
+
+  const reportFormat = env.input('report-format');
+  if (reportFormat !== undefined) argv.push('--format', reportFormat);
+
+  const reportHorizon = env.input('report-horizon');
+  if (reportHorizon !== undefined) argv.push('--horizon', reportHorizon);
 
   if (actionFlagIsTrue(env.input('no-links'))) argv.push('--no-links');
   if (actionFlagIsTrue(env.input('offline'))) argv.push('--offline');

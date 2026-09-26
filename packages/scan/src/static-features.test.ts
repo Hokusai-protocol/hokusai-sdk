@@ -589,3 +589,23 @@ test('bare-checkout parity: local overlay in a checkout is ignored', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// This repo's own committed config (HOK-2820 shadow mode)
+// ────────────────────────────────────────────────────────────────
+
+test('this repo commits a resolvable .hokusai-scan.json for its own shadow scans', () => {
+  // hokusai-sdk is itself a shadow-mode target: its committed config must
+  // resolve through the same reader the extractor uses on any target repo.
+  const repoRoot = join(import.meta.dirname, '../../..');
+  const diagnostics: string[] = [];
+  const config = readCommittedStaticAnalysisConfig(repoRoot, (message) =>
+    diagnostics.push(message),
+  );
+  // The primary filename resolves, so the legacy-fallback diagnostic must not fire.
+  expect(diagnostics).toEqual([]);
+  expect(config.typecheckCommand).toBe('pnpm typecheck');
+  expect(config.lintCommand).toBe('pnpm exec eslint . --format json');
+  expect(config.buildCommand).toBe('pnpm -r build');
+  expect(config.timeoutSeconds?.build).toBeGreaterThan(0);
+});

@@ -1,0 +1,12 @@
+{
+  "staticAnalysis": {
+    "typecheckCommand": "pnpm typecheck",
+    "lintCommand": "pnpm exec eslint . --format json",
+    "buildCommand": "pnpm -r build",
+    "timeoutSeconds": {
+      "typecheck": 300,
+      "lint": 240,
+      "build": 600
+    }
+  }
+}

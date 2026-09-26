@@ -57,6 +57,44 @@ describe('buildActionArgv', () => {
     expect(outputPath).toBe('/tmp/runner/result.jsonl');
   });
 
+  it('maps report mode without a --repo and with the report flags', () => {
+    const { argv, outputPath } = buildActionArgv({
+      input: envOf({
+        'mode': 'report',
+        'inputs-path': '/tmp/shadow-inputs',
+        'report-format': 'json',
+        'report-horizon': '30',
+        'as-of': '2026-01-01T00:00:00Z',
+        'output-path': 'last-report.json',
+      }),
+      runnerTemp: '/tmp/runner',
+      workspace: '/work/checkout',
+    });
+    expect(argv).toEqual([
+      'report',
+      '--as-of', '2026-01-01T00:00:00Z',
+      '--inputs', '/tmp/shadow-inputs',
+      '--format', 'json',
+      '--horizon', '30',
+      '--out', '/tmp/runner/last-report.json',
+    ]);
+    expect(outputPath).toBe('/tmp/runner/last-report.json');
+  });
+
+  it('maps max-prs for label mode', () => {
+    const { argv } = buildActionArgv({
+      input: envOf({
+        'mode': 'label',
+        'integration-branch': 'auto/integration',
+        'max-prs': '120',
+      }),
+      runnerTemp: '/tmp/runner',
+      workspace: '/work/checkout',
+    });
+    expect(argv).toContain('--max-prs');
+    expect(argv[argv.indexOf('--max-prs') + 1]).toBe('120');
+  });
+
   it('keeps an absolute output-path as given', () => {
     const { outputPath } = buildActionArgv({
       input: envOf({ mode: 'extract', 'pr-number': '3', 'output-path': '/data/out.json' }),

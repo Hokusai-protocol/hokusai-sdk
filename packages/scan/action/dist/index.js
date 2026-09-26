@@ -14,8 +14,10 @@ function actionFlagIsTrue(value) {
 function buildActionArgv(env) {
   const mode = env.input("mode") ?? "";
   const argv = [mode];
-  const repo = env.input("repo-path") ?? env.workspace ?? ".";
-  argv.push("--repo", repo);
+  if (mode !== "report") {
+    const repo = env.input("repo-path") ?? env.workspace ?? ".";
+    argv.push("--repo", repo);
+  }
   const integrationBranch = env.input("integration-branch");
   if (integrationBranch !== void 0) argv.push("--integration-branch", integrationBranch);
   const prNumber = env.input("pr-number");
@@ -30,6 +32,14 @@ function buildActionArgv(env) {
   if (horizons !== void 0) argv.push("--horizons", horizons);
   const baseRef = env.input("base-ref");
   if (baseRef !== void 0) argv.push("--base-ref", baseRef);
+  const maxPrs = env.input("max-prs");
+  if (maxPrs !== void 0) argv.push("--max-prs", maxPrs);
+  const inputsPath = env.input("inputs-path");
+  if (inputsPath !== void 0) argv.push("--inputs", inputsPath);
+  const reportFormat = env.input("report-format");
+  if (reportFormat !== void 0) argv.push("--format", reportFormat);
+  const reportHorizon = env.input("report-horizon");
+  if (reportHorizon !== void 0) argv.push("--horizon", reportHorizon);
   if (actionFlagIsTrue(env.input("no-links"))) argv.push("--no-links");
   if (actionFlagIsTrue(env.input("offline"))) argv.push("--offline");
   if (actionFlagIsTrue(env.input("debug"))) argv.push("--debug");
@@ -40,8 +50,8 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync2, mkdirSync, statSync as statSync3, writeFileSync } from "node:fs";
-import { dirname, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, readdirSync, statSync as statSync3, writeFileSync } from "node:fs";
+import { basename, dirname, join as join3, relative, resolve as resolve3 } from "node:path";
 import { parseArgs } from "node:util";
 
 // src/candidate-features.ts
@@ -5125,12 +5135,379 @@ function validateMaxPrs(value) {
   }
   return parsed;
 }
+function validateReportFormat(value) {
+  if (value === void 0 || value === "") return "markdown";
+  if (value !== "markdown" && value !== "json") {
+    throw new ScanInputError("--format must be markdown or json");
+  }
+  return value;
+}
+function validateReportHorizon(value) {
+  if (value === void 0 || value === "") return 30;
+  const parsed = Number(value.trim());
+  if (!HORIZONS.includes(parsed)) {
+    throw new ScanInputError(
+      `--horizon must be one of ${HORIZONS.join(", ")}`
+    );
+  }
+  return parsed;
+}
 function validateTokenEnvName(value) {
   if (value === void 0 || value === "") return "GITHUB_TOKEN";
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
     throw new ScanInputError("--token-env must name an environment variable");
   }
   return value;
+}
+
+// src/shadow-aggregate.ts
+var SHADOW_REPO_REPORT_SCHEMA_VERSION = "shadow_repo_report/v1";
+var SHADOW_RULE_ID = "placeholder-untested-risky-change/v1";
+var SHADOW_RULE_DESCRIPTION = "flag when risk_level is medium or high, requires_tests is true, and tests_changed is false";
+var PLACEHOLDER_RULE_PHRASE = "placeholder rule, no trained model yet";
+var PRECISION_SUPPRESSION_FLOOR = 5;
+var DEFAULT_REPORT_HORIZON = 30;
+function evaluateShadowRule(features) {
+  const { risk_level, requires_tests, tests_changed } = features;
+  if (risk_level !== null && risk_level !== "medium" && risk_level !== "high") return "no_flag";
+  if (requires_tests === false) return "no_flag";
+  if (tests_changed === true) return "no_flag";
+  if (risk_level === null || requires_tests === null || tests_changed === null) return "unknown";
+  return "flag";
+}
+function parsePrUrl(prUrl) {
+  const match = /\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\D|$)/.exec(prUrl);
+  if (!match) return null;
+  return {
+    repo: `${match[1]}/${match[2]}`,
+    prNumber: Number(match[3])
+  };
+}
+var REPORT_OUTCOMES = /* @__PURE__ */ new Set([
+  "survived",
+  "followup",
+  "substantially_rewritten",
+  "reverted"
+]);
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function intakeLabelRow(value, source) {
+  if (!isRecord(value)) return `${source}: label row is not an object`;
+  if (value.schema_version !== "1.0.0") {
+    return `${source}: unsupported label schema_version ${JSON.stringify(value.schema_version)}`;
+  }
+  if (typeof value.prUrl !== "string") return `${source}: label row has no prUrl`;
+  const ref = parsePrUrl(value.prUrl);
+  if (!ref) return `${source}: unparseable prUrl ${value.prUrl}`;
+  const horizon = value.horizon_days;
+  if (typeof horizon !== "number" || !HORIZONS.includes(horizon)) {
+    return `${source}: invalid horizon_days ${JSON.stringify(horizon)} on ${value.prUrl}`;
+  }
+  const outcome = value.outcome;
+  if (!isRecord(outcome)) return `${source}: label row has no outcome object (${value.prUrl})`;
+  const reportOutcome = outcome.report_outcome;
+  if (reportOutcome !== null && !REPORT_OUTCOMES.has(reportOutcome)) {
+    return `${source}: invalid report_outcome ${JSON.stringify(reportOutcome)} (${value.prUrl})`;
+  }
+  const envelope = value.envelope;
+  if (!isRecord(envelope) || typeof envelope.computed_at !== "string") {
+    return `${source}: label row has no envelope.computed_at (${value.prUrl})`;
+  }
+  return {
+    ref,
+    prUrl: value.prUrl,
+    horizonDays: horizon,
+    reportOutcome,
+    computedAt: envelope.computed_at,
+    source
+  };
+}
+function intakeFeatures(value, repo, prNumber, source) {
+  const result = validateCandidateFeaturesV1(value);
+  if (!result.ok) {
+    const first = result.errors[0];
+    return `${source}: invalid candidate features (${first?.path ?? "$"}: ${first?.message ?? "unknown"})`;
+  }
+  return { features: result.value, repo, prNumber, source };
+}
+function prNumberFromSource(source) {
+  const match = /(?:^|[^a-z0-9])pr-(\d+)(?:\D|$)/i.exec(source);
+  return match ? Number(match[1]) : null;
+}
+function parseOneInput(input, out) {
+  const text = input.content.trim();
+  if (text === "") {
+    out.diagnostics.push(`${input.source}: empty file, skipped`);
+    return;
+  }
+  let whole;
+  let wholeParsed = false;
+  try {
+    whole = JSON.parse(text);
+    wholeParsed = true;
+  } catch {
+    wholeParsed = false;
+  }
+  if (wholeParsed && isRecord(whole)) {
+    if (Array.isArray(whole.survival_labels) && isRecord(whole.candidate_features)) {
+      let combinedRef = null;
+      for (const row of whole.survival_labels) {
+        const label = intakeLabelRow(row, input.source);
+        if (typeof label === "string") {
+          out.diagnostics.push(label);
+          continue;
+        }
+        out.labels.push(label);
+        out.contributingSources.add(input.source);
+        combinedRef ??= label.ref;
+      }
+      const features = intakeFeatures(
+        whole.candidate_features,
+        combinedRef?.repo ?? null,
+        combinedRef?.prNumber ?? prNumberFromSource(input.source),
+        input.source
+      );
+      if (typeof features === "string") {
+        out.diagnostics.push(features);
+      } else {
+        out.features.push(features);
+        out.contributingSources.add(input.source);
+      }
+      return;
+    }
+    if (whole.schema_version === "candidate_features/v1") {
+      const prNumber = prNumberFromSource(input.source);
+      if (prNumber === null) {
+        out.diagnostics.push(
+          `${input.source}: candidate features without a pr-<n> token in the filename, skipped`
+        );
+        return;
+      }
+      const features = intakeFeatures(whole, null, prNumber, input.source);
+      if (typeof features === "string") {
+        out.diagnostics.push(features);
+      } else {
+        out.features.push(features);
+        out.contributingSources.add(input.source);
+      }
+      return;
+    }
+    if (whole.schema_version === "1.0.0" && typeof whole.prUrl === "string") {
+      const label = intakeLabelRow(whole, input.source);
+      if (typeof label === "string") {
+        out.diagnostics.push(label);
+      } else {
+        out.labels.push(label);
+        out.contributingSources.add(input.source);
+      }
+      return;
+    }
+    out.diagnostics.push(`${input.source}: unrecognized JSON document, skipped`);
+    return;
+  }
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (line === "") continue;
+    const where = `${input.source}:${index + 1}`;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      out.diagnostics.push(`${where}: not valid JSON, line skipped`);
+      continue;
+    }
+    const label = intakeLabelRow(row, where);
+    if (typeof label === "string") {
+      out.diagnostics.push(label);
+      continue;
+    }
+    out.labels.push(label);
+    out.contributingSources.add(input.source);
+  }
+}
+function ratio(numerator, denominator) {
+  if (denominator === 0) return null;
+  return Number((numerator / denominator).toFixed(4));
+}
+function aggregateShadowScans(inputs, options) {
+  const horizonDays = options.horizonDays ?? DEFAULT_REPORT_HORIZON;
+  const parsed = {
+    labels: [],
+    features: [],
+    diagnostics: [],
+    contributingSources: /* @__PURE__ */ new Set()
+  };
+  for (const input of [...inputs].sort((a, b) => a.source < b.source ? -1 : a.source > b.source ? 1 : 0)) {
+    parseOneInput(input, parsed);
+  }
+  const dedupedLabels = /* @__PURE__ */ new Map();
+  for (const label of parsed.labels) {
+    const key = `${label.prUrl}\0${label.horizonDays}`;
+    const existing = dedupedLabels.get(key);
+    if (existing === void 0 || label.computedAt >= existing.computedAt) {
+      dedupedLabels.set(key, label);
+    }
+  }
+  const prStates = /* @__PURE__ */ new Map();
+  const prKey = (ref) => `${ref.repo}\0${ref.prNumber}`;
+  for (const label of dedupedLabels.values()) {
+    const key = prKey(label.ref);
+    const state = prStates.get(key) ?? { ref: label.ref };
+    if (label.horizonDays === horizonDays) {
+      state.outcomeAtHorizon = {
+        reportOutcome: label.reportOutcome,
+        computedAt: label.computedAt
+      };
+    }
+    prStates.set(key, state);
+  }
+  const labelRepos = /* @__PURE__ */ new Set();
+  for (const state of prStates.values()) labelRepos.add(state.ref.repo);
+  const reposByPrNumber = /* @__PURE__ */ new Map();
+  for (const state of prStates.values()) {
+    const set = reposByPrNumber.get(state.ref.prNumber) ?? /* @__PURE__ */ new Set();
+    set.add(state.ref.repo);
+    reposByPrNumber.set(state.ref.prNumber, set);
+  }
+  for (const feature of parsed.features) {
+    let repo = feature.repo;
+    const prNumber = feature.prNumber;
+    if (prNumber === null) {
+      parsed.diagnostics.push(`${feature.source}: candidate features without a PR number, skipped`);
+      continue;
+    }
+    if (repo === null) {
+      if (labelRepos.size === 1) {
+        repo = [...labelRepos][0];
+      } else {
+        const candidates = reposByPrNumber.get(prNumber);
+        if (candidates !== void 0 && candidates.size === 1) {
+          repo = [...candidates][0];
+        }
+      }
+    }
+    if (repo === null) {
+      parsed.diagnostics.push(
+        `${feature.source}: cannot attribute PR #${prNumber} to a repo (no matching labels), skipped`
+      );
+      continue;
+    }
+    const key = prKey({ repo, prNumber });
+    const state = prStates.get(key) ?? { ref: { repo, prNumber } };
+    if (state.featuresSource === void 0 || feature.source >= state.featuresSource) {
+      state.verdict = evaluateShadowRule(feature.features);
+      state.featuresSource = feature.source;
+    }
+    prStates.set(key, state);
+  }
+  const repoNames = [...new Set([...prStates.values()].map((state) => state.ref.repo))].sort();
+  const repos = repoNames.map((repoName) => {
+    const states = [...prStates.values()].filter((state) => state.ref.repo === repoName);
+    const outcomes = {
+      survived: 0,
+      followup: 0,
+      substantially_rewritten: 0,
+      reverted: 0,
+      missing: 0
+    };
+    const flags = { flag: 0, no_flag: 0, unknown: 0 };
+    let labelledPrs = 0;
+    let truePositives = 0;
+    let falsePositives = 0;
+    for (const state of states) {
+      const verdict = state.verdict ?? "unknown";
+      flags[verdict] += 1;
+      if (state.outcomeAtHorizon === void 0) continue;
+      labelledPrs += 1;
+      const outcome = state.outcomeAtHorizon.reportOutcome;
+      if (outcome === null) {
+        outcomes.missing += 1;
+        continue;
+      }
+      outcomes[outcome] += 1;
+      if (verdict !== "flag") continue;
+      if (outcome === "survived") falsePositives += 1;
+      else truePositives += 1;
+    }
+    const knownOutcomes = outcomes.survived + outcomes.followup + outcomes.substantially_rewritten + outcomes.reverted;
+    const reworkedPrs = knownOutcomes - outcomes.survived;
+    const precisionSuppressed = reworkedPrs < PRECISION_SUPPRESSION_FLOOR;
+    return {
+      repo: repoName,
+      prs_seen: states.length,
+      labelled_prs: labelledPrs,
+      outcomes,
+      survival_rate: ratio(outcomes.survived, knownOutcomes),
+      reworked_prs: reworkedPrs,
+      flags,
+      would_flag_rate: ratio(flags.flag, flags.flag + flags.no_flag),
+      true_positives: truePositives,
+      false_positives: falsePositives,
+      would_be_precision: precisionSuppressed ? null : ratio(truePositives, truePositives + falsePositives),
+      precision_suppressed: precisionSuppressed
+    };
+  });
+  const report = {
+    schema_version: SHADOW_REPO_REPORT_SCHEMA_VERSION,
+    generated_at: options.asOf.toISOString(),
+    horizon_days: horizonDays,
+    shadow_rule: {
+      id: SHADOW_RULE_ID,
+      description: SHADOW_RULE_DESCRIPTION,
+      trained_model: false
+    },
+    inputs_read: parsed.contributingSources.size,
+    repos
+  };
+  return {
+    report,
+    markdown: renderShadowReportMarkdown(report),
+    diagnostics: parsed.diagnostics
+  };
+}
+function percent(numerator, denominator) {
+  if (denominator === 0) return "n/a";
+  return `${(numerator / denominator * 100).toFixed(1)}%`;
+}
+function renderShadowReportMarkdown(report) {
+  const lines = [
+    "# Hokusai shadow-mode survival report",
+    "",
+    `- generated_at: ${report.generated_at}`,
+    `- horizon: ${report.horizon_days} days`,
+    `- shadow rule: \`${report.shadow_rule.id}\` \u2014 ${report.shadow_rule.description} (${PLACEHOLDER_RULE_PHRASE})`,
+    `- inputs read: ${report.inputs_read}`,
+    "- shadow mode (Arbiter \xA715.4 step 1): nothing in this report is surfaced on any PR",
+    ""
+  ];
+  if (report.repos.length === 0) {
+    lines.push("No scan inputs found \u2014 nothing to report yet.", "");
+    return lines.join("\n");
+  }
+  for (const repo of report.repos) {
+    const { outcomes, flags } = repo;
+    const knownOutcomes = outcomes.survived + outcomes.followup + outcomes.substantially_rewritten + outcomes.reverted;
+    const decided = flags.flag + flags.no_flag;
+    const precisionLine = repo.precision_suppressed ? `- would-be precision: suppressed \u2014 ${repo.reworked_prs} reworked PR(s) at ${report.horizon_days}d, fewer than the ${PRECISION_SUPPRESSION_FLOOR} required to quote precision honestly (TP ${repo.true_positives}, FP ${repo.false_positives}; ${PLACEHOLDER_RULE_PHRASE})` : `- would-be precision: ${percent(repo.true_positives, repo.true_positives + repo.false_positives)} (TP ${repo.true_positives}, FP ${repo.false_positives}; ${PLACEHOLDER_RULE_PHRASE})`;
+    lines.push(
+      `## ${repo.repo}`,
+      "",
+      `- PRs seen: ${repo.prs_seen} (labelled at ${report.horizon_days}d: ${repo.labelled_prs})`,
+      `- outcomes at ${report.horizon_days}d: survived ${outcomes.survived}, followup ${outcomes.followup}, substantially_rewritten ${outcomes.substantially_rewritten}, reverted ${outcomes.reverted}, missing ${outcomes.missing}`,
+      `- ${report.horizon_days}-day survival rate: ${percent(outcomes.survived, knownOutcomes)} (${outcomes.survived}/${knownOutcomes} known outcomes)`,
+      `- would-be flags: ${flags.flag} flagged, ${flags.no_flag} not flagged, ${flags.unknown} unknown (${PLACEHOLDER_RULE_PHRASE})`,
+      `- would-be flag rate: ${percent(flags.flag, decided)} (${flags.flag}/${decided} decided)`,
+      precisionLine,
+      ""
+    );
+  }
+  return lines.join("\n");
+}
+function serializeShadowReport(report) {
+  return `${JSON.stringify(report, null, 2)}
+`;
 }
 
 // src/serialize.ts
@@ -5169,7 +5546,7 @@ var EXIT_OK = 0;
 var EXIT_INTERNAL = 1;
 var EXIT_INVALID_INPUT = 2;
 var EXIT_UPSTREAM = 3;
-var USAGE = `usage: hokusai-scan <label|extract|scan> [options]
+var USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
 label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
@@ -5177,6 +5554,8 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+report   --inputs <dir|file> [--horizon 14|30|60] [--as-of <iso>]
+         [--format markdown|json] [--out <path|->] [--debug]
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -5190,6 +5569,9 @@ var OPTION_SPEC = {
   "max-prs": { type: "string" },
   "as-of": { type: "string" },
   "token-env": { type: "string" },
+  "inputs": { type: "string" },
+  "format": { type: "string" },
+  "horizon": { type: "string" },
   "out": { type: "string" },
   "no-links": { type: "boolean" },
   "offline": { type: "boolean" },
@@ -5216,8 +5598,10 @@ function runScanCli(argv, io) {
       io.writeStderr(USAGE);
       return { exitCode: command === void 0 ? EXIT_INVALID_INPUT : EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
     }
-    if (command !== "label" && command !== "extract" && command !== "scan") {
-      throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);
+    if (command !== "label" && command !== "extract" && command !== "scan" && command !== "report") {
+      throw new ScanInputError(
+        `unknown subcommand ${command}; expected label, extract, scan, or report`
+      );
     }
     let values;
     try {
@@ -5232,13 +5616,20 @@ function runScanCli(argv, io) {
     context.debug = values.debug === true;
     const tokenEnvName = validateTokenEnvName(values["token-env"]);
     context.token = io.env[tokenEnvName];
-    const repoDir = resolveRepoDir(values.repo);
     const offline = values.offline === true;
     const asOf = validateAsOf(values["as-of"]);
     const outSpec = values.out ?? "-";
     let output;
     let rowCount;
-    if (command === "label") {
+    if (command === "report") {
+      ({ output, rowCount } = runReport(context, {
+        inputsPath: resolveInputsPath(values.inputs),
+        asOf,
+        horizon: validateReportHorizon(values.horizon),
+        format: validateReportFormat(values.format)
+      }));
+    } else if (command === "label") {
+      const repoDir = resolveRepoDir(values.repo);
       ({ output, rowCount } = runLabel(context, {
         repoDir,
         offline,
@@ -5251,6 +5642,7 @@ function runScanCli(argv, io) {
         includeLinkedReferences: values["no-links"] === true || offline ? false : void 0
       }));
     } else if (command === "extract") {
+      const repoDir = resolveRepoDir(values.repo);
       ({ output, rowCount } = runExtract(context, {
         repoDir,
         offline,
@@ -5259,6 +5651,7 @@ function runScanCli(argv, io) {
         configPath: values["config-path"]
       }));
     } else {
+      const repoDir = resolveRepoDir(values.repo);
       ({ output, rowCount } = runCombinedScan(context, {
         repoDir,
         offline,
@@ -5333,6 +5726,59 @@ function requireGithubRepo(context, repoDir, explicit) {
     `github repo detected from origin remote: ${detected.owner}/${detected.repo}`
   );
   return detected;
+}
+function resolveInputsPath(raw) {
+  if (!raw || !raw.trim()) {
+    throw new ScanInputError("--inputs is required");
+  }
+  const inputsPath = resolve3(raw);
+  if (!existsSync2(inputsPath)) {
+    throw new ScanInputError("--inputs path does not exist");
+  }
+  return inputsPath;
+}
+function collectShadowInputs(inputsPath) {
+  const stats = statSync3(inputsPath);
+  if (!stats.isDirectory()) {
+    return [{ source: basename(inputsPath), content: readFileSync2(inputsPath, "utf-8") }];
+  }
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort(
+      (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    )) {
+      const full = join3(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.jsonl?$/.test(entry.name)) files.push(full);
+    }
+  };
+  walk(inputsPath);
+  return files.map((file) => ({
+    source: relative(inputsPath, file),
+    content: readFileSync2(file, "utf-8")
+  }));
+}
+function runReport(context, params) {
+  const diag = makeDiagnostics(context);
+  const inputs = collectShadowInputs(params.inputsPath);
+  const result = aggregateShadowScans(inputs, {
+    asOf: params.asOf ?? /* @__PURE__ */ new Date(),
+    horizonDays: params.horizon
+  });
+  for (const diagnostic of result.diagnostics) diag.warn(diagnostic);
+  let totalPrs = 0;
+  for (const repo of result.report.repos) {
+    totalPrs += repo.prs_seen;
+    const precision = repo.precision_suppressed ? "precision suppressed" : `precision ${repo.would_be_precision ?? "n/a"}`;
+    context.summaryLines.push(
+      `${repo.repo}: ${repo.prs_seen} PRs, ${repo.flags.flag} would-be flags, ${precision}`
+    );
+  }
+  diag.info(
+    `shadow report: ${result.report.repos.length} repo(s), ${totalPrs} PR(s), horizon ${result.report.horizon_days}d`
+  );
+  const output = params.format === "json" ? serializeShadowReport(result.report) : result.markdown;
+  return { output, rowCount: totalPrs };
 }
 function buildLabellerWorld(context, params) {
   const diag = makeDiagnostics(context);
