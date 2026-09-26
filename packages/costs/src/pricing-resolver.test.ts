@@ -1,4 +1,8 @@
-import { MODEL_PRICING_AS_OF, computeActualCostUsd, type TaskCostTokenUsage } from '@hokusai/core';
+import {
+  MODEL_PRICING_AS_OF,
+  computeActualCostUsd,
+  type TaskCostTokenUsage,
+} from '@hokusai/core';
 import { describe, expect, it } from 'vitest';
 import {
   buildOverrideIndex,
@@ -7,7 +11,9 @@ import {
   type HostPriceOverride,
 } from './pricing-resolver.js';
 
-function usage(overrides: Partial<TaskCostTokenUsage> = {}): TaskCostTokenUsage {
+function usage(
+  overrides: Partial<TaskCostTokenUsage> = {},
+): TaskCostTokenUsage {
   return {
     input_tokens: 1000,
     output_tokens: 500,
@@ -20,7 +26,11 @@ function usage(overrides: Partial<TaskCostTokenUsage> = {}): TaskCostTokenUsage 
 
 describe('resolveEventPrice — provider-reported charge', () => {
   it('records a finite charge and marks the event provider_reported', () => {
-    const resolved = resolveEventPrice({ observedModel: 'claude-sonnet-4-6', usage: usage(), actualCostUsd: 0.0042 });
+    const resolved = resolveEventPrice({
+      observedModel: 'claude-sonnet-4-6',
+      usage: usage(),
+      actualCostUsd: 0.0042,
+    });
     expect(resolved.actualCostUsd).toBe(0.0042);
     expect(resolved.costSource).toBe('provider_reported');
     // The estimate still fills in alongside as a cross-check.
@@ -28,14 +38,22 @@ describe('resolveEventPrice — provider-reported charge', () => {
   });
 
   it('treats a zero charge as known-zero, not missing', () => {
-    const resolved = resolveEventPrice({ observedModel: 'unknown-model', usage: usage(), actualCostUsd: 0 });
+    const resolved = resolveEventPrice({
+      observedModel: 'unknown-model',
+      usage: usage(),
+      actualCostUsd: 0,
+    });
     expect(resolved.actualCostUsd).toBe(0);
     expect(resolved.costSource).toBe('provider_reported');
   });
 
   it('degrades a non-finite charge to null with a diagnostic', () => {
     for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
-      const resolved = resolveEventPrice({ observedModel: 'claude-sonnet-4-6', usage: usage(), actualCostUsd: bad });
+      const resolved = resolveEventPrice({
+        observedModel: 'claude-sonnet-4-6',
+        usage: usage(),
+        actualCostUsd: bad,
+      });
       expect(resolved.actualCostUsd).toBeNull();
       expect(resolved.diagnostics).toContain('invalid_token_usage');
       expect(resolved.costSource).toBe('local_estimate'); // the estimate still resolved
@@ -43,7 +61,11 @@ describe('resolveEventPrice — provider-reported charge', () => {
   });
 
   it('treats null/absent charge as missing without a diagnostic', () => {
-    const resolved = resolveEventPrice({ observedModel: 'claude-sonnet-4-6', usage: usage(), actualCostUsd: null });
+    const resolved = resolveEventPrice({
+      observedModel: 'claude-sonnet-4-6',
+      usage: usage(),
+      actualCostUsd: null,
+    });
     expect(resolved.actualCostUsd).toBeNull();
     expect(resolved.diagnostics).toEqual([]);
   });
@@ -65,7 +87,11 @@ describe('resolveEventPrice — caller-supplied estimate', () => {
   });
 
   it('defaults provenance to local_estimate / external', () => {
-    const resolved = resolveEventPrice({ observedModel: 'gpt-5', usage: usage(), estimatedCostUsd: 0.01 });
+    const resolved = resolveEventPrice({
+      observedModel: 'gpt-5',
+      usage: usage(),
+      estimatedCostUsd: 0.01,
+    });
     expect(resolved.pricingSource).toBe('local_estimate');
     expect(resolved.priceTable).toBe('external');
   });
@@ -79,7 +105,11 @@ describe('resolveEventPrice — caller-supplied estimate', () => {
   });
 
   it('an explicit null estimate opts out of engine pricing entirely', () => {
-    const resolved = resolveEventPrice({ observedModel: 'claude-sonnet-4-6', usage: usage(), estimatedCostUsd: null });
+    const resolved = resolveEventPrice({
+      observedModel: 'claude-sonnet-4-6',
+      usage: usage(),
+      estimatedCostUsd: null,
+    });
     expect(resolved.estimatedCostUsd).toBeNull();
     expect(resolved.pricingSource).toBe('none');
     expect(resolved.costSource).toBe('none');
@@ -87,7 +117,11 @@ describe('resolveEventPrice — caller-supplied estimate', () => {
 });
 
 describe('resolveEventPrice — host override', () => {
-  const override: HostPriceOverride = { model: 'local-llama', inputPerMTokUsd: 1, outputPerMTokUsd: 2 };
+  const override: HostPriceOverride = {
+    model: 'local-llama',
+    inputPerMTokUsd: 1,
+    outputPerMTokUsd: 2,
+  };
 
   it('prices from the override with override provenance', () => {
     const resolved = resolveEventPrice(
@@ -104,7 +138,15 @@ describe('resolveEventPrice — host override', () => {
   it('beats the built-in table for a model both know', () => {
     const resolved = resolveEventPrice(
       { observedModel: 'claude-sonnet-4-6', usage: usage() },
-      { overrides: [{ model: 'claude-sonnet-4-6', inputPerMTokUsd: 1, outputPerMTokUsd: 1 }] },
+      {
+        overrides: [
+          {
+            model: 'claude-sonnet-4-6',
+            inputPerMTokUsd: 1,
+            outputPerMTokUsd: 1,
+          },
+        ],
+      },
     );
     expect(resolved.estimatedCostUsd).toBe(0.0015); // not the table's 0.0105
     expect(resolved.priceTable).toBe('override');
@@ -113,7 +155,15 @@ describe('resolveEventPrice — host override', () => {
   it('matches through normalizeModelId on both sides', () => {
     const resolved = resolveEventPrice(
       { observedModel: 'claude-sonnet-4-6', usage: usage() },
-      { overrides: [{ model: 'anthropic/claude-sonnet-4.6', inputPerMTokUsd: 1, outputPerMTokUsd: 2 }] },
+      {
+        overrides: [
+          {
+            model: 'anthropic/claude-sonnet-4.6',
+            inputPerMTokUsd: 1,
+            outputPerMTokUsd: 2,
+          },
+        ],
+      },
     );
     expect(resolved.estimatedCostUsd).toBe(0.002);
   });
@@ -144,10 +194,19 @@ describe('resolveEventPrice — host override', () => {
 
   it('prices cache tiers with the configured multipliers', () => {
     const resolved = resolveEventPrice(
-      { observedModel: 'local-llama', usage: usage({ cache_write_tokens: 2000, cache_read_tokens: 10_000 }) },
+      {
+        observedModel: 'local-llama',
+        usage: usage({ cache_write_tokens: 2000, cache_read_tokens: 10_000 }),
+      },
       {
         overrides: [
-          { model: 'local-llama', inputPerMTokUsd: 1, outputPerMTokUsd: 2, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1 },
+          {
+            model: 'local-llama',
+            inputPerMTokUsd: 1,
+            outputPerMTokUsd: 2,
+            cacheWriteMultiplier: 1.25,
+            cacheReadMultiplier: 0.1,
+          },
         ],
       },
     );
@@ -157,7 +216,10 @@ describe('resolveEventPrice — host override', () => {
 
   it('leaves the estimate null (no_pricing_data) for reported cache tokens without multipliers', () => {
     const resolved = resolveEventPrice(
-      { observedModel: 'local-llama', usage: usage({ cache_write_tokens: 2000 }) },
+      {
+        observedModel: 'local-llama',
+        usage: usage({ cache_write_tokens: 2000 }),
+      },
       { overrides: [override] },
     );
     expect(resolved.estimatedCostUsd).toBeNull();
@@ -167,7 +229,10 @@ describe('resolveEventPrice — host override', () => {
 
   it('bills unreported (null) cache counters as zero like computeActualCostUsd', () => {
     const resolved = resolveEventPrice(
-      { observedModel: 'local-llama', usage: usage({ cache_write_tokens: null, cache_read_tokens: null }) },
+      {
+        observedModel: 'local-llama',
+        usage: usage({ cache_write_tokens: null, cache_read_tokens: null }),
+      },
       { overrides: [override] },
     );
     expect(resolved.estimatedCostUsd).toBe(0.002);
@@ -176,7 +241,11 @@ describe('resolveEventPrice — host override', () => {
   it('zero-rate override is known-zero evidence, not a fallback', () => {
     const resolved = resolveEventPrice(
       { observedModel: 'local-llama', usage: usage() },
-      { overrides: [{ model: 'local-llama', inputPerMTokUsd: 0, outputPerMTokUsd: 0 }] },
+      {
+        overrides: [
+          { model: 'local-llama', inputPerMTokUsd: 0, outputPerMTokUsd: 0 },
+        ],
+      },
     );
     expect(resolved.estimatedCostUsd).toBe(0);
     expect(resolved.pricingSource).toBe('local_estimate');
@@ -185,7 +254,11 @@ describe('resolveEventPrice — host override', () => {
 
   it('bills codex reasoning tokens as output through the override path', () => {
     const resolved = resolveEventPrice(
-      { observedModel: 'local-llama', usage: usage({ reasoning_tokens: 500 }), harness: 'codex' },
+      {
+        observedModel: 'local-llama',
+        usage: usage({ reasoning_tokens: 500 }),
+        harness: 'codex',
+      },
       { overrides: [override] },
     );
     // output billed as 500 + 500 = 1000 -> 0.001 + 0.002
@@ -195,8 +268,14 @@ describe('resolveEventPrice — host override', () => {
 
 describe('resolveEventPrice — built-in table', () => {
   it('prices a known Anthropic model with cache tiers exactly like computeActualCostUsd', () => {
-    const cacheUsage = usage({ cache_write_tokens: 2000, cache_read_tokens: 50_000 });
-    const resolved = resolveEventPrice({ observedModel: 'claude-sonnet-4-6', usage: cacheUsage });
+    const cacheUsage = usage({
+      cache_write_tokens: 2000,
+      cache_read_tokens: 50_000,
+    });
+    const resolved = resolveEventPrice({
+      observedModel: 'claude-sonnet-4-6',
+      usage: cacheUsage,
+    });
     expect(resolved.estimatedCostUsd).toBe(
       computeActualCostUsd({
         model: 'claude-sonnet-4-6',
@@ -211,8 +290,13 @@ describe('resolveEventPrice — built-in table', () => {
   });
 
   it('labels OpenAI- and Google-table models with their table', () => {
-    expect(resolveEventPrice({ observedModel: 'gpt-5', usage: usage() }).priceTable).toBe('openai');
-    expect(resolveEventPrice({ observedModel: 'gemini-2.5-pro', usage: usage() }).priceTable).toBe('google');
+    expect(
+      resolveEventPrice({ observedModel: 'gpt-5', usage: usage() }).priceTable,
+    ).toBe('openai');
+    expect(
+      resolveEventPrice({ observedModel: 'gemini-2.5-pro', usage: usage() })
+        .priceTable,
+    ).toBe('google');
   });
 
   it('bills codex reasoning tokens as output', () => {
@@ -222,7 +306,11 @@ describe('resolveEventPrice — built-in table', () => {
       harness: 'codex',
     });
     expect(resolved.estimatedCostUsd).toBe(
-      computeActualCostUsd({ model: 'gpt-5', inputTokens: 1000, outputTokens: 2000 }),
+      computeActualCostUsd({
+        model: 'gpt-5',
+        inputTokens: 1000,
+        outputTokens: 2000,
+      }),
     );
   });
 
@@ -233,12 +321,19 @@ describe('resolveEventPrice — built-in table', () => {
       harness: 'claude-code',
     });
     expect(resolved.estimatedCostUsd).toBe(
-      computeActualCostUsd({ model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 500 }),
+      computeActualCostUsd({
+        model: 'claude-sonnet-4-6',
+        inputTokens: 1000,
+        outputTokens: 500,
+      }),
     );
   });
 
   it('an unknown model yields null with unpriced_model, never zero', () => {
-    const resolved = resolveEventPrice({ observedModel: 'mystery-model-9', usage: usage() });
+    const resolved = resolveEventPrice({
+      observedModel: 'mystery-model-9',
+      usage: usage(),
+    });
     expect(resolved.estimatedCostUsd).toBeNull();
     expect(resolved.pricingSource).toBe('none');
     expect(resolved.costSource).toBe('none');
@@ -255,8 +350,14 @@ describe('resolveEventPrice — built-in table', () => {
   });
 
   it('incomplete usage (missing input or output) yields null without a pricing diagnostic', () => {
-    for (const partial of [usage({ input_tokens: null }), usage({ output_tokens: null })]) {
-      const resolved = resolveEventPrice({ observedModel: 'claude-sonnet-4-6', usage: partial });
+    for (const partial of [
+      usage({ input_tokens: null }),
+      usage({ output_tokens: null }),
+    ]) {
+      const resolved = resolveEventPrice({
+        observedModel: 'claude-sonnet-4-6',
+        usage: partial,
+      });
       expect(resolved.estimatedCostUsd).toBeNull();
       expect(resolved.diagnostics).toEqual([]);
     }
@@ -266,10 +367,18 @@ describe('resolveEventPrice — built-in table', () => {
 describe('override validation', () => {
   it('rejects negative or non-finite rates naming the model', () => {
     expect(() =>
-      validateHostPriceOverride({ model: 'local-llama', inputPerMTokUsd: -1, outputPerMTokUsd: 2 }),
+      validateHostPriceOverride({
+        model: 'local-llama',
+        inputPerMTokUsd: -1,
+        outputPerMTokUsd: 2,
+      }),
     ).toThrow(/local-llama.*inputPerMTokUsd/);
     expect(() =>
-      validateHostPriceOverride({ model: 'local-llama', inputPerMTokUsd: 1, outputPerMTokUsd: Number.NaN }),
+      validateHostPriceOverride({
+        model: 'local-llama',
+        inputPerMTokUsd: 1,
+        outputPerMTokUsd: Number.NaN,
+      }),
     ).toThrow(/local-llama.*outputPerMTokUsd/);
   });
 
@@ -287,7 +396,11 @@ describe('override validation', () => {
   it('rejects two overrides that normalize to the same model', () => {
     expect(() =>
       buildOverrideIndex([
-        { model: 'anthropic/claude-sonnet-4.6', inputPerMTokUsd: 1, outputPerMTokUsd: 2 },
+        {
+          model: 'anthropic/claude-sonnet-4.6',
+          inputPerMTokUsd: 1,
+          outputPerMTokUsd: 2,
+        },
         { model: 'claude-sonnet-4-6', inputPerMTokUsd: 3, outputPerMTokUsd: 4 },
       ]),
     ).toThrow(/duplicate price override/);

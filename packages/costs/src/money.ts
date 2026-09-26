@@ -35,7 +35,8 @@ function rateToPicoPerToken(ratePerMTokUsd: number): bigint {
  * engine validates token counts and override rates before ever calling this.
  */
 export function priceTokens(tokens: number, ratePerMTokUsd: number): bigint {
-  if (!Number.isFinite(tokens) || tokens < 0 || !Number.isInteger(tokens)) return 0n;
+  if (!Number.isFinite(tokens) || tokens < 0 || !Number.isInteger(tokens))
+    return 0n;
   if (!Number.isFinite(ratePerMTokUsd) || ratePerMTokUsd < 0) return 0n;
   return BigInt(tokens) * rateToPicoPerToken(ratePerMTokUsd);
 }

@@ -102,7 +102,10 @@ export interface ResolvedEventPricing {
  */
 export function validateHostPriceOverride(override: HostPriceOverride): string {
   const label = `price override for model "${override.model}"`;
-  if (typeof override.model !== 'string' || override.model.trim().length === 0) {
+  if (
+    typeof override.model !== 'string' ||
+    override.model.trim().length === 0
+  ) {
     throw new TypeError('price override model must be a non-empty string');
   }
   for (const [field, value] of [
@@ -110,15 +113,22 @@ export function validateHostPriceOverride(override: HostPriceOverride): string {
     ['outputPerMTokUsd', override.outputPerMTokUsd],
   ] as const) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      throw new TypeError(`${label}: ${field} must be a finite non-negative number`);
+      throw new TypeError(
+        `${label}: ${field} must be a finite non-negative number`,
+      );
     }
   }
   for (const [field, value] of [
     ['cacheWriteMultiplier', override.cacheWriteMultiplier],
     ['cacheReadMultiplier', override.cacheReadMultiplier],
   ] as const) {
-    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
-      throw new TypeError(`${label}: ${field} must be a finite non-negative number`);
+    if (
+      value !== undefined &&
+      (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+    ) {
+      throw new TypeError(
+        `${label}: ${field} must be a finite non-negative number`,
+      );
     }
   }
   return normalizeModelId(override.model);
@@ -135,7 +145,9 @@ export function buildOverrideIndex(
   for (const override of overrides) {
     const key = validateHostPriceOverride(override);
     if (index.has(key)) {
-      throw new TypeError(`duplicate price override for model "${override.model}" (normalizes to "${key}")`);
+      throw new TypeError(
+        `duplicate price override for model "${override.model}" (normalizes to "${key}")`,
+      );
     }
     index.set(key, override);
   }
@@ -148,7 +160,8 @@ export function buildOverrideIndex(
  * reference-identical to exactly one table's row.
  */
 function builtInPriceTable(price: ModelPrice): TaskCostPriceTable {
-  if (Object.values(ANTHROPIC_MODEL_PRICING).includes(price)) return 'anthropic';
+  if (Object.values(ANTHROPIC_MODEL_PRICING).includes(price))
+    return 'anthropic';
   if (Object.values(OPENAI_MODEL_PRICING).includes(price)) return 'openai';
   if (Object.values(GOOGLE_MODEL_PRICING).includes(price)) return 'google';
   /* v8 ignore next 2 -- unreachable while MODEL_PRICING is the union of the three tables */
@@ -160,9 +173,14 @@ function builtInPriceTable(price: ModelPrice): TaskCostPriceTable {
  * bills them as output; Claude Code's thinking tokens are already inside
  * `output_tokens`. Mirrors the rule the golden fixtures were priced with.
  */
-function billableOutputTokens(usage: TaskCostTokenUsage, harness: TaskCostHarness | undefined): number | null {
+function billableOutputTokens(
+  usage: TaskCostTokenUsage,
+  harness: TaskCostHarness | undefined,
+): number | null {
   if (usage.output_tokens === null) return null;
-  return harness === 'codex' ? usage.output_tokens + (usage.reasoning_tokens ?? 0) : usage.output_tokens;
+  return harness === 'codex'
+    ? usage.output_tokens + (usage.reasoning_tokens ?? 0)
+    : usage.output_tokens;
 }
 
 interface EstimateResolution {
@@ -183,7 +201,7 @@ function priceWithOverride(
   const provenance = {
     pricingSource: 'local_estimate' as const,
     priceTable: override.priceTable ?? ('override' as const),
-    ...(override.asOf ?? ctx.pricingRevision
+    ...((override.asOf ?? ctx.pricingRevision)
       ? { pricingRevision: override.asOf ?? ctx.pricingRevision }
       : {}),
   };
@@ -197,14 +215,24 @@ function priceWithOverride(
     (cacheWrite > 0 && override.cacheWriteMultiplier === undefined) ||
     (cacheRead > 0 && override.cacheReadMultiplier === undefined)
   ) {
-    return { estimated: null, pricingSource: 'none', diagnostics: ['no_pricing_data'] };
+    return {
+      estimated: null,
+      pricingSource: 'none',
+      diagnostics: ['no_pricing_data'],
+    };
   }
 
   const pico =
     priceTokens(inputTokens, override.inputPerMTokUsd) +
     priceTokens(outputTokens, override.outputPerMTokUsd) +
-    priceTokens(cacheWrite, override.inputPerMTokUsd * (override.cacheWriteMultiplier ?? 0)) +
-    priceTokens(cacheRead, override.inputPerMTokUsd * (override.cacheReadMultiplier ?? 0));
+    priceTokens(
+      cacheWrite,
+      override.inputPerMTokUsd * (override.cacheWriteMultiplier ?? 0),
+    ) +
+    priceTokens(
+      cacheRead,
+      override.inputPerMTokUsd * (override.cacheReadMultiplier ?? 0),
+    );
   return { estimated: toMicroUsd(pico), ...provenance, diagnostics: [] };
 }
 
@@ -218,7 +246,11 @@ function priceWithBuiltInTable(
   const price = resolveModelPrice(model);
   if (price === undefined) {
     // Usage was complete enough to price but no price exists anywhere.
-    return { estimated: null, pricingSource: 'none', diagnostics: ['unpriced_model'] };
+    return {
+      estimated: null,
+      pricingSource: 'none',
+      diagnostics: ['unpriced_model'],
+    };
   }
   const estimated = computeActualCostUsd({
     model,
@@ -230,7 +262,11 @@ function priceWithBuiltInTable(
   if (estimated === undefined) {
     // The model is priced but this usage is not (non-Anthropic cache tokens,
     // whose cache rates the table does not represent).
-    return { estimated: null, pricingSource: 'none', diagnostics: ['no_pricing_data'] };
+    return {
+      estimated: null,
+      pricingSource: 'none',
+      diagnostics: ['no_pricing_data'],
+    };
   }
   return {
     estimated,
@@ -241,7 +277,10 @@ function priceWithBuiltInTable(
   };
 }
 
-function resolveEstimate(req: EventPricingRequest, ctx: EventPricingContext): EstimateResolution {
+function resolveEstimate(
+  req: EventPricingRequest,
+  ctx: EventPricingContext,
+): EstimateResolution {
   // Branch 1 — the caller pre-computed its own estimate (or explicitly said
   // "no estimate" with null). Trust it; provenance comes from the caller.
   if (req.estimatedCostUsd !== undefined) {
@@ -252,7 +291,9 @@ function resolveEstimate(req: EventPricingRequest, ctx: EventPricingContext): Es
       estimated: req.estimatedCostUsd,
       pricingSource: req.pricingSource ?? 'local_estimate',
       priceTable: req.priceTable ?? 'external',
-      ...(ctx.pricingRevision !== undefined ? { pricingRevision: ctx.pricingRevision } : {}),
+      ...(ctx.pricingRevision !== undefined
+        ? { pricingRevision: ctx.pricingRevision }
+        : {}),
       diagnostics: [],
     };
   }
@@ -266,13 +307,27 @@ function resolveEstimate(req: EventPricingRequest, ctx: EventPricingContext): Es
   }
 
   // Branch 2 — explicit host override beats the built-in table.
-  const override = buildOverrideIndex(ctx.overrides ?? []).get(normalizeModelId(req.observedModel));
+  const override = buildOverrideIndex(ctx.overrides ?? []).get(
+    normalizeModelId(req.observedModel),
+  );
   if (override !== undefined) {
-    return priceWithOverride(override, req.usage, inputTokens, outputTokens, ctx);
+    return priceWithOverride(
+      override,
+      req.usage,
+      inputTokens,
+      outputTokens,
+      ctx,
+    );
   }
 
   // Branch 3/4 — built-in table, or nothing.
-  return priceWithBuiltInTable(req.observedModel, req.usage, inputTokens, outputTokens, ctx);
+  return priceWithBuiltInTable(
+    req.observedModel,
+    req.usage,
+    inputTokens,
+    outputTokens,
+    ctx,
+  );
 }
 
 /**
@@ -302,14 +357,20 @@ export function resolveEventPrice(
   return {
     actualCostUsd: actual,
     estimatedCostUsd: estimate.estimated,
-    pricingSource: estimate.estimated === null ? 'none' : estimate.pricingSource,
+    pricingSource:
+      estimate.estimated === null ? 'none' : estimate.pricingSource,
     ...(estimate.priceTable !== undefined && estimate.estimated !== null
       ? { priceTable: estimate.priceTable }
       : {}),
     ...(estimate.pricingRevision !== undefined && estimate.estimated !== null
       ? { pricingRevision: estimate.pricingRevision }
       : {}),
-    costSource: actual !== null ? 'provider_reported' : estimate.estimated !== null ? 'local_estimate' : 'none',
+    costSource:
+      actual !== null
+        ? 'provider_reported'
+        : estimate.estimated !== null
+          ? 'local_estimate'
+          : 'none',
     diagnostics,
   };
 }
