@@ -147,8 +147,54 @@ HOKUSAI_COSTS_PERF=1 pnpm --filter @hokusai/costs test   # + 100k-event throughp
 through the engine — in fixture order, reversed, and across seeded
 permutations — and requires exact-equal summaries.
 
+## Opt-in source adapters
+
+`@hokusai/costs` also ships session-file adapters behind four opt-in subpath
+imports. They translate provider transcripts into contract events using the
+same engine — nothing changes about how the engine is used downstream.
+
+Every adapter takes an explicit `TaskBoundary`: `taskId`, the allowed session
+ids, and an inclusive UTC time window. Nothing is inferred from paths,
+filenames, or newest-file heuristics — a caller who cannot supply the
+boundary cannot get events out.
+
+Parsing is allow-list only. Prompts, tool arguments, response text, filesystem
+paths, and account identifiers never leave the parser. Every rejection is
+reported as a count against a fixed `SourceDiagnosticCode`.
+
+```ts
+// Node (or any bundler that can run node:fs)
+import { discoverJsonlBlobs } from '@hokusai/costs/sources/node-fs';
+import { runClaudeCodeAdapter } from '@hokusai/costs/sources/claude-code';
+
+const blobs = await discoverJsonlBlobs({
+  roots: ['/home/me/.claude/projects/-Users-me-work-example/'],
+  allowedSessionIds: ['4c1e0d0e-…'],
+});
+const { events, diagnostics, summary } = runClaudeCodeAdapter({
+  blobs: blobs.map((b) => b.blob),
+  boundary: {
+    taskId: 'task-0001',
+    allowedSessionIds: ['4c1e0d0e-…'],
+    startAt: '2026-01-01T00:00:00Z',
+    endAt: '2026-01-01T02:00:00Z',
+  },
+});
+```
+
+Codex rollouts work the same way through `@hokusai/costs/sources/codex`; when
+`last_token_usage` is missing the adapter derives per-turn deltas from the
+cumulative counters scoped to the boundary session and rearms the baseline
+after a reset. Harnesses that already emit contract events pass them through
+`@hokusai/costs/sources/event-source`, sharing the boundary and dedupe
+machinery.
+
+The root `@hokusai/costs` barrel is unchanged: consumers who do not want the
+adapters keep the small pure engine surface.
+
 ## Related work
 
 - HOK-3072 — the contract this engine implements (`@hokusai/core/task-cost`).
 - HOK-3069 — task ledger + queries (downstream consumer).
-- HOK-3070 — session-file adapters that feed this engine (downstream).
+- HOK-3070 — session-file adapters that feed this engine (this package's
+  `./sources/*` subpaths).
