@@ -127,12 +127,13 @@ describe('cumulative fallback', () => {
     });
   });
 
-  it('a counter reset skips the observation and re-baselines', () => {
+  it('a counter reset treats the new (lower) totals as the new turn (REQ-F3)', () => {
     const rollout = [
       meta,
       codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T0 }),
       codexTokenCountLine({ timestamp: T0, total: codexUsage(5000, 900, 0, 0, 0) }),
-      // Counters regress (fresh backend context): no delta is derivable.
+      // Counters regress (fresh backend context): the new lower totals count
+      // as the new turn's usage per REQ-F3.
       codexTokenCountLine({ timestamp: T1, total: codexUsage(1000, 100, 0, 0, 0) }),
       // Next observation measures from the new baseline.
       codexTokenCountLine({ timestamp: T2, total: codexUsage(1500, 300, 0, 0, 0) }),
@@ -142,10 +143,44 @@ describe('cumulative fallback', () => {
       files: [rollout],
     });
     expect(result.diagnostics).toEqual({ cumulative_counter_reset: 1 });
-    expect(result.inputs).toHaveLength(2);
+    expect(result.inputs).toHaveLength(3);
     expect(result.inputs[1]?.usage).toEqual({
+      input_tokens: 1000,
+      output_tokens: 100,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+    });
+    expect(result.inputs[2]?.usage).toEqual({
       input_tokens: 500,
       output_tokens: 200,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+    });
+  });
+
+  it('resumption: pre-window turns baseline the tracker so new turns are not double-charged', () => {
+    // Resumed rollout: earlier turns are copied at their original timestamps
+    // (before the boundary window), then new turns land inside it. Without
+    // baselining, the first in-window observation would include the carried
+    // total.
+    const rollout = [
+      meta,
+      codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T0 }),
+      codexTokenCountLine({ timestamp: T0, total: codexUsage(500, 100, 0, 0, 0) }),
+      codexTurnContextLine({ turnId: 'turn-2', model: 'gpt-5-codex', timestamp: T2 }),
+      codexTokenCountLine({ timestamp: T2, total: codexUsage(700, 180, 0, 0, 0) }),
+    ].join('\n');
+    const result = extractCodexUsage({
+      boundary: boundaryFor('task-a', [sessionId], T1, '2026-01-02T00:00:00Z'),
+      files: [rollout],
+    });
+    expect(result.diagnostics).toEqual({ outside_time_window: 1 });
+    expect(result.inputs).toHaveLength(1);
+    expect(result.inputs[0]?.usage).toEqual({
+      input_tokens: 200,
+      output_tokens: 80,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       reasoning_tokens: 0,

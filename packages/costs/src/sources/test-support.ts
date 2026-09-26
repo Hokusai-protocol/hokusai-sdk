@@ -41,6 +41,12 @@ export interface ClaudeAssistantSpec {
   costUSD?: unknown;
   version?: string;
   isSidechain?: boolean;
+  /**
+   * `requestId` on the transcript row. Real Claude Code lines always carry
+   * one, but fixtures may omit it to keep composed dedupe keys equal to the
+   * message id alone (e.g. golden parity tests).
+   */
+  requestId?: string;
 }
 
 export function claudeUsage(
@@ -70,7 +76,7 @@ export function claudeAssistantLine(spec: ClaudeAssistantSpec): string {
     cwd: '/Users/sentinel-user/SENTINEL_PATH/repo',
     gitBranch: 'SENTINEL_BRANCH',
     userType: 'external',
-    requestId: 'req_SENTINEL_REQUEST',
+    ...(spec.requestId !== undefined ? { requestId: spec.requestId } : {}),
     ...(spec.isSidechain !== undefined ? { isSidechain: spec.isSidechain } : {}),
     ...(spec.costUSD !== undefined ? { costUSD: spec.costUSD } : {}),
     message: {

@@ -36,7 +36,9 @@ export interface ClaudeCodeUsageRow {
   sessionId: string | null;
   /**
    * Stable identity for dedupe and `event_id`: the API message id when
-   * present (streamed rows repeat it), else the entry uuid.
+   * present (streamed rows repeat it), else the entry uuid. A retry — same
+   * `message.id` with a different `requestId` — is composed with the
+   * request id (REQ-F2 edge case) so the two turns stay separate events.
    */
   eventKey: string | null;
   turnId: string | null;
@@ -81,9 +83,18 @@ export function parseClaudeCodeTranscript(
       continue;
     }
 
+    const messageId = idOrNull(message.id);
+    const requestId = idOrNull(entry.requestId);
+    // Streamed rows repeat message.id AND requestId, so composing them
+    // keeps streaming dedupe. A retry reuses message.id with a fresh
+    // requestId, so composing keeps the two turns separate (REQ-F2).
+    const composedKey =
+      messageId !== null && requestId !== null
+        ? `${messageId}.${requestId}`
+        : messageId;
     const row: ClaudeCodeUsageRow = {
       sessionId: idOrNull(entry.sessionId),
-      eventKey: idOrNull(message.id) ?? idOrNull(entry.uuid),
+      eventKey: composedKey ?? idOrNull(entry.uuid),
       turnId: idOrNull(entry.uuid),
       observedAt: null,
       observedMs: null,

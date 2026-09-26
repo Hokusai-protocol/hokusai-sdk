@@ -65,15 +65,16 @@ export function inBoundaryWindow(
 export interface CumulativeDeltaResult {
   /** Per-turn delta; `null` fields were never reported cumulatively. */
   usage: Partial<TaskCostTokenUsage>;
-  /** A present counter regressed: the tracker re-baselined and no delta is usable. */
+  /** A present counter regressed: the tracker re-baselined and the new (lower) values are used as the delta. */
   reset: boolean;
 }
 
 /**
  * Derives per-observation deltas from cumulative counters for one session.
  * A missing cumulative field stays missing in the delta (never inferred as
- * zero). A regressing counter marks a reset: the observation yields no delta
- * and later observations measure from the new baseline.
+ * zero). A regressing counter marks a reset: the new (lower) cumulative
+ * values are treated as the new turn's usage, and the tracker re-baselines
+ * on them so later observations measure from that point (per REQ-F3).
  */
 export class CumulativeUsageTracker {
   private readonly baseline = new Map<keyof TaskCostTokenUsage, number>();
@@ -101,7 +102,7 @@ export class CumulativeUsageTracker {
         continue;
       }
       const prior = this.baseline.get(field);
-      usage[field] = reset ? null : current - (prior ?? 0);
+      usage[field] = reset ? current : current - (prior ?? 0);
       this.baseline.set(field, current);
     }
     return { usage, reset };

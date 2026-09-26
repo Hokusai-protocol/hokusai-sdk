@@ -9,6 +9,11 @@
  * engine and the contract validators — so a record accepted here can still
  * be rejected at ingest without ever entering the ledger.
  *
+ * The adapter never trusts caller-supplied objects wholesale: each accepted
+ * record is rebuilt from an allow-list of contract-shaped fields, so extra
+ * keys a friendly source might carry (prompt, cwd, transcript text, account
+ * identity) have no code path into the adapter's output.
+ *
  * @module sources/event-source
  */
 
@@ -31,6 +36,76 @@ export interface ExtractEventSourceUsageOptions {
   boundary: TaskCostBoundaryV1;
   /** Candidate records: `IngestUsageInput`, `TaskCostEventV1`, or noise. */
   records: readonly unknown[];
+}
+
+/**
+ * Field allow-lists mirror the two accepted input shapes. Anything not named
+ * here is dropped when the adapter rebuilds a record, so no extra key on a
+ * caller-supplied object survives into the adapter's output.
+ */
+const FRIENDLY_ALLOWED_KEYS = [
+  'eventId',
+  'taskId',
+  'sessionId',
+  'turnId',
+  'sequence',
+  'harness',
+  'harnessVersion',
+  'providerContractVersion',
+  'observedModel',
+  'usage',
+  'usageKind',
+  'actualCostUsd',
+  'observedAt',
+  'costBasis',
+  'replayOfEventId',
+  'parentEventId',
+  'isSubagent',
+  'diagnostics',
+  'estimatedCostUsd',
+  'pricingSource',
+  'priceTable',
+] as const;
+
+const PREBUILT_ALLOWED_KEYS = [
+  'schema_version',
+  'event_id',
+  'task_id',
+  'session_id',
+  'turn_id',
+  'sequence',
+  'parent_event_id',
+  'is_subagent',
+  'replay_of_event_id',
+  'harness',
+  'harness_version',
+  'provider_contract_version',
+  'observed_model',
+  'usage_kind',
+  'usage',
+  'usage_coverage',
+  'actual_cost_usd',
+  'estimated_cost_usd',
+  'cost_source',
+  'cost_basis',
+  'pricing_source',
+  'pricing_revision',
+  'price_table',
+  'observed_at',
+  'diagnostics',
+] as const;
+
+function projectAllowed<T>(
+  source: Record<string, unknown>,
+  allowed: readonly string[],
+): T {
+  const projected: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      projected[key] = source[key];
+    }
+  }
+  return projected as T;
 }
 
 /**
@@ -86,7 +161,11 @@ export function extractEventSourceUsage(
     if (version !== null && !sourceVersions.includes(version)) {
       sourceVersions.push(version);
     }
-    inputs.push(candidate as IngestUsageInput | TaskCostEventV1);
+    if (prebuilt) {
+      inputs.push(projectAllowed<TaskCostEventV1>(record, PREBUILT_ALLOWED_KEYS));
+    } else {
+      inputs.push(projectAllowed<IngestUsageInput>(record, FRIENDLY_ALLOWED_KEYS));
+    }
   }
 
   return { inputs, diagnostics, sourceVersions };

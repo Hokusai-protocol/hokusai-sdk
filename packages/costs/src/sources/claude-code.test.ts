@@ -116,6 +116,61 @@ describe('task boundaries', () => {
     expect(result.inputs.map((input) => input.sequence)).toEqual([1, 2, 3]);
   });
 
+  it('retry (same message.id, different requestId) yields two events (REQ-F2)', () => {
+    const transcript = [
+      claudeAssistantLine({
+        sessionId: sessionA,
+        uuid: 'ua-1',
+        messageId: 'msg-1',
+        timestamp: T0,
+        requestId: 'req-a1',
+        usage: claudeUsage(1000, 100, 0, 0, 0),
+      }),
+      claudeAssistantLine({
+        sessionId: sessionA,
+        uuid: 'ua-2',
+        messageId: 'msg-1',
+        timestamp: T1,
+        requestId: 'req-b2',
+        usage: claudeUsage(1000, 200, 0, 0, 0),
+      }),
+    ].join('\n');
+    const result = extractClaudeCodeUsage({
+      boundary: boundaryFor('task-a', [sessionA]),
+      files: [transcript],
+    });
+    expect(result.inputs).toHaveLength(2);
+    expect(result.diagnostics).toEqual({});
+  });
+
+  it('streamed rows sharing a message id AND requestId collapse to the final row', () => {
+    const transcript = [
+      claudeAssistantLine({
+        sessionId: sessionA,
+        uuid: 'ua-1',
+        messageId: 'msg-1',
+        timestamp: T0,
+        requestId: 'req-shared',
+        usage: claudeUsage(1000, 100, 0, 0, 0),
+      }),
+      claudeAssistantLine({
+        sessionId: sessionA,
+        uuid: 'ua-2',
+        messageId: 'msg-1',
+        timestamp: T0,
+        requestId: 'req-shared',
+        usage: claudeUsage(1000, 900, 0, 0, 0),
+      }),
+    ].join('\n');
+    const result = extractClaudeCodeUsage({
+      boundary: boundaryFor('task-a', [sessionA]),
+      files: [transcript],
+    });
+    expect(result.inputs).toHaveLength(1);
+    expect(result.inputs[0]?.usage.output_tokens).toBe(900);
+    expect(result.diagnostics).toEqual({ duplicate_row: 1 });
+  });
+
   it('streamed rows sharing a message id collapse to the final row', () => {
     const transcript = [
       claudeAssistantLine({

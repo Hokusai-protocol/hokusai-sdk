@@ -72,9 +72,10 @@ export function extractCodexUsage(
         const derived = tracker.next(observation.cumulative);
         if (derived.reset) {
           countDiagnostic(diagnostics, 'cumulative_counter_reset');
-          // The provider-reported delta (when present) survives a total
-          // counter reset; a derived delta does not.
-          if (usage === null) continue;
+          // On a counter reset the new (lower) cumulative values are the new
+          // turn's usage (REQ-F3). The provider-reported delta still wins
+          // when the CLI supplies one.
+          if (usage === null) usage = derived.usage;
         } else if (usage === null) {
           usage = derived.usage;
         }
