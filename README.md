@@ -10,6 +10,7 @@ This repository currently includes:
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
 - `@hokusai/adapter-aider` for a vendor-neutral CLI wrapper that routes a task through Hokusai and launches [Aider](https://aider.chat) with the recommended model
+- `@hokusai/scan` for the Arbiter scanner: the survival labeller and candidate-feature extractor, as a library, the `hokusai-scan` CLI, and a one-shot GitHub Action
 - `examples/reference-harness` for the smallest complete generic integration flow
 - `examples/litellm-integration` for a Python-side LiteLLM metadata-only routing prototype
 - `examples/openhands-integration` for the Python-side `@hokusai/adapter-openhands` equivalent — Hokusai-backed `RouterLLM` plus SDK-metrics contribution rows

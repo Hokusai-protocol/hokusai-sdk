@@ -35,6 +35,16 @@ jobs:
       - run: pnpm -r build
       - run: pnpm -r test
 
+      # The scan Action ships a committed esbuild bundle (Actions cannot
+      # install dependencies on the caller's runner). Rebuild it here and fail
+      # if the committed copy is stale, so drift is caught on the PR that
+      # causes it.
+      - name: Scan Action bundle is fresh
+        run: |
+          set -euo pipefail
+          pnpm --filter @hokusai/scan bundle:action
+          git diff --exit-code -- packages/scan/action/dist/index.js
+
       # The release asserts the plugin manifest against the tag, so a stale
       # manifest aborts the release *after* everything above has passed. Build
       # the zips at a hypothetical next version here, where the failure is cheap.
