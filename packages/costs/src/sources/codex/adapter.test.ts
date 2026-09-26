@@ -169,6 +169,35 @@ describe('runCodexAdapter', () => {
     expect(event.usage.reasoning_tokens).toBe(100);
   });
 
+  it('advances the cumulative baseline through pre-window rows', () => {
+    // A session that started BEFORE the boundary window: the first two
+    // token_count rows are outside the window. The third, in-window, ships
+    // only `total_token_usage`. Its delta must be measured against the
+    // pre-window state, not zero, so this task is only charged for its own
+    // usage.
+    const blob = jsonl([
+      sessionMeta('session-a', '2025-12-31T23:00:00Z'),
+      turnContext('gpt-5', '2025-12-31T23:00:00Z'),
+      tokenCount('2025-12-31T23:30:00Z', {
+        total_token_usage: { input_tokens: 100, output_tokens: 50 },
+      }),
+      tokenCount('2025-12-31T23:45:00Z', {
+        total_token_usage: { input_tokens: 300, output_tokens: 150 },
+      }),
+      tokenCount('2026-01-01T00:15:00Z', {
+        total_token_usage: { input_tokens: 500, output_tokens: 250 },
+      }),
+    ]);
+    const result = runCodexAdapter({ blobs: [blob], boundary: BOUNDARY });
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.usage.input_tokens).toBe(200);
+    expect(result.events[0]?.usage.output_tokens).toBe(100);
+    expect(
+      result.diagnostics.find((d) => d.code === 'record_out_of_boundary')
+        ?.count,
+    ).toBe(2);
+  });
+
   it('rejects files whose session_meta id is outside the boundary set', () => {
     const blob = jsonl([
       sessionMeta('session-foreign', '2026-01-01T00:00:00Z'),

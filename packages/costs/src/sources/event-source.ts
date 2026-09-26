@@ -59,28 +59,42 @@ function isPrebuiltEvent(
   );
 }
 
+type Eligibility = {
+  sessionId: string;
+  observedAt: string;
+  taskId: string;
+};
+
 function isRecordEligible(
   input: IngestUsageInput | TaskCostEventV1,
-): { sessionId: string; observedAt: string; taskId: string } | null {
+): { kind: 'malformed' } | { kind: 'invalid' } | { kind: 'ok'; value: Eligibility } {
+  // Non-object records (nulls, primitives, arrays) are corrupt inputs — count
+  // them under `malformed_json`, don't dereference them.
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { kind: 'malformed' };
+  }
   if (isPrebuiltEvent(input)) {
     return {
-      sessionId: input.session_id,
-      observedAt: input.observed_at,
-      taskId: input.task_id,
+      kind: 'ok',
+      value: {
+        sessionId: input.session_id,
+        observedAt: input.observed_at,
+        taskId: input.task_id,
+      },
     };
   }
+  const record = input as unknown as Record<string, unknown>;
+  const sessionId = record['sessionId'];
+  const observedAt = record['observedAt'];
+  const taskId = record['taskId'];
   if (
-    typeof input.sessionId !== 'string' ||
-    typeof input.observedAt !== 'string' ||
-    typeof input.taskId !== 'string'
+    typeof sessionId !== 'string' ||
+    typeof observedAt !== 'string' ||
+    typeof taskId !== 'string'
   ) {
-    return null;
+    return { kind: 'invalid' };
   }
-  return {
-    sessionId: input.sessionId,
-    observedAt: input.observedAt,
-    taskId: input.taskId,
-  };
+  return { kind: 'ok', value: { sessionId, observedAt, taskId } };
 }
 
 export function runEventSourceAdapter(
@@ -100,16 +114,24 @@ export function runEventSourceAdapter(
 
   for (const record of input.records) {
     const eligibility = isRecordEligible(record);
-    if (eligibility === null) {
+    if (eligibility.kind === 'malformed') {
+      tally.bump('malformed_json');
+      continue;
+    }
+    if (eligibility.kind === 'invalid') {
       tally.bump('missing_required_field');
       continue;
     }
-    if (eligibility.taskId !== boundary.taskId) {
+    if (eligibility.value.taskId !== boundary.taskId) {
       tally.bump('record_out_of_boundary');
       continue;
     }
     if (
-      !matchesBoundary(boundary, eligibility.sessionId, eligibility.observedAt)
+      !matchesBoundary(
+        boundary,
+        eligibility.value.sessionId,
+        eligibility.value.observedAt,
+      )
     ) {
       tally.bump('record_out_of_boundary');
       continue;

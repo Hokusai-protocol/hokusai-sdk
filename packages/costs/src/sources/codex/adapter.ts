@@ -114,7 +114,21 @@ export function runCodexAdapter(input: CodexAdapterInput): CodexAdapterResult {
     }
 
     let currentModel: string | undefined;
+    // The cumulative baseline tracks the source's own running totals and MUST
+    // advance for every token_count row in this session, even ones outside
+    // the caller's window. Otherwise, the first in-window
+    // `total_token_usage`-only row after a skipped range is differenced
+    // against a null baseline and attributes an earlier task's usage to this
+    // one.
     const baseline = emptyCounters();
+
+    const advanceBaseline = (total: CodexRecord & { kind: 'token_count' }) => {
+      if (total.total === null) return;
+      baseline.input_tokens = total.total.input_tokens;
+      baseline.output_tokens = total.total.output_tokens;
+      baseline.cache_read_tokens = total.total.cache_read_tokens;
+      baseline.reasoning_tokens = total.total.reasoning_tokens;
+    };
 
     for (const record of parsed.records) {
       if (record.kind === 'turn_context') {
@@ -123,17 +137,23 @@ export function runCodexAdapter(input: CodexAdapterInput): CodexAdapterResult {
       }
       if (record.kind !== 'token_count') continue;
 
+      // Compute the delta and emission BEFORE advancing the baseline, so the
+      // delta is against the prior state. Filtered rows advance the baseline
+      // via `advanceBaseline` at the end of the branch.
       if (currentModel === undefined) {
+        advanceBaseline(record);
         tally.bump('missing_required_field');
         continue;
       }
       if (!matchesBoundary(boundary, sessionId, record.observedAt)) {
+        advanceBaseline(record);
         tally.bump('record_out_of_boundary');
         continue;
       }
 
       const dedupeKey = `${sessionId}:${record.observedAt}`;
       if (seenIdentities.has(dedupeKey)) {
+        // Do NOT re-advance the baseline; the first observation already did.
         tally.bump('duplicate_record');
         continue;
       }
@@ -148,22 +168,7 @@ export function runCodexAdapter(input: CodexAdapterInput): CodexAdapterResult {
           cache_write_tokens: null,
           reasoning_tokens: record.last.reasoning_tokens,
         };
-        if (record.total !== null) {
-          const cumulative: CumulativeCounters = {
-            input_tokens: record.total.input_tokens,
-            output_tokens: record.total.output_tokens,
-            cache_read_tokens: record.total.cache_read_tokens,
-            cache_write_tokens: null,
-            reasoning_tokens: record.total.reasoning_tokens,
-          };
-          // Keep the running baseline aligned with the source's own totals so
-          // a later row that only ships cumulative counters produces a
-          // correct delta.
-          baseline.input_tokens = cumulative.input_tokens;
-          baseline.output_tokens = cumulative.output_tokens;
-          baseline.cache_read_tokens = cumulative.cache_read_tokens;
-          baseline.reasoning_tokens = cumulative.reasoning_tokens;
-        }
+        advanceBaseline(record);
       } else if (record.total !== null) {
         const cumulative: CumulativeCounters = {
           input_tokens: record.total.input_tokens,
@@ -175,10 +180,7 @@ export function runCodexAdapter(input: CodexAdapterInput): CodexAdapterResult {
         const step = cumulativeDelta(baseline, cumulative);
         usage = step.delta;
         if (step.reset) tally.bump('cumulative_counter_reset');
-        baseline.input_tokens = cumulative.input_tokens;
-        baseline.output_tokens = cumulative.output_tokens;
-        baseline.cache_read_tokens = cumulative.cache_read_tokens;
-        baseline.reasoning_tokens = cumulative.reasoning_tokens;
+        advanceBaseline(record);
       } else {
         tally.bump('invalid_usage');
         continue;

@@ -67,4 +67,19 @@ describe('runEventSourceAdapter', () => {
       result.diagnostics.find((d) => d.code === 'duplicate_record')?.count,
     ).toBe(1);
   });
+
+  it('classifies non-object records as malformed instead of throwing', () => {
+    // Callers occasionally hand the adapter garbage (nulls, primitives, arrays)
+    // when they mis-parse an upstream feed. The adapter must NOT dereference
+    // them, and must record `malformed_json` — not raise a TypeError.
+    const junk = [null, 'not-a-record', 42, ['not', 'an', 'object']] as unknown[];
+    const result = runEventSourceAdapter({
+      records: junk as IngestUsageInput[],
+      boundary: BOUNDARY,
+    });
+    expect(result.events).toHaveLength(0);
+    expect(
+      result.diagnostics.find((d) => d.code === 'malformed_json')?.count,
+    ).toBe(junk.length);
+  });
 });
