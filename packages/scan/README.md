@@ -134,7 +134,7 @@ wavemill code at a pinned commit. CI proves, byte for byte:
 If any leg diverges, something environment-specific leaked into the core and
 the build fails. Wavemill's own adapter parity test (the fourth leg) lives in
 the wavemill repo — see
-`features/arbiter-s4-extract-the-labeller-and-extractor-into-hokusai-scan-wavemill-consumes-the-package/wavemill-migration-contract.md`.
+`docs/arbiter/wavemill-migration-contract.md`.
 
 ## Publishing
 

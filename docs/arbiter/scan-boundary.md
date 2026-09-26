@@ -43,7 +43,7 @@ Two guards keep it that way:
   pre-extraction home beyond two frozen literals (the legacy config filename
   and the `wavemill-cyclomatic/v1` metric id, which is a trained-model
   contract).
-- `scripts/check-core-boundaries.mjs` — core cannot import scan or adapters;
+- `scripts/core-boundaries.mjs` — core cannot import scan or adapters;
   scan cannot import adapters. Runs in CI as `pnpm check:boundaries`.
 
 When the boundary test fires, the fix is to add the leaked dependency to the

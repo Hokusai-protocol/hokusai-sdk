@@ -115,8 +115,9 @@ export function validateAsOf(value: string | undefined): Date | undefined {
   if (value === undefined || value === '') return undefined;
   // Require an explicit ISO-8601 date or timestamp, not the looser forms
   // Date.parse tolerates ("Sep 26", "2026/09/26"), so inputs stay portable.
-  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(value)) {
-    throw new ScanInputError('--as-of must be an ISO-8601 timestamp');
+  // If time is present, timezone must be present (Z or ±HH:MM) to ensure determinism.
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2}))?$/.test(value)) {
+    throw new ScanInputError('--as-of must be an ISO-8601 timestamp (e.g., 2026-03-01 or 2026-03-01T00:00:00Z)');
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
