@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "changeset": "changeset",
-    "check:boundaries": "node ./scripts/check-core-boundaries.mjs",
+    "check:boundaries": "node ./scripts/check-core-boundaries.mjs && node ./scripts/check-scan-workflow-surfaces.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
