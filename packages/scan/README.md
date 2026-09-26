@@ -52,6 +52,8 @@ hokusai-scan extract --repo <path> --pr <n> [--base-ref <ref>]
                      [--out <path|->] [--debug]
 hokusai-scan scan    --repo <path> --integration-branch <name> --pr <n>
                      [all common flags]
+hokusai-scan report  --inputs <dir|file> [--horizon 14|30|60] [--as-of <iso>]
+                     [--format markdown|json] [--out <path|->] [--debug]
 ```
 
 - `label` walks the integration branch's first-parent history (never `main`
@@ -62,6 +64,11 @@ hokusai-scan scan    --repo <path> --integration-branch <name> --pr <n>
   HEAD as PR `<n>`, keys sorted canonically.
 - `scan` labels one PR and extracts its features, emitting a combined object
   `{ scan_contract, candidate_features, survival_labels }`.
+- `report` aggregates accumulated scan output (label JSONL, per-PR feature
+  JSON named `…pr-<n>….json`, combined scan objects) into the shadow-mode
+  calibration report (`shadow_repo_report/v1`): per-repo would-be flag rate
+  and would-be precision under a transparent placeholder rule — see
+  [`docs/arbiter/shadow-mode-install.md`](../../docs/arbiter/shadow-mode-install.md).
 
 Conventions:
 
@@ -91,10 +98,14 @@ Exit codes:
 
 `packages/scan/action` is a `node20` Action running the committed bundle at
 `action/dist/index.js` (rebuilt and drift-checked in CI; the runner installs
-nothing). All inputs are explicit — see `action/action.yml`, and
-`action/example-workflow.yml` for a `workflow_dispatch` caller. Requires
-`actions/checkout` with `fetch-depth: 0`; a shallow clone fails fast with
-that exact hint. Outputs: `output-path`, `contract-version`, `row-count`.
+nothing). All inputs are explicit — see `action/action.yml`, plus two caller
+templates: `action/adhoc-workflow.yml` for a one-shot `workflow_dispatch`
+scan, and `action/shadow-mode-workflow.yml` for the scheduled shadow-mode
+install (per-PR extraction + nightly survival backfill + weekly report; see
+[`docs/arbiter/shadow-mode-install.md`](../../docs/arbiter/shadow-mode-install.md)).
+Requires `actions/checkout` with `fetch-depth: 0`; a shallow clone fails
+fast with that exact hint. Outputs: `output-path`, `contract-version`,
+`row-count`.
 
 ## Committed static-analysis config
 

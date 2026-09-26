@@ -1,0 +1,102 @@
+# Shadow-mode Survival Check — nightly survival backfill (HOK-2820, Arbiter
+# P2.S1 / plan-of-record §15.4 step 1, §15.5).
+#
+# Labels merged PRs on the integration branch nightly so shadow scores
+# accumulate the outcomes they calibrate against. Incremental, keyed on the
+# last-seen merge SHA recorded on the `arbiter/shadow-state` branch: each run
+# labels the horizon window (last ~70 days of merges, covering the 60-day
+# horizon as it elapses) or everything since the last seen merge, whichever
+# is larger, capped so CI minutes and rate limits stay bounded.
+#
+# Nothing here is a PR surface. `contents: write` exists solely to push
+# derived state (last-seen-merge.txt) to `arbiter/shadow-state` — pushing a
+# branch is not a PR surface, and the scopes that are (checks, statuses,
+# pull-requests, issues) stay read-only or absent; the workflow-surface guard
+# enforces that mechanically. Only derived features/labels/metrics ever land
+# on the state branch — never source (Arbiter S5).
+name: hokusai-scan-nightly
+
+on:
+  schedule:
+    # 06:15 UTC — offset from wavemill's 06:00 to avoid runner contention.
+    - cron: '15 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: hokusai-scan-nightly
+  cancel-in-progress: false
+
+jobs:
+  shadow-label:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the labeller walks the integration branch's
+      # first-parent chain and blames line ranges across horizons.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: window
+        name: Compute the incremental window
+        run: |
+          set -euo pipefail
+          git fetch -q origin '+refs/heads/arbiter/shadow-state:refs/remotes/origin/arbiter/shadow-state' || true
+          TIP=$(git rev-parse origin/auto/integration)
+          # Rolling horizon window: merged PRs need re-labelling as each
+          # 14/30/60-day horizon elapses, so "incremental" bounds the walk to
+          # the window plus anything new since the recorded last-seen merge.
+          WINDOW=$(git rev-list --first-parent --count --since='70 days ago' "$TIP")
+          SINCE_LAST=0
+          LAST=$(git show origin/arbiter/shadow-state:last-seen-merge.txt 2>/dev/null | head -n1 || true)
+          if [ -n "$LAST" ] && git cat-file -e "$LAST" 2>/dev/null; then
+            SINCE_LAST=$(git rev-list --first-parent --count "$LAST..$TIP")
+          fi
+          MAX=$(( WINDOW > SINCE_LAST ? WINDOW : SINCE_LAST ))
+          [ "$MAX" -lt 1 ] && MAX=1
+          [ "$MAX" -gt 500 ] && MAX=500
+          {
+            echo "max-prs=$MAX"
+            echo "tip=$TIP"
+            echo "as-of=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "date=$(date -u +%Y-%m-%d)"
+          } >> "$GITHUB_OUTPUT"
+      - id: scan
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: label
+          integration-branch: auto/integration
+          max-prs: ${{ steps.window.outputs.max-prs }}
+          as-of: ${{ steps.window.outputs.as-of }}
+          output-path: hokusai-scan-labels-${{ steps.window.outputs.date }}.jsonl
+      - uses: actions/upload-artifact@v4
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: hokusai-scan-labels-${{ steps.window.outputs.date }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.scan.outputs.output-path }}
+          retention-days: 90
+      - name: Record last-seen merge on arbiter/shadow-state
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name 'hokusai-shadow-scan'
+          git config user.email 'arbiter@hokus.ai'
+          if git rev-parse -q --verify refs/remotes/origin/arbiter/shadow-state >/dev/null; then
+            git worktree add -q --checkout -B arbiter/shadow-state /tmp/shadow-state origin/arbiter/shadow-state
+          else
+            git worktree add -q --orphan -b arbiter/shadow-state /tmp/shadow-state
+          fi
+          cd /tmp/shadow-state
+          echo '${{ steps.window.outputs.tip }}' > last-seen-merge.txt
+          git add last-seen-merge.txt
+          if git diff --cached --quiet; then
+            echo 'shadow-state unchanged; nothing to push'
+            exit 0
+          fi
+          git commit -q -m 'shadow-state: last-seen merge ${{ steps.window.outputs.tip }} (${{ steps.window.outputs.date }})'
+          git push -q origin HEAD:refs/heads/arbiter/shadow-state

@@ -186,7 +186,7 @@ export function parsePrUrl(prUrl: string): PrRef | null {
   if (!match) return null;
   return {
     repo: `${match[1] as string}/${match[2] as string}`,
-    prNumber: Number(match[3] as string),
+    prNumber: Number(match[3]),
   };
 }
 
@@ -272,7 +272,7 @@ function intakeFeatures(
 /** PR number from the `pr-<n>` token of a standalone features filename. */
 export function prNumberFromSource(source: string): number | null {
   const match = /(?:^|[^a-z0-9])pr-(\d+)(?:\D|$)/i.exec(source);
-  return match ? Number(match[1] as string) : null;
+  return match ? Number(match[1]) : null;
 }
 
 interface ParsedInputs {

@@ -1,0 +1,235 @@
+# Hokusai Survival Check — shadow-mode workflow template (HOK-2820).
+#
+# One-file install for a repo joining the shadow cohort (Arbiter §15.3: the
+# private-repo shape IS this Action run on a schedule). To install:
+#   1. Copy this file to .github/workflows/hokusai-scan-shadow.yml in the
+#      target repo.
+#   2. Replace every `auto/integration` below with the repo's integration
+#      branch (`main` is rejected by the label contract).
+#   3. Pin @vX.Y.Z to a published hokusai-sdk release tag.
+#   4. Commit a `.hokusai-scan.json` static-analysis config at the repo root
+#      (see the @hokusai/scan README) and fill in the dependency-install step.
+# Full instructions: docs/arbiter/shadow-mode-install.md in hokusai-sdk.
+#
+# SHADOW MODE — score silently, tell nobody (§15.4 step 1). Nothing here may
+# ever surface on a PR: permissions are read-only on every PR-visible scope,
+# scan steps are continue-on-error, fork PRs are skipped, and this workflow
+# must never be added to branch-protection required checks. `contents: write`
+# on the scheduled jobs exists only to push derived state (never source —
+# Arbiter S5) to the `arbiter/shadow-state` branch.
+name: hokusai-scan-shadow
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    - cron: '15 6 * * *' # nightly survival backfill
+    - cron: '0 12 * * MON' # weekly calibration report
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Which scheduled job to run: nightly | report'
+        required: true
+        type: choice
+        options: [nightly, report]
+
+# Default: nothing. Each job grants itself the minimum it needs.
+permissions: {}
+
+jobs:
+  # ── Per-PR feature extraction ────────────────────────────────────────────
+  shadow-extract:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # OPTIONAL: install the target repo's toolchain here so the committed
+      # .hokusai-scan.json typecheck/lint/build commands can run. Without it
+      # the scan still succeeds and static signals degrade to explicit nulls.
+      # - run: npm ci
+      #   continue-on-error: true
+      - id: scan
+        continue-on-error: true
+        uses: Hokusai-protocol/hokusai-sdk/packages/scan/action@vX.Y.Z
+        with:
+          mode: extract
+          pr-number: ${{ github.event.pull_request.number }}
+          base-ref: origin/${{ github.event.pull_request.base.ref }}
+          # The pr-<n> token in the filename is the aggregator's join key.
+          output-path: hokusai-scan-pr-${{ github.event.pull_request.number }}.json
+      - uses: actions/upload-artifact@v4
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: hokusai-scan-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.scan.outputs.output-path }}
+          retention-days: 90
+
+  # ── Nightly survival backfill (incremental, keyed on last-seen merge) ────
+  shadow-label:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '15 6 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'nightly')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: hokusai-scan-shadow-nightly
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: window
+        name: Compute the incremental window
+        run: |
+          set -euo pipefail
+          git fetch -q origin '+refs/heads/arbiter/shadow-state:refs/remotes/origin/arbiter/shadow-state' || true
+          TIP=$(git rev-parse origin/auto/integration)
+          WINDOW=$(git rev-list --first-parent --count --since='70 days ago' "$TIP")
+          SINCE_LAST=0
+          LAST=$(git show origin/arbiter/shadow-state:last-seen-merge.txt 2>/dev/null | head -n1 || true)
+          if [ -n "$LAST" ] && git cat-file -e "$LAST" 2>/dev/null; then
+            SINCE_LAST=$(git rev-list --first-parent --count "$LAST..$TIP")
+          fi
+          MAX=$(( WINDOW > SINCE_LAST ? WINDOW : SINCE_LAST ))
+          [ "$MAX" -lt 1 ] && MAX=1
+          [ "$MAX" -gt 500 ] && MAX=500
+          {
+            echo "max-prs=$MAX"
+            echo "tip=$TIP"
+            echo "as-of=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "date=$(date -u +%Y-%m-%d)"
+          } >> "$GITHUB_OUTPUT"
+      - id: scan
+        continue-on-error: true
+        uses: Hokusai-protocol/hokusai-sdk/packages/scan/action@vX.Y.Z
+        with:
+          mode: label
+          integration-branch: auto/integration
+          max-prs: ${{ steps.window.outputs.max-prs }}
+          as-of: ${{ steps.window.outputs.as-of }}
+          output-path: hokusai-scan-labels-${{ steps.window.outputs.date }}.jsonl
+      - uses: actions/upload-artifact@v4
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: hokusai-scan-labels-${{ steps.window.outputs.date }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.scan.outputs.output-path }}
+          retention-days: 90
+      - name: Record last-seen merge on arbiter/shadow-state
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name 'hokusai-shadow-scan'
+          git config user.email 'arbiter@hokus.ai'
+          if git rev-parse -q --verify refs/remotes/origin/arbiter/shadow-state >/dev/null; then
+            git worktree add -q --checkout -B arbiter/shadow-state /tmp/shadow-state origin/arbiter/shadow-state
+          else
+            git worktree add -q --orphan -b arbiter/shadow-state /tmp/shadow-state
+          fi
+          cd /tmp/shadow-state
+          echo '${{ steps.window.outputs.tip }}' > last-seen-merge.txt
+          git add last-seen-merge.txt
+          if git diff --cached --quiet; then
+            echo 'shadow-state unchanged; nothing to push'
+            exit 0
+          fi
+          git commit -q -m 'shadow-state: last-seen merge ${{ steps.window.outputs.tip }} (${{ steps.window.outputs.date }})'
+          git push -q origin HEAD:refs/heads/arbiter/shadow-state
+
+  # ── Weekly calibration report (would-be flag rate / precision) ───────────
+  shadow-report:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 12 * * MON') ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'report')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: hokusai-scan-shadow-report
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Download shadow artifacts from the last 30 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/shadow-inputs
+          CUTOFF=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate \
+            --jq '.artifacts[] | select(.expired == false)
+                  | select(.name | startswith("hokusai-scan-"))
+                  | select(.created_at > "'"$CUTOFF"'")
+                  | [.id, .name] | @tsv' \
+          | while IFS=$'\t' read -r id name; do
+              if gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "/tmp/artifact-$id.zip"; then
+                unzip -oq "/tmp/artifact-$id.zip" -d "/tmp/shadow-inputs/$name" \
+                  || echo "warn: could not unzip artifact $id ($name)"
+              else
+                echo "warn: could not download artifact $id ($name)"
+              fi
+            done
+      - id: asof
+        run: echo "as-of=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - id: report-md
+        continue-on-error: true
+        uses: Hokusai-protocol/hokusai-sdk/packages/scan/action@vX.Y.Z
+        with:
+          mode: report
+          inputs-path: /tmp/shadow-inputs
+          as-of: ${{ steps.asof.outputs.as-of }}
+          output-path: /tmp/shadow-report/last-report.md
+      - id: report-json
+        continue-on-error: true
+        uses: Hokusai-protocol/hokusai-sdk/packages/scan/action@vX.Y.Z
+        with:
+          mode: report
+          report-format: json
+          inputs-path: /tmp/shadow-inputs
+          as-of: ${{ steps.asof.outputs.as-of }}
+          output-path: /tmp/shadow-report/last-report.json
+      - name: Publish to the run summary
+        if: steps.report-md.outcome == 'success'
+        continue-on-error: true
+        run: cat /tmp/shadow-report/last-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.report-md.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: hokusai-shadow-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/shadow-report/
+          retention-days: 90
+      - name: Record last-report on arbiter/shadow-state
+        if: steps.report-md.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name 'hokusai-shadow-scan'
+          git config user.email 'arbiter@hokus.ai'
+          git fetch -q origin '+refs/heads/arbiter/shadow-state:refs/remotes/origin/arbiter/shadow-state' || true
+          if git rev-parse -q --verify refs/remotes/origin/arbiter/shadow-state >/dev/null; then
+            git worktree add -q --checkout -B arbiter/shadow-state /tmp/shadow-state origin/arbiter/shadow-state
+          else
+            git worktree add -q --orphan -b arbiter/shadow-state /tmp/shadow-state
+          fi
+          cp /tmp/shadow-report/last-report.md /tmp/shadow-report/last-report.json /tmp/shadow-state/
+          cd /tmp/shadow-state
+          git add last-report.md last-report.json
+          if git diff --cached --quiet; then
+            echo 'shadow-state unchanged; nothing to push'
+            exit 0
+          fi
+          git commit -q -m 'shadow-state: weekly report ${{ steps.asof.outputs.as-of }}'
+          git push -q origin HEAD:refs/heads/arbiter/shadow-state

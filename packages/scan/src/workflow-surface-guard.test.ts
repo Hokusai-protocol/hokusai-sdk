@@ -114,7 +114,7 @@ describe('check-scan-workflow-surfaces guard', () => {
   it('fails on a missing permissions block', () => {
     const dir = fixtureDir('noperms', {
       'hokusai-scan-pr.yml': ALLOWED_WORKFLOW.replace(
-        /permissions:\n  contents: read\n  pull-requests: read\n/,
+        'permissions:\n  contents: read\n  pull-requests: read\n',
         '',
       ),
     });

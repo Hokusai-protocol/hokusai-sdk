@@ -1,0 +1,65 @@
+# Shadow-mode Survival Check — per-PR feature extraction (HOK-2820, Arbiter
+# P2.S1 / plan-of-record §15.4 step 1).
+#
+# Scores silently: computes candidate_features/v1 for each PR in this repo's
+# own CI runner and uploads them as a workflow artifact. NOTHING is surfaced
+# on the PR — no check-run status a contributor watches, no comment, no
+# annotation. Mechanical guards (enforced by
+# scripts/check-scan-workflow-surfaces.mjs, wired into pnpm check:boundaries):
+#   - read-only permissions: the token cannot post a comment, create a check
+#     run, or set a commit status even if the code tried;
+#   - continue-on-error on the scan step: a failed scan never fails the
+#     workflow, and this workflow is never a required check (CI is `ci.yml`);
+#   - fork PRs are skipped entirely.
+# Advisory by design and forever: flag mode (Phase 3) arrives as a different
+# workflow, never as an edit to this one.
+name: hokusai-scan-pr
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  shadow-extract:
+    if: github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the extractor diffs against the merge-base with the
+      # PR base branch.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      # The static features (.hokusai-scan.json typecheck/lint/build
+      # commands) need installed dev dependencies; if this fails the scan
+      # still runs and those signals degrade to explicit nulls.
+      - run: pnpm install --frozen-lockfile
+        continue-on-error: true
+      - id: scan
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: extract
+          pr-number: ${{ github.event.pull_request.number }}
+          base-ref: origin/${{ github.event.pull_request.base.ref }}
+          # The pr-<n> token in the filename is the aggregator's join key.
+          output-path: hokusai-scan-pr-${{ github.event.pull_request.number }}.json
+      # 90-day retention covers the 60-day survival horizon plus the weekly
+      # report window (§15.5 accumulation surface).
+      - uses: actions/upload-artifact@v4
+        if: steps.scan.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: hokusai-scan-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.scan.outputs.output-path }}
+          retention-days: 90

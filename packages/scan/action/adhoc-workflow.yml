@@ -1,9 +1,13 @@
-# Example one-shot caller for the Hokusai Scan Action (HOK-2816).
+# Ad-hoc one-shot caller for the Hokusai Scan Action (HOK-2816).
 #
-# Copy into .github/workflows/hokusai-scan.yml in the repository you want to
-# scan, pin @vX.Y.Z to a published hokusai-sdk release tag, and dispatch it
-# with a PR number. `fetch-depth: 0` is required: the labeller walks the
-# integration branch's full first-parent history.
+# For a single manually dispatched scan of one PR. For the scheduled
+# shadow-mode install (per-PR extraction + nightly backfill + weekly report)
+# use shadow-mode-workflow.yml instead.
+#
+# Copy into .github/workflows/hokusai-scan-adhoc.yml in the repository you
+# want to scan, pin @vX.Y.Z to a published hokusai-sdk release tag, and
+# dispatch it with a PR number. `fetch-depth: 0` is required: the labeller
+# walks the integration branch's full first-parent history.
 name: hokusai-scan
 
 on:

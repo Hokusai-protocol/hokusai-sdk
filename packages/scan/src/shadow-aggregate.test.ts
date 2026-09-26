@@ -62,7 +62,7 @@ function makeFeatures(overrides: Partial<CandidateFeaturesV1>): CandidateFeature
     requires_tests: null,
     tests_changed: null,
     ...overrides,
-  } as CandidateFeaturesV1;
+  };
 }
 
 function makeLabelLine(

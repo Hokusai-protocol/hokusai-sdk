@@ -1,0 +1,109 @@
+# Shadow-mode Survival Check — weekly calibration report (HOK-2820, Arbiter
+# P2.S1 / plan-of-record §15.4 step 1).
+#
+# Downloads the last 30 days of accumulated shadow artifacts (per-PR features
+# and nightly survival labels), aggregates them with `hokusai-scan report`,
+# and records the would-be flag rate and would-be precision per repo. The
+# outputs go to Actions-only surfaces: the run summary, a workflow artifact,
+# and `last-report.md` on the `arbiter/shadow-state` branch. Nothing is ever
+# surfaced on a PR (guarded mechanically by
+# scripts/check-scan-workflow-surfaces.mjs). The report's numbers come from a
+# placeholder rule, not a trained model, and say so on every line.
+name: hokusai-scan-report
+
+on:
+  schedule:
+    - cron: '0 12 * * MON'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: hokusai-scan-report
+  cancel-in-progress: false
+
+jobs:
+  shadow-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Download shadow artifacts from the last 30 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/shadow-inputs
+          CUTOFF=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate \
+            --jq '.artifacts[] | select(.expired == false)
+                  | select(.name | startswith("hokusai-scan-"))
+                  | select(.created_at > "'"$CUTOFF"'")
+                  | [.id, .name] | @tsv' \
+          | while IFS=$'\t' read -r id name; do
+              if gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "/tmp/artifact-$id.zip"; then
+                unzip -oq "/tmp/artifact-$id.zip" -d "/tmp/shadow-inputs/$name" \
+                  || echo "warn: could not unzip artifact $id ($name)"
+              else
+                echo "warn: could not download artifact $id ($name)"
+              fi
+            done
+          echo "collected $(find /tmp/shadow-inputs -type f | wc -l) file(s)"
+      - id: asof
+        run: echo "as-of=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - id: report-md
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: report
+          inputs-path: /tmp/shadow-inputs
+          as-of: ${{ steps.asof.outputs.as-of }}
+          output-path: /tmp/shadow-report/last-report.md
+      - id: report-json
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: report
+          report-format: json
+          inputs-path: /tmp/shadow-inputs
+          as-of: ${{ steps.asof.outputs.as-of }}
+          output-path: /tmp/shadow-report/last-report.json
+      # The run summary is an Actions-only surface, not a PR surface.
+      - name: Publish to the run summary
+        if: steps.report-md.outcome == 'success'
+        continue-on-error: true
+        run: cat /tmp/shadow-report/last-report.md >> "$GITHUB_STEP_SUMMARY"
+      # Named outside the hokusai-scan- prefix so the next report run never
+      # re-ingests report output as scan input.
+      - uses: actions/upload-artifact@v4
+        if: steps.report-md.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: hokusai-shadow-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/shadow-report/
+          retention-days: 90
+      - name: Record last-report on arbiter/shadow-state
+        if: steps.report-md.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name 'hokusai-shadow-scan'
+          git config user.email 'arbiter@hokus.ai'
+          git fetch -q origin '+refs/heads/arbiter/shadow-state:refs/remotes/origin/arbiter/shadow-state' || true
+          if git rev-parse -q --verify refs/remotes/origin/arbiter/shadow-state >/dev/null; then
+            git worktree add -q --checkout -B arbiter/shadow-state /tmp/shadow-state origin/arbiter/shadow-state
+          else
+            git worktree add -q --orphan -b arbiter/shadow-state /tmp/shadow-state
+          fi
+          cp /tmp/shadow-report/last-report.md /tmp/shadow-report/last-report.json /tmp/shadow-state/
+          cd /tmp/shadow-state
+          git add last-report.md last-report.json
+          if git diff --cached --quiet; then
+            echo 'shadow-state unchanged; nothing to push'
+            exit 0
+          fi
+          git commit -q -m 'shadow-state: weekly report ${{ steps.asof.outputs.as-of }}'
+          git push -q origin HEAD:refs/heads/arbiter/shadow-state
