@@ -65,7 +65,7 @@ export const TASK_COST_SOURCE_DIAGNOSTIC_CODES = [
   'invalid_usage_value',
   /** A row repeated an already-seen identity (streamed/resumed duplicate). */
   'duplicate_row',
-  /** A cumulative counter regressed; the observation was skipped. */
+  /** A cumulative counter regressed; the tracker re-baselined and the new (lower) totals are charged as the new turn's usage (REQ-F3). */
   'cumulative_counter_reset',
   /** An event-source record was not a usable record shape. */
   'invalid_record',

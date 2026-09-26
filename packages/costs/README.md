@@ -186,13 +186,15 @@ Design rules the adapters hold to:
   Wavemill branch/stage/eval joins (those stay in Wavemill). Concurrent tasks
   with disjoint boundaries cannot cross-charge.
 - **Dedupe by source identity.** Claude Code rows dedupe on the API message id
-  (streamed rows collapse to the final one; a resumed session's copied history
-  is not double-charged). Codex observations dedupe on
-  `turn_id` + observation ordinal.
+  composed with the request id when both are present: streamed rows collapse
+  to the final one, a resumed session's copied history is not double-charged,
+  and a retry (same message id, fresh request id) stays two events per
+  REQ-F2. Codex observations dedupe on `turn_id` + observation ordinal.
 - **Deltas preferred, cumulative diffed.** Codex `last_token_usage` wins when
   present; otherwise deltas are derived from `total_token_usage` against a
-  per-file baseline. A regressing counter is a reset: the observation is
-  skipped with a `cumulative_counter_reset` count, never guessed.
+  per-file baseline. A regressing counter is a reset: the tracker re-baselines
+  on the new (lower) values and charges them as the new turn's usage per
+  REQ-F3, marked with a `cumulative_counter_reset` diagnostic.
 - **Provider cost when present.** Claude Code's legacy per-turn `costUSD`
   becomes `actual_cost_usd`; everything else is priced by the engine.
 - **Fail soft, count only.** Malformed lines, unknown fields, missing
