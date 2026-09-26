@@ -9,7 +9,8 @@
       "@hokusai/costs",
       "@hokusai/adapter-claude-code",
       "@hokusai/adapter-codex",
-      "@hokusai/adapter-wavemill"
+      "@hokusai/adapter-wavemill",
+      "@hokusai/scan"
     ]
   ],
   "linked": [],

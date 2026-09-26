@@ -1,5 +1,10 @@
 export { claudeCodeTaskPacketFixture } from './claude-code.js';
 export {
+  harvestedSurvivalLabelFixture,
+  ownerCorrectedSurvivalLabelFixture,
+  survivalLabelFixtureLineRanges,
+} from './arbiter-survival-label.js';
+export {
   completeCandidateFeaturesV1Fixture,
   observedZeroCandidateFeaturesV1Fixture,
   sparseCandidateFeaturesV1Fixture,

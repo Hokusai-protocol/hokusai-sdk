@@ -1,0 +1,15 @@
+{
+  "case": "case-01-simple-merge",
+  "description": "One clean merged PR whose lines are never touched again: survived at every horizon.",
+  "github_repo": "golden/case-01-simple-merge",
+  "integration_branch": "integ",
+  "branches": [
+    "main",
+    "integ",
+    "pr1"
+  ],
+  "checkout_ref": "pr1",
+  "pr_number": 1,
+  "base_ref": "main",
+  "as_of": "2026-03-12T00:00:00Z"
+}

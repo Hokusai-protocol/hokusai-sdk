@@ -283,6 +283,32 @@ export {
   type CandidateStaticFeatures,
   type CandidateTestFeatures,
 } from './candidate-features.js';
+export {
+  ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
+  HORIZONS,
+  MISSING_REASON_CODES,
+  REASON_CODES,
+  SUBSTANTIAL_REWRITE_THRESHOLD,
+  buildArbiterSurvivalLabel,
+  canonicalHash,
+  canonicalSerialize,
+  deriveReportOutcome,
+  type ArbiterSurvivalLabelV1,
+  type BuildSurvivalLabelInput,
+  type HorizonDays,
+  type LabelProvenance,
+  type LineRange,
+  type LineRangeAnchor,
+  type MissingReasonCode,
+  type OwnerCorrection,
+  type ReasonCode,
+  type ReportOutcome,
+  type ReportOutcomeInputs,
+  type ReproducibilityEnvelope,
+  type SurvivalOutcome,
+  type UndoneBy,
+} from './arbiter-survival-label.js';
+export { ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA } from './arbiter-survival-label-schema.js';
 export { HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA } from './task-descriptor-schema.js';
 export {
   REASONING_DEPTH_COMPLEXITY,
@@ -332,6 +358,9 @@ export {
   claudeCodeTaskPacketFixture,
   claudeCodeFailureOutcomeFixture,
   claudeCodeSuccessOutcomeFixture,
+  harvestedSurvivalLabelFixture,
+  ownerCorrectedSurvivalLabelFixture,
+  survivalLabelFixtureLineRanges,
   codexAbandonedOutcomeFixture,
   codexSuccessOutcomeFixture,
   codexTaskPacketFixture,

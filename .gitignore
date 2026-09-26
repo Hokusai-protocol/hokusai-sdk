@@ -7,6 +7,9 @@ dist-bundle
 dist-zip
 !packages/adapter-claude-code/plugin/dist/
 !packages/adapter-claude-code/plugin/dist/index.js
+# The scan Action bundle is committed: Actions cannot install dependencies.
+!packages/scan/action/dist/
+!packages/scan/action/dist/index.js
 coverage
 .turbo
 .typecheck

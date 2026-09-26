@@ -1,5 +1,5 @@
 {
-  "name": "@hokusai/core",
+  "name": "@hokusai/scan",
   "version": "0.4.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -8,26 +8,38 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Hokusai-protocol/hokusai-sdk",
-    "directory": "packages/core"
+    "directory": "packages/scan"
+  },
+  "bin": {
+    "hokusai-scan": "./dist/cli.js"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "schemas"
+    "action",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "@hokusai/core": "workspace:*"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "esbuild": "^0.28.0",
+    "vitest": "^3.2.3"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",
+    "bundle:action": "node bundle-action.mjs",
     "lint": "eslint src --max-warnings=0",
-    "test": "vitest run",
+    "test": "vitest run --root ../.. packages/scan/src",
     "typecheck": "tsc -b tsconfig.json --pretty false"
   }
 }

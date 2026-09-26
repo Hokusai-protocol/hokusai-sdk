@@ -1,0 +1,89 @@
+# Hokusai Scan — one-shot workflow_dispatch Action (HOK-2816).
+#
+# Same code as the `hokusai-scan` CLI (`npx @hokusai/scan`): the committed
+# bundle at dist/index.js maps these inputs onto the CLI argv and runs it
+# in-process. Every dependency is an explicit input — no ambient gh login,
+# no origin-remote sniffing, no host config. The repository must be checked
+# out with full history (`fetch-depth: 0`); a shallow clone fails fast with
+# an actionable message.
+#
+# Exit codes surface as step failure: 1 internal, 2 invalid input,
+# 3 upstream GitHub failure.
+name: 'Hokusai Scan'
+description: >-
+  Run the Hokusai Arbiter scanner (survival labeller + candidate feature
+  extractor) against a checked-out repository.
+author: 'Hokusai'
+branding:
+  icon: 'search'
+  color: 'blue'
+
+inputs:
+  mode:
+    description: 'What to run: label | extract | scan'
+    required: true
+  integration-branch:
+    description: >-
+      Integration branch whose first-parent history is walked (label/scan
+      modes). "main" is rejected by the v1.0.0 label contract.
+    required: false
+  pr-number:
+    description: 'Pull request number (extract/scan modes). Positive integer.'
+    required: false
+  pr-url:
+    description: 'Label a single PR URL instead of enumerating (label mode).'
+    required: false
+  github-repo:
+    description: 'GitHub repository as owner/name.'
+    required: false
+    default: ${{ github.repository }}
+  token:
+    description: >-
+      GitHub token for gh evidence collection. Exposed to the scanner as
+      GITHUB_TOKEN; never passed on the command line.
+    required: false
+    default: ${{ github.token }}
+  repo-path:
+    description: 'Path to the checked-out repository.'
+    required: false
+    default: ${{ github.workspace }}
+  as-of:
+    description: 'ISO-8601 instant pinning "now" (horizon cutoffs, computed_at). Empty = wall clock.'
+    required: false
+  horizons:
+    description: 'Comma-separated label horizons (subset of 14,30,60).'
+    required: false
+    default: '14,30,60'
+  base-ref:
+    description: 'Base ref override for the extract diff (extract/scan modes).'
+    required: false
+  output-path:
+    description: >-
+      Destination file. A relative path lands in $RUNNER_TEMP; pass an
+      absolute path to control the location.
+    required: false
+    default: 'hokusai-scan-output.jsonl'
+  no-links:
+    description: 'Skip gh cross-reference lookups (label mode).'
+    required: false
+    default: 'false'
+  offline:
+    description: 'Skip all network evidence collection.'
+    required: false
+    default: 'false'
+  debug:
+    description: 'Dump stack traces to the log on failure.'
+    required: false
+    default: 'false'
+
+outputs:
+  output-path:
+    description: 'Path of the written output file.'
+  contract-version:
+    description: 'candidate-features schema : label schema, e.g. candidate_features/v1:arbiter_survival_label/v1.'
+  row-count:
+    description: 'Number of label rows written (0 on empty output; 1 per extract blob).'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
