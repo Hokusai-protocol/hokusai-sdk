@@ -19,6 +19,7 @@ function writeGithubKeyValue(file: string | undefined, key: string, value: strin
 }
 
 function main(): number {
+  const mode = readActionInput(process.env, 'mode');
   const { argv, outputPath } = buildActionArgv({
     input: (name) => readActionInput(process.env, name),
     runnerTemp: process.env.RUNNER_TEMP,
@@ -39,7 +40,8 @@ function main(): number {
     writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'output-path', result.outputPath ?? outputPath);
     writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'contract-version', scanContractVersion());
     writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'row-count', String(result.rowCount));
-    if (process.env.GITHUB_STEP_SUMMARY) {
+    // Shadow mode: extract is silent (PR surface), report is internal summary only
+    if (process.env.GITHUB_STEP_SUMMARY && mode !== 'extract' && mode !== 'report') {
       const summary = [
         '### hokusai-scan',
         '',

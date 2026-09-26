@@ -39,6 +39,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - run: git checkout -B auto/integration origin/auto/integration
+        name: Create local auto/integration tracking branch
       - id: window
         name: Compute the incremental window
         run: |
