@@ -5169,10 +5169,9 @@ var PRECISION_SUPPRESSION_FLOOR = 5;
 var DEFAULT_REPORT_HORIZON = 30;
 function evaluateShadowRule(features) {
   const { risk_level, requires_tests, tests_changed } = features;
-  if (risk_level !== null && risk_level !== "medium" && risk_level !== "high") return "no_flag";
-  if (requires_tests === false) return "no_flag";
-  if (tests_changed === true) return "no_flag";
+  if (risk_level === "low" || requires_tests === false || tests_changed === true) return "no_flag";
   if (risk_level === null || requires_tests === null || tests_changed === null) return "unknown";
+  if (risk_level !== "medium" && risk_level !== "high") return "no_flag";
   return "flag";
 }
 function parsePrUrl(prUrl) {

@@ -156,22 +156,18 @@ export interface ShadowAggregateResult {
 /**
  * The transparent placeholder "would flag" rule (see {@link SHADOW_RULE_ID}).
  *
- * Extraction-mode rule: Flags a PR when `tests_changed === false` and
- * `loc_touched >= 50` (meaningful changes without test coverage).
- *
- * When a full task contract is available, Intent fields like `risk_level`
- * and `requires_tests` would refine this to a more targeted rule; this
- * placeholder uses only fields the extractor always emits.
+ * Flags a PR when `risk_level` is medium or high, `requires_tests` is true,
+ * and `tests_changed` is false (a risky change requiring tests with no test coverage).
  *
  * Tri-state on nulls: a definitive negative is `no_flag` regardless of
  * others; any null means `unknown` — never guessed to either side.
  */
 export function evaluateShadowRule(features: CandidateFeaturesV1): ShadowFlagVerdict {
-  const { tests_changed, loc_touched } = features;
-  if (tests_changed === true) return 'no_flag';
-  if (tests_changed === false && loc_touched !== null && loc_touched >= 50) return 'flag';
-  if (tests_changed === null || loc_touched === null) return 'unknown';
-  return 'no_flag';
+  const { risk_level, requires_tests, tests_changed } = features;
+  if (risk_level === 'low' || requires_tests === false || tests_changed === true) return 'no_flag';
+  if (risk_level === null || requires_tests === null || tests_changed === null) return 'unknown';
+  if (risk_level !== 'medium' && risk_level !== 'high') return 'no_flag';
+  return 'flag';
 }
 
 // ── Input parsing ───────────────────────────────────────────────────────────
