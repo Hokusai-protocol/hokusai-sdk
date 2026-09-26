@@ -151,9 +151,24 @@ export function runCodexAdapter(input: CodexAdapterInput): CodexAdapterResult {
         continue;
       }
 
-      const dedupeKey = `${sessionId}:${record.observedAt}`;
+      // Dedupe on (session, observedAt, cumulative totals). Including the
+      // cumulative signature lets two token_count rows with the same
+      // millisecond timestamp but different totals both pass (real usage),
+      // while resumed rollouts that replay prior rows with identical
+      // cumulatives correctly collapse.
+      const totalsSig =
+        record.total !== null
+          ? `${record.total.input_tokens ?? ''}|${record.total.output_tokens ?? ''}|${record.total.cache_read_tokens ?? ''}|${record.total.reasoning_tokens ?? ''}`
+          : record.last !== null
+            ? `L${record.last.input_tokens ?? ''}|${record.last.output_tokens ?? ''}|${record.last.cache_read_tokens ?? ''}|${record.last.reasoning_tokens ?? ''}`
+            : '';
+      const dedupeKey = `${sessionId}:${record.observedAt}:${totalsSig}`;
       if (seenIdentities.has(dedupeKey)) {
-        // Do NOT re-advance the baseline; the first observation already did.
+        // Advance the baseline from cumulative totals so a subsequent new row
+        // that ships only `total_token_usage` deltas against the correct
+        // prior state — this is the resumed-rollout case where an earlier
+        // blob has already emitted these rows.
+        advanceBaseline(record);
         tally.bump('duplicate_record');
         continue;
       }

@@ -169,6 +169,64 @@ describe('runCodexAdapter', () => {
     expect(event.usage.reasoning_tokens).toBe(100);
   });
 
+  it('resumed rollout under the same session id does not charge the prior task', () => {
+    // Blob A: original session run, in-window. Ends with cumulative 300/150.
+    // Blob B: a resumed rollout that copies blob A's row (duplicate) and then
+    // emits a new totals-only row. The new row's delta MUST be against blob
+    // A's cumulative, not zero.
+    const blobA = jsonl([
+      sessionMeta('session-a', '2026-01-01T00:00:00Z'),
+      turnContext('gpt-5', '2026-01-01T00:00:00Z'),
+      tokenCount('2026-01-01T00:10:00Z', {
+        total_token_usage: { input_tokens: 300, output_tokens: 150 },
+      }),
+    ]);
+    const blobB = jsonl([
+      sessionMeta('session-a', '2026-01-01T00:00:00Z'),
+      turnContext('gpt-5', '2026-01-01T00:00:00Z'),
+      // Replay of the same row (identical cumulative) — duplicate.
+      tokenCount('2026-01-01T00:10:00Z', {
+        total_token_usage: { input_tokens: 300, output_tokens: 150 },
+      }),
+      // Genuinely new row after resumption.
+      tokenCount('2026-01-01T00:30:00Z', {
+        total_token_usage: { input_tokens: 500, output_tokens: 250 },
+      }),
+    ]);
+    const result = runCodexAdapter({
+      blobs: [blobA, blobB],
+      boundary: BOUNDARY,
+    });
+    expect(result.events).toHaveLength(2);
+    // Blob A emits the 300/150 row against a zero baseline (a legitimate
+    // charge — this is the first row of the session).
+    expect(result.events[0]?.usage.input_tokens).toBe(300);
+    expect(result.events[0]?.usage.output_tokens).toBe(150);
+    // Blob B's genuinely new row should charge only the delta 200/100, not
+    // the whole carried-over cumulative 500/250.
+    expect(result.events[1]?.usage.input_tokens).toBe(200);
+    expect(result.events[1]?.usage.output_tokens).toBe(100);
+  });
+
+  it('keeps two token_count rows with the same millisecond timestamp but different totals', () => {
+    // Two distinct rows sharing a timestamp must not collapse; the dedupe key
+    // is (session, observedAt, cumulative signature).
+    const blob = jsonl([
+      sessionMeta('session-a', '2026-01-01T00:00:00Z'),
+      turnContext('gpt-5', '2026-01-01T00:00:00Z'),
+      tokenCount('2026-01-01T00:10:00.500Z', {
+        total_token_usage: { input_tokens: 100, output_tokens: 50 },
+      }),
+      tokenCount('2026-01-01T00:10:00.500Z', {
+        total_token_usage: { input_tokens: 200, output_tokens: 100 },
+      }),
+    ]);
+    const result = runCodexAdapter({ blobs: [blob], boundary: BOUNDARY });
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]?.usage.input_tokens).toBe(100);
+    expect(result.events[1]?.usage.input_tokens).toBe(100);
+  });
+
   it('advances the cumulative baseline through pre-window rows', () => {
     // A session that started BEFORE the boundary window: the first two
     // token_count rows are outside the window. The third, in-window, ships
