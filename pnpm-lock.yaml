@@ -89,6 +89,16 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/scan:
+    dependencies:
+      '@hokusai/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
+
 packages:
 
   '@babel/runtime@7.29.7':
