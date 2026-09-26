@@ -29,7 +29,8 @@
       "@hokusai/adapter-wavemill": ["packages/adapter-wavemill/src/index.ts"],
       "@hokusai/adapter-aider": ["packages/adapter-aider/src/index.ts"],
       "@hokusai/router": ["packages/router/src/index.ts"],
-      "@hokusai/scan": ["packages/scan/src/index.ts"]
+      "@hokusai/scan": ["packages/scan/src/index.ts"],
+      "@hokusai/costs": ["packages/costs/src/index.ts"]
     }
   }
 }

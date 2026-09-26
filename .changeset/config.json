@@ -6,6 +6,7 @@
     [
       "@hokusai/core",
       "@hokusai/router",
+      "@hokusai/costs",
       "@hokusai/adapter-claude-code",
       "@hokusai/adapter-codex",
       "@hokusai/adapter-wavemill",

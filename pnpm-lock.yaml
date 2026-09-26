@@ -83,6 +83,12 @@ importers:
 
   packages/core: {}
 
+  packages/costs:
+    dependencies:
+      '@hokusai/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/router:
     dependencies:
       '@hokusai/core':
