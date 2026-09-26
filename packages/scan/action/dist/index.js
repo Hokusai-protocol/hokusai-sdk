@@ -5097,8 +5097,8 @@ function validatePrUrl(value) {
 }
 function validateAsOf(value) {
   if (value === void 0 || value === "") return void 0;
-  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(value)) {
-    throw new ScanInputError("--as-of must be an ISO-8601 timestamp");
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2}))?$/.test(value)) {
+    throw new ScanInputError("--as-of must be an ISO-8601 timestamp (e.g., 2026-03-01 or 2026-03-01T00:00:00Z)");
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {

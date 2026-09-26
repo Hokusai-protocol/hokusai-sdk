@@ -31,9 +31,9 @@
     "@hokusai/core": "workspace:*"
   },
   "devDependencies": {
-    "ajv": "^8.12.0",
+    "ajv": "^8.17.1",
     "esbuild": "^0.28.0",
-    "vitest": "workspace:*"
+    "vitest": "^3.2.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",
