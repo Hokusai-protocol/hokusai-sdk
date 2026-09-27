@@ -17,6 +17,8 @@ export interface ReportMetrics {
   base_survival_rate: number | null;
   scorer_id: string;
   scorer_version: string;
+  /** All distinct scorer pairs in the window, present only when mixed (>1). */
+  scorers?: Array<{ scorer_id: string; scorer_version: string }>;
   threshold_sweep: Array<{
     threshold: number;
     would_flag_count: number;
@@ -179,8 +181,19 @@ export function computeShadowReport(
       };
     });
 
-    const scorerId = repoScoredList[0]?.scorer_id ?? 'unknown';
-    const scorerVersion = repoScoredList[0]?.scorer_version ?? 'unknown';
+    // Report the most-recent row's scorer; when the window mixes scorers, also
+    // surface every distinct pair (plan impl step 8).
+    const mostRecent = repoScoredList.reduce((a, b) => (b.scored_at > a.scored_at ? b : a));
+    const scorerId = mostRecent.scorer_id;
+    const scorerVersion = mostRecent.scorer_version;
+    const distinctScorers = new Map<string, { scorer_id: string; scorer_version: string }>();
+    for (const s of repoScoredList) {
+      distinctScorers.set(`${s.scorer_id}@${s.scorer_version}`, {
+        scorer_id: s.scorer_id,
+        scorer_version: s.scorer_version,
+      });
+    }
+    const scorers = [...distinctScorers.values()];
 
     repos.push({
       repo,
@@ -194,6 +207,7 @@ export function computeShadowReport(
       base_survival_rate: base_survival_rate === null ? null : round4(base_survival_rate),
       scorer_id: scorerId,
       scorer_version: scorerVersion,
+      ...(scorers.length > 1 ? { scorers } : {}),
       threshold_sweep,
     });
   }

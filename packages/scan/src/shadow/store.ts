@@ -206,8 +206,10 @@ export function writeReport(
   const reportsDir = path.join(dir, 'reports');
   fs.mkdirSync(reportsDir, { recursive: true });
 
+  // REQ-F6: the file content must be byte-identical to the stdout JSON, which
+  // runShadowReport emits with compact JSON.stringify(report).
   const reportFile = path.join(reportsDir, `${date}.json`);
-  const content = JSON.stringify(json, null, 2);
+  const content = JSON.stringify(json);
 
   fs.writeFileSync(reportFile, content, 'utf-8');
 }

@@ -3,7 +3,7 @@
  */
 
 import * as path from 'node:path';
-import { createDefaultDeps } from '../default-deps.js';
+import { createDefaultDeps, createOfflineGitHubClient } from '../default-deps.js';
 import { HORIZONS } from '@hokusai/core';
 import type { HorizonDays } from '@hokusai/core';
 import { validateGithubRepo } from '../inputs.js';
@@ -102,7 +102,13 @@ export function runShadowCli(
         integrationBranch,
         repoDir: checkoutDir,
       };
+      // Plan D7: the shadow workflow token has issues:none/pull-requests:none.
+      // Use git via createDefaultDeps but swap in the offline GitHub client so
+      // backfill makes zero API calls (redispatch detection via allMergedPrs
+      // stays on; cross-reference follow-ups are off — includeLinkedReferences
+      // is false in runShadowBackfill).
       const deps = createDefaultDeps(target);
+      deps.github = createOfflineGitHubClient();
 
       const result = runShadowBackfill({
         dataDir,
