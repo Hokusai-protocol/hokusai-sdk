@@ -26,3 +26,5 @@ features/
 .wavemill/
 .wavemill-config.json
 .wavemill-config.local.json
+# Wavemill prompt-usage telemetry (older native-agent runs wrote it at the repo root)
+/prompt-registry.jsonl
