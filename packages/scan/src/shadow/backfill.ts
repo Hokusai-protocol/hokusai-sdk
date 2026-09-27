@@ -108,20 +108,22 @@ export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise
       }
 
       // Label
-      const labelResult = await labelMergedPr(target, deps, prRef, {
+      const labelResults = await labelMergedPr(target, deps, prRef, {
         horizons: [horizonDays],
         allMergedPrs: allMergedPrsResult,
         includeLinkedReferences: false,
       });
 
-      if (!labelResult || !labelResult.label) {
-        // Missing label - skip for now, retry later
-        if (labelResult?.reason === 'missing_horizon') {
-          // Not yet mature for this horizon
-          pending++;
-        } else {
-          skipped++;
-        }
+      if (!labelResults || labelResults.length === 0) {
+        // No label - skip for now, retry later
+        pending++;
+        continue;
+      }
+
+      const label = labelResults[0]; // Only one horizon requested
+      if (!label || label.outcome.reason_codes.includes('missing_horizon')) {
+        // Not yet mature for this horizon
+        pending++;
         continue;
       }
 
@@ -133,14 +135,14 @@ export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise
         merge_sha: score.merge_sha,
         horizon_days: horizonDays,
         labelled_at: now().toISOString(),
-        survived: labelResult.label.outcome.survived,
+        survived: label.outcome.survived,
         label: {
-          schema_version: labelResult.label.schema_version,
-          prUrl: labelResult.label.prUrl,
-          horizon_days: labelResult.label.horizon_days,
-          label_provenance: labelResult.label.label_provenance,
-          outcome: labelResult.label.outcome,
-          envelope: labelResult.label.envelope,
+          schema_version: label.schema_version,
+          prUrl: label.prUrl,
+          horizon_days: label.horizon_days,
+          label_provenance: label.label_provenance,
+          outcome: label.outcome,
+          envelope: label.envelope,
         },
       };
 

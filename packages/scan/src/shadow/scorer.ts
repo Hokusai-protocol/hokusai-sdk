@@ -2,7 +2,7 @@
  * Shadow mode scorer interface and baseline implementation.
  */
 
-import type { CandidateFeaturesV1, StaticFeaturesResult } from '@hokusai/core';
+import type { CandidateFeaturesV1 } from '@hokusai/core';
 
 /** Scorer interface: pure function to score candidate features. */
 export interface ShadowScorer {
@@ -34,7 +34,7 @@ export const BASELINE_V0_WEIGHTS = Object.freeze({
 });
 
 /** Null static features result (no tool execution in shadow mode). */
-export const NULL_STATIC_FEATURES: StaticFeaturesResult = Object.freeze({
+export const NULL_STATIC_FEATURES = Object.freeze({
   type_errors: null,
   lint_errors: null,
   build_ok: null,

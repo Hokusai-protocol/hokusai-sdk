@@ -4,35 +4,24 @@
 
 import * as path from 'node:path';
 import { createDefaultDeps } from '../default-deps.js';
-import { HORIZONS, validateGithubRepo } from '@hokusai/core';
+import { HORIZONS } from '@hokusai/core';
+import { validateGithubRepo } from '../inputs.js';
 import { BASELINE_V0 } from './scorer.js';
 import { runShadowScore } from './score.js';
 import { runShadowBackfill } from './backfill.js';
 import { runShadowReport } from './report.js';
 import { ShadowError } from './errors.js';
 import type { GitRunner } from '../survival-labeller.js';
-import { execArgvCommand } from '../shell-utils.js';
 
 export interface ShadowCliIO {
   log: (line: string) => void;
-}
-
-async function createGitRunner(): Promise<GitRunner> {
-  return async (args: string[], opts?: { cwd?: string }): Promise<{ stdout: string; exitCode: number }> => {
-    try {
-      const result = await execArgvCommand(['git', ...args], opts);
-      return { stdout: result.stdout, exitCode: result.exitCode };
-    } catch (error) {
-      throw new ShadowError('NOT_A_GIT_REPO');
-    }
-  };
 }
 
 export async function runShadowCli(
   command: string,
   argv: Record<string, unknown>,
   io: ShadowCliIO,
-  runGit?: GitRunner,
+  runGit: GitRunner,
 ): Promise<{ exitCode: number }> {
   const log = io.log;
 
@@ -51,7 +40,7 @@ export async function runShadowCli(
 
     // Validate github-repo format
     const repoValidation = validateGithubRepo(githubRepo);
-    if (!repoValidation.ok) {
+    if (!repoValidation || !repoValidation.owner || !repoValidation.name) {
       throw new ShadowError('INVALID_ARG');
     }
 
@@ -86,11 +75,6 @@ export async function runShadowCli(
       throw new ShadowError('INVALID_ARG');
     }
 
-    // Create git runner
-    if (!runGit) {
-      runGit = await createGitRunner();
-    }
-
     const checkoutDir = repo === '.' ? process.cwd() : path.resolve(repo);
 
     if (command === 'shadow-score') {
@@ -123,7 +107,7 @@ export async function runShadowCli(
         integrationBranch,
         horizonDays,
         checkoutDir,
-        target: { integrationBranch, checkoutDir },
+        target: { integrationBranch },
         deps,
         now: () => new Date(),
         log,
