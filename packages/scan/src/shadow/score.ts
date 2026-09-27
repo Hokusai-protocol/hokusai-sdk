@@ -2,16 +2,23 @@
  * Shadow scoring runner: extract features and score merged PRs.
  */
 
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { GitRunner } from '../survival-labeller.js';
 import type { CandidateFeaturesV1 } from '@hokusai/core';
 import { extractCandidateFeatures } from '../candidate-features.js';
 import type { ShadowScorer } from './scorer.js';
-import { BASELINE_V0 } from './scorer.js';
-import type { DiscoveredMerge } from './discover.js';
-import type { ArbiterShadowScoreV1, ArbiterShadowStateV1, ArbiterShadowRunStatus } from '@hokusai/core';
+import { BASELINE_V0, NULL_STATIC_FEATURES } from './scorer.js';
+import type {
+  ArbiterShadowScoreV1,
+  ArbiterShadowStateV1,
+  ArbiterShadowRunStatus,
+  ArbiterShadowErrorCode,
+} from '@hokusai/core';
 import { validateShadowScoreRow } from '@hokusai/core';
 import { ShadowError } from './errors.js';
-import { discoverMerges, isAncestor } from './discover.js';
+import { discoverMerges } from './discover.js';
 import { readJsonl, appendJsonl, readState, writeState, ensureWritableDataDir } from './store.js';
 
 export interface RunShadowScoreOptions {
@@ -38,11 +45,10 @@ export interface RunShadowScoreResult {
 }
 
 /** Run shadow scoring: discover, extract, score, and store results. */
-export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunShadowScoreResult> {
+export function runShadowScore(opts: RunShadowScoreOptions): RunShadowScoreResult {
   const {
     dataDir,
     repo,
-    githubRepo,
     integrationBranch,
     checkoutDir,
     threshold,
@@ -69,12 +75,21 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
   let scored = 0;
   let skipped = 0;
   let status: ArbiterShadowRunStatus = 'ok';
-  let lastError: string | null = null;
+  let lastError: ArbiterShadowErrorCode | null = null;
   let cursorReset = false;
+
+  // Dedicated detached, no-checkout worktree in the OS temp dir (plan D6):
+  // moving HEAD here never mutates the live checkout, and --no-checkout means
+  // no files are ever materialised.
+  const worktreeDir = path.join(
+    os.tmpdir(),
+    `arbiter-shadow-wt-${now().getTime()}-${Math.random().toString(36).slice(2)}`,
+  );
+  let worktreeCreated = false;
 
   try {
     // Discover merges
-    const discovered = await discoverMerges({
+    const discovered = discoverMerges({
       runGit,
       ref: integrationBranch,
       cursor: cursorBefore,
@@ -86,6 +101,24 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
     cursorReset = discovered.cursorReset;
     const rows: ArbiterShadowScoreV1[] = [];
 
+    if (discovered.merges.length > 0) {
+      // Prune stale worktree registrations, then create the temp worktree.
+      runGit(['-C', checkoutDir, 'worktree', 'prune']);
+      const add = runGit([
+        '-C',
+        checkoutDir,
+        'worktree',
+        'add',
+        '--detach',
+        '--no-checkout',
+        worktreeDir,
+      ]);
+      if (add.exitCode !== 0) {
+        throw new ShadowError('NOT_A_GIT_REPO');
+      }
+      worktreeCreated = true;
+    }
+
     // Process each merge
     for (const merge of discovered.merges) {
       try {
@@ -96,21 +129,21 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
           continue;
         }
 
-        // Update git worktree HEAD to this merge
-        await runGit(['update-ref', '--no-deref', 'HEAD', merge.mergeSha], { cwd: checkoutDir });
+        // Move the temp worktree's HEAD to this merge (cheap, no files).
+        runGit(['-C', worktreeDir, 'update-ref', '--no-deref', 'HEAD', merge.mergeSha]);
 
-        // Extract features
+        // Extract features. staticFeatures: NULL_STATIC_FEATURES guarantees no
+        // tool execution (tsc/eslint/build) per plan D6; offline avoids network.
         let features: CandidateFeaturesV1 | null = null;
         try {
-          const result = await extractCandidateFeatures({
-            checkoutDir,
-            prNumber: merge.prNumber,
+          features = extractCandidateFeatures({
+            checkoutDir: worktreeDir,
+            prNumber: merge.prNumber ?? 0,
             baseRef: merge.parentSha,
             offline: true,
-            staticFeatures: null,
+            staticFeatures: NULL_STATIC_FEATURES,
           });
-          features = result.features;
-        } catch (error) {
+        } catch {
           log(`SHADOW_SKIP pr=${merge.prNumber ?? 'none'} code=EXTRACT_FAILED`);
           skipped++;
           status = 'partial';
@@ -161,7 +194,7 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
         rows.push(row);
         scored++;
         cursorAfter = merge.mergeSha;
-      } catch (error) {
+      } catch {
         // Log and continue
         const prNum = merge.prNumber ?? 'none';
         log(`SHADOW_SKIP pr=${prNum} code=EXTRACT_FAILED`);
@@ -182,6 +215,26 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
       lastError = 'INTERNAL';
     }
     status = 'error';
+  } finally {
+    // Always remove the temp worktree and prune its registration.
+    if (worktreeCreated) {
+      try {
+        runGit(['-C', checkoutDir, 'worktree', 'remove', '--force', worktreeDir]);
+      } catch {
+        // ignore
+      }
+      try {
+        runGit(['-C', checkoutDir, 'worktree', 'prune']);
+      } catch {
+        // ignore
+      }
+    }
+    // Belt-and-braces: drop the directory if `worktree remove` left anything.
+    try {
+      fs.rmSync(worktreeDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
   }
 
   // Write state last

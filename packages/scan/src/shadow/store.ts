@@ -5,16 +5,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
-  ArbiterShadowScoreV1,
-  ArbiterShadowOutcomeV1,
   ArbiterShadowStateV1,
   HokusaiFieldError,
 } from '@hokusai/core';
 import {
-  ARBITER_SHADOW_STATE_SCHEMA_VERSION,
   initialShadowState,
-  validateShadowScoreRow,
-  validateShadowOutcomeRow,
   validateShadowState,
 } from '@hokusai/core';
 import { ShadowError } from './errors.js';
@@ -22,6 +17,17 @@ import { ShadowError } from './errors.js';
 export interface JsonlResult<T> {
   rows: T[];
   malformed: number;
+}
+
+/** Write content to a file durably: fsync the data, then close the fd. */
+function writeFileDurable(file: string, content: string): void {
+  fs.writeFileSync(file, content, 'utf-8');
+  const fd = fs.openSync(file, 'r');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** Ensure the data directory exists and is writable. */
@@ -55,7 +61,7 @@ export function readJsonl<T>(
 
     for (const line of lines) {
       try {
-        const parsed = JSON.parse(line);
+        const parsed: unknown = JSON.parse(line);
         const result = validate(parsed);
         if (result.ok && result.value) {
           rows.push(result.value);
@@ -105,8 +111,7 @@ export function appendJsonl<T>(
   // Write atomically using temp file + rename
   const tempFile = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
   try {
-    fs.writeFileSync(tempFile, newContent, 'utf-8');
-    fs.fsyncSync(fs.openSync(tempFile, 'r'));
+    writeFileDurable(tempFile, newContent);
     fs.renameSync(tempFile, file);
   } catch (error) {
     // Clean up temp file
@@ -140,7 +145,7 @@ export function readState(
 
   try {
     const content = fs.readFileSync(stateFile, 'utf-8');
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
     const result = validateShadowState(parsed);
 
     if (result.ok) {
@@ -180,8 +185,7 @@ export function writeState(dir: string, state: ArbiterShadowStateV1): void {
   const tempFile = `${stateFile}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
 
   try {
-    fs.writeFileSync(tempFile, content, 'utf-8');
-    fs.fsyncSync(fs.openSync(tempFile, 'r'));
+    writeFileDurable(tempFile, content);
     fs.renameSync(tempFile, stateFile);
   } catch (error) {
     try {

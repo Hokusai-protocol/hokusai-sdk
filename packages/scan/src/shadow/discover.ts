@@ -16,13 +16,13 @@ export interface DiscoveredMerge {
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 /** Check if a SHA is an ancestor of a ref. Returns false if the SHA is missing. */
-export async function isAncestor(
+export function isAncestor(
   runGit: GitRunner,
   sha: string,
   ref: string,
-): Promise<boolean> {
+): boolean {
   try {
-    const result = await runGit(['merge-base', '--is-ancestor', sha, ref]);
+    const result = runGit(['merge-base', '--is-ancestor', sha, ref]);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -45,7 +45,7 @@ export interface DiscoverMergesResult {
 }
 
 /** Discover merged PRs from git history. */
-export async function discoverMerges(opts: DiscoverMergesOptions): Promise<DiscoverMergesResult> {
+export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResult {
   const { runGit, ref, cursor, bootstrapDays, now, maxPrs } = opts;
 
   const merges: DiscoveredMerge[] = [];
@@ -60,7 +60,7 @@ export async function discoverMerges(opts: DiscoverMergesOptions): Promise<Disco
     gitRevRange = `--since=${isoDate}`;
   } else {
     // Check if cursor is an ancestor of ref
-    const isAncestorResult = await isAncestor(runGit, cursor, ref);
+    const isAncestorResult = isAncestor(runGit, cursor, ref);
 
     if (isAncestorResult) {
       // Use the range from cursor to ref
@@ -78,7 +78,7 @@ export async function discoverMerges(opts: DiscoverMergesOptions): Promise<Disco
   const format = '%H%x09%P%x09%ct%x09%s';
   const args = ['log', '--first-parent', '--reverse', `--pretty=format:${format}`, gitRevRange, ref];
 
-  const result = await runGit(args);
+  const result = runGit(args);
   if (result.exitCode !== 0) {
     throw new ShadowError('NOT_A_GIT_REPO');
   }
@@ -106,7 +106,7 @@ export async function discoverMerges(opts: DiscoverMergesOptions): Promise<Disco
 
     // Handle root commits
     const parentShas = parents.split(' ').filter(p => p.length > 0);
-    const parentSha = parentShas.length > 0 ? parentShas[0] : EMPTY_TREE_SHA;
+    const parentSha = parentShas[0] ?? EMPTY_TREE_SHA;
 
     // Extract PR number
     const prNumber = extractPrNumber(subject ?? '');
@@ -126,9 +126,10 @@ export async function discoverMerges(opts: DiscoverMergesOptions): Promise<Disco
 
   // Get pending total for first-parent from oldest candidate to ref
   let pendingTotal = 0;
-  if (merges.length > 0) {
-    const oldestSha = merges[0].mergeSha;
-    const countResult = await runGit([
+  const oldest = merges[0];
+  if (oldest) {
+    const oldestSha = oldest.mergeSha;
+    const countResult = runGit([
       'rev-list',
       '--first-parent',
       '--count',

@@ -49,11 +49,11 @@ export interface ComputeReportOptions {
   thresholds?: number[];
 }
 
-export async function computeShadowReport(
+export function computeShadowReport(
   scores: ArbiterShadowScoreV1[],
   outcomes: ArbiterShadowOutcomeV1[],
   opts: ComputeReportOptions,
-): Promise<ShadowReport> {
+): ShadowReport {
   const { windowDays, horizonDays, now, thresholds = [] } = opts;
 
   const now_time = now();
@@ -94,21 +94,28 @@ export async function computeShadowReport(
     let survived_total = 0;
 
     for (const score of repoScoredList) {
-      const outcome = outcomesByKey.get(score.merge_sha);
+      const flagged = score.score < mainThreshold;
 
+      // Flagging is independent of maturity: count over all scored rows.
+      if (flagged) {
+        n_flagged++;
+      }
+
+      const outcome = outcomesByKey.get(score.merge_sha);
       if (!outcome) {
         continue;
       }
 
-      n_matured++;
-
       if (outcome.survived === null) {
+        // Matured but unlabellable: excluded from matured denominators.
         n_unlabelled++;
         continue;
       }
 
-      if (score.score < mainThreshold) {
-        n_flagged++;
+      // Matured and labelled.
+      n_matured++;
+
+      if (flagged) {
         if (outcome.survived) {
           flagged_survived++;
         } else {
@@ -121,8 +128,9 @@ export async function computeShadowReport(
       }
     }
 
+    const flagged_matured = flagged_survived + flagged_not_survived;
     const would_flag_rate = ratio(n_flagged, n_scored);
-    const precision = ratio(flagged_not_survived, n_flagged);
+    const precision = ratio(flagged_not_survived, flagged_matured);
     const false_positive_rate = ratio(flagged_survived, survived_total);
     const base_survival_rate = ratio(survived_total, n_matured);
 
@@ -133,15 +141,27 @@ export async function computeShadowReport(
       let sweep_flagged_not_survived = 0;
       let sweep_survived = 0;
 
+      let sweep_flagged_matured = 0;
+      let sweep_flagged_survived = 0;
+
       for (const score of repoScoredList) {
+        const flagged = score.score < t;
+
+        // would_flag_count is independent of maturity: count over all scored.
+        if (flagged) {
+          sweep_flagged++;
+        }
+
         const outcome = outcomesByKey.get(score.merge_sha);
         if (!outcome || outcome.survived === null) {
           continue;
         }
 
-        if (score.score < t) {
-          sweep_flagged++;
-          if (!outcome.survived) {
+        if (flagged) {
+          sweep_flagged_matured++;
+          if (outcome.survived) {
+            sweep_flagged_survived++;
+          } else {
             sweep_flagged_not_survived++;
           }
         }
@@ -154,8 +174,8 @@ export async function computeShadowReport(
       return {
         threshold: round4(t),
         would_flag_count: sweep_flagged,
-        precision: ratio(sweep_flagged_not_survived, sweep_flagged),
-        false_positive_rate: ratio(sweep_flagged - sweep_flagged_not_survived, sweep_survived),
+        precision: ratio(sweep_flagged_not_survived, sweep_flagged_matured),
+        false_positive_rate: ratio(sweep_flagged_survived, sweep_survived),
       };
     });
 
@@ -168,10 +188,10 @@ export async function computeShadowReport(
       n_matured,
       n_unlabelled,
       n_flagged,
-      would_flag_rate: would_flag_rate ? round4(would_flag_rate) : null,
-      precision: precision ? round4(precision) : null,
-      false_positive_rate: false_positive_rate ? round4(false_positive_rate) : null,
-      base_survival_rate: base_survival_rate ? round4(base_survival_rate) : null,
+      would_flag_rate: would_flag_rate === null ? null : round4(would_flag_rate),
+      precision: precision === null ? null : round4(precision),
+      false_positive_rate: false_positive_rate === null ? null : round4(false_positive_rate),
+      base_survival_rate: base_survival_rate === null ? null : round4(base_survival_rate),
       scorer_id: scorerId,
       scorer_version: scorerVersion,
       threshold_sweep,
@@ -196,7 +216,7 @@ export interface RunShadowReportOptions {
   log: (line: string) => void;
 }
 
-export async function runShadowReport(opts: RunShadowReportOptions): Promise<void> {
+export function runShadowReport(opts: RunShadowReportOptions): void {
   const { dataDir, windowDays, horizonDays, now, log } = opts;
 
   // Load scores and outcomes
@@ -220,7 +240,7 @@ export async function runShadowReport(opts: RunShadowReportOptions): Promise<voi
   });
 
   // Compute report
-  const report = await computeShadowReport(scoresResult.rows, outcomesResult.rows, {
+  const report = computeShadowReport(scoresResult.rows, outcomesResult.rows, {
     windowDays,
     horizonDays,
     now,
@@ -231,7 +251,7 @@ export async function runShadowReport(opts: RunShadowReportOptions): Promise<voi
   report.malformed_lines.outcomes = outcomesResult.malformed;
 
   // Write to disk and stdout
-  const date = now().toISOString().split('T')[0];
+  const date = now().toISOString().slice(0, 10);
   writeReport(dataDir, date, report);
   log(JSON.stringify(report));
 }

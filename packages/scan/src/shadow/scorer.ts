@@ -3,6 +3,7 @@
  */
 
 import type { CandidateFeaturesV1 } from '@hokusai/core';
+import type { StaticFeaturesResult } from '../static-features.js';
 
 /** Scorer interface: pure function to score candidate features. */
 export interface ShadowScorer {
@@ -34,12 +35,13 @@ export const BASELINE_V0_WEIGHTS = Object.freeze({
 });
 
 /** Null static features result (no tool execution in shadow mode). */
-export const NULL_STATIC_FEATURES = Object.freeze({
+export const NULL_STATIC_FEATURES: StaticFeaturesResult = Object.freeze({
   type_errors: null,
   lint_errors: null,
   build_ok: null,
-  build_warnings: null,
   complexity_delta: null,
+  build_evidence: null,
+  complexity_metric: null,
 });
 
 function clamp(value: number, min: number, max: number): number {

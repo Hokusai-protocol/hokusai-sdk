@@ -2,10 +2,10 @@
  * Shadow outcome backfilling: label matured PRs.
  */
 
-import type { SurvivalLabellerDeps, SurvivalLabellerTarget, MergedPrRef } from '../survival-labeller.js';
+import type { SurvivalLabellerDeps, SurvivalLabellerTarget } from '../survival-labeller.js';
 import { labelMergedPr, enumerateMergedPrs } from '../survival-labeller.js';
 import type { ArbiterShadowScoreV1, ArbiterShadowOutcomeV1, HorizonDays } from '@hokusai/core';
-import { validateShadowOutcomeRow, HORIZONS } from '@hokusai/core';
+import { validateShadowOutcomeRow } from '@hokusai/core';
 import { readJsonl, appendJsonl } from './store.js';
 
 export interface RunShadowBackfillOptions {
@@ -29,11 +29,9 @@ export interface RunShadowBackfillResult {
 }
 
 /** Backfill outcomes for matured scored PRs. */
-export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise<RunShadowBackfillResult> {
+export function runShadowBackfill(opts: RunShadowBackfillOptions): RunShadowBackfillResult {
   const {
     dataDir,
-    repo,
-    integrationBranch,
     horizonDays,
     target,
     deps,
@@ -67,7 +65,7 @@ export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise
   );
 
   // Get merged PRs for labelling
-  const allMergedPrsResult = await enumerateMergedPrs(target, deps, { maxCount: 10000 });
+  const allMergedPrsResult = enumerateMergedPrs(target, deps, { maxCount: 10000 });
 
   const now_epoch = Math.floor(now().getTime() / 1000);
   const horizon_seconds = horizonDays * 86400;
@@ -108,7 +106,7 @@ export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise
       }
 
       // Label
-      const labelResults = await labelMergedPr(target, deps, prRef, {
+      const labelResults = labelMergedPr(target, deps, prRef, {
         horizons: [horizonDays],
         allMergedPrs: allMergedPrsResult,
         includeLinkedReferences: false,
@@ -156,7 +154,7 @@ export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise
       rows.push(outcome);
       labelled++;
       existingOutcomes.add(outcomeKey);
-    } catch (error) {
+    } catch {
       log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
       skipped++;
     }

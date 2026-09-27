@@ -5,24 +5,25 @@
 import * as path from 'node:path';
 import { createDefaultDeps } from '../default-deps.js';
 import { HORIZONS } from '@hokusai/core';
+import type { HorizonDays } from '@hokusai/core';
 import { validateGithubRepo } from '../inputs.js';
 import { BASELINE_V0 } from './scorer.js';
 import { runShadowScore } from './score.js';
 import { runShadowBackfill } from './backfill.js';
 import { runShadowReport } from './report.js';
 import { ShadowError } from './errors.js';
-import type { GitRunner } from '../survival-labeller.js';
+import type { GitRunner, SurvivalLabellerTarget } from '../survival-labeller.js';
 
 export interface ShadowCliIO {
   log: (line: string) => void;
 }
 
-export async function runShadowCli(
+export function runShadowCli(
   command: string,
   argv: Record<string, unknown>,
   io: ShadowCliIO,
   runGit: GitRunner,
-): Promise<{ exitCode: number }> {
+): { exitCode: number } {
   const log = io.log;
 
   try {
@@ -40,7 +41,7 @@ export async function runShadowCli(
 
     // Validate github-repo format
     const repoValidation = validateGithubRepo(githubRepo);
-    if (!repoValidation || !repoValidation.owner || !repoValidation.name) {
+    if (!repoValidation || !repoValidation.owner || !repoValidation.repo) {
       throw new ShadowError('INVALID_ARG');
     }
 
@@ -65,10 +66,10 @@ export async function runShadowCli(
     }
 
     const horizonDaysNum = Number(argv['horizon-days'] ?? 30);
-    if (!HORIZONS.includes(horizonDaysNum as any)) {
+    if (!(HORIZONS as readonly number[]).includes(horizonDaysNum)) {
       throw new ShadowError('INVALID_ARG');
     }
-    const horizonDays = horizonDaysNum as 14 | 30 | 60;
+    const horizonDays = horizonDaysNum as HorizonDays;
 
     const windowDays = Number(argv['window-days'] ?? 30);
     if (!Number.isInteger(windowDays) || windowDays < 1) {
@@ -78,7 +79,7 @@ export async function runShadowCli(
     const checkoutDir = repo === '.' ? process.cwd() : path.resolve(repo);
 
     if (command === 'shadow-score') {
-      const result = await runShadowScore({
+      const result = runShadowScore({
         dataDir,
         repo: githubRepo,
         githubRepo,
@@ -95,19 +96,22 @@ export async function runShadowCli(
 
       log(`SHADOW_OK scored=${result.scored} skipped=${result.skipped}`);
     } else if (command === 'shadow-backfill') {
-      const deps = createDefaultDeps(
-        { checkoutDir, gitBranch: integrationBranch, githubRepoRef: githubRepo },
-        { github: { client: { request: async () => ({ data: {} }) } } },
-      );
+      const target: SurvivalLabellerTarget = {
+        owner: repoValidation.owner,
+        repo: repoValidation.repo,
+        integrationBranch,
+        repoDir: checkoutDir,
+      };
+      const deps = createDefaultDeps(target);
 
-      const result = await runShadowBackfill({
+      const result = runShadowBackfill({
         dataDir,
         repo: githubRepo,
         githubRepo,
         integrationBranch,
         horizonDays,
         checkoutDir,
-        target: { integrationBranch },
+        target,
         deps,
         now: () => new Date(),
         log,
@@ -117,7 +121,7 @@ export async function runShadowCli(
         `SHADOW_OK labelled=${result.labelled} pending=${result.pending} skipped=${result.skipped} unlabellable=${result.unlabellable}`,
       );
     } else if (command === 'shadow-report') {
-      await runShadowReport({
+      runShadowReport({
         dataDir,
         windowDays,
         horizonDays,
