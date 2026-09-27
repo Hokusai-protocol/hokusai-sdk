@@ -133,6 +133,8 @@ repo, over `window-days` (default 30, keyed on `merged_at`):
 - `false_positive_rate` = (flagged ∧ survived) / (survived ∧ matured) — how
   much of the healthy work would have been flagged.
 - `base_survival_rate` = survived / n_matured.
+- `scorer_id`/`scorer_version` — the most frequent scorer pair in the window,
+  with `scorer_mixed: true` when the window mixes more than one pair.
 - `threshold_sweep` — the same metrics recomputed at thresholds 0.05…0.95 in
   steps of 0.05 (19 entries), for calibration.
 

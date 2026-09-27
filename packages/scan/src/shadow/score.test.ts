@@ -219,6 +219,29 @@ describe('runShadowScore per-run cap (REQ-F4)', () => {
     expect(runShadowScore(opts).scored).toBe(0);
   });
 
+  it(
+    'scores 200 merges in under 60 seconds (NFR)',
+    { timeout: 60_000 },
+    () => {
+      const repo = fixture();
+      repo.addMerges(
+        Array.from({ length: 200 }, (_, i) => ({
+          prNumber: i + 1,
+          epoch: NOW_EPOCH - (250 - i) * 3600,
+          squash: true,
+        })),
+      );
+      const dataDir = tempDataDir();
+
+      const started = Date.now();
+      const result = runShadowScore({ ...baseOptions(repo, dataDir), maxPrs: 200, bootstrapDays: 365 });
+      const elapsedMs = Date.now() - started;
+
+      expect(result.scored).toBeGreaterThanOrEqual(200);
+      expect(elapsedMs).toBeLessThan(60_000);
+    },
+  );
+
   it('an extractor throw skips that PR, sets partial, and still advances the cursor', () => {
     const repo = fixture();
     const shas = repo.addMerges([

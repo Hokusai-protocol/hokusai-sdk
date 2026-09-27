@@ -185,7 +185,16 @@ export function runShadowScore(opts: RunShadowScoreOptions): RunShadowScoreResul
         }
 
         if (rows.length > 0) {
-          appendJsonl(scoresFile, rows, validateShadowScoreRow);
+          try {
+            appendJsonl(scoresFile, rows, validateShadowScoreRow);
+          } catch (error) {
+            // Nothing was persisted (the write is atomic), so the cursor
+            // must not advance past merges whose rows were lost — the next
+            // run rediscovers them and dedups by merge_sha.
+            cursorAfter = cursorBefore;
+            scored = 0;
+            throw error;
+          }
         }
       } finally {
         runGit(['worktree', 'remove', '--force', worktreeDir]);

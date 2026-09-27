@@ -213,4 +213,39 @@ describe('cli-core routing', () => {
     ).toString();
     expect(stdout.trim()).toBe('SHADOW_ERROR code=NOT_A_GIT_REPO');
   });
+
+  it('the Action bundle in shadow mode exits 0 and writes no outputs or summary', () => {
+    const actionBundle = join(dirname(fileURLToPath(import.meta.url)), '../../action/dist/index.js');
+    if (!existsSync(actionBundle)) return; // CI builds before testing
+    const repo = fixture();
+    const workDir = tempDir('hokusai-shadow-action-');
+    const dataDir = join(workDir, 'data');
+    const githubOutput = join(workDir, 'github-output.txt');
+    const githubSummary = join(workDir, 'github-summary.md');
+    writeFileSync(githubOutput, '');
+    writeFileSync(githubSummary, '');
+
+    const stdout = execFileSync(process.execPath, [actionBundle], {
+      cwd: repo.dir,
+      env: {
+        ...process.env,
+        INPUT_MODE: 'shadow-score',
+        'INPUT_DATA-DIR': dataDir,
+        'INPUT_INTEGRATION-BRANCH': 'auto/integration',
+        'INPUT_GITHUB-REPO': 'o/r',
+        'INPUT_REPO-PATH': repo.dir,
+        // The subprocess runs on the wall clock; widen the bootstrap window
+        // so the fixture's pinned commit dates stay inside it.
+        'INPUT_BOOTSTRAP-DAYS': '36500',
+        GITHUB_OUTPUT: githubOutput,
+        GITHUB_STEP_SUMMARY: githubSummary,
+      },
+    }).toString();
+
+    // 3 = the two fixture merges plus the initial commit (wide window).
+    expect(stdout).toMatch(/SHADOW_OK scored=3 /);
+    // Never visible: the Action wrote neither outputs nor a step summary.
+    expect(readFileSync(githubOutput, 'utf-8')).toBe('');
+    expect(readFileSync(githubSummary, 'utf-8')).toBe('');
+  });
 });

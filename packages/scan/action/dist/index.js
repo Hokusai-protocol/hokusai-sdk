@@ -1751,6 +1751,7 @@ var ARBITER_SHADOW_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
   "title",
   "commit_message",
   "author_email",
+  "author_name",
   "line_ranges",
   "path"
 ]);
@@ -5967,7 +5968,13 @@ function runShadowScore(opts) {
           }
         }
         if (rows.length > 0) {
-          appendJsonl(scoresFile, rows, validateShadowScoreRow);
+          try {
+            appendJsonl(scoresFile, rows, validateShadowScoreRow);
+          } catch (error) {
+            cursorAfter = cursorBefore;
+            scored = 0;
+            throw error;
+          }
         }
       } finally {
         runGit3(["worktree", "remove", "--force", worktreeDir]);
@@ -6169,6 +6176,20 @@ function computeShadowReport(scores, outcomes, opts) {
     const lastScore = scored[scored.length - 1];
     const mainThreshold = lastScore ? lastScore.threshold : 0.5;
     const main2 = metricsAtThreshold(inputs, mainThreshold);
+    const scorerCounts = /* @__PURE__ */ new Map();
+    for (const score of scored) {
+      const key = `${score.scorer_id}\0${score.scorer_version}`;
+      scorerCounts.set(key, (scorerCounts.get(key) ?? 0) + 1);
+    }
+    let topScorerKey = "";
+    let topScorerCount = -1;
+    for (const [key, count] of scorerCounts.entries()) {
+      if (count > topScorerCount) {
+        topScorerKey = key;
+        topScorerCount = count;
+      }
+    }
+    const [topScorerId = "unknown", topScorerVersion = "unknown"] = topScorerKey.split("\0");
     const threshold_sweep = thresholds.map((t) => {
       const m = metricsAtThreshold(inputs, t);
       return {
@@ -6189,8 +6210,9 @@ function computeShadowReport(scores, outcomes, opts) {
       precision: ratio(main2.flaggedNotSurvived, main2.flaggedMatured),
       false_positive_rate: ratio(main2.flaggedSurvived, main2.survived),
       base_survival_rate: ratio(main2.survived, n_matured),
-      scorer_id: lastScore ? lastScore.scorer_id : "unknown",
-      scorer_version: lastScore ? lastScore.scorer_version : "unknown",
+      scorer_id: topScorerId,
+      scorer_version: topScorerVersion,
+      scorer_mixed: scorerCounts.size > 1,
       threshold_sweep
     });
   }

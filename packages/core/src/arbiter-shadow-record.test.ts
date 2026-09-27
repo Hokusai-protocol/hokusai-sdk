@@ -440,6 +440,7 @@ describe('arbiter-shadow-record validators', () => {
       expect(ARBITER_SHADOW_FORBIDDEN_KEYS.has('title')).toBe(true);
       expect(ARBITER_SHADOW_FORBIDDEN_KEYS.has('commit_message')).toBe(true);
       expect(ARBITER_SHADOW_FORBIDDEN_KEYS.has('author_email')).toBe(true);
+      expect(ARBITER_SHADOW_FORBIDDEN_KEYS.has('author_name')).toBe(true);
     });
 
     it('includes outcome-specific privacy keys', () => {

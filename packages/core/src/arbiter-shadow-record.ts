@@ -56,6 +56,7 @@ export const ARBITER_SHADOW_FORBIDDEN_KEYS = new Set([
   'title',
   'commit_message',
   'author_email',
+  'author_name',
   'line_ranges',
   'path',
 ]);

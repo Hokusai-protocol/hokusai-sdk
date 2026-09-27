@@ -139,6 +139,25 @@ describe('computeShadowReport (REQ-F6)', () => {
     expect(repo?.precision).toBeNull();
   });
 
+  it('flags mixed-scorer windows and reports the most frequent pair', () => {
+    const scores = [
+      scoreRow(1, { mergedAt: daysAgo(5), score: 0.9 }),
+      scoreRow(2, { mergedAt: daysAgo(5), score: 0.9 }),
+      { ...scoreRow(3, { mergedAt: daysAgo(5), score: 0.9 }), scorer_id: 'model-a', scorer_version: '1.0.0' },
+    ];
+    const report = computeShadowReport(scores, [], { windowDays: 30, horizonDays: 30, now });
+    const repo = report.repos[0];
+    expect(repo?.scorer_mixed).toBe(true);
+    expect(repo?.scorer_id).toBe('baseline-v0');
+    expect(repo?.scorer_version).toBe('0.1.0');
+  });
+
+  it('a single-scorer window is not flagged as mixed', () => {
+    const scores = [scoreRow(1, { mergedAt: daysAgo(5), score: 0.9 })];
+    const report = computeShadowReport(scores, [], { windowDays: 30, horizonDays: 30, now });
+    expect(report.repos[0]?.scorer_mixed).toBe(false);
+  });
+
   it('scores outside the window are excluded', () => {
     const scores = [
       scoreRow(1, { mergedAt: daysAgo(45), score: 0.4 }),

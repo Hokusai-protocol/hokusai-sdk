@@ -36,8 +36,11 @@ export interface ReportMetrics {
   precision: number | null;
   false_positive_rate: number | null;
   base_survival_rate: number | null;
+  /** The most frequent (scorer_id, scorer_version) pair in the window. */
   scorer_id: string;
   scorer_version: string;
+  /** True when the window mixes more than one scorer id/version pair. */
+  scorer_mixed: boolean;
   threshold_sweep: ThresholdSweepEntry[];
 }
 
@@ -147,6 +150,22 @@ export function computeShadowReport(
     const mainThreshold = lastScore ? lastScore.threshold : 0.5;
     const main = metricsAtThreshold(inputs, mainThreshold);
 
+    // Most frequent scorer pair in the window; flag mixed-scorer windows.
+    const scorerCounts = new Map<string, number>();
+    for (const score of scored) {
+      const key = `${score.scorer_id}\u0000${score.scorer_version}`;
+      scorerCounts.set(key, (scorerCounts.get(key) ?? 0) + 1);
+    }
+    let topScorerKey = '';
+    let topScorerCount = -1;
+    for (const [key, count] of scorerCounts.entries()) {
+      if (count > topScorerCount) {
+        topScorerKey = key;
+        topScorerCount = count;
+      }
+    }
+    const [topScorerId = 'unknown', topScorerVersion = 'unknown'] = topScorerKey.split('\u0000');
+
     const threshold_sweep: ThresholdSweepEntry[] = thresholds.map((t) => {
       const m = metricsAtThreshold(inputs, t);
       return {
@@ -168,8 +187,9 @@ export function computeShadowReport(
       precision: ratio(main.flaggedNotSurvived, main.flaggedMatured),
       false_positive_rate: ratio(main.flaggedSurvived, main.survived),
       base_survival_rate: ratio(main.survived, n_matured),
-      scorer_id: lastScore ? lastScore.scorer_id : 'unknown',
-      scorer_version: lastScore ? lastScore.scorer_version : 'unknown',
+      scorer_id: topScorerId,
+      scorer_version: topScorerVersion,
+      scorer_mixed: scorerCounts.size > 1,
       threshold_sweep,
     });
   }
