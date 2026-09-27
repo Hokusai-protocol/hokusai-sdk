@@ -136,6 +136,77 @@ Every event the engine assembles or is handed passes
 enforcement (no prompts/paths/credentials), and the contract's cross-field
 consistency rules hold for everything in `events()`.
 
+## Source adapters (opt-in)
+
+Task/session capture for Claude Code and Codex ships behind dedicated subpath
+exports (HOK-3070). The package root stays parser- and Node-free; importing a
+subpath is the opt-in:
+
+| Subpath                               | What it does                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `@hokusai/costs/sources/claude-code`  | `extractClaudeCodeUsage` — assistant-turn usage from session transcript JSONL contents   |
+| `@hokusai/costs/sources/codex`        | `extractCodexUsage` — `token_count` usage from rollout JSONL contents                    |
+| `@hokusai/costs/sources/event-source` | `extractEventSourceUsage` — boundary filter for harnesses already emitting usage records |
+| `@hokusai/costs/sources/node-fs`      | `readSessionFiles` — Node-only file discovery over explicitly supplied roots             |
+
+```ts
+import { createTaskCostEngine } from '@hokusai/costs';
+import { extractClaudeCodeUsage } from '@hokusai/costs/sources/claude-code';
+import { readSessionFiles } from '@hokusai/costs/sources/node-fs';
+
+// 1. The caller states the task boundary explicitly — task, sessions, window.
+const boundary = {
+  boundaryVersion: 1,
+  taskId: 'task-0001',
+  sessionIds: ['0199a3b2-...-claude-session-uuid'],
+  startedAt: '2026-01-01T00:00:00Z',
+  endedAt: '2026-01-01T01:00:00Z',
+} as const;
+
+// 2. Read the session files (or supply contents from anywhere else).
+const { files, diagnostics: fsDiagnostics } = readSessionFiles({
+  roots: ['/home/me/.claude/projects/-encoded-project-dir'],
+  sessionIds: boundary.sessionIds,
+});
+
+// 3. Extract, then feed the engine.
+const { inputs, diagnostics, sourceVersions } = extractClaudeCodeUsage({
+  boundary,
+  files: files.map((file) => file.content),
+});
+const engine = createTaskCostEngine({ taskId: boundary.taskId });
+engine.ingestMany(inputs);
+const summary = engine.snapshot();
+```
+
+Design rules the adapters hold to:
+
+- **Explicit boundary only.** Correlation is `session_id ∈ sessionIds` AND
+  `startedAt <= observed_at <= endedAt` — never "the newest file", and never
+  Wavemill branch/stage/eval joins (those stay in Wavemill). Concurrent tasks
+  with disjoint boundaries cannot cross-charge.
+- **Dedupe by source identity.** Claude Code rows dedupe on the API message id
+  composed with the request id when both are present: streamed rows collapse
+  to the final one, a resumed session's copied history is not double-charged,
+  and a retry (same message id, fresh request id) stays two events per
+  REQ-F2. Codex observations dedupe on `turn_id` + observation ordinal.
+- **Deltas preferred, cumulative diffed.** Codex `last_token_usage` wins when
+  present; otherwise deltas are derived from `total_token_usage` against a
+  per-file baseline. A regressing counter is a reset: the tracker re-baselines
+  on the new (lower) values and charges them as the new turn's usage per
+  REQ-F3, marked with a `cumulative_counter_reset` diagnostic.
+- **Provider cost when present.** Claude Code's legacy per-turn `costUSD`
+  becomes `actual_cost_usd`; everything else is priced by the engine.
+- **Fail soft, count only.** Malformed lines, unknown fields, missing
+  timestamps/session ids, unreadable files: each becomes a count in the
+  result's `diagnostics` (`TaskCostSourceDiagnostics`) and coverage degrades
+  to partial/unavailable. Nothing throws on bad input — only a misconfigured
+  boundary throws `TypeError`.
+- **Allow-list projection.** Parsers only read usage/identity fields; prompts,
+  transcript text, paths, branches, and account attributes have no code path
+  into the output (`sources/privacy.test.ts` proves it with sentinels, and
+  every emitted event still passes the contract's forbidden-key validator).
+
 ## Testing
 
 ```sh
