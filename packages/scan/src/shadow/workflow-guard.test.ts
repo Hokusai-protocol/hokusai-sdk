@@ -76,6 +76,10 @@ export function checkShadowWorkflow(doc: WorkflowDoc, rawText: string): string[]
   }
 
   const permissions = doc.permissions ?? {};
+  if (typeof permissions !== 'object' || permissions === null || Array.isArray(permissions)) {
+    // e.g. `permissions: write-all`
+    return [...violations, 'permissions must be an explicit scope map'];
+  }
   for (const [scope, level] of Object.entries(permissions)) {
     if (level === 'write' && scope !== 'contents') {
       violations.push(`forbidden write permission: ${scope}`);
@@ -142,6 +146,7 @@ const FORBIDDEN_SOURCE_TOKENS = [
   'core.error',
   'core.notice',
   'GITHUB_STEP_SUMMARY',
+  'GITHUB_OUTPUT',
   'createCheck',
   'createComment',
   'fetch(',
@@ -188,6 +193,13 @@ describe('arbiter-shadow workflow guard (REQ-F8)', () => {
       const { doc, raw } = mutate((r) => r.replace('on:\n', `on:\n  ${trigger}: {}\n`));
       expect(checkShadowWorkflow(doc, raw).some((v) => v.includes(trigger))).toBe(true);
     }
+  });
+
+  it('rejects blanket write-all permissions', () => {
+    const { doc, raw } = mutate((r) =>
+      r.replace(/permissions:\n(?: {2}.*\n)+/, 'permissions: write-all\n'),
+    );
+    expect(checkShadowWorkflow(doc, raw).length).toBeGreaterThan(0);
   });
 
   it('rejects PR-facing write permissions', () => {

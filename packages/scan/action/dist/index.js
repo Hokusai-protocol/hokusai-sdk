@@ -6227,6 +6227,7 @@ function computeShadowReport(scores, outcomes, opts) {
 }
 function runShadowReport(opts) {
   const { dataDir, windowDays, horizonDays, now, log } = opts;
+  ensureWritableDataDir(dataDir);
   const scoresResult = readJsonl(join6(dataDir, "scores.jsonl"), validateShadowScoreRow);
   const outcomesResult = readJsonl(join6(dataDir, "outcomes.jsonl"), validateShadowOutcomeRow);
   const report = computeShadowReport(scoresResult.rows, outcomesResult.rows, {

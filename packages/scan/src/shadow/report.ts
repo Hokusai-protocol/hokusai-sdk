@@ -16,7 +16,7 @@
 import { join } from 'node:path';
 import type { ArbiterShadowOutcomeV1, ArbiterShadowScoreV1 } from '@hokusai/core';
 import { validateShadowOutcomeRow, validateShadowScoreRow } from '@hokusai/core';
-import { readJsonl, writeReport } from './store.js';
+import { ensureWritableDataDir, readJsonl, writeReport } from './store.js';
 
 export interface ThresholdSweepEntry {
   threshold: number;
@@ -215,6 +215,9 @@ export interface RunShadowReportOptions {
 /** Load rows, compute the report, write `reports/<date>.json`, print to stdout. */
 export function runShadowReport(opts: RunShadowReportOptions): ShadowReport {
   const { dataDir, windowDays, horizonDays, now, log } = opts;
+
+  // Surface an unwritable data dir as DATA_DIR_UNWRITABLE, not INTERNAL.
+  ensureWritableDataDir(dataDir);
 
   const scoresResult = readJsonl(join(dataDir, 'scores.jsonl'), validateShadowScoreRow);
   const outcomesResult = readJsonl(join(dataDir, 'outcomes.jsonl'), validateShadowOutcomeRow);
