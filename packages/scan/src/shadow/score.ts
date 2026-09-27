@@ -91,6 +91,7 @@ export function runShadowScore(opts: RunShadowScoreOptions): RunShadowScoreResul
     // Discover merges
     const discovered = discoverMerges({
       runGit,
+      checkoutDir,
       ref: integrationBranch,
       cursor: cursorBefore,
       bootstrapDays,

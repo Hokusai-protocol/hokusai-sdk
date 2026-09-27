@@ -18,11 +18,12 @@ const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 /** Check if a SHA is an ancestor of a ref. Returns false if the SHA is missing. */
 export function isAncestor(
   runGit: GitRunner,
+  checkoutDir: string,
   sha: string,
   ref: string,
 ): boolean {
   try {
-    const result = runGit(['merge-base', '--is-ancestor', sha, ref]);
+    const result = runGit(['-C', checkoutDir, 'merge-base', '--is-ancestor', sha, ref]);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -31,6 +32,8 @@ export function isAncestor(
 
 export interface DiscoverMergesOptions {
   runGit: GitRunner;
+  /** Repository directory the git commands run in (bound with `-C`). */
+  checkoutDir: string;
   ref: string;
   cursor: string | null; // last_seen_merge_sha
   bootstrapDays: number;
@@ -46,7 +49,7 @@ export interface DiscoverMergesResult {
 
 /** Discover merged PRs from git history. */
 export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResult {
-  const { runGit, ref, cursor, bootstrapDays, now, maxPrs } = opts;
+  const { runGit, checkoutDir, ref, cursor, bootstrapDays, now, maxPrs } = opts;
 
   const merges: DiscoveredMerge[] = [];
   let cursorReset = false;
@@ -60,7 +63,7 @@ export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResul
     gitRevRange = `--since=${isoDate}`;
   } else {
     // Check if cursor is an ancestor of ref
-    const isAncestorResult = isAncestor(runGit, cursor, ref);
+    const isAncestorResult = isAncestor(runGit, checkoutDir, cursor, ref);
 
     if (isAncestorResult) {
       // Use the range from cursor to ref
@@ -76,7 +79,7 @@ export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResul
 
   // Get first-parent commits
   const format = '%H%x09%P%x09%ct%x09%s';
-  const args = ['log', '--first-parent', '--reverse', `--pretty=format:${format}`, gitRevRange, ref];
+  const args = ['-C', checkoutDir, 'log', '--first-parent', '--reverse', `--pretty=format:${format}`, gitRevRange, ref];
 
   const result = runGit(args);
   if (result.exitCode !== 0) {
@@ -130,6 +133,8 @@ export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResul
   if (oldest) {
     const oldestSha = oldest.mergeSha;
     const countResult = runGit([
+      '-C',
+      checkoutDir,
       'rev-list',
       '--first-parent',
       '--count',
