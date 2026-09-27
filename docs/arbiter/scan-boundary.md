@@ -60,6 +60,16 @@ the Action bundle. Do not regenerate goldens to make a failing test pass;
 re-capture only in a PR that deliberately bumps the labeller/normalization
 versions (see `docs/versioning-policy.md`, "The Scan Contract").
 
+## Shadow mode
+
+Shadow mode (HOK-2820) runs this scanner silently on a schedule against a
+repo's own merged PRs, storing scores and survival outcomes on a dedicated
+`arbiter-shadow` data branch — never on a PR. It reuses the labeller and
+extractor unchanged through their public functions; the wire contracts live
+in `packages/core/src/arbiter-shadow-record.ts` and the runners in
+`packages/scan/src/shadow/`. See [shadow-mode.md](./shadow-mode.md) for the
+install steps, data layout, and the never-gate guarantees.
+
 ## Where things are
 
 - Contract modules: `packages/core/src/{candidate-features,arbiter-survival-label}.ts`

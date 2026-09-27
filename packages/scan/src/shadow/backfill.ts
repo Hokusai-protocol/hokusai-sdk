@@ -1,24 +1,37 @@
 /**
- * Shadow outcome backfilling: label matured PRs.
+ * Shadow outcome backfilling: label matured scored PRs with the existing
+ * S2/S4 survival labeller and append validated outcome rows.
+ *
+ * Idempotent: an existing `(repo, merge_sha, horizon_days)` outcome is never
+ * re-appended. Privacy (D4): the embedded label omits `line_ranges` (file
+ * paths) and `owner_correction`.
  */
 
-import type { SurvivalLabellerDeps, SurvivalLabellerTarget, MergedPrRef } from '../survival-labeller.js';
-import { labelMergedPr, enumerateMergedPrs } from '../survival-labeller.js';
-import type { ArbiterShadowScoreV1, ArbiterShadowOutcomeV1, HorizonDays } from '@hokusai/core';
-import { validateShadowOutcomeRow, HORIZONS } from '@hokusai/core';
-import { readJsonl, appendJsonl } from './store.js';
+import { join } from 'node:path';
+import type { ArbiterShadowOutcomeV1, ArbiterShadowScoreV1, HorizonDays } from '@hokusai/core';
+import { validateShadowOutcomeRow, validateShadowScoreRow } from '@hokusai/core';
+import {
+  enumerateMergedPrs,
+  labelMergedPr,
+  type MergedPrRef,
+  type SurvivalLabellerDeps,
+  type SurvivalLabellerTarget,
+} from '../survival-labeller.js';
+import { appendJsonl, ensureWritableDataDir, readJsonl } from './store.js';
 
 export interface RunShadowBackfillOptions {
   dataDir: string;
-  repo: string;
-  githubRepo: string;
-  integrationBranch: string;
   horizonDays: HorizonDays;
-  checkoutDir: string;
   target: SurvivalLabellerTarget;
   deps: SurvivalLabellerDeps;
   now: () => Date;
   log: (line: string) => void;
+  /** Upper bound on the merged-PR enumeration walk. */
+  maxCount?: number | undefined;
+  /** Seam for tests: merged-PR enumeration. */
+  enumerate?: typeof enumerateMergedPrs | undefined;
+  /** Seam for tests: the survival labeller. */
+  label?: typeof labelMergedPr | undefined;
 }
 
 export interface RunShadowBackfillResult {
@@ -29,148 +42,130 @@ export interface RunShadowBackfillResult {
 }
 
 /** Backfill outcomes for matured scored PRs. */
-export async function runShadowBackfill(opts: RunShadowBackfillOptions): Promise<RunShadowBackfillResult> {
+export function runShadowBackfill(opts: RunShadowBackfillOptions): RunShadowBackfillResult {
   const {
     dataDir,
-    repo,
-    integrationBranch,
     horizonDays,
     target,
     deps,
     now,
     log,
+    maxCount = 10000,
+    enumerate = enumerateMergedPrs,
+    label = labelMergedPr,
   } = opts;
 
-  // Load scores and outcomes
-  const scoresFile = `${dataDir}/scores.jsonl`;
-  const outcomesFile = `${dataDir}/outcomes.jsonl`;
+  ensureWritableDataDir(dataDir);
 
-  const scoresResult = readJsonl(scoresFile, (row: unknown) => {
-    const r = row as Partial<ArbiterShadowScoreV1>;
-    return {
-      ok: r.schema_version === 'arbiter_shadow_score/v1' && !!r.merge_sha,
-      value: r as ArbiterShadowScoreV1,
-    };
-  });
+  const scoresFile = join(dataDir, 'scores.jsonl');
+  const outcomesFile = join(dataDir, 'outcomes.jsonl');
 
-  const outcomesResult = readJsonl(outcomesFile, (row: unknown) => {
-    const r = row as Partial<ArbiterShadowOutcomeV1>;
-    return {
-      ok: r.schema_version === 'arbiter_shadow_outcome/v1' && !!r.merge_sha,
-      value: r as ArbiterShadowOutcomeV1,
-    };
-  });
+  const scoresResult = readJsonl(scoresFile, validateShadowScoreRow);
+  const outcomesResult = readJsonl(outcomesFile, validateShadowOutcomeRow);
 
-  // Index existing outcomes
   const existingOutcomes = new Set(
-    outcomesResult.rows.map(r => `${r.merge_sha}:${r.horizon_days}`),
+    outcomesResult.rows.map((r) => `${r.repo}:${r.merge_sha}:${r.horizon_days}`),
   );
 
-  // Get merged PRs for labelling
-  const allMergedPrsResult = await enumerateMergedPrs(target, deps, { maxCount: 10000 });
+  const nowEpoch = Math.floor(now().getTime() / 1000);
+  const horizonSeconds = horizonDays * 86400;
 
-  const now_epoch = Math.floor(now().getTime() / 1000);
-  const horizon_seconds = horizonDays * 86400;
-
-  const rows: ArbiterShadowOutcomeV1[] = [];
-  let labelled = 0;
+  // Filter to matured candidates first so the (potentially expensive)
+  // enumeration only happens when there is work to do.
+  const candidates: ArbiterShadowScoreV1[] = [];
   let pending = 0;
-  let skipped = 0;
   let unlabellable = 0;
-
   for (const score of scoresResult.rows) {
-    const outcomeKey = `${score.merge_sha}:${horizonDays}`;
+    if (existingOutcomes.has(`${score.repo}:${score.merge_sha}:${horizonDays}`)) continue;
 
-    // Skip if already has outcome for this horizon
-    if (existingOutcomes.has(outcomeKey)) {
-      continue;
-    }
-
-    // Check if mature
     const mergedAtEpoch = Math.floor(new Date(score.merged_at).getTime() / 1000);
-    if (mergedAtEpoch + horizon_seconds > now_epoch) {
+    if (mergedAtEpoch + horizonSeconds > nowEpoch) {
+      // Maturity is inclusive: merged_at + horizon == now counts as mature.
       pending++;
       continue;
     }
 
-    // Skip if pr_number is null
     if (score.pr_number === null) {
       unlabellable++;
       continue;
     }
 
-    try {
-      // Look up in all merged PRs
-      const prRef = allMergedPrsResult.find(p => p.prNumber === score.pr_number);
-      if (!prRef) {
+    candidates.push(score);
+  }
+
+  const rows: ArbiterShadowOutcomeV1[] = [];
+  let labelled = 0;
+  let skipped = 0;
+
+  if (candidates.length > 0) {
+    const allMergedPrs = enumerate(target, deps, { maxCount });
+    const byMergeSha = new Map<string, MergedPrRef>(allMergedPrs.map((p) => [p.mergeSha, p]));
+
+    for (const score of candidates) {
+      try {
+        const prRef = byMergeSha.get(score.merge_sha);
+        if (!prRef) {
+          log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
+          skipped++;
+          continue;
+        }
+
+        const labelResults = label(target, deps, prRef, {
+          horizons: [horizonDays],
+          allMergedPrs,
+          includeLinkedReferences: false,
+        });
+
+        const result = labelResults[0];
+        if (!result) {
+          // No label for the horizon yet: retry next run.
+          pending++;
+          continue;
+        }
+        if (result.outcome.reason_codes.includes('missing_horizon')) {
+          // Not yet mature by the labeller's clock: retry next run.
+          pending++;
+          continue;
+        }
+
+        // D4 privacy: strip line_ranges (file paths) and owner_correction.
+        const outcome: ArbiterShadowOutcomeV1 = {
+          schema_version: 'arbiter_shadow_outcome/v1',
+          repo: score.repo,
+          pr_number: score.pr_number,
+          merge_sha: score.merge_sha,
+          horizon_days: horizonDays,
+          labelled_at: now().toISOString(),
+          survived: result.outcome.survived,
+          label: {
+            schema_version: result.schema_version,
+            prUrl: result.prUrl,
+            horizon_days: result.horizon_days,
+            label_provenance: result.label_provenance,
+            outcome: result.outcome,
+            envelope: result.envelope,
+          },
+        };
+
+        const validation = validateShadowOutcomeRow(outcome);
+        if (!validation.ok) {
+          log(`SHADOW_SKIP pr=${score.pr_number} code=INVALID_ROW`);
+          skipped++;
+          continue;
+        }
+
+        rows.push(outcome);
+        labelled++;
+      } catch {
+        log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
         skipped++;
-        continue;
       }
+    }
 
-      // Label
-      const labelResults = await labelMergedPr(target, deps, prRef, {
-        horizons: [horizonDays],
-        allMergedPrs: allMergedPrsResult,
-        includeLinkedReferences: false,
-      });
-
-      if (!labelResults || labelResults.length === 0) {
-        // No label - skip for now, retry later
-        pending++;
-        continue;
-      }
-
-      const label = labelResults[0]; // Only one horizon requested
-      if (!label || label.outcome.reason_codes.includes('missing_horizon')) {
-        // Not yet mature for this horizon
-        pending++;
-        continue;
-      }
-
-      // Build outcome row
-      const outcome: ArbiterShadowOutcomeV1 = {
-        schema_version: 'arbiter_shadow_outcome/v1',
-        repo: score.repo,
-        pr_number: score.pr_number,
-        merge_sha: score.merge_sha,
-        horizon_days: horizonDays,
-        labelled_at: now().toISOString(),
-        survived: label.outcome.survived,
-        label: {
-          schema_version: label.schema_version,
-          prUrl: label.prUrl,
-          horizon_days: label.horizon_days,
-          label_provenance: label.label_provenance,
-          outcome: label.outcome,
-          envelope: label.envelope,
-        },
-      };
-
-      // Validate
-      const validation = validateShadowOutcomeRow(outcome);
-      if (!validation.ok) {
-        skipped++;
-        continue;
-      }
-
-      rows.push(outcome);
-      labelled++;
-      existingOutcomes.add(outcomeKey);
-    } catch (error) {
-      log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
-      skipped++;
+    if (rows.length > 0) {
+      appendJsonl(outcomesFile, rows, validateShadowOutcomeRow);
     }
   }
 
-  // Append outcomes
-  if (rows.length > 0) {
-    appendJsonl(outcomesFile, rows, validateShadowOutcomeRow);
-  }
-
-  return {
-    labelled,
-    pending,
-    skipped,
-    unlabellable,
-  };
+  return { labelled, pending, skipped, unlabellable };
 }

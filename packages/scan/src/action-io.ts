@@ -25,6 +25,38 @@ export function actionFlagIsTrue(value: string | undefined): boolean {
   return value !== undefined && /^(true|1|yes)$/i.test(value);
 }
 
+/** Shadow modes (HOK-2820) never write Action outputs or a step summary. */
+export function isShadowMode(mode: string | undefined): boolean {
+  return mode === 'shadow-score' || mode === 'shadow-backfill' || mode === 'shadow-report';
+}
+
+/**
+ * Map `INPUT_*` values to the shadow sub-CLI argv. No `--out`: shadow
+ * commands write only to `--data-dir` and stdout.
+ */
+export function buildShadowActionArgv(env: ActionEnv): { argv: string[] } {
+  const mode = env.input('mode') ?? '';
+  const argv: string[] = [mode];
+
+  argv.push('--repo', env.input('repo-path') ?? env.workspace ?? '.');
+
+  const dataDir = env.input('data-dir');
+  if (dataDir !== undefined) argv.push('--data-dir', dataDir);
+
+  const githubRepo = env.input('github-repo');
+  if (githubRepo !== undefined) argv.push('--github-repo', githubRepo);
+
+  const integrationBranch = env.input('integration-branch');
+  if (integrationBranch !== undefined) argv.push('--integration-branch', integrationBranch);
+
+  for (const flag of ['threshold', 'bootstrap-days', 'max-prs', 'horizon-days', 'window-days']) {
+    const value = env.input(flag);
+    if (value !== undefined) argv.push(`--${flag}`, value);
+  }
+
+  return { argv };
+}
+
 export function buildActionArgv(env: ActionEnv): { argv: string[]; outputPath: string } {
   const mode = env.input('mode') ?? '';
   const argv: string[] = [mode];

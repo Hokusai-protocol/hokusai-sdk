@@ -3,6 +3,7 @@
  */
 
 import type { CandidateFeaturesV1 } from '@hokusai/core';
+import type { StaticFeaturesResult } from '../static-features.js';
 
 /** Scorer interface: pure function to score candidate features. */
 export interface ShadowScorer {
@@ -34,12 +35,13 @@ export const BASELINE_V0_WEIGHTS = Object.freeze({
 });
 
 /** Null static features result (no tool execution in shadow mode). */
-export const NULL_STATIC_FEATURES = Object.freeze({
+export const NULL_STATIC_FEATURES: StaticFeaturesResult = Object.freeze({
   type_errors: null,
   lint_errors: null,
   build_ok: null,
-  build_warnings: null,
   complexity_delta: null,
+  build_evidence: null,
+  complexity_metric: null,
 });
 
 function clamp(value: number, min: number, max: number): number {
@@ -97,9 +99,9 @@ export const BASELINE_V0: ShadowScorer = Object.freeze({
       z -= w.buildFailPenalty;
     }
 
-    // Complexity delta penalty
+    // Complexity delta penalty (clamped at 0 so reductions are neutral, not a bonus)
     const complexityDelta = features.complexity_delta ?? 0;
-    z -= (w.complexityDeltaPenalty * Math.min(complexityDelta, w.complexityDeltaSaturation)) / w.complexityDeltaSaturation;
+    z -= (w.complexityDeltaPenalty * clamp(complexityDelta, 0, w.complexityDeltaSaturation)) / w.complexityDeltaSaturation;
 
     // Review signals penalties
     const changeRequests = features.change_requests ?? 0;

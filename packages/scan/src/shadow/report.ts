@@ -1,9 +1,30 @@
 /**
- * Shadow report generation: compute metrics over scored and labelled PRs.
+ * Shadow report generation: compute would-be flag rate, precision and
+ * false-positive rate per repo over a window, plus a threshold sweep.
+ *
+ * Metric definitions (denominator 0 → null, never 0 or NaN):
+ * - would_flag_rate      = flagged / n_scored
+ * - precision            = (flagged ∧ ¬survived) / (flagged ∧ matured)
+ * - false_positive_rate  = (flagged ∧ survived) / (survived ∧ matured)
+ * - base_survival_rate   = survived / n_matured
+ *
+ * "Matured" means an outcome row exists with `survived !== null`; outcome
+ * rows with `survived: null` (labeller-declared missing) are counted as
+ * `n_unlabelled` and excluded from every outcome-based denominator.
  */
 
-import type { ArbiterShadowScoreV1, ArbiterShadowOutcomeV1 } from '@hokusai/core';
+import { join } from 'node:path';
+import type { ArbiterShadowOutcomeV1, ArbiterShadowScoreV1 } from '@hokusai/core';
+import { validateShadowOutcomeRow, validateShadowScoreRow } from '@hokusai/core';
 import { readJsonl, writeReport } from './store.js';
+
+export interface ThresholdSweepEntry {
+  threshold: number;
+  would_flag_count: number;
+  would_flag_rate: number | null;
+  precision: number | null;
+  false_positive_rate: number | null;
+}
 
 export interface ReportMetrics {
   repo: string;
@@ -17,12 +38,7 @@ export interface ReportMetrics {
   base_survival_rate: number | null;
   scorer_id: string;
   scorer_version: string;
-  threshold_sweep: Array<{
-    threshold: number;
-    would_flag_count: number;
-    precision: number | null;
-    false_positive_rate: number | null;
-  }>;
+  threshold_sweep: ThresholdSweepEntry[];
 }
 
 export interface ShadowReport {
@@ -35,7 +51,7 @@ export interface ShadowReport {
 }
 
 function ratio(n: number, d: number): number | null {
-  return d === 0 ? null : n / d;
+  return d === 0 ? null : round4(n / d);
 }
 
 function round4(value: number): number {
@@ -46,141 +62,121 @@ export interface ComputeReportOptions {
   windowDays: number;
   horizonDays: number;
   now: () => Date;
-  thresholds?: number[];
+  thresholds?: number[] | undefined;
 }
 
-export async function computeShadowReport(
+const SWEEP_THRESHOLDS = Array.from({ length: 19 }, (_, i) => round4((i + 1) * 0.05));
+
+interface RepoMetricInputs {
+  scores: ArbiterShadowScoreV1[];
+  outcomeFor: (score: ArbiterShadowScoreV1) => ArbiterShadowOutcomeV1 | undefined;
+}
+
+function metricsAtThreshold(
+  { scores, outcomeFor }: RepoMetricInputs,
+  threshold: number,
+): { flagged: number; flaggedMatured: number; flaggedNotSurvived: number; flaggedSurvived: number; survived: number } {
+  let flagged = 0;
+  let flaggedMatured = 0;
+  let flaggedNotSurvived = 0;
+  let flaggedSurvived = 0;
+  let survived = 0;
+
+  for (const score of scores) {
+    const isFlagged = score.score < threshold;
+    if (isFlagged) flagged++;
+
+    const outcome = outcomeFor(score);
+    if (!outcome || outcome.survived === null) continue;
+
+    if (outcome.survived) survived++;
+    if (isFlagged) {
+      flaggedMatured++;
+      if (outcome.survived) flaggedSurvived++;
+      else flaggedNotSurvived++;
+    }
+  }
+
+  return { flagged, flaggedMatured, flaggedNotSurvived, flaggedSurvived, survived };
+}
+
+/** Pure report computation over already-loaded rows. */
+export function computeShadowReport(
   scores: ArbiterShadowScoreV1[],
   outcomes: ArbiterShadowOutcomeV1[],
   opts: ComputeReportOptions,
-): Promise<ShadowReport> {
-  const { windowDays, horizonDays, now, thresholds = [] } = opts;
+): ShadowReport {
+  const { windowDays, horizonDays, now, thresholds = SWEEP_THRESHOLDS } = opts;
 
-  const now_time = now();
-  const cutoff = new Date(now_time.getTime() - windowDays * 86400 * 1000);
+  const nowTime = now();
+  const cutoff = new Date(nowTime.getTime() - windowDays * 86400 * 1000);
+  const windowScores = scores.filter((s) => new Date(s.merged_at) >= cutoff);
 
-  // Filter to window
-  const windowScores = scores.filter(s => new Date(s.merged_at) >= cutoff);
-
-  // Index outcomes
   const outcomesByKey = new Map<string, ArbiterShadowOutcomeV1>();
   for (const o of outcomes) {
     if (o.horizon_days === horizonDays) {
-      outcomesByKey.set(`${o.merge_sha}`, o);
+      outcomesByKey.set(`${o.repo}:${o.merge_sha}`, o);
     }
   }
+  const outcomeFor = (score: ArbiterShadowScoreV1): ArbiterShadowOutcomeV1 | undefined =>
+    outcomesByKey.get(`${score.repo}:${score.merge_sha}`);
 
-  // Group by repo
   const repoScores = new Map<string, ArbiterShadowScoreV1[]>();
   for (const s of windowScores) {
-    if (!repoScores.has(s.repo)) {
-      repoScores.set(s.repo, []);
-    }
-    repoScores.get(s.repo)!.push(s);
+    const list = repoScores.get(s.repo);
+    if (list) list.push(s);
+    else repoScores.set(s.repo, [s]);
   }
 
-  // Compute metrics per repo
   const repos: ReportMetrics[] = [];
-  for (const [repo, repoScoredList] of repoScores.entries()) {
-    const n_scored = repoScoredList.length;
+  for (const [repo, scored] of repoScores.entries()) {
+    const inputs: RepoMetricInputs = { scores: scored, outcomeFor };
+    const n_scored = scored.length;
 
-    // Count flagged at main threshold
-    const mainThreshold = repoScoredList[0]?.threshold ?? 0.5;
-    let n_flagged = 0;
     let n_matured = 0;
     let n_unlabelled = 0;
-    let flagged_survived = 0;
-    let flagged_not_survived = 0;
-    let survived_total = 0;
-
-    for (const score of repoScoredList) {
-      const outcome = outcomesByKey.get(score.merge_sha);
-
-      if (!outcome) {
-        continue;
-      }
-
-      n_matured++;
-
-      if (outcome.survived === null) {
-        n_unlabelled++;
-        continue;
-      }
-
-      if (score.score < mainThreshold) {
-        n_flagged++;
-        if (outcome.survived) {
-          flagged_survived++;
-        } else {
-          flagged_not_survived++;
-        }
-      }
-
-      if (outcome.survived) {
-        survived_total++;
-      }
+    for (const score of scored) {
+      const outcome = outcomeFor(score);
+      if (!outcome) continue;
+      if (outcome.survived === null) n_unlabelled++;
+      else n_matured++;
     }
 
-    const would_flag_rate = ratio(n_flagged, n_scored);
-    const precision = ratio(flagged_not_survived, n_flagged);
-    const false_positive_rate = ratio(flagged_survived, survived_total);
-    const base_survival_rate = ratio(survived_total, n_matured);
+    // The recorded threshold (most recent row wins on mixed thresholds).
+    const lastScore = scored[scored.length - 1];
+    const mainThreshold = lastScore ? lastScore.threshold : 0.5;
+    const main = metricsAtThreshold(inputs, mainThreshold);
 
-    // Threshold sweep
-    const sweep_thresholds = thresholds.length > 0 ? thresholds : Array.from({ length: 19 }, (_, i) => (i + 1) * 0.05);
-    const threshold_sweep = sweep_thresholds.map(t => {
-      let sweep_flagged = 0;
-      let sweep_flagged_not_survived = 0;
-      let sweep_survived = 0;
-
-      for (const score of repoScoredList) {
-        const outcome = outcomesByKey.get(score.merge_sha);
-        if (!outcome || outcome.survived === null) {
-          continue;
-        }
-
-        if (score.score < t) {
-          sweep_flagged++;
-          if (!outcome.survived) {
-            sweep_flagged_not_survived++;
-          }
-        }
-
-        if (outcome.survived) {
-          sweep_survived++;
-        }
-      }
-
+    const threshold_sweep: ThresholdSweepEntry[] = thresholds.map((t) => {
+      const m = metricsAtThreshold(inputs, t);
       return {
         threshold: round4(t),
-        would_flag_count: sweep_flagged,
-        precision: ratio(sweep_flagged_not_survived, sweep_flagged),
-        false_positive_rate: ratio(sweep_flagged - sweep_flagged_not_survived, sweep_survived),
+        would_flag_count: m.flagged,
+        would_flag_rate: ratio(m.flagged, n_scored),
+        precision: ratio(m.flaggedNotSurvived, m.flaggedMatured),
+        false_positive_rate: ratio(m.flaggedSurvived, m.survived),
       };
     });
-
-    const scorerId = repoScoredList[0]?.scorer_id ?? 'unknown';
-    const scorerVersion = repoScoredList[0]?.scorer_version ?? 'unknown';
 
     repos.push({
       repo,
       n_scored,
       n_matured,
       n_unlabelled,
-      n_flagged,
-      would_flag_rate: would_flag_rate ? round4(would_flag_rate) : null,
-      precision: precision ? round4(precision) : null,
-      false_positive_rate: false_positive_rate ? round4(false_positive_rate) : null,
-      base_survival_rate: base_survival_rate ? round4(base_survival_rate) : null,
-      scorer_id: scorerId,
-      scorer_version: scorerVersion,
+      n_flagged: main.flagged,
+      would_flag_rate: ratio(main.flagged, n_scored),
+      precision: ratio(main.flaggedNotSurvived, main.flaggedMatured),
+      false_positive_rate: ratio(main.flaggedSurvived, main.survived),
+      base_survival_rate: ratio(main.survived, n_matured),
+      scorer_id: lastScore ? lastScore.scorer_id : 'unknown',
+      scorer_version: lastScore ? lastScore.scorer_version : 'unknown',
       threshold_sweep,
     });
   }
 
   return {
     schema_version: 'arbiter_shadow_report/v1',
-    generated_at: now_time.toISOString(),
+    generated_at: nowTime.toISOString(),
     window_days: windowDays,
     horizon_days: horizonDays,
     malformed_lines: { scores: 0, outcomes: 0 },
@@ -196,42 +192,24 @@ export interface RunShadowReportOptions {
   log: (line: string) => void;
 }
 
-export async function runShadowReport(opts: RunShadowReportOptions): Promise<void> {
+/** Load rows, compute the report, write `reports/<date>.json`, print to stdout. */
+export function runShadowReport(opts: RunShadowReportOptions): ShadowReport {
   const { dataDir, windowDays, horizonDays, now, log } = opts;
 
-  // Load scores and outcomes
-  const scoresFile = `${dataDir}/scores.jsonl`;
-  const outcomesFile = `${dataDir}/outcomes.jsonl`;
+  const scoresResult = readJsonl(join(dataDir, 'scores.jsonl'), validateShadowScoreRow);
+  const outcomesResult = readJsonl(join(dataDir, 'outcomes.jsonl'), validateShadowOutcomeRow);
 
-  const scoresResult = readJsonl(scoresFile, (row: unknown) => {
-    const r = row as Partial<ArbiterShadowScoreV1>;
-    return {
-      ok: r.schema_version === 'arbiter_shadow_score/v1' && !!r.merge_sha,
-      value: r as ArbiterShadowScoreV1,
-    };
-  });
-
-  const outcomesResult = readJsonl(outcomesFile, (row: unknown) => {
-    const r = row as Partial<ArbiterShadowOutcomeV1>;
-    return {
-      ok: r.schema_version === 'arbiter_shadow_outcome/v1' && !!r.merge_sha,
-      value: r as ArbiterShadowOutcomeV1,
-    };
-  });
-
-  // Compute report
-  const report = await computeShadowReport(scoresResult.rows, outcomesResult.rows, {
+  const report = computeShadowReport(scoresResult.rows, outcomesResult.rows, {
     windowDays,
     horizonDays,
     now,
   });
-
-  // Add malformed counts
   report.malformed_lines.scores = scoresResult.malformed;
   report.malformed_lines.outcomes = outcomesResult.malformed;
 
-  // Write to disk and stdout
-  const date = now().toISOString().split('T')[0];
-  writeReport(dataDir, date, report);
-  log(JSON.stringify(report));
+  const serialized = JSON.stringify(report, null, 2);
+  const date = now().toISOString().slice(0, 10);
+  writeReport(dataDir, date, serialized);
+  log(serialized);
+  return report;
 }

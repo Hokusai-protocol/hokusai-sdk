@@ -11,6 +11,25 @@ function readActionInput(env, name) {
 function actionFlagIsTrue(value) {
   return value !== void 0 && /^(true|1|yes)$/i.test(value);
 }
+function isShadowMode(mode) {
+  return mode === "shadow-score" || mode === "shadow-backfill" || mode === "shadow-report";
+}
+function buildShadowActionArgv(env) {
+  const mode = env.input("mode") ?? "";
+  const argv = [mode];
+  argv.push("--repo", env.input("repo-path") ?? env.workspace ?? ".");
+  const dataDir = env.input("data-dir");
+  if (dataDir !== void 0) argv.push("--data-dir", dataDir);
+  const githubRepo = env.input("github-repo");
+  if (githubRepo !== void 0) argv.push("--github-repo", githubRepo);
+  const integrationBranch = env.input("integration-branch");
+  if (integrationBranch !== void 0) argv.push("--integration-branch", integrationBranch);
+  for (const flag of ["threshold", "bootstrap-days", "max-prs", "horizon-days", "window-days"]) {
+    const value = env.input(flag);
+    if (value !== void 0) argv.push(`--${flag}`, value);
+  }
+  return { argv };
+}
 function buildActionArgv(env) {
   const mode = env.input("mode") ?? "";
   const argv = [mode];
@@ -40,9 +59,9 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync2, mkdirSync, statSync as statSync3, writeFileSync } from "node:fs";
-import { dirname, resolve as resolve3 } from "node:path";
-import { parseArgs } from "node:util";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname, resolve as resolve4 } from "node:path";
+import { parseArgs as parseArgs2 } from "node:util";
 
 // src/candidate-features.ts
 import { statSync as statSync2 } from "node:fs";
@@ -919,8 +938,8 @@ function isPlainObject(value) {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
-function fieldError(path, message, code) {
-  return { path, message, code };
+function fieldError(path2, message, code) {
+  return { path: path2, message, code };
 }
 function validateFeatureValue(name, value) {
   if (value === null) {
@@ -1700,6 +1719,401 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/arbiter-shadow-record.ts
+var ARBITER_SHADOW_SCORE_SCHEMA_VERSION = "arbiter_shadow_score/v1";
+var ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION = "arbiter_shadow_outcome/v1";
+var ARBITER_SHADOW_STATE_SCHEMA_VERSION = "arbiter_shadow_state/v1";
+var ARBITER_SHADOW_RUN_STATUSES = ["ok", "partial", "error"];
+var ARBITER_SHADOW_ERROR_CODES = [
+  "INVALID_ARG",
+  "NOT_A_GIT_REPO",
+  "SHALLOW_CLONE",
+  "DATA_DIR_UNWRITABLE",
+  "STATE_CORRUPT",
+  "CURSOR_RESET",
+  "EXTRACT_FAILED",
+  "LABEL_FAILED",
+  "INVALID_ROW",
+  "INTERNAL"
+];
+var ARBITER_SHADOW_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  // Core raw-content names
+  "rawTaskText",
+  "rawCode",
+  "rawLog",
+  "prompt",
+  "rawPrompt",
+  "rawContent",
+  // Additional forbidden keys for shadow mode
+  "diff",
+  "patch",
+  "body",
+  "title",
+  "commit_message",
+  "author_email",
+  "line_ranges",
+  "path"
+]);
+function fieldError2(path2, message, code) {
+  return { path: path2, message, code };
+}
+function isPlainObject2(value) {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+function findForbiddenKeys(obj, path2 = "$") {
+  const errors = [];
+  if (!isPlainObject2(obj)) {
+    return errors;
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    if (ARBITER_SHADOW_FORBIDDEN_KEYS.has(key)) {
+      errors.push(fieldError2(path2 === "$" ? key : `${path2}.${key}`, `Forbidden key.`, "invalid_value"));
+    }
+    if (isPlainObject2(value)) {
+      errors.push(...findForbiddenKeys(value, path2 === "$" ? key : `${path2}.${key}`));
+    } else if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        const item = value[i];
+        if (isPlainObject2(item)) {
+          errors.push(...findForbiddenKeys(item, `${path2 === "$" ? key : `${path2}.${key}`}[${i}]`));
+        }
+      }
+    }
+  }
+  return errors;
+}
+function validateShadowScoreRow(input) {
+  const errors = [];
+  if (!isPlainObject2(input)) {
+    return {
+      ok: false,
+      errors: [fieldError2("$", "Score row must be a plain object.", "invalid_type")]
+    };
+  }
+  const allowedKeys = /* @__PURE__ */ new Set([
+    "schema_version",
+    "repo",
+    "pr_number",
+    "merge_sha",
+    "merged_at",
+    "scored_at",
+    "scorer_id",
+    "scorer_version",
+    "score",
+    "threshold",
+    "would_flag",
+    "features"
+  ]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      errors.push(fieldError2(key, `Unknown field.`, "invalid_value"));
+    }
+  }
+  if (!("schema_version" in input)) {
+    errors.push(fieldError2("schema_version", "Field is required.", "required"));
+  } else if (input.schema_version !== ARBITER_SHADOW_SCORE_SCHEMA_VERSION) {
+    errors.push(
+      fieldError2(
+        "schema_version",
+        `Expected "${ARBITER_SHADOW_SCORE_SCHEMA_VERSION}".`,
+        typeof input.schema_version === "string" ? "invalid_value" : "invalid_type"
+      )
+    );
+  }
+  if (!("repo" in input)) {
+    errors.push(fieldError2("repo", "Field is required.", "required"));
+  } else if (typeof input.repo !== "string" || !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(input.repo)) {
+    errors.push(fieldError2("repo", 'Must be "owner/name".', "invalid_value"));
+  }
+  if (!("pr_number" in input)) {
+    errors.push(fieldError2("pr_number", "Field is required.", "required"));
+  } else if (input.pr_number !== null && typeof input.pr_number === "number") {
+    if (!Number.isInteger(input.pr_number) || input.pr_number <= 0) {
+      errors.push(fieldError2("pr_number", "Must be an integer > 0 or null.", "invalid_value"));
+    }
+  } else if (input.pr_number !== null) {
+    errors.push(fieldError2("pr_number", "Must be an integer > 0 or null.", "invalid_value"));
+  }
+  if (!("merge_sha" in input)) {
+    errors.push(fieldError2("merge_sha", "Field is required.", "required"));
+  } else if (typeof input.merge_sha !== "string" || !/^[0-9a-f]{40}$/.test(input.merge_sha)) {
+    errors.push(fieldError2("merge_sha", "Must be 40 lowercase hex characters.", "invalid_value"));
+  }
+  if (!("merged_at" in input)) {
+    errors.push(fieldError2("merged_at", "Field is required.", "required"));
+  } else if (typeof input.merged_at === "string" && Number.isNaN(Date.parse(input.merged_at))) {
+    errors.push(fieldError2("merged_at", "Must be valid ISO 8601 date.", "invalid_value"));
+  } else if (typeof input.merged_at !== "string") {
+    errors.push(fieldError2("merged_at", "Must be valid ISO 8601 date.", "invalid_value"));
+  }
+  if (!("scored_at" in input)) {
+    errors.push(fieldError2("scored_at", "Field is required.", "required"));
+  } else if (typeof input.scored_at === "string" && Number.isNaN(Date.parse(input.scored_at))) {
+    errors.push(fieldError2("scored_at", "Must be valid ISO 8601 date.", "invalid_value"));
+  } else if (typeof input.scored_at !== "string") {
+    errors.push(fieldError2("scored_at", "Must be valid ISO 8601 date.", "invalid_value"));
+  }
+  if (!("scorer_id" in input)) {
+    errors.push(fieldError2("scorer_id", "Field is required.", "required"));
+  } else if (typeof input.scorer_id !== "string" || input.scorer_id === "") {
+    errors.push(fieldError2("scorer_id", "Must be a non-empty string.", "invalid_value"));
+  }
+  if (!("scorer_version" in input)) {
+    errors.push(fieldError2("scorer_version", "Field is required.", "required"));
+  } else if (typeof input.scorer_version !== "string" || input.scorer_version === "") {
+    errors.push(fieldError2("scorer_version", "Must be a non-empty string.", "invalid_value"));
+  }
+  if (!("score" in input)) {
+    errors.push(fieldError2("score", "Field is required.", "required"));
+  } else if (typeof input.score !== "number" || !Number.isFinite(input.score) || input.score < 0 || input.score > 1) {
+    errors.push(fieldError2("score", "Must be a finite number in [0, 1].", "invalid_value"));
+  }
+  if (!("threshold" in input)) {
+    errors.push(fieldError2("threshold", "Field is required.", "required"));
+  } else if (typeof input.threshold !== "number" || !Number.isFinite(input.threshold) || input.threshold < 0 || input.threshold > 1) {
+    errors.push(fieldError2("threshold", "Must be a finite number in [0, 1].", "invalid_value"));
+  }
+  if (!("would_flag" in input)) {
+    errors.push(fieldError2("would_flag", "Field is required.", "required"));
+  } else if (typeof input.would_flag !== "boolean") {
+    errors.push(fieldError2("would_flag", "Must be a boolean.", "invalid_value"));
+  } else if ("score" in input && "threshold" in input && typeof input.score === "number" && typeof input.threshold === "number" && Number.isFinite(input.score) && Number.isFinite(input.threshold)) {
+    const expectedFlag = input.score < input.threshold;
+    if (input.would_flag !== expectedFlag) {
+      errors.push(
+        fieldError2(
+          "would_flag",
+          `Must be ${expectedFlag} (score ${input.score.toFixed(3)} < threshold ${input.threshold.toFixed(3)}).`,
+          "invalid_value"
+        )
+      );
+    }
+  }
+  if (!("features" in input)) {
+    errors.push(fieldError2("features", "Field is required.", "required"));
+  } else {
+    const featResult = validateCandidateFeaturesV1(input.features);
+    if (!featResult.ok) {
+      errors.push(...featResult.errors.map((e) => ({ ...e, path: `features.${e.path}` })));
+    }
+  }
+  errors.push(...findForbiddenKeys(input));
+  return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+function validateShadowOutcomeRow(input) {
+  const errors = [];
+  if (!isPlainObject2(input)) {
+    return {
+      ok: false,
+      errors: [fieldError2("$", "Outcome row must be a plain object.", "invalid_type")]
+    };
+  }
+  const allowedKeys = /* @__PURE__ */ new Set([
+    "schema_version",
+    "repo",
+    "pr_number",
+    "merge_sha",
+    "horizon_days",
+    "labelled_at",
+    "survived",
+    "label"
+  ]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      errors.push(fieldError2(key, `Unknown field.`, "invalid_value"));
+    }
+  }
+  if (!("schema_version" in input)) {
+    errors.push(fieldError2("schema_version", "Field is required.", "required"));
+  } else if (input.schema_version !== ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION) {
+    errors.push(
+      fieldError2(
+        "schema_version",
+        `Expected "${ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION}".`,
+        typeof input.schema_version === "string" ? "invalid_value" : "invalid_type"
+      )
+    );
+  }
+  if (!("repo" in input)) {
+    errors.push(fieldError2("repo", "Field is required.", "required"));
+  } else if (typeof input.repo !== "string" || !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(input.repo)) {
+    errors.push(fieldError2("repo", 'Must be "owner/name".', "invalid_value"));
+  }
+  if (!("pr_number" in input)) {
+    errors.push(fieldError2("pr_number", "Field is required.", "required"));
+  } else if (input.pr_number !== null && typeof input.pr_number === "number") {
+    if (!Number.isInteger(input.pr_number) || input.pr_number <= 0) {
+      errors.push(fieldError2("pr_number", "Must be an integer > 0 or null.", "invalid_value"));
+    }
+  } else if (input.pr_number !== null) {
+    errors.push(fieldError2("pr_number", "Must be an integer > 0 or null.", "invalid_value"));
+  }
+  if (!("merge_sha" in input)) {
+    errors.push(fieldError2("merge_sha", "Field is required.", "required"));
+  } else if (typeof input.merge_sha !== "string" || !/^[0-9a-f]{40}$/.test(input.merge_sha)) {
+    errors.push(fieldError2("merge_sha", "Must be 40 lowercase hex characters.", "invalid_value"));
+  }
+  if (!("horizon_days" in input)) {
+    errors.push(fieldError2("horizon_days", "Field is required.", "required"));
+  } else if (!HORIZONS.includes(input.horizon_days)) {
+    errors.push(fieldError2("horizon_days", `Must be one of ${HORIZONS.join(", ")}.`, "invalid_value"));
+  }
+  if (!("labelled_at" in input)) {
+    errors.push(fieldError2("labelled_at", "Field is required.", "required"));
+  } else if (typeof input.labelled_at === "string" && Number.isNaN(Date.parse(input.labelled_at))) {
+    errors.push(fieldError2("labelled_at", "Must be valid ISO 8601 date.", "invalid_value"));
+  } else if (typeof input.labelled_at !== "string") {
+    errors.push(fieldError2("labelled_at", "Must be valid ISO 8601 date.", "invalid_value"));
+  }
+  if (!("survived" in input)) {
+    errors.push(fieldError2("survived", "Field is required.", "required"));
+  } else if (typeof input.survived !== "boolean" && input.survived !== null) {
+    errors.push(fieldError2("survived", "Must be a boolean or null.", "invalid_value"));
+  }
+  if (!("label" in input)) {
+    errors.push(fieldError2("label", "Field is required.", "required"));
+  } else if (isPlainObject2(input.label)) {
+    if (input.label.schema_version !== ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION) {
+      errors.push(
+        fieldError2(
+          "label.schema_version",
+          `Expected "${ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION}".`,
+          "invalid_value"
+        )
+      );
+    }
+    if (input.label.horizon_days !== input.horizon_days) {
+      errors.push(fieldError2("label.horizon_days", "Must match row horizon_days.", "invalid_value"));
+    }
+    if (isPlainObject2(input.label.envelope)) {
+      if (input.label.envelope.merge_sha !== input.merge_sha) {
+        errors.push(fieldError2("label.envelope.merge_sha", "Must match row merge_sha.", "invalid_value"));
+      }
+    }
+    if (isPlainObject2(input.label.outcome)) {
+      if (input.label.outcome.survived !== input.survived) {
+        errors.push(fieldError2("label.outcome.survived", "Must match row survived.", "invalid_value"));
+      }
+      if (!Array.isArray(input.label.outcome.reason_codes) || input.label.outcome.reason_codes.length === 0) {
+        errors.push(fieldError2("label.outcome.reason_codes", "Must be a non-empty array.", "invalid_value"));
+      }
+    }
+  } else {
+    errors.push(fieldError2("label", "Must be an object.", "invalid_type"));
+  }
+  errors.push(...findForbiddenKeys(input));
+  return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+function validateShadowState(input) {
+  const errors = [];
+  if (!isPlainObject2(input)) {
+    return {
+      ok: false,
+      errors: [fieldError2("$", "State must be a plain object.", "invalid_type")]
+    };
+  }
+  const allowedKeys = /* @__PURE__ */ new Set([
+    "schema_version",
+    "repo",
+    "last_seen_merge_sha",
+    "last_run_at",
+    "last_run_status",
+    "last_error_code",
+    "scorer_id",
+    "scorer_version"
+  ]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      errors.push(fieldError2(key, `Unknown field.`, "invalid_value"));
+    }
+  }
+  if (!("schema_version" in input)) {
+    errors.push(fieldError2("schema_version", "Field is required.", "required"));
+  } else if (input.schema_version !== ARBITER_SHADOW_STATE_SCHEMA_VERSION) {
+    errors.push(
+      fieldError2(
+        "schema_version",
+        `Expected "${ARBITER_SHADOW_STATE_SCHEMA_VERSION}".`,
+        typeof input.schema_version === "string" ? "invalid_value" : "invalid_type"
+      )
+    );
+  }
+  if (!("repo" in input)) {
+    errors.push(fieldError2("repo", "Field is required.", "required"));
+  } else if (typeof input.repo !== "string" || !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(input.repo)) {
+    errors.push(fieldError2("repo", 'Must be "owner/name".', "invalid_value"));
+  }
+  if (!("last_seen_merge_sha" in input)) {
+    errors.push(fieldError2("last_seen_merge_sha", "Field is required.", "required"));
+  } else if (input.last_seen_merge_sha !== null) {
+    if (typeof input.last_seen_merge_sha !== "string" || !/^[0-9a-f]{40}$/.test(input.last_seen_merge_sha)) {
+      errors.push(fieldError2("last_seen_merge_sha", "Must be 40 lowercase hex or null.", "invalid_value"));
+    }
+  }
+  if (!("last_run_at" in input)) {
+    errors.push(fieldError2("last_run_at", "Field is required.", "required"));
+  } else if (input.last_run_at !== null) {
+    if (typeof input.last_run_at !== "string" || Number.isNaN(Date.parse(input.last_run_at))) {
+      errors.push(fieldError2("last_run_at", "Must be valid ISO 8601 date or null.", "invalid_value"));
+    }
+  }
+  if (!("last_run_status" in input)) {
+    errors.push(fieldError2("last_run_status", "Field is required.", "required"));
+  } else if (typeof input.last_run_status === "string" && !ARBITER_SHADOW_RUN_STATUSES.includes(input.last_run_status)) {
+    errors.push(fieldError2("last_run_status", `Must be one of ${ARBITER_SHADOW_RUN_STATUSES.join(", ")}.`, "invalid_value"));
+  } else if (typeof input.last_run_status !== "string") {
+    errors.push(fieldError2("last_run_status", `Must be one of ${ARBITER_SHADOW_RUN_STATUSES.join(", ")}.`, "invalid_value"));
+  }
+  if (!("last_error_code" in input)) {
+    errors.push(fieldError2("last_error_code", "Field is required.", "required"));
+  } else if (input.last_error_code !== null && typeof input.last_error_code === "string") {
+    if (!ARBITER_SHADOW_ERROR_CODES.includes(input.last_error_code)) {
+      errors.push(
+        fieldError2(
+          "last_error_code",
+          `Must be one of ${ARBITER_SHADOW_ERROR_CODES.join(", ")} or null.`,
+          "invalid_value"
+        )
+      );
+    }
+  } else if (input.last_error_code !== null) {
+    errors.push(
+      fieldError2(
+        "last_error_code",
+        `Must be one of ${ARBITER_SHADOW_ERROR_CODES.join(", ")} or null.`,
+        "invalid_value"
+      )
+    );
+  }
+  if (!("scorer_id" in input)) {
+    errors.push(fieldError2("scorer_id", "Field is required.", "required"));
+  } else if (typeof input.scorer_id !== "string" || input.scorer_id === "") {
+    errors.push(fieldError2("scorer_id", "Must be a non-empty string.", "invalid_value"));
+  }
+  if (!("scorer_version" in input)) {
+    errors.push(fieldError2("scorer_version", "Field is required.", "required"));
+  } else if (typeof input.scorer_version !== "string" || input.scorer_version === "") {
+    errors.push(fieldError2("scorer_version", "Must be a non-empty string.", "invalid_value"));
+  }
+  return errors.length === 0 ? { ok: true, value: input } : { ok: false, errors };
+}
+function initialShadowState(repo, scorerId, scorerVersion) {
+  return {
+    schema_version: ARBITER_SHADOW_STATE_SCHEMA_VERSION,
+    repo,
+    last_seen_merge_sha: null,
+    last_run_at: null,
+    last_run_status: "ok",
+    last_error_code: null,
+    scorer_id: scorerId,
+    scorer_version: scorerVersion
+  };
+}
+
 // ../core/src/task-descriptor-schema.ts
 var HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA = Object.freeze({
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -2155,24 +2569,24 @@ var TASK_COST_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
 function normalizeKey(key) {
   return key.toLowerCase().replaceAll("_", "").replaceAll("-", "");
 }
-function assertNoForbiddenKeys(value, path = []) {
+function assertNoForbiddenKeys(value, path2 = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys(item, [...path, String(index)]);
+      assertNoForbiddenKeys(item, [...path2, String(index)]);
     }
     return;
   }
-  if (!isPlainObject2(value)) {
+  if (!isPlainObject3(value)) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
     if (TASK_COST_FORBIDDEN_KEYS.has(normalizeKey(key))) {
       throw new TaskCostValidationError(
         "forbidden_field",
-        `Forbidden field at ${[...path, key].join(".")}`
+        `Forbidden field at ${[...path2, key].join(".")}`
       );
     }
-    assertNoForbiddenKeys(child, [...path, key]);
+    assertNoForbiddenKeys(child, [...path2, key]);
   }
 }
 var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -2180,14 +2594,14 @@ var MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$/;
 var VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 var PROVIDER_CONTRACT_PATTERN = /^[a-z][a-z0-9-]{0,31}\/[0-9]{1,4}$/;
 var TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
-function isPlainObject2(value) {
+function isPlainObject3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function fail(message, code = "schema_validation_failed") {
   throw new TaskCostValidationError(code, message);
 }
 function requireObject(value, label) {
-  if (!isPlainObject2(value)) fail(`${label} must be an object`);
+  if (!isPlainObject3(value)) fail(`${label} must be an object`);
   return value;
 }
 function requireEnum(value, allowed, label) {
@@ -4029,9 +4443,9 @@ function parseNameStatus(output) {
   }
   return results;
 }
-function getExtension(path) {
-  const lastSlash = path.lastIndexOf("/");
-  const base = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
+function getExtension(path2) {
+  const lastSlash = path2.lastIndexOf("/");
+  const base = lastSlash >= 0 ? path2.slice(lastSlash + 1) : path2;
   const lastDot = base.lastIndexOf(".");
   if (lastDot <= 0) return "";
   return base.slice(lastDot).toLowerCase();
@@ -4348,7 +4762,7 @@ function nullIntent() {
 function collectTouchedOutOfScopeFiles(diffStats, contract) {
   if (!diffStats || !contract?.scope) return null;
   const allowedFiles = new Set((contract.scope.allowedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
-  const allowedPrefixes = (contract.scope.allowedPrefixes ?? []).map(normalizeRepoPath).filter((path) => Boolean(path)).map((path) => path.endsWith("/") ? path : `${path}/`);
+  const allowedPrefixes = (contract.scope.allowedPrefixes ?? []).map(normalizeRepoPath).filter((path2) => Boolean(path2)).map((path2) => path2.endsWith("/") ? path2 : `${path2}/`);
   if (allowedFiles.size === 0 && allowedPrefixes.length === 0) return null;
   let outOfScope = 0;
   for (const file of diffStats.changedFiles) {
@@ -4362,15 +4776,15 @@ function collectTouchedOutOfScopeFiles(diffStats, contract) {
   }
   return outOfScope;
 }
-function normalizeRepoPath(path) {
-  const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+function normalizeRepoPath(path2) {
+  const normalized = path2.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../")) {
     return null;
   }
   return normalized;
 }
-function isTestFile(path) {
-  return TEST_FILE_PATTERN.test(path);
+function isTestFile(path2) {
+  return TEST_FILE_PATTERN.test(path2);
 }
 function normalizeNonNegativeInteger(value) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
@@ -4425,9 +4839,9 @@ function bucketDescription(taskText) {
   if (tokens2 < 200) return "medium";
   return "long";
 }
-function isExistingDir(path) {
+function isExistingDir(path2) {
   try {
-    return statSync2(path).isDirectory();
+    return statSync2(path2).isDirectory();
   } catch {
     return false;
   }
@@ -4460,10 +4874,10 @@ function parseNameStatusOutput(output) {
     const [statusToken, firstPath = "", secondPath = ""] = line.split("	");
     const status = statusToken?.trim() ?? "";
     const normalizedStatus = status[0] ?? "";
-    const path = normalizedStatus === "R" || normalizedStatus === "C" ? secondPath : firstPath;
+    const path2 = normalizedStatus === "R" || normalizedStatus === "C" ? secondPath : firstPath;
     return {
       status: normalizedStatus,
-      path,
+      path: path2,
       previousPath: normalizedStatus === "R" || normalizedStatus === "C" ? firstPath : void 0
     };
   }).filter((entry) => entry.status && entry.path);
@@ -4636,9 +5050,9 @@ function buildSubstrate(deps, pr) {
   const files = [];
   for (const entry of parseZeroContextDiff(result.stdout)) {
     if (entry.hunks.length === 0) continue;
-    const path = entry.newPath ?? entry.oldPath;
-    if (!path) continue;
-    files.push({ path, oldPath: entry.oldPath ?? path, hunks: entry.hunks });
+    const path2 = entry.newPath ?? entry.oldPath;
+    if (!path2) continue;
+    files.push({ path: path2, oldPath: entry.oldPath ?? path2, hunks: entry.hunks });
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const lineRanges = [];
@@ -4655,8 +5069,8 @@ function buildSubstrate(deps, pr) {
   }
   return { files, lineRanges, totalLines };
 }
-function blobAt(deps, sha, path) {
-  const result = deps.runGit(["rev-parse", "-q", "--verify", `${sha}:${path}`]);
+function blobAt(deps, sha, path2) {
+  const result = deps.runGit(["rev-parse", "-q", "--verify", `${sha}:${path2}`]);
   if (result.exitCode !== 0) return null;
   return result.stdout.trim() || null;
 }
@@ -5164,6 +5578,797 @@ function sortMergedPrsForEmission(prs) {
   return [...prs].sort((a, b) => a.mergedAtEpoch - b.mergedAtEpoch || a.prNumber - b.prNumber);
 }
 
+// src/shadow/cli.ts
+import { existsSync as existsSync3, statSync as statSync3 } from "node:fs";
+import { resolve as resolve3 } from "node:path";
+import { parseArgs } from "node:util";
+
+// src/shadow/errors.ts
+var ShadowError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message || code);
+    this.name = "ShadowError";
+    this.code = code;
+  }
+};
+
+// src/shadow/scorer.ts
+var BASELINE_V0_WEIGHTS = Object.freeze({
+  baseZ: 2,
+  locPenalty: 0.35,
+  locSaturation: 2e3,
+  filePenalty: 0.25,
+  fileSaturation: 50,
+  testBonus: 0.4,
+  uncertainPenalty: 0.5,
+  typeErrorPenalty: 0.3,
+  typeErrorSaturation: 20,
+  lintErrorPenalty: 0.3,
+  lintErrorSaturation: 50,
+  buildFailPenalty: 0.6,
+  complexityDeltaPenalty: 0.2,
+  complexityDeltaSaturation: 50,
+  changeRequestsPenalty: 0.15,
+  changeRequestsSaturation: 5,
+  reviewRoundsPenalty: 0.05,
+  reviewRoundsSaturation: 10
+});
+var NULL_STATIC_FEATURES = Object.freeze({
+  type_errors: null,
+  lint_errors: null,
+  build_ok: null,
+  complexity_delta: null,
+  build_evidence: null,
+  complexity_metric: null
+});
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+function logistic(z) {
+  return 1 / (1 + Math.exp(-z));
+}
+function round6(value) {
+  return Math.round(value * 1e6) / 1e6;
+}
+var BASELINE_V0 = Object.freeze({
+  id: "baseline-v0",
+  version: "0.1.0",
+  score(features) {
+    const w = BASELINE_V0_WEIGHTS;
+    let z = w.baseZ;
+    const locTouched = features.loc_touched ?? 0;
+    z -= w.locPenalty * Math.log2(1 + locTouched) / Math.log2(1 + w.locSaturation) * 4;
+    const filesTouched = features.files_touched ?? 0;
+    z -= w.filePenalty * Math.min(filesTouched, w.fileSaturation) / w.fileSaturation * 4;
+    if (features.tests_changed) {
+      z += w.testBonus;
+    }
+    if (features.diff_uncertain) {
+      z -= w.uncertainPenalty;
+    }
+    const typeErrors = features.type_errors ?? 0;
+    z -= w.typeErrorPenalty * Math.min(typeErrors, w.typeErrorSaturation) / w.typeErrorSaturation;
+    const lintErrors = features.lint_errors ?? 0;
+    z -= w.lintErrorPenalty * Math.min(lintErrors, w.lintErrorSaturation) / w.lintErrorSaturation;
+    if (features.build_ok === false) {
+      z -= w.buildFailPenalty;
+    }
+    const complexityDelta = features.complexity_delta ?? 0;
+    z -= w.complexityDeltaPenalty * clamp(complexityDelta, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
+    const changeRequests = features.change_requests ?? 0;
+    z -= w.changeRequestsPenalty * Math.min(changeRequests, w.changeRequestsSaturation);
+    const reviewRounds = features.review_rounds ?? 0;
+    z -= w.reviewRoundsPenalty * Math.min(reviewRounds, w.reviewRoundsSaturation);
+    const rawScore = logistic(z);
+    const clamped = clamp(rawScore, 0, 1);
+    return round6(clamped);
+  }
+});
+
+// src/shadow/score.ts
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as join4 } from "node:path";
+
+// src/shadow/discover.ts
+var EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+function isAncestor(runGit3, sha, ref) {
+  try {
+    const result = runGit3(["merge-base", "--is-ancestor", sha, ref]);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+function discoverMerges(opts) {
+  const { runGit: runGit3, ref, cursor, bootstrapDays, now, maxPrs } = opts;
+  const merges = [];
+  let cursorReset = false;
+  let useBootstrapWindow = cursor === null;
+  if (cursor !== null && !isAncestor(runGit3, cursor, ref)) {
+    cursorReset = true;
+    useBootstrapWindow = true;
+  }
+  const cutoffEpoch = Math.floor(now().getTime() / 1e3) - bootstrapDays * 86400;
+  const format = "%H%x09%P%x09%ct%x09%s";
+  const args = useBootstrapWindow ? [
+    "log",
+    "--first-parent",
+    "--reverse",
+    `--pretty=format:${format}`,
+    `--since=${new Date(cutoffEpoch * 1e3).toISOString()}`,
+    ref
+  ] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref}`];
+  const result = runGit3(args);
+  if (result.exitCode !== 0) {
+    throw new ShadowError("NOT_A_GIT_REPO");
+  }
+  for (const line of result.stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [mergeSha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
+    if (!mergeSha || !/^[0-9a-f]{40}$/.test(mergeSha)) continue;
+    const mergedAtEpoch = Number.parseInt(epochText, 10);
+    if (!Number.isFinite(mergedAtEpoch)) continue;
+    if (useBootstrapWindow && mergedAtEpoch < cutoffEpoch) continue;
+    const parents = parentsText.trim().split(/\s+/).filter(Boolean);
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA;
+    const subject = subjectParts.join("	");
+    const prNumber = extractPrNumber(subject);
+    merges.push({ mergeSha, parentSha, mergedAtEpoch, prNumber });
+    if (merges.length >= maxPrs) break;
+  }
+  return { merges, cursorReset };
+}
+
+// src/shadow/store.ts
+import * as fs from "node:fs";
+import * as path from "node:path";
+function ensureWritableDataDir(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+    const probe = path.join(dir, `.probe-${process.pid}-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(probe, "");
+    fs.unlinkSync(probe);
+  } catch {
+    throw new ShadowError("DATA_DIR_UNWRITABLE");
+  }
+}
+function writeFileAtomic(file, content) {
+  const tempFile = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  let fd = null;
+  try {
+    fd = fs.openSync(tempFile, "w");
+    fs.writeSync(fd, content);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+    fs.renameSync(tempFile, file);
+  } catch (error) {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+      }
+    }
+    try {
+      fs.unlinkSync(tempFile);
+    } catch {
+    }
+    throw error;
+  }
+}
+function readJsonl(file, validate) {
+  const rows = [];
+  let malformed = 0;
+  if (!fs.existsSync(file)) {
+    return { rows, malformed };
+  }
+  try {
+    const content = fs.readFileSync(file, "utf-8");
+    const lines = content.split("\n").filter((line) => line.length > 0);
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        const result = validate(parsed);
+        if (result.ok && result.value) {
+          rows.push(result.value);
+        } else {
+          malformed++;
+        }
+      } catch {
+        malformed++;
+      }
+    }
+  } catch {
+  }
+  return { rows, malformed };
+}
+function appendJsonl(file, rows, validate) {
+  for (const row of rows) {
+    const result = validate(row);
+    if (!result.ok) {
+      throw new ShadowError("INVALID_ROW");
+    }
+  }
+  if (rows.length === 0) {
+    return;
+  }
+  let existingContent = "";
+  if (fs.existsSync(file)) {
+    existingContent = fs.readFileSync(file, "utf-8");
+  }
+  const newLines = rows.map((row) => JSON.stringify(row));
+  const trimmed = existingContent.length > 0 && !existingContent.endsWith("\n") ? `${existingContent}
+` : existingContent;
+  const newContent = `${trimmed}${newLines.join("\n")}
+`;
+  writeFileAtomic(file, newContent);
+}
+function readState(dir, repo, scorerId, scorerVersion) {
+  const stateFile = path.join(dir, "state.json");
+  if (!fs.existsSync(stateFile)) {
+    return {
+      state: initialShadowState(repo, scorerId, scorerVersion),
+      corrupt: false
+    };
+  }
+  try {
+    const content = fs.readFileSync(stateFile, "utf-8");
+    const parsed = JSON.parse(content);
+    const result = validateShadowState(parsed);
+    if (result.ok) {
+      return { state: result.value, corrupt: false };
+    } else {
+      return {
+        state: {
+          ...initialShadowState(repo, scorerId, scorerVersion),
+          last_run_status: "error",
+          last_error_code: "STATE_CORRUPT"
+        },
+        corrupt: true
+      };
+    }
+  } catch {
+    return {
+      state: {
+        ...initialShadowState(repo, scorerId, scorerVersion),
+        last_run_status: "error",
+        last_error_code: "STATE_CORRUPT"
+      },
+      corrupt: true
+    };
+  }
+}
+function writeState(dir, state) {
+  const stateFile = path.join(dir, "state.json");
+  const result = validateShadowState(state);
+  if (!result.ok) {
+    throw new ShadowError("INVALID_ROW");
+  }
+  writeFileAtomic(stateFile, JSON.stringify(state, null, 2));
+}
+function writeReport(dir, date, serialized) {
+  const reportsDir = path.join(dir, "reports");
+  fs.mkdirSync(reportsDir, { recursive: true });
+  writeFileAtomic(path.join(reportsDir, `${date}.json`), serialized);
+}
+
+// src/shadow/score.ts
+function defaultMakeGitRunner(dir) {
+  return (args) => execArgvCommand("git", ["-C", dir, ...args], { maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+}
+function runShadowScore(opts) {
+  const {
+    dataDir,
+    repo,
+    integrationBranch,
+    threshold,
+    bootstrapDays,
+    maxPrs,
+    runGit: runGit3,
+    now,
+    log,
+    scorer = BASELINE_V0,
+    makeGitRunner: makeGitRunner2 = defaultMakeGitRunner,
+    extract = extractCandidateFeatures
+  } = opts;
+  ensureWritableDataDir(dataDir);
+  const { state: oldState, corrupt } = readState(dataDir, repo, scorer.id, scorer.version);
+  const cursorBefore = oldState.last_seen_merge_sha;
+  const scoresFile = join4(dataDir, "scores.jsonl");
+  const existing = readJsonl(scoresFile, validateShadowScoreRow);
+  const existingMergeShas = new Set(existing.rows.map((r) => r.merge_sha));
+  let cursorAfter = cursorBefore;
+  let scored = 0;
+  let skipped = 0;
+  let status = "ok";
+  let lastError = null;
+  let cursorReset = false;
+  try {
+    const discovered = discoverMerges({
+      runGit: runGit3,
+      ref: integrationBranch,
+      cursor: cursorBefore,
+      bootstrapDays,
+      now,
+      maxPrs
+    });
+    cursorReset = discovered.cursorReset;
+    const rows = [];
+    if (discovered.merges.length > 0) {
+      runGit3(["worktree", "prune"]);
+      const worktreeDir = mkdtempSync(join4(tmpdir(), "hokusai-shadow-"));
+      const added = runGit3([
+        "worktree",
+        "add",
+        "--detach",
+        "--no-checkout",
+        "--force",
+        worktreeDir
+      ]);
+      if (added.exitCode !== 0) {
+        throw new ShadowError("EXTRACT_FAILED");
+      }
+      const runWorktreeGit = makeGitRunner2(worktreeDir);
+      try {
+        for (const merge of discovered.merges) {
+          if (existingMergeShas.has(merge.mergeSha)) {
+            skipped++;
+            cursorAfter = merge.mergeSha;
+            continue;
+          }
+          try {
+            const moved = runWorktreeGit(["update-ref", "--no-deref", "HEAD", merge.mergeSha]);
+            if (moved.exitCode !== 0) {
+              throw new ShadowError("EXTRACT_FAILED");
+            }
+            const features = extract({
+              checkoutDir: worktreeDir,
+              // The extractor stringifies this; offline mode never sends it
+              // anywhere. Non-PR merges fall back to the SHA.
+              prNumber: merge.prNumber ?? merge.mergeSha,
+              baseRef: merge.parentSha,
+              offline: true,
+              staticFeatures: NULL_STATIC_FEATURES
+            });
+            const score = scorer.score(features);
+            const row = {
+              schema_version: "arbiter_shadow_score/v1",
+              repo,
+              pr_number: merge.prNumber,
+              merge_sha: merge.mergeSha,
+              merged_at: new Date(merge.mergedAtEpoch * 1e3).toISOString(),
+              scored_at: now().toISOString(),
+              scorer_id: scorer.id,
+              scorer_version: scorer.version,
+              score,
+              threshold,
+              would_flag: score < threshold,
+              features
+            };
+            const validation = validateShadowScoreRow(row);
+            if (!validation.ok) {
+              log(`SHADOW_SKIP pr=${merge.prNumber ?? "none"} code=INVALID_ROW`);
+              skipped++;
+              status = "partial";
+              cursorAfter = merge.mergeSha;
+              continue;
+            }
+            rows.push(row);
+            scored++;
+            cursorAfter = merge.mergeSha;
+          } catch {
+            log(`SHADOW_SKIP pr=${merge.prNumber ?? "none"} code=EXTRACT_FAILED`);
+            skipped++;
+            status = "partial";
+            cursorAfter = merge.mergeSha;
+          }
+        }
+        if (rows.length > 0) {
+          appendJsonl(scoresFile, rows, validateShadowScoreRow);
+        }
+      } finally {
+        runGit3(["worktree", "remove", "--force", worktreeDir]);
+        rmSync(worktreeDir, { recursive: true, force: true });
+        runGit3(["worktree", "prune"]);
+      }
+    }
+  } catch (error) {
+    lastError = error instanceof ShadowError ? error.code : "INTERNAL";
+    status = "error";
+  }
+  const newState = {
+    schema_version: "arbiter_shadow_state/v1",
+    repo,
+    last_seen_merge_sha: cursorAfter,
+    last_run_at: now().toISOString(),
+    last_run_status: status,
+    last_error_code: corrupt ? "STATE_CORRUPT" : cursorReset ? "CURSOR_RESET" : lastError,
+    scorer_id: scorer.id,
+    scorer_version: scorer.version
+  };
+  try {
+    writeState(dataDir, newState);
+  } catch {
+  }
+  return {
+    scored,
+    skipped,
+    cursor_before: cursorBefore,
+    cursor_after: cursorAfter,
+    status
+  };
+}
+
+// src/shadow/backfill.ts
+import { join as join5 } from "node:path";
+function runShadowBackfill(opts) {
+  const {
+    dataDir,
+    horizonDays,
+    target,
+    deps,
+    now,
+    log,
+    maxCount = 1e4,
+    enumerate = enumerateMergedPrs,
+    label = labelMergedPr
+  } = opts;
+  ensureWritableDataDir(dataDir);
+  const scoresFile = join5(dataDir, "scores.jsonl");
+  const outcomesFile = join5(dataDir, "outcomes.jsonl");
+  const scoresResult = readJsonl(scoresFile, validateShadowScoreRow);
+  const outcomesResult = readJsonl(outcomesFile, validateShadowOutcomeRow);
+  const existingOutcomes = new Set(
+    outcomesResult.rows.map((r) => `${r.repo}:${r.merge_sha}:${r.horizon_days}`)
+  );
+  const nowEpoch = Math.floor(now().getTime() / 1e3);
+  const horizonSeconds = horizonDays * 86400;
+  const candidates = [];
+  let pending = 0;
+  let unlabellable = 0;
+  for (const score of scoresResult.rows) {
+    if (existingOutcomes.has(`${score.repo}:${score.merge_sha}:${horizonDays}`)) continue;
+    const mergedAtEpoch = Math.floor(new Date(score.merged_at).getTime() / 1e3);
+    if (mergedAtEpoch + horizonSeconds > nowEpoch) {
+      pending++;
+      continue;
+    }
+    if (score.pr_number === null) {
+      unlabellable++;
+      continue;
+    }
+    candidates.push(score);
+  }
+  const rows = [];
+  let labelled = 0;
+  let skipped = 0;
+  if (candidates.length > 0) {
+    const allMergedPrs = enumerate(target, deps, { maxCount });
+    const byMergeSha = new Map(allMergedPrs.map((p) => [p.mergeSha, p]));
+    for (const score of candidates) {
+      try {
+        const prRef = byMergeSha.get(score.merge_sha);
+        if (!prRef) {
+          log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
+          skipped++;
+          continue;
+        }
+        const labelResults = label(target, deps, prRef, {
+          horizons: [horizonDays],
+          allMergedPrs,
+          includeLinkedReferences: false
+        });
+        const result = labelResults[0];
+        if (!result) {
+          pending++;
+          continue;
+        }
+        if (result.outcome.reason_codes.includes("missing_horizon")) {
+          pending++;
+          continue;
+        }
+        const outcome = {
+          schema_version: "arbiter_shadow_outcome/v1",
+          repo: score.repo,
+          pr_number: score.pr_number,
+          merge_sha: score.merge_sha,
+          horizon_days: horizonDays,
+          labelled_at: now().toISOString(),
+          survived: result.outcome.survived,
+          label: {
+            schema_version: result.schema_version,
+            prUrl: result.prUrl,
+            horizon_days: result.horizon_days,
+            label_provenance: result.label_provenance,
+            outcome: result.outcome,
+            envelope: result.envelope
+          }
+        };
+        const validation = validateShadowOutcomeRow(outcome);
+        if (!validation.ok) {
+          log(`SHADOW_SKIP pr=${score.pr_number} code=INVALID_ROW`);
+          skipped++;
+          continue;
+        }
+        rows.push(outcome);
+        labelled++;
+      } catch {
+        log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
+        skipped++;
+      }
+    }
+    if (rows.length > 0) {
+      appendJsonl(outcomesFile, rows, validateShadowOutcomeRow);
+    }
+  }
+  return { labelled, pending, skipped, unlabellable };
+}
+
+// src/shadow/report.ts
+import { join as join6 } from "node:path";
+function ratio(n, d) {
+  return d === 0 ? null : round4(n / d);
+}
+function round4(value) {
+  return Math.round(value * 1e4) / 1e4;
+}
+var SWEEP_THRESHOLDS = Array.from({ length: 19 }, (_, i) => round4((i + 1) * 0.05));
+function metricsAtThreshold({ scores, outcomeFor }, threshold) {
+  let flagged = 0;
+  let flaggedMatured = 0;
+  let flaggedNotSurvived = 0;
+  let flaggedSurvived = 0;
+  let survived = 0;
+  for (const score of scores) {
+    const isFlagged = score.score < threshold;
+    if (isFlagged) flagged++;
+    const outcome = outcomeFor(score);
+    if (!outcome || outcome.survived === null) continue;
+    if (outcome.survived) survived++;
+    if (isFlagged) {
+      flaggedMatured++;
+      if (outcome.survived) flaggedSurvived++;
+      else flaggedNotSurvived++;
+    }
+  }
+  return { flagged, flaggedMatured, flaggedNotSurvived, flaggedSurvived, survived };
+}
+function computeShadowReport(scores, outcomes, opts) {
+  const { windowDays, horizonDays, now, thresholds = SWEEP_THRESHOLDS } = opts;
+  const nowTime = now();
+  const cutoff = new Date(nowTime.getTime() - windowDays * 86400 * 1e3);
+  const windowScores = scores.filter((s) => new Date(s.merged_at) >= cutoff);
+  const outcomesByKey = /* @__PURE__ */ new Map();
+  for (const o of outcomes) {
+    if (o.horizon_days === horizonDays) {
+      outcomesByKey.set(`${o.repo}:${o.merge_sha}`, o);
+    }
+  }
+  const outcomeFor = (score) => outcomesByKey.get(`${score.repo}:${score.merge_sha}`);
+  const repoScores = /* @__PURE__ */ new Map();
+  for (const s of windowScores) {
+    const list = repoScores.get(s.repo);
+    if (list) list.push(s);
+    else repoScores.set(s.repo, [s]);
+  }
+  const repos = [];
+  for (const [repo, scored] of repoScores.entries()) {
+    const inputs = { scores: scored, outcomeFor };
+    const n_scored = scored.length;
+    let n_matured = 0;
+    let n_unlabelled = 0;
+    for (const score of scored) {
+      const outcome = outcomeFor(score);
+      if (!outcome) continue;
+      if (outcome.survived === null) n_unlabelled++;
+      else n_matured++;
+    }
+    const lastScore = scored[scored.length - 1];
+    const mainThreshold = lastScore ? lastScore.threshold : 0.5;
+    const main2 = metricsAtThreshold(inputs, mainThreshold);
+    const threshold_sweep = thresholds.map((t) => {
+      const m = metricsAtThreshold(inputs, t);
+      return {
+        threshold: round4(t),
+        would_flag_count: m.flagged,
+        would_flag_rate: ratio(m.flagged, n_scored),
+        precision: ratio(m.flaggedNotSurvived, m.flaggedMatured),
+        false_positive_rate: ratio(m.flaggedSurvived, m.survived)
+      };
+    });
+    repos.push({
+      repo,
+      n_scored,
+      n_matured,
+      n_unlabelled,
+      n_flagged: main2.flagged,
+      would_flag_rate: ratio(main2.flagged, n_scored),
+      precision: ratio(main2.flaggedNotSurvived, main2.flaggedMatured),
+      false_positive_rate: ratio(main2.flaggedSurvived, main2.survived),
+      base_survival_rate: ratio(main2.survived, n_matured),
+      scorer_id: lastScore ? lastScore.scorer_id : "unknown",
+      scorer_version: lastScore ? lastScore.scorer_version : "unknown",
+      threshold_sweep
+    });
+  }
+  return {
+    schema_version: "arbiter_shadow_report/v1",
+    generated_at: nowTime.toISOString(),
+    window_days: windowDays,
+    horizon_days: horizonDays,
+    malformed_lines: { scores: 0, outcomes: 0 },
+    repos: repos.sort((a, b) => a.repo.localeCompare(b.repo))
+  };
+}
+function runShadowReport(opts) {
+  const { dataDir, windowDays, horizonDays, now, log } = opts;
+  const scoresResult = readJsonl(join6(dataDir, "scores.jsonl"), validateShadowScoreRow);
+  const outcomesResult = readJsonl(join6(dataDir, "outcomes.jsonl"), validateShadowOutcomeRow);
+  const report = computeShadowReport(scoresResult.rows, outcomesResult.rows, {
+    windowDays,
+    horizonDays,
+    now
+  });
+  report.malformed_lines.scores = scoresResult.malformed;
+  report.malformed_lines.outcomes = outcomesResult.malformed;
+  const serialized = JSON.stringify(report, null, 2);
+  const date = now().toISOString().slice(0, 10);
+  writeReport(dataDir, date, serialized);
+  log(serialized);
+  return report;
+}
+
+// src/shadow/cli.ts
+var SHADOW_COMMANDS = ["shadow-score", "shadow-backfill", "shadow-report"];
+function isShadowCommand(command) {
+  return SHADOW_COMMANDS.includes(command);
+}
+var SHADOW_OPTION_SPEC = {
+  "data-dir": { type: "string" },
+  "repo": { type: "string" },
+  "github-repo": { type: "string" },
+  "integration-branch": { type: "string" },
+  "threshold": { type: "string" },
+  "bootstrap-days": { type: "string" },
+  "max-prs": { type: "string" },
+  "horizon-days": { type: "string" },
+  "window-days": { type: "string" }
+};
+function parseBoundedFloat(raw, fallback, min, max) {
+  if (raw === void 0) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new ShadowError("INVALID_ARG");
+  }
+  return value;
+}
+function parsePositiveInt(raw, fallback) {
+  if (raw === void 0) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new ShadowError("INVALID_ARG");
+  }
+  return value;
+}
+function parseHorizon(raw) {
+  const value = raw === void 0 ? 30 : Number(raw);
+  const horizon = HORIZONS.find((h) => h === value);
+  if (horizon === void 0) {
+    throw new ShadowError("INVALID_ARG");
+  }
+  return horizon;
+}
+function makeGitRunner(dir) {
+  return (args) => execArgvCommand("git", ["-C", dir, ...args], { maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+}
+function checkRepoPreconditions(repoDir, runGit3) {
+  if (!existsSync3(repoDir) || !statSync3(repoDir).isDirectory()) {
+    throw new ShadowError("NOT_A_GIT_REPO");
+  }
+  const inside = runGit3(["rev-parse", "--is-inside-work-tree"]);
+  if (inside.exitCode !== 0 || inside.stdout.trim() !== "true") {
+    throw new ShadowError("NOT_A_GIT_REPO");
+  }
+  const shallow = runGit3(["rev-parse", "--is-shallow-repository"]);
+  if (shallow.stdout.trim() === "true") {
+    throw new ShadowError("SHALLOW_CLONE");
+  }
+}
+function detectGithubRepo(runGit3) {
+  const result = runGit3(["remote", "get-url", "origin"]);
+  if (result.exitCode !== 0) return null;
+  const match = result.stdout.trim().match(/[/:]([^/:]+)\/([^/]+?)(?:\.git)?$/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2] };
+}
+function runShadowCli(command, args, io) {
+  const log = io.log;
+  const now = io.now ?? (() => /* @__PURE__ */ new Date());
+  try {
+    if (!isShadowCommand(command)) {
+      throw new ShadowError("INVALID_ARG");
+    }
+    let values;
+    try {
+      ({ values } = parseArgs({
+        args: [...args],
+        options: SHADOW_OPTION_SPEC,
+        strict: true,
+        allowPositionals: false
+      }));
+    } catch {
+      throw new ShadowError("INVALID_ARG");
+    }
+    const dataDir = values["data-dir"];
+    if (!dataDir) {
+      throw new ShadowError("INVALID_ARG");
+    }
+    const threshold = parseBoundedFloat(values["threshold"], 0.5, 0, 1);
+    const bootstrapDays = parsePositiveInt(values["bootstrap-days"], 30);
+    const maxPrs = parsePositiveInt(values["max-prs"], 200);
+    const horizonDays = parseHorizon(values["horizon-days"]);
+    const windowDays = parsePositiveInt(values["window-days"], 30);
+    if (command === "shadow-report") {
+      runShadowReport({ dataDir, windowDays, horizonDays, now, log });
+      return { exitCode: 0 };
+    }
+    const repoDir = resolve3(io.cwd, values["repo"] ?? ".");
+    const runGit3 = makeGitRunner(repoDir);
+    checkRepoPreconditions(repoDir, runGit3);
+    let githubRepo;
+    try {
+      githubRepo = validateGithubRepo(values["github-repo"]) ?? null;
+    } catch {
+      throw new ShadowError("INVALID_ARG");
+    }
+    githubRepo = githubRepo ?? detectGithubRepo(runGit3);
+    if (!githubRepo) {
+      throw new ShadowError("INVALID_ARG");
+    }
+    const repoSlug = `${githubRepo.owner}/${githubRepo.repo}`;
+    const integrationBranch = values["integration-branch"];
+    if (!integrationBranch || integrationBranch === "main") {
+      throw new ShadowError("INVALID_ARG");
+    }
+    if (command === "shadow-score") {
+      const result = runShadowScore({
+        dataDir,
+        repo: repoSlug,
+        integrationBranch,
+        threshold,
+        bootstrapDays,
+        maxPrs,
+        runGit: runGit3,
+        now,
+        log,
+        scorer: BASELINE_V0
+      });
+      log(`SHADOW_OK scored=${result.scored} skipped=${result.skipped} status=${result.status}`);
+    } else {
+      const target = {
+        owner: githubRepo.owner,
+        repo: githubRepo.repo,
+        integrationBranch,
+        repoDir
+      };
+      const deps = createDefaultDeps(target, { now });
+      deps.github = createOfflineGitHubClient();
+      const result = runShadowBackfill({ dataDir, horizonDays, target, deps, now, log });
+      log(
+        `SHADOW_OK labelled=${result.labelled} pending=${result.pending} skipped=${result.skipped} unlabellable=${result.unlabellable}`
+      );
+    }
+    return { exitCode: 0 };
+  } catch (error) {
+    const code = error instanceof ShadowError ? error.code : "INTERNAL";
+    log(`SHADOW_ERROR code=${code}`);
+    return { exitCode: 0 };
+  }
+}
+
 // src/cli-core.ts
 var EXIT_OK = 0;
 var EXIT_INTERNAL = 1;
@@ -5177,6 +6382,14 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+
+shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
+                 [--github-repo <owner/name>] [--threshold 0.5]
+                 [--bootstrap-days 30] [--max-prs 200]
+shadow-backfill  --data-dir <path> --integration-branch <name> [--repo <path>]
+                 [--github-repo <owner/name>] [--horizon-days 30]
+shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
+                 (shadow commands always exit 0 and print SHADOW_* lines)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -5216,12 +6429,20 @@ function runScanCli(argv, io) {
       io.writeStderr(USAGE);
       return { exitCode: command === void 0 ? EXIT_INVALID_INPUT : EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
     }
+    if (command.startsWith("shadow-")) {
+      const result = runShadowCli(command, rest, {
+        log: (line) => io.writeStdout(`${line}
+`),
+        cwd: process.cwd()
+      });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
     if (command !== "label" && command !== "extract" && command !== "scan") {
       throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);
     }
     let values;
     try {
-      ({ values } = parseArgs({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
+      ({ values } = parseArgs2({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -5277,9 +6498,9 @@ function runScanCli(argv, io) {
     if (outSpec === "-") {
       io.writeStdout(output);
     } else {
-      outputPath = resolve3(outSpec);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, output);
+      outputPath = resolve4(outSpec);
+      mkdirSync2(dirname(outputPath), { recursive: true });
+      writeFileSync2(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -5302,8 +6523,8 @@ function runScanCli(argv, io) {
   }
 }
 function resolveRepoDir(raw) {
-  const repoDir = resolve3(validateRepoDir(raw));
-  if (!existsSync2(repoDir) || !statSync3(repoDir).isDirectory()) {
+  const repoDir = resolve4(validateRepoDir(raw));
+  if (!existsSync4(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);
@@ -5316,7 +6537,7 @@ function resolveRepoDir(raw) {
   }
   return repoDir;
 }
-function detectGithubRepo(repoDir) {
+function detectGithubRepo2(repoDir) {
   const result = execArgvCommand("git", ["-C", repoDir, "remote", "get-url", "origin"]);
   if (result.exitCode !== 0) return null;
   const match = result.stdout.toString().trim().match(/[/:]([^/:]+)\/([^/]+?)(?:\.git)?$/);
@@ -5325,7 +6546,7 @@ function detectGithubRepo(repoDir) {
 }
 function requireGithubRepo(context, repoDir, explicit) {
   if (explicit) return explicit;
-  const detected = detectGithubRepo(repoDir);
+  const detected = detectGithubRepo2(repoDir);
   if (!detected) {
     throw new ScanInputError("cannot detect owner/name from the origin remote; pass --github-repo");
   }
@@ -5446,11 +6667,21 @@ function writeGithubKeyValue(file, key, value) {
 `);
 }
 function main() {
-  const { argv, outputPath } = buildActionArgv({
+  const actionEnv = {
     input: (name) => readActionInput(process.env, name),
     runnerTemp: process.env.RUNNER_TEMP,
     workspace: process.env.GITHUB_WORKSPACE
-  });
+  };
+  if (isShadowMode(actionEnv.input("mode"))) {
+    const { argv: argv2 } = buildShadowActionArgv(actionEnv);
+    runScanCli(argv2, {
+      writeStdout: (text) => process.stdout.write(text),
+      writeStderr: (text) => process.stderr.write(text),
+      env: { ...process.env }
+    });
+    return 0;
+  }
+  const { argv, outputPath } = buildActionArgv(actionEnv);
   const env = { ...process.env };
   const token = readActionInput(process.env, "token");
   if (token !== void 0) env.GITHUB_TOKEN = token;

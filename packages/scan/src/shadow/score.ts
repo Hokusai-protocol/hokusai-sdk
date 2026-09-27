@@ -1,32 +1,54 @@
 /**
- * Shadow scoring runner: extract features and score merged PRs.
+ * Shadow scoring runner: discover newly merged PRs, extract candidate
+ * features, score them, and append validated rows to the data dir.
+ *
+ * Feature extraction runs against a temporary detached no-checkout worktree
+ * whose HEAD is moved per merge with `update-ref` — the live checkout's HEAD
+ * is never touched, no files are populated, and no static tooling runs
+ * (`NULL_STATIC_FEATURES` is passed explicitly, so tsc/eslint/build never
+ * execute against historical commits).
  */
 
-import type { GitRunner } from '../survival-labeller.js';
-import type { CandidateFeaturesV1 } from '@hokusai/core';
-import { extractCandidateFeatures } from '../candidate-features.js';
-import type { ShadowScorer } from './scorer.js';
-import { BASELINE_V0 } from './scorer.js';
-import type { DiscoveredMerge } from './discover.js';
-import type { ArbiterShadowScoreV1, ArbiterShadowStateV1, ArbiterShadowRunStatus } from '@hokusai/core';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type {
+  ArbiterShadowErrorCode,
+  ArbiterShadowRunStatus,
+  ArbiterShadowScoreV1,
+  ArbiterShadowStateV1,
+  CandidateFeaturesV1,
+} from '@hokusai/core';
 import { validateShadowScoreRow } from '@hokusai/core';
+import {
+  extractCandidateFeatures,
+  type CandidateFeaturesOptions,
+} from '../candidate-features.js';
+import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
+import { execArgvCommand } from '../shell-utils.js';
 import { ShadowError } from './errors.js';
-import { discoverMerges, isAncestor } from './discover.js';
-import { readJsonl, appendJsonl, readState, writeState, ensureWritableDataDir } from './store.js';
+import { discoverMerges } from './discover.js';
+import { BASELINE_V0, NULL_STATIC_FEATURES, type ShadowScorer } from './scorer.js';
+import { appendJsonl, ensureWritableDataDir, readJsonl, readState, writeState } from './store.js';
 
 export interface RunShadowScoreOptions {
   dataDir: string;
-  repo: string; // owner/repo
-  githubRepo: string; // owner/repo
+  /** "owner/name" recorded on every row. */
+  repo: string;
+  /** Branch whose first-parent history is walked (never `main`; see D1). */
   integrationBranch: string;
-  checkoutDir: string;
   threshold: number;
   bootstrapDays: number;
   maxPrs: number;
+  /** Git runner bound to `checkoutDir`. */
   runGit: GitRunner;
   now: () => Date;
   log: (line: string) => void;
-  scorer?: ShadowScorer;
+  scorer?: ShadowScorer | undefined;
+  /** Seam for tests: builds a git runner bound to an arbitrary directory. */
+  makeGitRunner?: ((dir: string) => GitRunner) | undefined;
+  /** Seam for tests: candidate-feature extraction. */
+  extract?: ((options: CandidateFeaturesOptions) => CandidateFeaturesV1) | undefined;
 }
 
 export interface RunShadowScoreResult {
@@ -37,14 +59,17 @@ export interface RunShadowScoreResult {
   status: ArbiterShadowRunStatus;
 }
 
+function defaultMakeGitRunner(dir: string): GitRunner {
+  return (args) =>
+    execArgvCommand('git', ['-C', dir, ...args], { maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+}
+
 /** Run shadow scoring: discover, extract, score, and store results. */
-export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunShadowScoreResult> {
+export function runShadowScore(opts: RunShadowScoreOptions): RunShadowScoreResult {
   const {
     dataDir,
     repo,
-    githubRepo,
     integrationBranch,
-    checkoutDir,
     threshold,
     bootstrapDays,
     maxPrs,
@@ -52,29 +77,30 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
     now,
     log,
     scorer = BASELINE_V0,
+    makeGitRunner = defaultMakeGitRunner,
+    extract = extractCandidateFeatures,
   } = opts;
 
   ensureWritableDataDir(dataDir);
 
-  // Load existing state
   const { state: oldState, corrupt } = readState(dataDir, repo, scorer.id, scorer.version);
   const cursorBefore = oldState.last_seen_merge_sha;
 
-  // Read existing scores to avoid duplicates
-  const scoresFile = `${dataDir}/scores.jsonl`;
+  // Existing merge SHAs make scoring idempotent, including after a crash
+  // between the rows append and the state write.
+  const scoresFile = join(dataDir, 'scores.jsonl');
   const existing = readJsonl(scoresFile, validateShadowScoreRow);
-  const existingMergeShas = new Set(existing.rows.map(r => r.merge_sha));
+  const existingMergeShas = new Set(existing.rows.map((r) => r.merge_sha));
 
   let cursorAfter = cursorBefore;
   let scored = 0;
   let skipped = 0;
   let status: ArbiterShadowRunStatus = 'ok';
-  let lastError: string | null = null;
+  let lastError: ArbiterShadowErrorCode | null = null;
   let cursorReset = false;
 
   try {
-    // Discover merges
-    const discovered = await discoverMerges({
+    const discovered = discoverMerges({
       runGit,
       ref: integrationBranch,
       cursor: cursorBefore,
@@ -82,109 +108,96 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
       now,
       maxPrs,
     });
-
     cursorReset = discovered.cursorReset;
+
     const rows: ArbiterShadowScoreV1[] = [];
 
-    // Process each merge
-    for (const merge of discovered.merges) {
+    if (discovered.merges.length > 0) {
+      // One detached no-checkout worktree per run; HEAD moves per merge.
+      runGit(['worktree', 'prune']);
+      const worktreeDir = mkdtempSync(join(tmpdir(), 'hokusai-shadow-'));
+      const added = runGit([
+        'worktree', 'add', '--detach', '--no-checkout', '--force', worktreeDir,
+      ]);
+      if (added.exitCode !== 0) {
+        throw new ShadowError('EXTRACT_FAILED');
+      }
+      const runWorktreeGit = makeGitRunner(worktreeDir);
+
       try {
-        // Skip if already scored
-        if (existingMergeShas.has(merge.mergeSha)) {
-          skipped++;
-          cursorAfter = merge.mergeSha;
-          continue;
+        for (const merge of discovered.merges) {
+          if (existingMergeShas.has(merge.mergeSha)) {
+            skipped++;
+            cursorAfter = merge.mergeSha;
+            continue;
+          }
+
+          try {
+            const moved = runWorktreeGit(['update-ref', '--no-deref', 'HEAD', merge.mergeSha]);
+            if (moved.exitCode !== 0) {
+              throw new ShadowError('EXTRACT_FAILED');
+            }
+
+            const features = extract({
+              checkoutDir: worktreeDir,
+              // The extractor stringifies this; offline mode never sends it
+              // anywhere. Non-PR merges fall back to the SHA.
+              prNumber: merge.prNumber ?? merge.mergeSha,
+              baseRef: merge.parentSha,
+              offline: true,
+              staticFeatures: NULL_STATIC_FEATURES,
+            });
+
+            const score = scorer.score(features);
+            const row: ArbiterShadowScoreV1 = {
+              schema_version: 'arbiter_shadow_score/v1',
+              repo,
+              pr_number: merge.prNumber,
+              merge_sha: merge.mergeSha,
+              merged_at: new Date(merge.mergedAtEpoch * 1000).toISOString(),
+              scored_at: now().toISOString(),
+              scorer_id: scorer.id,
+              scorer_version: scorer.version,
+              score,
+              threshold,
+              would_flag: score < threshold,
+              features,
+            };
+
+            const validation = validateShadowScoreRow(row);
+            if (!validation.ok) {
+              log(`SHADOW_SKIP pr=${merge.prNumber ?? 'none'} code=INVALID_ROW`);
+              skipped++;
+              status = 'partial';
+              cursorAfter = merge.mergeSha;
+              continue;
+            }
+
+            rows.push(row);
+            scored++;
+            cursorAfter = merge.mergeSha;
+          } catch {
+            log(`SHADOW_SKIP pr=${merge.prNumber ?? 'none'} code=EXTRACT_FAILED`);
+            skipped++;
+            status = 'partial';
+            cursorAfter = merge.mergeSha;
+          }
         }
 
-        // Update git worktree HEAD to this merge
-        await runGit(['update-ref', '--no-deref', 'HEAD', merge.mergeSha], { cwd: checkoutDir });
-
-        // Extract features
-        let features: CandidateFeaturesV1 | null = null;
-        try {
-          const result = await extractCandidateFeatures({
-            checkoutDir,
-            prNumber: merge.prNumber,
-            baseRef: merge.parentSha,
-            offline: true,
-            staticFeatures: null,
-          });
-          features = result.features;
-        } catch (error) {
-          log(`SHADOW_SKIP pr=${merge.prNumber ?? 'none'} code=EXTRACT_FAILED`);
-          skipped++;
-          status = 'partial';
-          cursorAfter = merge.mergeSha;
-          continue;
+        if (rows.length > 0) {
+          appendJsonl(scoresFile, rows, validateShadowScoreRow);
         }
-
-        if (!features) {
-          log(`SHADOW_SKIP pr=${merge.prNumber ?? 'none'} code=EXTRACT_FAILED`);
-          skipped++;
-          status = 'partial';
-          cursorAfter = merge.mergeSha;
-          continue;
-        }
-
-        // Score
-        const score = scorer.score(features);
-
-        // Build row
-        const mergedAt = new Date(merge.mergedAtEpoch * 1000).toISOString();
-        const scoredAt = now().toISOString();
-
-        const row: ArbiterShadowScoreV1 = {
-          schema_version: 'arbiter_shadow_score/v1',
-          repo,
-          pr_number: merge.prNumber,
-          merge_sha: merge.mergeSha,
-          merged_at: mergedAt,
-          scored_at: scoredAt,
-          scorer_id: scorer.id,
-          scorer_version: scorer.version,
-          score,
-          threshold,
-          would_flag: score < threshold,
-          features,
-        };
-
-        // Validate
-        const validation = validateShadowScoreRow(row);
-        if (!validation.ok) {
-          log(`SHADOW_SKIP pr=${merge.prNumber ?? 'none'} code=INVALID_ROW`);
-          skipped++;
-          status = 'partial';
-          cursorAfter = merge.mergeSha;
-          continue;
-        }
-
-        rows.push(row);
-        scored++;
-        cursorAfter = merge.mergeSha;
-      } catch (error) {
-        // Log and continue
-        const prNum = merge.prNumber ?? 'none';
-        log(`SHADOW_SKIP pr=${prNum} code=EXTRACT_FAILED`);
-        skipped++;
-        status = 'partial';
-        cursorAfter = merge.mergeSha;
+      } finally {
+        runGit(['worktree', 'remove', '--force', worktreeDir]);
+        rmSync(worktreeDir, { recursive: true, force: true });
+        runGit(['worktree', 'prune']);
       }
     }
-
-    // Append all rows atomically
-    if (rows.length > 0) {
-      appendJsonl(scoresFile, rows, validateShadowScoreRow);
-    }
   } catch (error) {
-    if (error instanceof ShadowError) {
-      lastError = error.code;
-    } else {
-      lastError = 'INTERNAL';
-    }
+    lastError = error instanceof ShadowError ? error.code : 'INTERNAL';
     status = 'error';
   }
 
-  // Write state last
   const newState: ArbiterShadowStateV1 = {
     schema_version: 'arbiter_shadow_state/v1',
     repo,
@@ -199,7 +212,8 @@ export async function runShadowScore(opts: RunShadowScoreOptions): Promise<RunSh
   try {
     writeState(dataDir, newState);
   } catch {
-    // Best-effort state write - don't fail the whole operation
+    // Best-effort: a failed state write means the next run re-discovers and
+    // dedups by merge_sha, so no duplicate rows are possible.
   }
 
   return {

@@ -52,6 +52,7 @@ import {
   type SurvivalLabellerDeps,
   type SurvivalLabellerTarget,
 } from './survival-labeller.js';
+import { runShadowCli } from './shadow/cli.js';
 
 export const EXIT_OK = 0;
 export const EXIT_INTERNAL = 1;
@@ -83,6 +84,14 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+
+shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
+                 [--github-repo <owner/name>] [--threshold 0.5]
+                 [--bootstrap-days 30] [--max-prs 200]
+shadow-backfill  --data-dir <path> --integration-branch <name> [--repo <path>]
+                 [--github-repo <owner/name>] [--horizon-days 30]
+shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
+                 (shadow commands always exit 0 and print SHADOW_* lines)
 `;
 
 const OPTION_SPEC = {
@@ -129,6 +138,15 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
     if (command === undefined || command === '--help' || command === 'help') {
       io.writeStderr(USAGE);
       return { exitCode: command === undefined ? EXIT_INVALID_INPUT : EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (command.startsWith('shadow-')) {
+      // Shadow mode is fail-silent (HOK-2820): the sub-CLI always exits 0
+      // and writes only SHADOW_* lines to stdout. Never gates anything.
+      const result = runShadowCli(command, rest, {
+        log: (line) => io.writeStdout(`${line}\n`),
+        cwd: process.cwd(),
+      });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command !== 'label' && command !== 'extract' && command !== 'scan') {
       throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);

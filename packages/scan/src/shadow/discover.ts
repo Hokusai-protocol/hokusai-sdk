@@ -1,5 +1,11 @@
 /**
- * Discover merged PRs from git history.
+ * Discover merged PRs from local git history (no GitHub API).
+ *
+ * Discovery walks the integration branch's first-parent history from the
+ * stored cursor (`last_seen_merge_sha`). A missing or non-ancestor cursor
+ * falls back to a bounded `bootstrapDays` window instead of crashing.
+ * Commit subjects are parsed for a PR number and then dropped immediately;
+ * they never leave this module (Arbiter S5).
  */
 
 import type { GitRunner } from '../survival-labeller.js';
@@ -8,7 +14,7 @@ import { ShadowError } from './errors.js';
 
 export interface DiscoveredMerge {
   mergeSha: string; // 40-hex
-  parentSha: string; // 40-hex
+  parentSha: string; // 40-hex (empty-tree SHA for root commits)
   mergedAtEpoch: number; // Unix timestamp
   prNumber: number | null;
 }
@@ -16,13 +22,9 @@ export interface DiscoveredMerge {
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 /** Check if a SHA is an ancestor of a ref. Returns false if the SHA is missing. */
-export async function isAncestor(
-  runGit: GitRunner,
-  sha: string,
-  ref: string,
-): Promise<boolean> {
+export function isAncestor(runGit: GitRunner, sha: string, ref: string): boolean {
   try {
-    const result = await runGit(['merge-base', '--is-ancestor', sha, ref]);
+    const result = runGit(['merge-base', '--is-ancestor', sha, ref]);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -41,111 +43,62 @@ export interface DiscoverMergesOptions {
 export interface DiscoverMergesResult {
   merges: DiscoveredMerge[];
   cursorReset: boolean;
-  pendingTotal: number;
 }
 
-/** Discover merged PRs from git history. */
-export async function discoverMerges(opts: DiscoverMergesOptions): Promise<DiscoverMergesResult> {
+/** Discover merged PRs from git history, oldest first, capped at maxPrs. */
+export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResult {
   const { runGit, ref, cursor, bootstrapDays, now, maxPrs } = opts;
 
   const merges: DiscoveredMerge[] = [];
   let cursorReset = false;
-  let gitRevRange = '';
+  let useBootstrapWindow = cursor === null;
 
-  // Determine git range
-  if (cursor === null) {
-    // First run: use bootstrap window
-    const cutoffTime = new Date(now().getTime() - bootstrapDays * 86400 * 1000);
-    const isoDate = cutoffTime.toISOString();
-    gitRevRange = `--since=${isoDate}`;
-  } else {
-    // Check if cursor is an ancestor of ref
-    const isAncestorResult = await isAncestor(runGit, cursor, ref);
-
-    if (isAncestorResult) {
-      // Use the range from cursor to ref
-      gitRevRange = `${cursor}..${ref}`;
-    } else {
-      // Cursor is missing or not an ancestor: reset and use bootstrap window
-      cursorReset = true;
-      const cutoffTime = new Date(now().getTime() - bootstrapDays * 86400 * 1000);
-      const isoDate = cutoffTime.toISOString();
-      gitRevRange = `--since=${isoDate}`;
-    }
+  if (cursor !== null && !isAncestor(runGit, cursor, ref)) {
+    // Cursor is missing or not an ancestor (rewritten history): reset.
+    cursorReset = true;
+    useBootstrapWindow = true;
   }
 
-  // Get first-parent commits
+  const cutoffEpoch = Math.floor(now().getTime() / 1000) - bootstrapDays * 86400;
   const format = '%H%x09%P%x09%ct%x09%s';
-  const args = ['log', '--first-parent', '--reverse', `--pretty=format:${format}`, gitRevRange, ref];
+  const args = useBootstrapWindow
+    ? [
+        'log',
+        '--first-parent',
+        '--reverse',
+        `--pretty=format:${format}`,
+        `--since=${new Date(cutoffEpoch * 1000).toISOString()}`,
+        ref,
+      ]
+    : ['log', '--first-parent', '--reverse', `--pretty=format:${format}`, `${cursor}..${ref}`];
 
-  const result = await runGit(args);
+  const result = runGit(args);
   if (result.exitCode !== 0) {
     throw new ShadowError('NOT_A_GIT_REPO');
   }
 
-  // Parse output
-  const lines = result.stdout.split('\n').filter(l => l.length > 0);
-  const now_epoch = Math.floor(now().getTime() / 1000);
-  const cutoff_epoch = now_epoch - bootstrapDays * 86400;
+  for (const line of result.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    const [mergeSha, parentsText = '', epochText = '', ...subjectParts] = line.split('\t');
+    if (!mergeSha || !/^[0-9a-f]{40}$/.test(mergeSha)) continue;
 
-  for (const line of lines) {
-    const [mergeSha, parents, ctStr, subject] = line.split('\t');
+    const mergedAtEpoch = Number.parseInt(epochText, 10);
+    if (!Number.isFinite(mergedAtEpoch)) continue;
 
-    if (!mergeSha || !parents || !ctStr) {
-      continue;
-    }
+    // `--since` filters on commit date already; re-filter in code so the
+    // injected clock, not git's wall clock, is authoritative.
+    if (useBootstrapWindow && mergedAtEpoch < cutoffEpoch) continue;
 
-    const mergedAtEpoch = parseInt(ctStr, 10);
+    const parents = parentsText.trim().split(/\s+/).filter(Boolean);
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA;
 
-    // Filter by time if we're using bootstrap window
-    if (cursorReset || cursor === null) {
-      if (mergedAtEpoch < cutoff_epoch) {
-        continue;
-      }
-    }
+    // The subject is parsed for a PR number and dropped here (S5 privacy).
+    const subject = subjectParts.join('\t');
+    const prNumber = extractPrNumber(subject);
 
-    // Handle root commits
-    const parentShas = parents.split(' ').filter(p => p.length > 0);
-    const parentSha = parentShas.length > 0 ? parentShas[0] : EMPTY_TREE_SHA;
-
-    // Extract PR number
-    const prNumber = extractPrNumber(subject ?? '');
-
-    merges.push({
-      mergeSha,
-      parentSha,
-      mergedAtEpoch,
-      prNumber,
-    });
-
-    // Respect max_prs limit
-    if (merges.length >= maxPrs) {
-      break;
-    }
+    merges.push({ mergeSha, parentSha, mergedAtEpoch, prNumber });
+    if (merges.length >= maxPrs) break;
   }
 
-  // Get pending total for first-parent from oldest candidate to ref
-  let pendingTotal = 0;
-  if (merges.length > 0) {
-    const oldestSha = merges[0].mergeSha;
-    const countResult = await runGit([
-      'rev-list',
-      '--first-parent',
-      '--count',
-      `${oldestSha}..${ref}`,
-    ]);
-    if (countResult.exitCode === 0) {
-      pendingTotal = parseInt(countResult.stdout.trim(), 10);
-    } else {
-      pendingTotal = merges.length; // fallback
-    }
-  } else {
-    pendingTotal = 0;
-  }
-
-  return {
-    merges,
-    cursorReset,
-    pendingTotal,
-  };
+  return { merges, cursorReset };
 }

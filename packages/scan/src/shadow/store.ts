@@ -4,19 +4,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  ArbiterShadowScoreV1,
-  ArbiterShadowOutcomeV1,
-  ArbiterShadowStateV1,
-  HokusaiFieldError,
-} from '@hokusai/core';
-import {
-  ARBITER_SHADOW_STATE_SCHEMA_VERSION,
-  initialShadowState,
-  validateShadowScoreRow,
-  validateShadowOutcomeRow,
-  validateShadowState,
-} from '@hokusai/core';
+import type { ArbiterShadowStateV1, HokusaiFieldError } from '@hokusai/core';
+import { initialShadowState, validateShadowState } from '@hokusai/core';
 import { ShadowError } from './errors.js';
 
 export interface JsonlResult<T> {
@@ -24,15 +13,44 @@ export interface JsonlResult<T> {
   malformed: number;
 }
 
-/** Ensure the data directory exists and is writable. */
+/** Ensure the data directory exists and is writable (probe file, not just mode bits). */
 export function ensureWritableDataDir(dir: string): void {
   try {
-    // Create directory if it doesn't exist
     fs.mkdirSync(dir, { recursive: true });
-    // Test write access
     fs.accessSync(dir, fs.constants.W_OK);
+    const probe = path.join(dir, `.probe-${process.pid}-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
   } catch {
     throw new ShadowError('DATA_DIR_UNWRITABLE');
+  }
+}
+
+/** Write bytes to `file` atomically: temp file, fsync, rename. */
+function writeFileAtomic(file: string, content: string): void {
+  const tempFile = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(tempFile, 'w');
+    fs.writeSync(fd, content);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+    fs.renameSync(tempFile, file);
+  } catch (error) {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      fs.unlinkSync(tempFile);
+    } catch {
+      // ignore
+    }
+    throw error;
   }
 }
 
@@ -55,7 +73,7 @@ export function readJsonl<T>(
 
     for (const line of lines) {
       try {
-        const parsed = JSON.parse(line);
+        const parsed: unknown = JSON.parse(line);
         const result = validate(parsed);
         if (result.ok && result.value) {
           rows.push(result.value);
@@ -98,25 +116,14 @@ export function appendJsonl<T>(
     existingContent = fs.readFileSync(file, 'utf-8');
   }
 
-  // Build new content
+  // Build new content: existing bytes + new lines, one JSON object per line.
   const newLines = rows.map(row => JSON.stringify(row));
-  const newContent = existingContent + (existingContent ? '\n' : '') + newLines.join('\n');
+  const trimmed = existingContent.length > 0 && !existingContent.endsWith('\n')
+    ? `${existingContent}\n`
+    : existingContent;
+  const newContent = `${trimmed}${newLines.join('\n')}\n`;
 
-  // Write atomically using temp file + rename
-  const tempFile = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
-  try {
-    fs.writeFileSync(tempFile, newContent, 'utf-8');
-    fs.fsyncSync(fs.openSync(tempFile, 'r'));
-    fs.renameSync(tempFile, file);
-  } catch (error) {
-    // Clean up temp file
-    try {
-      fs.unlinkSync(tempFile);
-    } catch {
-      // ignore
-    }
-    throw error;
-  }
+  writeFileAtomic(file, newContent);
 }
 
 /** Read state from data directory. Missing or invalid state returns initial state. */
@@ -140,7 +147,7 @@ export function readState(
 
   try {
     const content = fs.readFileSync(stateFile, 'utf-8');
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
     const result = validateShadowState(parsed);
 
     if (result.ok) {
@@ -176,34 +183,16 @@ export function writeState(dir: string, state: ArbiterShadowStateV1): void {
     throw new ShadowError('INVALID_ROW');
   }
 
-  const content = JSON.stringify(state);
-  const tempFile = `${stateFile}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
-
-  try {
-    fs.writeFileSync(tempFile, content, 'utf-8');
-    fs.fsyncSync(fs.openSync(tempFile, 'r'));
-    fs.renameSync(tempFile, stateFile);
-  } catch (error) {
-    try {
-      fs.unlinkSync(tempFile);
-    } catch {
-      // ignore
-    }
-    throw error;
-  }
+  writeFileAtomic(stateFile, JSON.stringify(state, null, 2));
 }
 
-/** Write report to data directory. */
+/** Write an already-serialized report to `reports/<date>.json`. */
 export function writeReport(
   dir: string,
   date: string, // YYYY-MM-DD format
-  json: unknown,
+  serialized: string,
 ): void {
   const reportsDir = path.join(dir, 'reports');
   fs.mkdirSync(reportsDir, { recursive: true });
-
-  const reportFile = path.join(reportsDir, `${date}.json`);
-  const content = JSON.stringify(json, null, 2);
-
-  fs.writeFileSync(reportFile, content, 'utf-8');
+  writeFileAtomic(path.join(reportsDir, `${date}.json`), serialized);
 }

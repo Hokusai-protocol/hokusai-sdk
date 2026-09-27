@@ -12,6 +12,37 @@
 
 export { SCAN_CONTRACT, scanContractVersion, type ScanContract } from './contract.js';
 
+// Shadow mode (HOK-2820): silent scheduled scoring of merged PRs. Never
+// visible on a PR, never gating; see docs/arbiter/shadow-mode.md.
+export {
+  BASELINE_V0,
+  BASELINE_V0_WEIGHTS,
+  NULL_STATIC_FEATURES,
+  SHADOW_COMMANDS,
+  ShadowError,
+  computeShadowReport,
+  discoverMerges,
+  isAncestor,
+  isShadowCommand,
+  runShadowBackfill,
+  runShadowCli,
+  runShadowReport,
+  runShadowScore,
+  type DiscoveredMerge,
+  type DiscoverMergesResult,
+  type ReportMetrics,
+  type RunShadowBackfillOptions,
+  type RunShadowBackfillResult,
+  type RunShadowReportOptions,
+  type RunShadowScoreOptions,
+  type RunShadowScoreResult,
+  type ShadowCliIO,
+  type ShadowCommand,
+  type ShadowReport,
+  type ShadowScorer,
+  type ThresholdSweepEntry,
+} from './shadow/index.js';
+
 export {
   extractCandidateFeatures,
   validateCandidateFeatures,

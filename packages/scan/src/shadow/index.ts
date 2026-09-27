@@ -8,5 +8,12 @@ export { discoverMerges, isAncestor, type DiscoveredMerge, type DiscoverMergesRe
 export { ensureWritableDataDir, readJsonl, appendJsonl, readState, writeState, writeReport, type JsonlResult } from './store.js';
 export { runShadowScore, type RunShadowScoreOptions, type RunShadowScoreResult } from './score.js';
 export { runShadowBackfill, type RunShadowBackfillOptions, type RunShadowBackfillResult } from './backfill.js';
-export { runShadowReport, computeShadowReport, type RunShadowReportOptions, type ShadowReport, type ReportMetrics } from './report.js';
-export { runShadowCli, type ShadowCliIO } from './cli.js';
+export {
+  runShadowReport,
+  computeShadowReport,
+  type RunShadowReportOptions,
+  type ShadowReport,
+  type ReportMetrics,
+  type ThresholdSweepEntry,
+} from './report.js';
+export { runShadowCli, isShadowCommand, SHADOW_COMMANDS, type ShadowCliIO, type ShadowCommand } from './cli.js';
