@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TaskCostLedgerError } from './errors.js';
 import { openTaskCostLedger } from './ledger.js';
 import { createMemoryLedgerStorage } from './storage.js';
 import { hash, input } from './test-support.js';
@@ -30,6 +31,29 @@ describe('task cost ledger', () => {
       reopened.query({ taskId: 't1', groupBy: ['model', 'backend'] }),
     ).toEqual(grouped);
     expect(() => ledger.records()).toThrow();
+  });
+  it('appendMany persists prior entries when a later entry fails', async () => {
+    let calls = 0;
+    const storage = createMemoryLedgerStorage({
+      onAppend: () => {
+        calls += 1;
+        if (calls === 3)
+          return Promise.resolve({
+            write: '',
+            throw: new TaskCostLedgerError('STORAGE_FAILURE', 'disk full'),
+          });
+        return Promise.resolve('ok');
+      },
+    });
+    const ledger = await openTaskCostLedger({ storage, hashFn: hash });
+    await expect(
+      ledger.appendMany([
+        { input: input({ ts: 1 }), eventKey: 'a' },
+        { input: input({ ts: 2 }), eventKey: 'b' },
+        { input: input({ ts: 3 }), eventKey: 'c' },
+      ]),
+    ).rejects.toMatchObject({ code: 'STORAGE_FAILURE' });
+    expect(ledger.records().map((record) => record.ts)).toEqual([1, 2]);
   });
   it('serializes concurrent appends in arrival order', async () => {
     const storage = createMemoryLedgerStorage();

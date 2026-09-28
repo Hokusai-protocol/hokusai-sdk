@@ -43,6 +43,12 @@ export interface TaskCostLedger {
     input: ToLedgerRecordInput,
     opts: { eventKey: string },
   ): Promise<AppendResult>;
+  /**
+   * Appends entries sequentially. If entry N fails, entries 0..N-1 remain
+   * durably persisted and indexed, and the returned promise rejects with that
+   * failure; the caller may reopen the ledger and re-run the remaining entries
+   * (they will dedupe by eventKey).
+   */
   appendMany(
     entries: readonly { input: ToLedgerRecordInput; eventKey: string }[],
   ): Promise<readonly AppendResult[]>;

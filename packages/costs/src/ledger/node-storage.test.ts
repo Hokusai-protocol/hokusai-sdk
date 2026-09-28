@@ -64,7 +64,15 @@ describe('Node file storage', () => {
       throw new Error('accepted');
     } catch (error) {
       expect(error).toMatchObject({ code: 'STORAGE_FAILURE' });
-      expect(String(error)).not.toContain(root);
+      const rendered = [
+        String(error),
+        (error as Error).message,
+        (error as { cause?: unknown }).cause instanceof Error
+          ? ((error as { cause?: Error }).cause as Error).message
+          : String((error as { cause?: unknown }).cause),
+        (error as Error).stack ?? '',
+      ].join('\n');
+      expect(rendered).not.toContain(root);
     }
   });
   it('rejects truncation lengths that would extend the file', async () => {

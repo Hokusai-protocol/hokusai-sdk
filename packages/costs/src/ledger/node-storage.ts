@@ -12,10 +12,12 @@ function storageError(error: unknown): TaskCostLedgerError {
     typeof error.code === 'string'
       ? error.code
       : 'unknown';
+  const scrubbed = new Error(`storage errno ${code}`);
+  scrubbed.name = 'LedgerStorageCause';
   return new TaskCostLedgerError(
     'STORAGE_FAILURE',
     `Ledger storage failed (${code})`,
-    { cause: error },
+    { cause: scrubbed },
   );
 }
 function checkPath(path: string, field: string): void {
