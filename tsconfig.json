@@ -7,6 +7,7 @@
     { "path": "./packages/adapter-wavemill" },
     { "path": "./packages/adapter-aider" },
     { "path": "./packages/router" },
+    { "path": "./packages/costs" },
     { "path": "./examples/reference-harness" }
   ]
 }

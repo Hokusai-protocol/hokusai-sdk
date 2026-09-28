@@ -1,0 +1,16 @@
+{
+  "case": "case-02-followup-deletion",
+  "description": "PR #2 substantially rewritten by a human (line_range_followup, ratio 0.4); PR #3 exactly reverted by an agent.",
+  "github_repo": "golden/case-02-followup-deletion",
+  "integration_branch": "integ",
+  "branches": [
+    "main",
+    "integ",
+    "pr2",
+    "pr3"
+  ],
+  "checkout_ref": "pr2",
+  "pr_number": 2,
+  "base_ref": "main",
+  "as_of": "2026-03-12T00:00:00Z"
+}

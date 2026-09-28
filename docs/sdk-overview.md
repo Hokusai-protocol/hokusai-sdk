@@ -57,8 +57,9 @@ $hokusai-doctor
 - `@hokusai/adapter-claude-code`: Claude Code plugin-facing adapter, CLI commands, config loading, and doctor helpers built on `@hokusai/core`.
 - `@hokusai/adapter-codex`: Codex plugin, MCP server, task/outcome builders, and OpenAI-only routing helpers built on `@hokusai/core`.
 - `@hokusai/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers built on `@hokusai/core`.
+- `@hokusai/scan`: the Arbiter scanner (HOK-2816) — the survival labeller and candidate-feature extractor extracted from wavemill, shipped as a library, the `hokusai-scan` CLI, and a one-shot `workflow_dispatch` GitHub Action, all sharing one code path. Wire formats (`candidate_features/v1`, `arbiter_survival_label/v1`) live in `@hokusai/core`; execution lives here.
 
-Dependency direction is one-way: `@hokusai/core` does not import adapters; adapters and `@hokusai/router` depend on core.
+Dependency direction is one-way: `@hokusai/core` does not import adapters or `@hokusai/scan`; adapters, `@hokusai/router`, and `@hokusai/scan` depend on core. `@hokusai/scan` never imports adapters. `scripts/check-core-boundaries.mjs` enforces both edges in CI.
 
 ## Core SDK API
 
@@ -130,10 +131,15 @@ Arbiter feature producers and consumers additionally use:
 - `taskDescriptorToCandidateIntent()`
 - the complete, sparse, and observed-zero candidate fixture exports
 
-Core owns the wire contract. Wavemill owns the initial checkout/PR extractor
-and maps its existing difficulty, outcome, verification, descriptor, and scope
-guard outputs into these fields. The data pipeline and future `@hokusai/scan`
-package consume the versioned contract rather than defining local field lists.
+Core owns the wire contract. `@hokusai/scan` owns the checkout/PR extractor
+(extracted from wavemill in HOK-2816) and produces values for these fields;
+the data pipeline and every other consumer read the versioned contract rather
+than defining local field lists. Core also owns the Arbiter S2 survival-label
+contract: `ArbiterSurvivalLabelV1`, `buildArbiterSurvivalLabel()`,
+`deriveReportOutcome()`, `canonicalHash()`/`canonicalSerialize()`, the
+`ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA` mirror of
+`packages/core/schemas/arbiter-survival-label.schema.json`, and the
+harvested/owner-corrected fixture pair.
 
 ### Model Registry
 

@@ -1,0 +1,15 @@
+{
+  "case": "case-03-empty-diff",
+  "description": "Whitespace-only PR: zero-line substrate, insufficient_line_range_substrate at every horizon.",
+  "github_repo": "golden/case-03-empty-diff",
+  "integration_branch": "integ",
+  "branches": [
+    "main",
+    "integ",
+    "pr4"
+  ],
+  "checkout_ref": "pr4",
+  "pr_number": 4,
+  "base_ref": "main",
+  "as_of": "2026-03-12T00:00:00Z"
+}

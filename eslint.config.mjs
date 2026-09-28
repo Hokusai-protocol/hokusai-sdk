@@ -4,6 +4,7 @@ import globals from 'globals';
 
 const coreRestrictedImports = [
   '@hokusai/adapter-*',
+  '@hokusai/scan',
   '../../adapter-*',
   '../adapter-*',
   '../../../examples/*',

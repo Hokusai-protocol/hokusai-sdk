@@ -6,10 +6,12 @@ This repository currently includes:
 
 - `@hokusai/router` for routing a task from application code — the front door, and where most integrations should start
 - `@hokusai/core` for the harness-agnostic SDK contracts and API client
+- `@hokusai/costs` for the provider-neutral task cost engine — offline per-event pricing and cost/token totals over the `@hokusai/core` task-cost contract
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
 - `@hokusai/adapter-aider` for a vendor-neutral CLI wrapper that routes a task through Hokusai and launches [Aider](https://aider.chat) with the recommended model
+- `@hokusai/scan` for the Arbiter scanner: the survival labeller and candidate-feature extractor, as a library, the `hokusai-scan` CLI, and a one-shot GitHub Action
 - `examples/reference-harness` for the smallest complete generic integration flow
 - `examples/litellm-integration` for a Python-side LiteLLM metadata-only routing prototype
 - `examples/openhands-integration` for the Python-side `@hokusai/adapter-openhands` equivalent — Hokusai-backed `RouterLLM` plus SDK-metrics contribution rows
@@ -397,6 +399,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 ## Package Map
 
 - `packages/core`: shared contracts, schemas, consent/config helpers, redaction, client, model registry, storage, fixtures, and conformance utilities
+- `packages/costs`: provider-neutral task cost engine (`@hokusai/costs`) — offline usage-event ingest, per-event pricing with host overrides, and summary snapshots; see [packages/costs/README.md](packages/costs/README.md)
 - `packages/adapter-claude-code`: Claude Code plugin, CLI commands, doctor/privacy/report tooling, and Claude-specific adapter
 - `packages/adapter-codex`: Codex command descriptors, task context builders, outcome builders, model provider, and harness adapter
 - `packages/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers and conformance fixtures

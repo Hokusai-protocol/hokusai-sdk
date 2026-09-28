@@ -1,0 +1,59 @@
+{
+  "name": "@hokusai/costs",
+  "version": "0.4.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "description": "Provider-neutral task cost engine: accepts usage events for a task and returns cost/token totals with attribution and coverage. Works offline, without Hokusai credentials.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hokusai-protocol/hokusai-sdk",
+    "directory": "packages/costs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sources/claude-code": {
+      "types": "./dist/sources/claude-code/index.d.ts",
+      "import": "./dist/sources/claude-code/index.js"
+    },
+    "./sources/codex": {
+      "types": "./dist/sources/codex/index.d.ts",
+      "import": "./dist/sources/codex/index.js"
+    },
+    "./sources/event-source": {
+      "types": "./dist/sources/event-source.d.ts",
+      "import": "./dist/sources/event-source.js"
+    },
+    "./sources/node-fs": {
+      "types": "./dist/sources/node-fs.d.ts",
+      "import": "./dist/sources/node-fs.js"
+    },
+    "./ledger": {
+      "types": "./dist/ledger/index.d.ts",
+      "import": "./dist/ledger/index.js"
+    },
+    "./ledger/node": {
+      "types": "./dist/ledger/node/index.d.ts",
+      "import": "./dist/ledger/node/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@hokusai/core": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json --pretty false",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --pretty false"
+  }
+}

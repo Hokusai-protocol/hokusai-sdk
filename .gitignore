@@ -7,6 +7,9 @@ dist-bundle
 dist-zip
 !packages/adapter-claude-code/plugin/dist/
 !packages/adapter-claude-code/plugin/dist/index.js
+# The scan Action bundle is committed: Actions cannot install dependencies.
+!packages/scan/action/dist/
+!packages/scan/action/dist/index.js
 coverage
 .turbo
 .typecheck
@@ -23,3 +26,5 @@ features/
 .wavemill/
 .wavemill-config.json
 .wavemill-config.local.json
+# Wavemill prompt-usage telemetry (older native-agent runs wrote it at the repo root)
+/prompt-registry.jsonl

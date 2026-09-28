@@ -1,0 +1,36 @@
+# Example one-shot caller for the Hokusai Scan Action (HOK-2816).
+#
+# Copy into .github/workflows/hokusai-scan.yml in the repository you want to
+# scan, pin @vX.Y.Z to a published hokusai-sdk release tag, and dispatch it
+# with a PR number. `fetch-depth: 0` is required: the labeller walks the
+# integration branch's full first-parent history.
+name: hokusai-scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to scan'
+        required: true
+        type: string
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scan
+        uses: Hokusai-protocol/hokusai-sdk/packages/scan/action@vX.Y.Z
+        with:
+          mode: scan
+          pr-number: ${{ inputs.pr_number }}
+          integration-branch: auto/integration
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hokusai-scan
+          path: ${{ steps.scan.outputs.output-path }}

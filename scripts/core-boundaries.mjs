@@ -5,9 +5,21 @@ import ts from 'typescript';
 const rootDir = path.resolve(import.meta.dirname, '..');
 const coreDir = path.join(rootDir, 'packages', 'core', 'src');
 const packageJsonPath = path.join(rootDir, 'packages', 'core', 'package.json');
+const scanDir = path.join(rootDir, 'packages', 'scan', 'src');
+const scanPackageJsonPath = path.join(rootDir, 'packages', 'scan', 'package.json');
 
-const forbiddenPackagePattern = /^@hokusai\/adapter-/;
+// Core holds wire-format contracts only: it must not depend on adapters or on
+// the scanner runtime (@hokusai/scan → @hokusai/core is the only allowed edge).
+const forbiddenPackagePattern = /^@hokusai\/(adapter-|scan$)/;
 const forbiddenPathSegments = [
+  `${path.sep}packages${path.sep}adapter-`,
+  `${path.sep}packages${path.sep}scan${path.sep}`,
+  `${path.sep}examples${path.sep}`,
+];
+
+// The scanner is adapter-agnostic: it may import @hokusai/core, never adapters.
+const scanForbiddenPackagePattern = /^@hokusai\/adapter-/;
+const scanForbiddenPathSegments = [
   `${path.sep}packages${path.sep}adapter-`,
   `${path.sep}examples${path.sep}`,
 ];
@@ -55,8 +67,8 @@ function collectSpecifiers(sourceText, filePath) {
   return specifiers;
 }
 
-function isForbiddenSpecifier(filePath, specifier) {
-  if (forbiddenPackagePattern.test(specifier)) {
+function isForbiddenSpecifier(filePath, specifier, packagePattern, pathSegments) {
+  if (packagePattern.test(specifier)) {
     return true;
   }
 
@@ -65,47 +77,75 @@ function isForbiddenSpecifier(filePath, specifier) {
   }
 
   const resolved = path.resolve(path.dirname(filePath), specifier);
-  return forbiddenPathSegments.some((segment) => resolved.includes(segment));
+  return pathSegments.some((segment) => resolved.includes(segment));
 }
 
-export async function checkCoreBoundaries() {
-  const violations = [];
-  const files = await listTypeScriptFiles(coreDir);
+const dependencyBuckets = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+];
+
+async function checkPackage(violations, {
+  srcDir,
+  packageJsonFile,
+  packagePattern,
+  pathSegments,
+  importMessage,
+  dependencyMessage,
+}) {
+  const files = await listTypeScriptFiles(srcDir);
 
   for (const filePath of files) {
     const sourceText = await readFile(filePath, 'utf8');
 
     for (const { specifier } of collectSpecifiers(sourceText, filePath)) {
-      if (isForbiddenSpecifier(filePath, specifier)) {
+      if (isForbiddenSpecifier(filePath, specifier, packagePattern, pathSegments)) {
         violations.push({
           filePath,
           specifier,
-          message: 'Core must not import adapters or examples.',
+          message: importMessage,
         });
       }
     }
   }
 
-  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
-  const dependencyBuckets = [
-    'dependencies',
-    'devDependencies',
-    'peerDependencies',
-    'optionalDependencies',
-  ];
-
+  const packageJson = JSON.parse(await readFile(packageJsonFile, 'utf8'));
   for (const bucket of dependencyBuckets) {
     const dependencies = packageJson[bucket] ?? {};
     for (const dependency of Object.keys(dependencies)) {
-      if (forbiddenPackagePattern.test(dependency)) {
+      if (packagePattern.test(dependency)) {
         violations.push({
-          filePath: packageJsonPath,
+          filePath: packageJsonFile,
           specifier: dependency,
-          message: `Core ${bucket} must not reference adapter packages.`,
+          message: `${dependencyMessage} (${bucket})`,
         });
       }
     }
   }
+}
+
+export async function checkCoreBoundaries() {
+  const violations = [];
+
+  await checkPackage(violations, {
+    srcDir: coreDir,
+    packageJsonFile: packageJsonPath,
+    packagePattern: forbiddenPackagePattern,
+    pathSegments: forbiddenPathSegments,
+    importMessage: 'Core must not import adapters, scan, or examples.',
+    dependencyMessage: 'Core must not reference adapter or scan packages.',
+  });
+
+  await checkPackage(violations, {
+    srcDir: scanDir,
+    packageJsonFile: scanPackageJsonPath,
+    packagePattern: scanForbiddenPackagePattern,
+    pathSegments: scanForbiddenPathSegments,
+    importMessage: 'Scan must not import adapters or examples.',
+    dependencyMessage: 'Scan must not reference adapter packages.',
+  });
 
   return violations;
 }

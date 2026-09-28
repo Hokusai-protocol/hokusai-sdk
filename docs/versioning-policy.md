@@ -24,6 +24,7 @@ The canonical schema versions are exported from `@hokusai/core`:
 - `TASK_PACKET_SCHEMA_VERSION = "1.1.0"`
 - `OUTCOME_REPORT_SCHEMA_VERSION = "1"`
 - `CANDIDATE_FEATURES_SCHEMA_VERSION = "candidate_features/v1"`
+- `ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = "1.0.0"` (the `arbiter_survival_label/v1` wire contract)
 
 Rules:
 
@@ -38,6 +39,30 @@ Rules:
 - A package release that adds a new candidate schema version is MINOR when the
   previous version remains exported. Removing a supported candidate schema
   version is MAJOR.
+- The survival-label contract is frozen the same way: ANY field or semantics
+  change to `ArbiterSurvivalLabelV1` or
+  `packages/core/schemas/arbiter-survival-label.schema.json` — however small —
+  requires bumping `ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION`, coordinated with
+  the `Hokusai/hokusai-data-pipeline` consumer. The TS schema mirror and the
+  JSON file must change together (a core test enforces deep equality).
+
+## The Scan Contract
+
+`@hokusai/scan` exports `SCAN_CONTRACT`, the frozen tuple a consumer uses to
+pin exactly what produced a scan artifact:
+
+- `candidateFeatures` / `labels`: the wire-schema versions, derived from the
+  `@hokusai/core` constants above — never copied literals.
+- `labellerVersion` / `normalizationVersion`: the scanner implementation
+  semvers stamped into every label's reproducibility envelope. Bump
+  `labellerVersion` for any behaviour change in the labeller; bump
+  `normalizationVersion` when the substrate normalization rules or the
+  substantial-rewrite threshold change.
+
+Changing any `SCAN_CONTRACT` value invalidates the golden parity fixtures
+under `fixtures/arbiter/scan/`; re-capturing them
+(`scripts/capture-scan-golden.mjs`) is legitimate only in the PR that makes
+that deliberate change.
 
 ## Breaking Change Taxonomy
 
