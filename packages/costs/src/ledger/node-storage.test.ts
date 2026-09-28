@@ -67,6 +67,24 @@ describe('Node file storage', () => {
       expect(String(error)).not.toContain(root);
     }
   });
+  it('rejects truncation lengths that would extend the file', async () => {
+    const { ledgerPath } = await path();
+    const storage = createNodeFileLedgerStorage({ path: ledgerPath });
+    await storage.append('abcd');
+    await expect(storage.truncate(2)).resolves.toBeUndefined();
+    await expect(storage.truncate(999)).rejects.toMatchObject({
+      code: 'INVALID_STORAGE_ARGUMENT',
+    });
+    await expect(storage.truncate(-1)).rejects.toMatchObject({
+      code: 'INVALID_STORAGE_ARGUMENT',
+    });
+    const { ledgerPath: missingPath } = await path();
+    const missing = createNodeFileLedgerStorage({ path: missingPath });
+    await expect(missing.truncate(0)).resolves.toBeUndefined();
+    await expect(missing.truncate(1)).rejects.toMatchObject({
+      code: 'INVALID_STORAGE_ARGUMENT',
+    });
+  });
   it('checks size before reading file contents', async () => {
     const { ledgerPath } = await path();
     const storage = createNodeFileLedgerStorage({ path: ledgerPath });

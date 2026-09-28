@@ -82,14 +82,35 @@ export function createNodeFileLedgerStorage({
       }
     },
     async truncate(byteLength) {
+      if (!Number.isSafeInteger(byteLength) || byteLength < 0)
+        throw new TaskCostLedgerError(
+          'INVALID_STORAGE_ARGUMENT',
+          'Invalid truncate length',
+          { field: 'byteLength' },
+        );
+      let currentSize: number | null = null;
+      try {
+        currentSize = (await fs.stat(path)).size;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (byteLength === 0) return;
+          throw new TaskCostLedgerError(
+            'INVALID_STORAGE_ARGUMENT',
+            'Invalid truncate length',
+            { field: 'byteLength' },
+          );
+        }
+        throw storageError(error);
+      }
+      if (byteLength > currentSize)
+        throw new TaskCostLedgerError(
+          'INVALID_STORAGE_ARGUMENT',
+          'Invalid truncate length',
+          { field: 'byteLength' },
+        );
       try {
         await fs.truncate(path, byteLength);
       } catch (error) {
-        if (
-          (error as NodeJS.ErrnoException).code === 'ENOENT' &&
-          byteLength === 0
-        )
-          return;
         throw storageError(error);
       }
     },
