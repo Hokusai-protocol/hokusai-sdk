@@ -60,7 +60,7 @@ describe('Node file storage', () => {
     const { root } = await path();
     const storage = createNodeFileLedgerStorage({ path: root });
     try {
-      await storage.readAll({ maxBytes: 1024 });
+      await storage.readAll({ maxBytes: Number.MAX_SAFE_INTEGER });
       throw new Error('accepted');
     } catch (error) {
       expect(error).toMatchObject({ code: 'STORAGE_FAILURE' });
