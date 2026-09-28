@@ -31,6 +31,14 @@
     "./sources/node-fs": {
       "types": "./dist/sources/node-fs.d.ts",
       "import": "./dist/sources/node-fs.js"
+    },
+    "./ledger": {
+      "types": "./dist/ledger/index.d.ts",
+      "import": "./dist/ledger/index.js"
+    },
+    "./ledger/node": {
+      "types": "./dist/ledger/node/index.d.ts",
+      "import": "./dist/ledger/node/index.js"
     }
   },
   "files": [

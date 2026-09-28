@@ -223,3 +223,46 @@ permutations — and requires exact-equal summaries.
 - HOK-3072 — the contract this engine implements (`@hokusai/core/task-cost`).
 - HOK-3069 — task ledger + queries (downstream consumer).
 - HOK-3070 — session-file adapters that feed this engine (downstream).
+
+## Local ledger
+
+The optional local ledger stores measured task costs as checksummed, versioned
+JSONL. Supply a storage instance with an explicit absolute path and a hash
+function:
+
+```ts
+import {
+  openTaskCostLedger,
+  createNodeFileLedgerStorage,
+  defaultLedgerHash,
+} from '@hokusai/costs/ledger/node';
+
+const ledger = await openTaskCostLedger({
+  storage: createNodeFileLedgerStorage({
+    path: '/absolute/private/task-cost-ledger.v1.jsonl',
+  }),
+  hashFn: defaultLedgerHash,
+});
+```
+
+`resolveDefaultLedgerPath({ homeDir })` constructs a suggested path under
+`.hokusai/costs/`, but never reads the home directory implicitly. Only one
+writer may use a ledger path at a time. The Node store uses a single append
+write followed by `fsync`, creates files with mode `0600` and new parent
+directories with mode `0700`, and never uploads data.
+
+Each record has exactly these 17 keys: `v`, `id`, `c`, `ts`, `taskId`, `model`,
+`harness`, `backend`, `source`, `pricingBasis`, `amountMicros`, `currency`,
+`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, and
+`coverage`. Callers provide an `eventKey`, which is hashed into `id` and never
+stored raw. Extra input fields are discarded. Amounts are integer micro-USD;
+queries keep metered charges separate from token-equivalent estimates and
+report unpriced and partial coverage.
+
+At open, the ledger truncates only an incomplete final line, preserving every
+earlier byte. Checksums protect complete lines; corrupt lines are skipped and
+counted in diagnostics. Replay of the same `(taskId, source, eventKey)` returns
+`duplicate` without another write, including after a restart. A v1 reader
+skips future-version lines without changing them; future migrations can lift
+records in memory without rewriting the file. Reverting this additive feature
+leaves existing JSONL files unused and readable by a compatible reader.
