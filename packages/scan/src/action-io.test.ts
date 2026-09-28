@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { actionFlagIsTrue, buildActionArgv, readActionInput } from './action-io.js';
+import {
+  actionFlagIsTrue,
+  buildActionArgv,
+  buildShadowActionArgv,
+  isShadowMode,
+  readActionInput,
+} from './action-io.js';
 
 function envOf(inputs: Record<string, string>) {
   return (name: string) => inputs[name];
@@ -74,5 +80,56 @@ describe('buildActionArgv', () => {
     });
     expect(argv.slice(0, 3)).toEqual(['label', '--repo', '/work']);
     expect(outputPath).toBe('/tmp/runner/hokusai-scan-output.jsonl');
+  });
+});
+
+describe('shadow mode action IO (HOK-2820)', () => {
+  it('isShadowMode recognizes exactly the three shadow modes', () => {
+    for (const mode of ['shadow-score', 'shadow-backfill', 'shadow-report']) {
+      expect(isShadowMode(mode)).toBe(true);
+    }
+    for (const mode of ['label', 'extract', 'scan', 'shadow', '', undefined]) {
+      expect(isShadowMode(mode)).toBe(false);
+    }
+  });
+
+  it('buildShadowActionArgv maps shadow inputs and never emits --out', () => {
+    const { argv } = buildShadowActionArgv({
+      input: envOf({
+        'mode': 'shadow-score',
+        'data-dir': '/tmp/runner/arbiter-shadow',
+        'integration-branch': 'auto/integration',
+        'github-repo': 'o/r',
+        'threshold': '0.4',
+        'bootstrap-days': '14',
+        'max-prs': '50',
+        'horizon-days': '30',
+        'window-days': '60',
+      }),
+      runnerTemp: '/tmp/runner',
+      workspace: '/work',
+    });
+    expect(argv).toEqual([
+      'shadow-score',
+      '--repo', '/work',
+      '--data-dir', '/tmp/runner/arbiter-shadow',
+      '--github-repo', 'o/r',
+      '--integration-branch', 'auto/integration',
+      '--threshold', '0.4',
+      '--bootstrap-days', '14',
+      '--max-prs', '50',
+      '--horizon-days', '30',
+      '--window-days', '60',
+    ]);
+    expect(argv).not.toContain('--out');
+  });
+
+  it('omits absent optional shadow inputs so CLI defaults apply', () => {
+    const { argv } = buildShadowActionArgv({
+      input: envOf({ mode: 'shadow-report', 'data-dir': '/d' }),
+      runnerTemp: '/tmp/runner',
+      workspace: '/work',
+    });
+    expect(argv).toEqual(['shadow-report', '--repo', '/work', '--data-dir', '/d']);
   });
 });

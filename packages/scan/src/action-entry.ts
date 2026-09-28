@@ -9,7 +9,12 @@
  */
 
 import { appendFileSync } from 'node:fs';
-import { buildActionArgv, readActionInput } from './action-io.js';
+import {
+  buildActionArgv,
+  buildShadowActionArgv,
+  isShadowMode,
+  readActionInput,
+} from './action-io.js';
 import { runScanCli } from './cli-core.js';
 import { scanContractVersion } from './contract.js';
 
@@ -19,11 +24,25 @@ function writeGithubKeyValue(file: string | undefined, key: string, value: strin
 }
 
 function main(): number {
-  const { argv, outputPath } = buildActionArgv({
-    input: (name) => readActionInput(process.env, name),
+  const actionEnv = {
+    input: (name: string) => readActionInput(process.env, name),
     runnerTemp: process.env.RUNNER_TEMP,
     workspace: process.env.GITHUB_WORKSPACE,
-  });
+  };
+
+  if (isShadowMode(actionEnv.input('mode'))) {
+    // Shadow mode (HOK-2820): never visible, never gating. No GITHUB_OUTPUT,
+    // no GITHUB_STEP_SUMMARY, and the step always succeeds (exit 0).
+    const { argv } = buildShadowActionArgv(actionEnv);
+    runScanCli(argv, {
+      writeStdout: (text) => process.stdout.write(text),
+      writeStderr: (text) => process.stderr.write(text),
+      env: { ...process.env },
+    });
+    return 0;
+  }
+
+  const { argv, outputPath } = buildActionArgv(actionEnv);
 
   const env: Record<string, string | undefined> = { ...process.env };
   const token = readActionInput(process.env, 'token');

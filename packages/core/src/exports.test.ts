@@ -120,4 +120,17 @@ describe('core public surface', () => {
     expect(core.TaskCostValidationError).toBeDefined();
     expect(core.taskCostFixtures).toHaveLength(15);
   });
+
+  it('exposes the arbiter shadow record contract', () => {
+    expect(core.ARBITER_SHADOW_SCORE_SCHEMA_VERSION).toBe('arbiter_shadow_score/v1');
+    expect(core.ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION).toBe('arbiter_shadow_outcome/v1');
+    expect(core.ARBITER_SHADOW_STATE_SCHEMA_VERSION).toBe('arbiter_shadow_state/v1');
+    expect(Array.isArray(core.ARBITER_SHADOW_RUN_STATUSES)).toBe(true);
+    expect(Array.isArray(core.ARBITER_SHADOW_ERROR_CODES)).toBe(true);
+    expect(core.ARBITER_SHADOW_FORBIDDEN_KEYS instanceof Set).toBe(true);
+    expect(core.validateShadowScoreRow).toBeDefined();
+    expect(core.validateShadowOutcomeRow).toBeDefined();
+    expect(core.validateShadowState).toBeDefined();
+    expect(core.initialShadowState).toBeDefined();
+  });
 });

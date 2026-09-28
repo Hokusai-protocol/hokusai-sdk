@@ -1,0 +1,109 @@
+# ⚠️  ARBITER SHADOW MODE — NEVER MARK THIS JOB AS A REQUIRED STATUS CHECK.
+#
+# This workflow only runs on schedule/workflow_dispatch, never reports on PR
+# SHAs, and marking it required would leave every PR waiting forever. It holds
+# no checks/statuses/pull-requests/issues permissions, emits no annotations or
+# step summaries, and writes only to the `arbiter-shadow` data branch of this
+# repository. Every scan step is continue-on-error and the CLI exits 0 in
+# shadow mode: nothing here can ever gate a merge or appear on a PR.
+#
+# Template for other Hokusai repos: copy this file, change INTEGRATION_BRANCH,
+# and swap `uses: ./packages/scan/action` for the published
+# `Hokusai-protocol/hokusai-sdk/packages/scan/action@<tag>`.
+# See docs/arbiter/shadow-mode.md.
+name: arbiter-shadow
+
+on:
+  schedule:
+    - cron: '17 0,6,12,18 * * *' # score only
+    - cron: '17 3 * * *'         # score + nightly backfill + report
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  # Explicit for readability: shadow mode is structurally unable to surface
+  # anything on a PR. Do not add write scopes here (guard-tested).
+  checks: none
+  statuses: none
+  pull-requests: none
+  issues: none
+
+concurrency:
+  group: arbiter-shadow
+  cancel-in-progress: false
+
+env:
+  INTEGRATION_BRANCH: auto/integration
+
+jobs:
+  arbiter-shadow-never-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATA_DIR: ${{ runner.temp }}/arbiter-shadow
+      NIGHTLY: ${{ github.event.schedule == '17 3 * * *' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: auto/integration
+          # Full history: the cursor ancestor check and survival labelling
+          # both need it; a shallow clone fails fast with SHALLOW_CLONE.
+          fetch-depth: 0
+
+      - name: Prepare arbiter-shadow data branch
+        continue-on-error: true
+        run: |
+          set -eu
+          if git fetch origin arbiter-shadow 2>/dev/null; then
+            git worktree add "$DATA_DIR" FETCH_HEAD
+            git -C "$DATA_DIR" checkout -B arbiter-shadow FETCH_HEAD
+          else
+            git worktree add --detach "$DATA_DIR"
+            git -C "$DATA_DIR" checkout --orphan arbiter-shadow
+            git -C "$DATA_DIR" rm -rf --quiet . || true
+            git -C "$DATA_DIR" clean -fdx
+          fi
+
+      - name: Shadow score
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: shadow-score
+          integration-branch: ${{ env.INTEGRATION_BRANCH }}
+          data-dir: ${{ env.DATA_DIR }}
+
+      - name: Shadow backfill
+        if: env.NIGHTLY == 'true'
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: shadow-backfill
+          integration-branch: ${{ env.INTEGRATION_BRANCH }}
+          data-dir: ${{ env.DATA_DIR }}
+
+      - name: Shadow report
+        if: env.NIGHTLY == 'true'
+        continue-on-error: true
+        uses: ./packages/scan/action
+        with:
+          mode: shadow-report
+          data-dir: ${{ env.DATA_DIR }}
+
+      - name: Persist shadow data
+        continue-on-error: true
+        run: |
+          set -eu
+          cd "$DATA_DIR"
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'arbiter-shadow: update [skip ci]'
+          # On a push race: rebase once and retry once, then give up silently.
+          # The cursor was not pushed, so the next run regenerates the rows.
+          git push origin HEAD:refs/heads/arbiter-shadow \
+            || { git pull --rebase origin arbiter-shadow \
+                 && git push origin HEAD:refs/heads/arbiter-shadow; } \
+            || true

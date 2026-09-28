@@ -20,7 +20,11 @@ branding:
 
 inputs:
   mode:
-    description: 'What to run: label | extract | scan'
+    description: >-
+      What to run: label | extract | scan, or the silent shadow modes
+      shadow-score | shadow-backfill | shadow-report (HOK-2820). Shadow
+      modes always exit 0, write nothing outside the data dir and stdout,
+      and never write the Action outputs or a step summary.
     required: true
   integration-branch:
     description: >-
@@ -75,7 +79,32 @@ inputs:
     description: 'Dump stack traces to the log on failure.'
     required: false
     default: 'false'
+  data-dir:
+    description: 'Shadow modes only: directory holding state.json/scores.jsonl/outcomes.jsonl/reports (the arbiter-shadow branch worktree).'
+    required: false
+  threshold:
+    description: 'Shadow-score only: would-flag threshold in [0, 1].'
+    required: false
+    default: '0.5'
+  bootstrap-days:
+    description: 'Shadow-score only: fallback window when the cursor is missing or stale.'
+    required: false
+    default: '30'
+  max-prs:
+    description: 'Shadow-score only: per-run cap on newly scored merges.'
+    required: false
+    default: '200'
+  horizon-days:
+    description: 'Shadow backfill/report: survival horizon (14, 30 or 60).'
+    required: false
+    default: '30'
+  window-days:
+    description: 'Shadow-report only: report window keyed on merged_at.'
+    required: false
+    default: '30'
 
+# Shadow modes never write these outputs (nothing is surfaced outside the
+# data dir and stdout).
 outputs:
   output-path:
     description: 'Path of the written output file.'

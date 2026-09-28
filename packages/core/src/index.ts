@@ -309,6 +309,24 @@ export {
   type UndoneBy,
 } from './arbiter-survival-label.js';
 export { ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA } from './arbiter-survival-label-schema.js';
+export {
+  ARBITER_SHADOW_SCORE_SCHEMA_VERSION,
+  ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION,
+  ARBITER_SHADOW_STATE_SCHEMA_VERSION,
+  ARBITER_SHADOW_RUN_STATUSES,
+  ARBITER_SHADOW_ERROR_CODES,
+  ARBITER_SHADOW_FORBIDDEN_KEYS,
+  initialShadowState,
+  validateShadowScoreRow,
+  validateShadowOutcomeRow,
+  validateShadowState,
+  type ArbiterShadowScoreV1,
+  type ArbiterShadowOutcomeV1,
+  type ArbiterShadowStateV1,
+  type ArbiterShadowLabel,
+  type ArbiterShadowRunStatus,
+  type ArbiterShadowErrorCode,
+} from './arbiter-shadow-record.js';
 export { HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA } from './task-descriptor-schema.js';
 export {
   REASONING_DEPTH_COMPLEXITY,

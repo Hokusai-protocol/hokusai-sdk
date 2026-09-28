@@ -93,4 +93,19 @@ describe('scanner core boundary', () => {
       ).toBe(false);
     }
   });
+
+  it('shipped shadow modules read no ambient process state (HOK-2820)', () => {
+    const shadowDir = join(srcDir, 'shadow');
+    for (const file of readdirSync(shadowDir)) {
+      // Test files and test-only helpers (test-*.ts) are exempt.
+      if (!file.endsWith('.ts') || file.endsWith('.test.ts') || file.startsWith('test-')) continue;
+      const source = readFileSync(join(shadowDir, file), 'utf-8');
+      for (const pattern of FORBIDDEN_PATTERNS) {
+        expect(
+          pattern.test(source),
+          `shadow/${file} matches forbidden pattern ${pattern} — take the dependency as an explicit input`,
+        ).toBe(false);
+      }
+    }
+  });
 });
