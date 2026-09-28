@@ -5,17 +5,30 @@ import { openTaskCostLedger } from './ledger.js';
 import { createMemoryLedgerStorage } from './storage.js';
 import { hash, input } from './test-support.js';
 
+function walkProductionSources(root: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const full = join(root, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walkProductionSources(full));
+      continue;
+    }
+    if (
+      entry.name.endsWith('.ts') &&
+      !entry.name.endsWith('.test.ts') &&
+      entry.name !== 'test-support.ts'
+    )
+      out.push(full);
+  }
+  return out;
+}
+
 describe('offline ledger', () => {
   it('contains no networking calls in production source', () => {
     const root = new URL('.', import.meta.url).pathname;
-    const files = readdirSync(root).filter(
-      (name) =>
-        name.endsWith('.ts') &&
-        !name.endsWith('.test.ts') &&
-        name !== 'test-support.ts',
-    );
+    const files = walkProductionSources(root);
     for (const file of files)
-      expect(readFileSync(join(root, file), 'utf8')).not.toMatch(
+      expect(readFileSync(file, 'utf8')).not.toMatch(
         /from ['"](node:)?(http|https|net|dgram|undici)['"]|\bfetch\(|XMLHttpRequest/,
       );
   });
