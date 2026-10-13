@@ -37,6 +37,32 @@ export interface ExtractCodexUsageOptions {
 }
 
 /**
+ * Restore the SDK's disjoint-bucket invariant on a Codex event's usage.
+ * Codex reports `cached_input_tokens` as a subset of `input_tokens` (and the
+ * rare `cache_write_input_tokens` the same way); the SDK contract treats
+ * cache tokens as disjoint from input tokens. We subtract them here, clamp
+ * at zero and count a diagnostic on underflow. A `null` input bucket means
+ * "not reported" and is left alone — there is nothing to subtract from.
+ */
+function normalizeCodexBuckets(
+  usage: Partial<TaskCostTokenUsage>,
+  diagnostics: TaskCostSourceDiagnostics,
+): Partial<TaskCostTokenUsage> {
+  const input = usage.input_tokens;
+  if (input === null || input === undefined) return usage;
+  const cached = usage.cache_read_tokens ?? 0;
+  const cacheWrite = usage.cache_write_tokens ?? 0;
+  const sub = cached + cacheWrite;
+  if (sub <= 0) return usage;
+  const normalized = input - sub;
+  if (normalized < 0) {
+    countDiagnostic(diagnostics, 'codex_cache_exceeds_input');
+    return { ...usage, input_tokens: 0 };
+  }
+  return { ...usage, input_tokens: normalized };
+}
+
+/**
  * Extract normalized per-turn usage for one task from Codex rollouts. Never
  * throws on malformed input; a misconfigured boundary throws `TypeError`.
  */
@@ -81,6 +107,7 @@ export function extractCodexUsage(
         }
       }
       if (usage === null) continue;
+      usage = normalizeCodexBuckets(usage, diagnostics);
 
       // Identity is assigned before any window filtering so event ids stay
       // stable for a given rollout regardless of the boundary supplied.

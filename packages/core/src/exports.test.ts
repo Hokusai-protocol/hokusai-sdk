@@ -118,7 +118,7 @@ describe('core public surface', () => {
     expect(core.validateTaskCostSummaryV1).toBeDefined();
     expect(core.validateTaskCostLedgerV1).toBeDefined();
     expect(core.TaskCostValidationError).toBeDefined();
-    expect(core.taskCostFixtures).toHaveLength(15);
+    expect(core.taskCostFixtures).toHaveLength(16);
   });
 
   it('exposes the arbiter shadow record contract', () => {

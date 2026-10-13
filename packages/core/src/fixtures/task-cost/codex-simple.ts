@@ -2,20 +2,22 @@ import { eventFactory, ledgerFor, tokens, type HarnessProfile, type TaskCostFixt
 
 const profile: HarnessProfile = {
   harness: 'codex',
-  providerContractVersion: 'codex/1',
+  providerContractVersion: 'codex/2',
   harnessVersion: '0.50.0',
 };
 const event = eventFactory(profile);
 
 /**
- * gpt-5-codex ($1.25 in / $10 out per MTok). Codex bills reasoning tokens as
- * output, so the estimate prices `output + reasoning`:
- * event 1: 2000 in, (600 + 150) out -> 0.0025 + 0.0075 = 0.01
- * event 2: 3000 in, (900 + 300) out -> 0.00375 + 0.012 = 0.01575
+ * gpt-5-codex ($1.25 in / $10 out per MTok). Under the `codex/2` disjoint-
+ * buckets contract (HOK-3104), `reasoning_tokens` is a reporting-only
+ * breakdown of `output_tokens` — never billed separately — so the estimate
+ * prices `output` as-is:
+ * event 1: 2000 in, 600 out (reasoning 150) -> 0.0025 + 0.006 = 0.0085
+ * event 2: 3000 in, 900 out (reasoning 300) -> 0.00375 + 0.009 = 0.01275
  */
 const events = [
-  event({ n: 1, model: 'gpt-5-codex', usage: tokens(2000, 600, 0, 0, 150), estimated: 0.01 }),
-  event({ n: 2, model: 'gpt-5-codex', usage: tokens(3000, 900, 0, 0, 300), estimated: 0.01575 }),
+  event({ n: 1, model: 'gpt-5-codex', usage: tokens(2000, 600, 0, 0, 150), estimated: 0.0085 }),
+  event({ n: 2, model: 'gpt-5-codex', usage: tokens(3000, 900, 0, 0, 300), estimated: 0.01275 }),
 ];
 
 export const codexSimpleFixture: TaskCostFixture = {
@@ -30,7 +32,7 @@ export const codexSimpleFixture: TaskCostFixture = {
       session_ids: ['session-0001'],
       harness: 'codex',
       harness_version: '0.50.0',
-      provider_contract_version: 'codex/1',
+      provider_contract_version: 'codex/2',
       models: ['gpt-5-codex'],
       model_segments: [
         {
@@ -38,7 +40,7 @@ export const codexSimpleFixture: TaskCostFixture = {
           turn_count: 2,
           usage: tokens(5000, 1500, 0, 0, 450),
           actual_cost_usd: null,
-          estimated_cost_usd: 0.02575,
+          estimated_cost_usd: 0.02125,
           cost_source: 'local_estimate',
         },
       ],
@@ -46,8 +48,8 @@ export const codexSimpleFixture: TaskCostFixture = {
       turns_truncated: false,
       usage: tokens(5000, 1500, 0, 0, 450),
       actual_cost_usd: null,
-      estimated_cost_usd: 0.02575,
-      total_cost_usd: 0.02575,
+      estimated_cost_usd: 0.02125,
+      total_cost_usd: 0.02125,
       cost_source: 'local_estimate',
       cost_basis: 'per_token_api',
       coverage: 'complete',

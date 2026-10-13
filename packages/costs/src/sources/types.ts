@@ -67,6 +67,8 @@ export const TASK_COST_SOURCE_DIAGNOSTIC_CODES = [
   'duplicate_row',
   /** A cumulative counter regressed; the tracker re-baselined and the new (lower) totals are charged as the new turn's usage (REQ-F3). */
   'cumulative_counter_reset',
+  /** Codex: `(cached + cache_write) > input` on a normalized event; `input_tokens` clamped to 0. */
+  'codex_cache_exceeds_input',
   /** An event-source record was not a usable record shape. */
   'invalid_record',
   /** A file or directory could not be read. */

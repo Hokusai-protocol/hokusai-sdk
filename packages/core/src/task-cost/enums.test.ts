@@ -37,7 +37,7 @@ describe('task-cost versions', () => {
   it('mirrors Wavemill provider contract versions and adds native and pi', () => {
     expect(PROVIDER_CONTRACT_VERSIONS).toEqual({
       'claude-code': 'claude-code/1',
-      codex: 'codex/1',
+      codex: 'codex/2',
       native: 'native/1',
       pi: 'pi/1',
     });

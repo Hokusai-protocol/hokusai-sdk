@@ -269,19 +269,42 @@ describe('REQ-F9: cache tiers', () => {
     );
   });
 
-  it('non-Anthropic cache tokens stay unpriced (null, no_pricing_data)', () => {
+  it('Gemini cache tokens stay unpriced (null, no_pricing_data)', () => {
     const engine = engineFor();
     const result = engine.ingest(
       input({
-        observedModel: 'gpt-5',
-        harness: 'codex',
-        providerContractVersion: 'codex/1',
+        observedModel: 'gemini-2.5-pro',
+        harness: 'native',
+        providerContractVersion: 'native/1',
         usage: { ...cacheUsage },
       }),
     );
     if (result.status !== 'accepted') throw new Error('expected accepted');
     expect(result.event.estimated_cost_usd).toBeNull();
     expect(result.event.diagnostics).toContain('no_pricing_data');
+  });
+
+  it('gpt-5 cache tokens price through the built-in table at 0.1×/1.25× (HOK-3104)', () => {
+    const engine = engineFor();
+    const result = engine.ingest(
+      input({
+        observedModel: 'gpt-5',
+        harness: 'codex',
+        providerContractVersion: 'codex/2',
+        usage: { ...cacheUsage },
+      }),
+    );
+    if (result.status !== 'accepted') throw new Error('expected accepted');
+    expect(result.event.estimated_cost_usd).toBe(
+      computeActualCostUsd({
+        model: 'gpt-5',
+        inputTokens: 1000,
+        outputTokens: 500,
+        cacheCreationTokens: 2000,
+        cacheReadTokens: 50_000,
+      }),
+    );
+    expect(result.event.price_table).toBe('openai');
   });
 
   it('override cache multipliers price cache tokens on any model', () => {
@@ -301,7 +324,7 @@ describe('REQ-F9: cache tiers', () => {
       input({
         observedModel: 'gpt-5',
         harness: 'codex',
-        providerContractVersion: 'codex/1',
+        providerContractVersion: 'codex/2',
         usage: { ...cacheUsage },
       }),
     );

@@ -18,9 +18,17 @@ Everything is exported from `@hokusai/core`. Fixtures live in
 | `TASK_COST_SUMMARY_SCHEMA_VERSION` | `task_cost_summary/v1` | `TaskCostSummaryV1` |
 | `TASK_COST_LEDGER_SCHEMA_VERSION` | `task_cost_ledger/v1` | `TaskCostLedgerV1` |
 | `TASK_COST_ADAPTER_CONTRACT_VERSION` | `task_cost_adapter/v1` | `TaskCostAdapterV1` |
-| `PROVIDER_CONTRACT_VERSIONS` | `claude-code/1`, `codex/1`, `native/1`, `pi/1` | Each harness's parsing contract |
+| `PROVIDER_CONTRACT_VERSIONS` | `claude-code/1`, `codex/2`, `native/1`, `pi/1` | Each harness's parsing contract |
 
-`claude-code/1` and `codex/1` are Wavemill's existing values (HOK-2958).
+`claude-code/1` mirrors Wavemill's existing value (HOK-2958). `codex/2`
+(HOK-3104) is the SDK's disjoint-buckets fix for Codex `token_count` events:
+`cache_read_tokens` is disjoint from `input_tokens`, and `reasoning_tokens` is a
+reporting-only breakdown of `output_tokens` (never billed separately). Pre-fix
+`codex/1` ledgers remain readable and keep their old interpretation (raw
+`input_tokens` including the cached slice, and reasoning billed as output); the
+discriminator on any downstream re-pricing is this field. Wavemill still writes
+`codex/1`; see [`wavemill-parity.md`](./wavemill-parity.md) for the migration
+oracle.
 
 ## The records
 
@@ -145,10 +153,26 @@ them. Read it together with `cost_source`: it is a real charge only when
 ### Pricing rule for estimates
 
 Estimates are inputs, not something the reducer computes. Adapters should price
-with `computeActualCostUsd` and `resolveModelPrice`. Two harness conventions
-matter: Claude Code's thinking tokens are already inside `output_tokens`; Codex
-bills reasoning tokens as output, so price `output + reasoning`. The fixtures
-follow this and a test recomputes every fixture estimate from the SDK table.
+with `computeActualCostUsd` and `resolveModelPrice`. The contract treats token
+buckets as **disjoint**: `cache_read_tokens` and `cache_write_tokens` are
+disjoint from `input_tokens`, and `reasoning_tokens` is a reporting-only
+breakdown of `output_tokens` and must not be billed separately. Claude Code's
+thinking tokens are already inside `output_tokens` as well. Adapters whose raw
+source reports non-disjoint buckets normalize on ingest (today: Codex — the
+`codex/2` adapter subtracts `cache_read + cache_write` from `input_tokens` and
+clamps at zero, counting a `codex_cache_exceeds_input` diagnostic on
+underflow). The fixtures follow this and a test recomputes every fixture
+estimate from the SDK table.
+
+#### Codex normalization
+
+Codex `token_count` events report `cached_input_tokens` as a subset of
+`input_tokens` (and similarly `cache_write_input_tokens`), and
+`reasoning_output_tokens` as a subset of `output_tokens`. The `codex/2` Codex
+adapter (`packages/costs/src/sources/codex/adapter.ts`) subtracts the cached
+and cache-write slices from `input_tokens` right after a per-event usage is
+chosen (delta or baseline-diffed cumulative), restoring the disjoint
+invariant before any pricing or ledger write.
 
 ## Privacy
 
@@ -180,7 +204,7 @@ lower-casing and stripping `_`/`-`). Fixtures use synthetic ids only.
 
 ## Fixtures
 
-`taskCostFixtures` (15 modules) each pair `events` and a `ledger` with
+`taskCostFixtures` (16 modules) each pair `events` and a `ledger` with
 hand-written `expectedSummaries`. `fixtures.test.ts` checks that the reducer
 reproduces every expected summary in any input order, that every estimate matches
 the SDK price table, and that nothing path-, credential-, or identity-shaped
@@ -194,7 +218,8 @@ appears.
 | `claude-code-retry` | Retried turn superseding its first attempt |
 | `claude-code-cumulative-snapshot` | Cumulative snapshots and a backward jump |
 | `claude-code-subscription` | Subscription basis: no charge, token-equivalent estimate |
-| `codex-simple` | OpenAI pricing, reasoning billed as output |
+| `codex-simple` | OpenAI pricing, disjoint buckets (reasoning is reporting-only) |
+| `codex-real-cache` | Sanitized real `token_count`: raw input includes the cached slice; adapter restores disjoint buckets (`codex/2`) |
 | `codex-unknown-pricing` | Unpriced model: null cost, partial coverage, no total |
 | `codex-provider-override` | Provider charge supersedes an OpenRouter estimate |
 | `mixed-model` | Anthropic charged + OpenAI estimated: `cost_source: mixed` |

@@ -61,10 +61,10 @@ totals. A non-finite or negative charge degrades to `null` with an
 
 ### Cache tiers
 
-- Built-in table: Anthropic models bill cache writes at 1.25× and reads at
-  0.1× the input rate (`computeActualCostUsd`'s existing behavior). Reported
-  cache tokens on a non-Anthropic table model are unpriceable → the estimate
-  stays `null` with `no_pricing_data`.
+- Built-in table: Anthropic and OpenAI models bill cache writes at 1.25× and
+  reads at 0.1× the input rate (`computeActualCostUsd`). Reported cache tokens
+  on a Gemini model are unpriceable (its tier is 0.25× for reads, out of
+  scope here) → the estimate stays `null` with `no_pricing_data`.
 - Overrides: set `cacheWriteMultiplier` / `cacheReadMultiplier` to price cache
   tokens on any model. Reported non-zero cache tokens without a configured
   multiplier leave the whole estimate `null` (with `no_pricing_data`) rather
@@ -72,12 +72,18 @@ totals. A non-finite or negative charge degrades to `null` with an
 - An _unreported_ (`null`) cache counter bills as zero, matching
   `computeActualCostUsd`.
 
-### Codex reasoning tokens
+### Codex disjoint buckets
 
-`harness: 'codex'` bills `output_tokens + reasoning_tokens` as output (Codex
-reports them separately); Claude Code's thinking tokens are already inside
-`output_tokens` and are left alone. Same rule the golden fixtures were priced
-with.
+Codex `token_count` events report `cached_input_tokens` as a subset of
+`input_tokens` (same with `cache_write_input_tokens`) and
+`reasoning_output_tokens` as a subset of `output_tokens`. The `codex/2`
+adapter (HOK-3104) restores the SDK's disjoint-buckets invariant on ingest:
+`cache_read` + `cache_write` are subtracted from `input_tokens` (clamped to
+zero, with a `codex_cache_exceeds_input` diagnostic on underflow), and
+`reasoning_tokens` is reporting-only — never billed as output. Historical
+`codex/1` rows keep their old interpretation (raw input includes the cached
+slice; reasoning billed as output). Claude Code's thinking tokens are already
+inside `output_tokens` and are left alone, as before.
 
 ## Coverage semantics: partial ≠ zero
 

@@ -252,7 +252,7 @@ describe('resolveEventPrice — host override', () => {
     expect(resolved.costSource).toBe('local_estimate');
   });
 
-  it('bills codex reasoning tokens as output through the override path', () => {
+  it('ignores Codex reasoning tokens through the override path (codex/2 disjoint buckets)', () => {
     const resolved = resolveEventPrice(
       {
         observedModel: 'local-llama',
@@ -261,8 +261,8 @@ describe('resolveEventPrice — host override', () => {
       },
       { overrides: [override] },
     );
-    // output billed as 500 + 500 = 1000 -> 0.001 + 0.002
-    expect(resolved.estimatedCostUsd).toBe(0.003);
+    // output billed as 500 only; reasoning is reporting-only -> 0.001 + 0.001
+    expect(resolved.estimatedCostUsd).toBe(0.002);
   });
 });
 
@@ -299,19 +299,28 @@ describe('resolveEventPrice — built-in table', () => {
     ).toBe('google');
   });
 
-  it('bills codex reasoning tokens as output', () => {
+  it('prices gpt-5 with disjoint buckets through the built-in table (codex/2)', () => {
+    // Codex `codex/2` disjoint-buckets contract (HOK-3104): the adapter
+    // subtracted cache_read from input before pricing, so the resolver sees
+    // disjoint input/cache_read, and reasoning stays reporting-only.
     const resolved = resolveEventPrice({
       observedModel: 'gpt-5',
-      usage: usage({ output_tokens: 500, reasoning_tokens: 1500 }),
+      usage: usage({
+        output_tokens: 500,
+        reasoning_tokens: 1500,
+        cache_read_tokens: 50_000,
+      }),
       harness: 'codex',
     });
     expect(resolved.estimatedCostUsd).toBe(
       computeActualCostUsd({
         model: 'gpt-5',
         inputTokens: 1000,
-        outputTokens: 2000,
+        outputTokens: 500,
+        cacheReadTokens: 50_000,
       }),
     );
+    expect(resolved.priceTable).toBe('openai');
   });
 
   it('leaves Claude Code thinking tokens alone (already inside output)', () => {
@@ -340,13 +349,26 @@ describe('resolveEventPrice — built-in table', () => {
     expect(resolved.diagnostics).toContain('unpriced_model');
   });
 
-  it('non-Anthropic cache tokens are unpriceable (no_pricing_data)', () => {
-    const resolved = resolveEventPrice({
+  it('Gemini cache tokens are unpriceable (no_pricing_data); OpenAI prices through (HOK-3104)', () => {
+    const gemini = resolveEventPrice({
+      observedModel: 'gemini-2.5-pro',
+      usage: usage({ cache_read_tokens: 5000 }),
+    });
+    expect(gemini.estimatedCostUsd).toBeNull();
+    expect(gemini.diagnostics).toContain('no_pricing_data');
+
+    const openai = resolveEventPrice({
       observedModel: 'gpt-5',
       usage: usage({ cache_read_tokens: 5000 }),
     });
-    expect(resolved.estimatedCostUsd).toBeNull();
-    expect(resolved.diagnostics).toContain('no_pricing_data');
+    expect(openai.estimatedCostUsd).toBe(
+      computeActualCostUsd({
+        model: 'gpt-5',
+        inputTokens: 1000,
+        outputTokens: 500,
+        cacheReadTokens: 5000,
+      }),
+    );
   });
 
   it('incomplete usage (missing input or output) yields null without a pricing diagnostic', () => {
