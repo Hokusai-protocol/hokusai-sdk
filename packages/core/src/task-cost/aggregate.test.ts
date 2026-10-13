@@ -4,6 +4,7 @@ import { TaskCostValidationError } from './validators.js';
 import { addNullable, deriveUsageAvailability, promoteAvailability } from './token-usage.js';
 import {
   aggregateTaskCost,
+  aggregateTaskCostByModel,
   promoteCostSource,
   promoteCoverage,
   reconcileCumulative,
@@ -436,5 +437,127 @@ describe('cumulative reconciliation', () => {
     ]);
     expect(summary.estimated_cost_usd).toBe(0.3);
     expect(summary.actual_cost_usd).toBeNull();
+  });
+});
+
+describe('aggregateTaskCostByModel', () => {
+  it('reconciles cumulative usage across a model switch inside one session', () => {
+    // One session, cumulative counters that keep running across the switch:
+    // the per-model deltas must partition the task's usage exactly.
+    const events = [
+      claude({ n: 1, model: 'claude-sonnet-5', kind: 'cumulative', usage: tokens(100, 10, null, null, null), estimated: 0.1 }),
+      claude({ n: 2, model: 'claude-opus-4-1', kind: 'cumulative', usage: tokens(300, 30, null, null, null), estimated: 0.3 }),
+      claude({ n: 3, model: 'claude-sonnet-5', kind: 'cumulative', usage: tokens(350, 45, null, null, null), estimated: 0.45 }),
+    ];
+    const summary = aggregateTaskCost(events);
+    const totals = aggregateTaskCostByModel(events);
+    expect(totals.map((t) => t.model)).toEqual(['claude-sonnet-5', 'claude-opus-4-1']);
+    const sonnetTotal = totals[0]!;
+    const opusTotal = totals[1]!;
+    expect(sonnetTotal.usage.input_tokens).toBe(150); // 100 + (350-300)
+    expect(opusTotal.usage.input_tokens).toBe(200); // 300-100
+    expect(
+      addNullable(sonnetTotal.usage.input_tokens, opusTotal.usage.input_tokens),
+    ).toBe(summary.usage.input_tokens);
+    expect(
+      addNullable(sonnetTotal.usage.output_tokens, opusTotal.usage.output_tokens),
+    ).toBe(summary.usage.output_tokens);
+    expect(sonnetTotal.total_cost_usd! + opusTotal.total_cost_usd!).toBeCloseTo(
+      summary.total_cost_usd!,
+      9,
+    );
+  });
+
+  it('honors a replay that supersedes an event on another model', () => {
+    const totals = aggregateTaskCostByModel([
+      claude({ n: 1, model: 'claude-sonnet-5', usage: tokens(100, 10, 0, 0, 0), estimated: 0.1 }),
+      claude({
+        n: 2,
+        model: 'claude-opus-4-1',
+        usage: tokens(100, 10, 0, 0, 0),
+        estimated: 0.5,
+        replayOf: eventId(1),
+      }),
+    ]);
+    expect(totals).toHaveLength(1);
+    expect(totals[0]!.model).toBe('claude-opus-4-1');
+    expect(totals[0]!.event_count).toBe(1);
+    expect(totals[0]!.total_cost_usd).toBe(0.5);
+  });
+
+  it('counts an event carrying both a charge and an estimate once (charge wins)', () => {
+    const totals = aggregateTaskCostByModel([
+      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), actual: 0.2, estimated: 0.1 }),
+    ]);
+    expect(totals[0]!.total_cost_usd).toBe(0.2);
+    expect(totals[0]!.actual_cost_usd).toBe(0.2);
+    expect(totals[0]!.estimated_cost_usd).toBe(0.1);
+    expect(totals[0]!.cost_source).toBe('provider_reported');
+  });
+
+  it('nulls the unpriced model total while the priced models stay intact', () => {
+    const totals = aggregateTaskCostByModel([
+      claude({ n: 1, model: 'claude-sonnet-5', usage: tokens(100, 10, 0, 0, 0), estimated: 0.1 }),
+      claude({ n: 2, model: 'mystery-model', usage: tokens(100, 10, 0, 0, 0) }),
+    ]);
+    expect(totals.map((t) => t.model)).toEqual(['claude-sonnet-5', 'mystery-model']);
+    expect(totals[0]!.total_cost_usd).toBe(0.1);
+    expect(totals[0]!.coverage).toBe('complete');
+    expect(totals[1]!.total_cost_usd).toBeNull();
+    expect(totals[1]!.actual_cost_usd).toBeNull();
+    expect(totals[1]!.estimated_cost_usd).toBeNull();
+    expect(totals[1]!.cost_source).toBe('none');
+    expect(totals[1]!.coverage).toBe('partial');
+  });
+
+  it('throws mixed_scope exactly like aggregateTaskCost', () => {
+    const events = [
+      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      codex({ n: 2, model: 'gpt-5-codex', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+    ];
+    expect(codeOf(() => aggregateTaskCostByModel(events))).toBe('mixed_scope');
+    expect(codeOf(() => aggregateTaskCost(events))).toBe('mixed_scope');
+  });
+
+  it('partitions every golden fixture: per-model totals reconcile with the summary', async () => {
+    const { taskCostFixtures } = await import('../fixtures/task-cost/index.js');
+    expect(taskCostFixtures).toHaveLength(15);
+    for (const fixture of taskCostFixtures) {
+      for (const expected of fixture.expectedSummaries) {
+        const options = { taskId: expected.task_id };
+        const summary = aggregateTaskCost(fixture.events, options);
+        const totals = aggregateTaskCostByModel(fixture.events, options);
+
+        // Same models, same first-appearance order, no duplicates.
+        expect(totals.map((t) => t.model)).toEqual(summary.models);
+
+        // Event and turn counts partition the summary's.
+        expect(totals.reduce((n, t) => n + t.event_count, 0)).toBe(summary.event_count);
+
+        // Usage counters partition the summary's (null-consistent).
+        for (const field of [
+          'input_tokens',
+          'output_tokens',
+          'cache_read_tokens',
+          'cache_write_tokens',
+          'reasoning_tokens',
+        ] as const) {
+          const sum = totals.reduce<number | null>(
+            (acc, t) => addNullable(acc, t.usage[field]),
+            null,
+          );
+          expect(sum).toBe(summary.usage[field]);
+        }
+
+        // Resolved totals sum to the summary total, null-consistent.
+        if (summary.total_cost_usd === null) {
+          expect(totals.some((t) => t.total_cost_usd === null)).toBe(true);
+        } else {
+          expect(totals.every((t) => t.total_cost_usd !== null)).toBe(true);
+          const sum = totals.reduce((acc, t) => acc + t.total_cost_usd!, 0);
+          expect(sum).toBeCloseTo(summary.total_cost_usd, 9);
+        }
+      }
+    }
   });
 });

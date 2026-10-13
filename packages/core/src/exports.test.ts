@@ -114,6 +114,7 @@ describe('core public surface', () => {
     expect(core.TASK_COST_ADAPTER_CONTRACT_VERSION).toBe('task_cost_adapter/v1');
     expect(core.PROVIDER_CONTRACT_VERSIONS['claude-code']).toBe('claude-code/1');
     expect(core.aggregateTaskCost).toBeDefined();
+    expect(core.aggregateTaskCostByModel).toBeDefined();
     expect(core.validateTaskCostEventV1).toBeDefined();
     expect(core.validateTaskCostSummaryV1).toBeDefined();
     expect(core.validateTaskCostLedgerV1).toBeDefined();

@@ -376,15 +376,26 @@ function promotePricingSource(sources: readonly TaskCostPricingSource[]): TaskCo
 }
 
 /**
- * Summarize one task. Throws {@link TaskCostValidationError} for invalid
- * events (`schema_validation_failed` and friends), events spanning several
- * tasks/harnesses/provider contracts (`mixed_scope`), or replay cycles
- * (`replay_cycle`).
+ * The shared prelude of {@link aggregateTaskCost} and
+ * {@link aggregateTaskCostByModel}: validate every event, select exactly one
+ * task (and enforce the one-harness/one-provider-contract scope), resolve
+ * replays, and reconcile cumulative snapshots into effective observations.
  */
-export function aggregateTaskCost(
+interface PreparedTaskObservations {
+  taskId: string;
+  taskEvents: TaskCostEventV1[];
+  harness: TaskCostEventV1['harness'];
+  providerContract: string;
+  replay: ReplayResolution;
+  /** Effective per-event contributions, in canonical order. */
+  observations: EffectiveObservation[];
+  backwardJump: boolean;
+}
+
+function prepareTaskObservations(
   events: readonly TaskCostEventV1[],
-  options: AggregateTaskCostOptions = {},
-): TaskCostSummaryV1 {
+  options: AggregateTaskCostOptions,
+): PreparedTaskObservations {
   for (const event of events) validateTaskCostEventV1(event);
 
   const taskIds = distinct(events.map((event) => event.task_id));
@@ -420,6 +431,21 @@ export function aggregateTaskCost(
 
   const replay = resolveReplays(taskEvents);
   const { observations, backwardJump } = reconcileCumulative(replay.contributing);
+  return { taskId, taskEvents, harness, providerContract, replay, observations, backwardJump };
+}
+
+/**
+ * Summarize one task. Throws {@link TaskCostValidationError} for invalid
+ * events (`schema_validation_failed` and friends), events spanning several
+ * tasks/harnesses/provider contracts (`mixed_scope`), or replay cycles
+ * (`replay_cycle`).
+ */
+export function aggregateTaskCost(
+  events: readonly TaskCostEventV1[],
+  options: AggregateTaskCostOptions = {},
+): TaskCostSummaryV1 {
+  const { taskId, taskEvents, harness, providerContract, replay, observations, backwardJump } =
+    prepareTaskObservations(events, options);
   const contributing = observations.map((o) => o.event);
 
   const resolved = observations.map(resolvedCost);
@@ -509,4 +535,69 @@ export function aggregateTaskCost(
     event_ids: contributing.map((event) => event.event_id),
     diagnostics: TASK_COST_DIAGNOSTIC_CODES.filter((code) => derived.has(code)),
   };
+}
+
+/**
+ * Per-model totals for one task, derived from the *same* effective
+ * observations as {@link aggregateTaskCost} (post replay resolution and
+ * cumulative reconciliation), so the per-model rows reconcile exactly with the
+ * task summary. This is an SDK read-model, not a wire record: unlike
+ * `model_segments` (consecutive same-model runs), each model appears once.
+ */
+export interface TaskCostModelTotal {
+  model: string;
+  /** Contributing events observed for this model. */
+  event_count: number;
+  /** Distinct `(session_id, turn_id)` pairs among those events. */
+  turn_count: number;
+  usage: TaskCostTokenUsage;
+  /** Lower bound when some of the model's events carry no charge. */
+  actual_cost_usd: number | null;
+  /** Lower bound when some of the model's events carry no estimate. */
+  estimated_cost_usd: number | null;
+  /**
+   * `actual ?? estimated` summed per event — `null` unless *every* observation
+   * for this model resolved to a cost (same never-an-undercount rule as the
+   * summary's `total_cost_usd`).
+   */
+  total_cost_usd: number | null;
+  cost_source: TaskCostSource;
+  coverage: TaskCostCoverage;
+}
+
+/**
+ * Break one task's cost down by observed model. Models appear in order of
+ * first appearance (canonical event order). Grouping partitions the task's
+ * observations, so the resolved per-model totals sum to the task summary's
+ * `total_cost_usd` (and stay `null`-consistent with it). Throws exactly the
+ * same errors as {@link aggregateTaskCost} for the same inputs.
+ */
+export function aggregateTaskCostByModel(
+  events: readonly TaskCostEventV1[],
+  options: AggregateTaskCostOptions = {},
+): TaskCostModelTotal[] {
+  const { observations } = prepareTaskObservations(events, options);
+
+  const byModel = new Map<string, EffectiveObservation[]>();
+  for (const observation of observations) {
+    const model = observation.event.observed_model;
+    const group = byModel.get(model);
+    if (group === undefined) byModel.set(model, [observation]);
+    else group.push(observation);
+  }
+
+  return [...byModel.entries()].map(([model, group]) => {
+    const resolved = group.map(resolvedCost);
+    return {
+      model,
+      event_count: group.length,
+      turn_count: new Set(group.map((o) => turnKey(o.event))).size,
+      usage: sumUsage(group.map((o) => o.usage)),
+      actual_cost_usd: sumUsd(group.map((o) => o.actual)),
+      estimated_cost_usd: sumUsd(group.map((o) => o.estimated)),
+      total_cost_usd: resolved.every((cost) => cost !== null) ? sumUsd(resolved) : null,
+      cost_source: promoteCostSource(group.map(observationSource)),
+      coverage: promoteCoverage(group.map(observationCoverage)),
+    };
+  });
 }
