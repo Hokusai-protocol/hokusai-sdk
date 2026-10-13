@@ -42,6 +42,7 @@ import { buildTaskCostReport } from './report.js';
 import {
   createTrackerCore,
   isContractSafeId,
+  toContractHarness,
   type TrackerCore,
 } from './tracker.js';
 import {
@@ -294,7 +295,11 @@ function ingestSourceResult(
 ): void {
   mapSourceDiagnostics(result.diagnostics, core);
   for (const input of result.inputs) {
-    core.noteIngestResult(core.engine().ingest(input));
+    const normalized = {
+      ...input,
+      harness: toContractHarness((input as any).harness ?? 'unknown'),
+    };
+    core.noteIngestResult(core.engine().ingest(normalized));
   }
 }
 
