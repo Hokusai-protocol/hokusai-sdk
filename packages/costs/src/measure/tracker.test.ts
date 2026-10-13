@@ -3,12 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { TaskCostMeasureError } from './errors.js';
 import { createTaskCostTracker } from './tracker.js';
 import { fromAnthropicUsage, fromOpenAIUsage } from './usage.js';
-import type { TaskCostTrackerOptions, TaskCostUsage, TaskUsageRecord } from './types.js';
+import type {
+  TaskCostTrackerOptions,
+  TaskCostUsage,
+  TaskUsageRecord,
+} from './types.js';
 
 const fixedNow = (): Date => new Date('2026-01-01T00:00:00Z');
 
 function tracker(options: TaskCostTrackerOptions = {}) {
-  return createTaskCostTracker({ taskId: 'task-0001', now: fixedNow, ...options });
+  return createTaskCostTracker({
+    taskId: 'task-0001',
+    now: fixedNow,
+    ...options,
+  });
 }
 
 function usage(input: number, output: number): Partial<TaskCostUsage> {
@@ -25,7 +33,8 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
   it('prices two models and reconciles byModel with the total', () => {
     const t = tracker({ harness: 'native' });
     expect(
-      t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1_000_000, 0) }).status,
+      t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1_000_000, 0) })
+        .status,
     ).toBe('accepted');
     expect(
       t.recordUsage({ model: 'gpt-5', usage: usage(0, 1_000_000) }).status,
@@ -40,7 +49,9 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
       (sum, slice) => sum + (slice.totalUsd ?? 0),
       0,
     );
-    expect(Math.abs((report.totalUsd ?? Number.NaN) - sumOfModels)).toBeLessThan(1e-9);
+    expect(
+      Math.abs((report.totalUsd ?? Number.NaN) - sumOfModels),
+    ).toBeLessThan(1e-9);
     expect(report.coverage.status).toBe('complete');
     expect(report.eventCount).toBe(2);
     expect(report.source.cost).toBe('local_estimate');
@@ -61,7 +72,9 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
     const after = t.summary();
     expect(after.totalUsd).toBe(before.totalUsd);
     expect(after.eventCount).toBe(before.eventCount);
-    const diagnostic = after.diagnostics.find((d) => d.code === 'invalid_usage');
+    const diagnostic = after.diagnostics.find(
+      (d) => d.code === 'invalid_usage',
+    );
     expect(diagnostic).toMatchObject({ level: 'warn', count: 1 });
   });
 
@@ -91,9 +104,9 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
     expect(t.summary()).toEqual(tracker().summary());
     expect(t.events()).toEqual([]);
     // And it keeps working after the reset.
-    expect(t.recordUsage({ model: 'claude-sonnet-5', usage: usage(10, 10) }).status).toBe(
-      'accepted',
-    );
+    expect(
+      t.recordUsage({ model: 'claude-sonnet-5', usage: usage(10, 10) }).status,
+    ).toBe('accepted');
   });
 
   it('throws INVALID_ARGUMENT for programmer errors', () => {
@@ -106,7 +119,9 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
       () => createTaskCostTracker({ now: 5 as never }),
       () =>
         createTaskCostTracker({
-          priceOverrides: [{ model: 'm', inputPerMTokUsd: -1, outputPerMTokUsd: 1 }],
+          priceOverrides: [
+            { model: 'm', inputPerMTokUsd: -1, outputPerMTokUsd: 1 },
+          ],
         }),
     ]) {
       expect(call).toThrowError(TaskCostMeasureError);
@@ -122,8 +137,16 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
 describe('createTaskCostTracker: multi-harness and replay', () => {
   it('splits engines per harness and null-propagates the combined total', () => {
     const t = tracker();
-    t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1000, 100), harness: 'claude-code' });
-    t.recordUsage({ model: 'unpriceable-model', usage: usage(1000, 100), harness: 'codex' });
+    t.recordUsage({
+      model: 'claude-sonnet-5',
+      usage: usage(1000, 100),
+      harness: 'claude-code',
+    });
+    t.recordUsage({
+      model: 'unpriceable-model',
+      usage: usage(1000, 100),
+      harness: 'codex',
+    });
     const report = t.summary();
     expect(report.summaries).toHaveLength(2);
     expect(report.byHarness['claude-code']?.totalUsd).not.toBeNull();
@@ -145,17 +168,25 @@ describe('createTaskCostTracker: multi-harness and replay', () => {
     };
     expect(t.recordUsage(record).status).toBe('accepted');
     expect(t.recordUsage(record).status).toBe('duplicate');
-    expect(t.recordUsage({ ...record, harness: 'codex' }).status).toBe('duplicate');
+    expect(t.recordUsage({ ...record, harness: 'codex' }).status).toBe(
+      'duplicate',
+    );
     const report = t.summary();
     expect(report.eventCount).toBe(1);
     expect(report.summaries).toHaveLength(1);
-    const diagnostic = report.diagnostics.find((d) => d.code === 'duplicate_event');
+    const diagnostic = report.diagnostics.find(
+      (d) => d.code === 'duplicate_event',
+    );
     expect(diagnostic).toMatchObject({ level: 'info', count: 2 });
   });
 
   it('supersedes a prior event via replayOfEventId', () => {
     const t = tracker();
-    t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1000, 100), eventId: 'e1' });
+    t.recordUsage({
+      model: 'claude-sonnet-5',
+      usage: usage(1000, 100),
+      eventId: 'e1',
+    });
     t.recordUsage({
       model: 'claude-sonnet-5',
       usage: usage(2000, 200),
@@ -171,7 +202,11 @@ describe('createTaskCostTracker: multi-harness and replay', () => {
 describe('createTaskCostTracker: cost semantics', () => {
   it('reports providerCostUsd: 0 as known_zero', () => {
     const t = tracker();
-    t.recordUsage({ model: 'some-free-model', usage: usage(10, 5), providerCostUsd: 0 });
+    t.recordUsage({
+      model: 'some-free-model',
+      usage: usage(10, 5),
+      providerCostUsd: 0,
+    });
     const report = t.summary();
     expect(report.totalUsd).toBe(0);
     expect(report.actualUsd).toBe(0);
@@ -202,7 +237,10 @@ describe('createTaskCostTracker: cost semantics', () => {
         },
       ],
     });
-    t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1_000_000, 1_000_000) });
+    t.recordUsage({
+      model: 'claude-sonnet-5',
+      usage: usage(1_000_000, 1_000_000),
+    });
     const report = t.summary();
     expect(report.totalUsd).toBeCloseTo(3, 9); // 1 + 2, not the built-in 3 + 15
     expect(report.pricing.priceTables).toEqual(['override']);
@@ -271,7 +309,11 @@ describe('createTaskCostTracker: cost semantics', () => {
     const run = () => {
       const t = tracker();
       t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1000, 100) });
-      t.recordUsage({ model: 'gpt-5', usage: usage(500, 50), harness: 'codex' });
+      t.recordUsage({
+        model: 'gpt-5',
+        usage: usage(500, 50),
+        harness: 'codex',
+      });
       return t.summary();
     };
     expect(run()).toEqual(run());
@@ -279,8 +321,16 @@ describe('createTaskCostTracker: cost semantics', () => {
 
   it('emits contract-valid summaries', () => {
     const t = tracker();
-    t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1000, 100), harness: 'claude-code' });
-    t.recordUsage({ model: 'gpt-5-codex', usage: usage(500, 50), harness: 'codex' });
+    t.recordUsage({
+      model: 'claude-sonnet-5',
+      usage: usage(1000, 100),
+      harness: 'claude-code',
+    });
+    t.recordUsage({
+      model: 'gpt-5-codex',
+      usage: usage(500, 50),
+      harness: 'codex',
+    });
     const report = t.summary();
     expect(report.summaries).toHaveLength(2);
     for (const summary of report.summaries) {

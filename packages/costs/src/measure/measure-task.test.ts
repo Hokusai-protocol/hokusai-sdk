@@ -28,7 +28,9 @@ async function tempDir(): Promise<string> {
   return dir;
 }
 afterAll(async () => {
-  await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 });
 
 function usageRecord(input: number, output: number): TaskUsageRecord {
@@ -47,7 +49,10 @@ function usageRecord(input: number, output: number): TaskUsageRecord {
 describe('measureTask: session files (REQ-F2)', () => {
   it('measures a Claude Code session behind an explicit boundary', async () => {
     const dir = await tempDir();
-    await writeFile(join(dir, `${EXAMPLE_SESSION_ID}.jsonl`), buildExampleClaudeSessionJsonl());
+    await writeFile(
+      join(dir, `${EXAMPLE_SESSION_ID}.jsonl`),
+      buildExampleClaudeSessionJsonl(),
+    );
 
     const { result, cost } = await measureTask(
       {
@@ -82,7 +87,10 @@ describe('measureTask: session files (REQ-F2)', () => {
     const dir = await tempDir();
     const sessionId = 'codex-session-0001';
     const lines = [
-      codexSessionMetaLine({ id: sessionId, timestamp: '2026-01-01T00:05:00Z' }),
+      codexSessionMetaLine({
+        id: sessionId,
+        timestamp: '2026-01-01T00:05:00Z',
+      }),
       codexTurnContextLine({
         turnId: 'codex-turn-0001',
         model: 'gpt-5-codex',
@@ -132,7 +140,9 @@ describe('measureTask: session files (REQ-F2)', () => {
       },
       () => 1,
     );
-    const diagnostic = cost.diagnostics.find((d) => d.code === 'session_file_unreadable');
+    const diagnostic = cost.diagnostics.find(
+      (d) => d.code === 'session_file_unreadable',
+    );
     expect(diagnostic).toMatchObject({ level: 'warn', count: 1 });
     expect(JSON.stringify(cost)).not.toContain('does-not-exist');
     expect(cost.coverage.status).toBe('unavailable');
@@ -156,7 +166,9 @@ describe('measureTask: session files (REQ-F2)', () => {
       () => 1,
     );
     expect(cost.totalUsd ?? 0).toBeGreaterThan(0);
-    const diagnostic = cost.diagnostics.find((d) => d.code === 'malformed_record');
+    const diagnostic = cost.diagnostics.find(
+      (d) => d.code === 'malformed_record',
+    );
     expect(diagnostic).toMatchObject({ count: 1 });
   });
 
@@ -177,13 +189,20 @@ describe('measureTask: session files (REQ-F2)', () => {
       () => 1,
     );
     expect(cost.coverage.status).toBe('unavailable');
-    expect(cost.diagnostics.some((d) => d.code === 'malformed_record')).toBe(false);
-    expect(cost.diagnostics.some((d) => d.code === 'no_usage_captured')).toBe(true);
+    expect(cost.diagnostics.some((d) => d.code === 'malformed_record')).toBe(
+      false,
+    );
+    expect(cost.diagnostics.some((d) => d.code === 'no_usage_captured')).toBe(
+      true,
+    );
   });
 
   it('counts and drops rows outside the window', async () => {
     const dir = await tempDir();
-    await writeFile(join(dir, `${EXAMPLE_SESSION_ID}.jsonl`), buildExampleClaudeSessionJsonl());
+    await writeFile(
+      join(dir, `${EXAMPLE_SESSION_ID}.jsonl`),
+      buildExampleClaudeSessionJsonl(),
+    );
     const { cost } = await measureTask(
       {
         taskId: EXAMPLE_TASK_ID,
@@ -193,13 +212,18 @@ describe('measureTask: session files (REQ-F2)', () => {
           sessionIds: [EXAMPLE_SESSION_ID],
           roots: [dir],
           // A window that excludes the second turn (at 00:20).
-          window: { startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T00:15:00Z' },
+          window: {
+            startedAt: '2026-01-01T00:00:00Z',
+            endedAt: '2026-01-01T00:15:00Z',
+          },
         },
       },
       () => 1,
     );
     expect(cost.eventCount).toBe(1);
-    const diagnostic = cost.diagnostics.find((d) => d.code === 'outside_time_window');
+    const diagnostic = cost.diagnostics.find(
+      (d) => d.code === 'outside_time_window',
+    );
     expect(diagnostic).toMatchObject({ level: 'info', count: 1 });
   });
 });
@@ -228,7 +252,9 @@ describe('measureTask: event sources', () => {
     const { cost } = await measureTask(
       { taskId: 'task-target', now: fixedNow, events: target },
       () => {
-        target.dispatchEvent(new CustomEvent('usage', { detail: usageRecord(500, 50) }));
+        target.dispatchEvent(
+          new CustomEvent('usage', { detail: usageRecord(500, 50) }),
+        );
         return 1;
       },
     );
@@ -245,7 +271,10 @@ describe('measureTask: event sources', () => {
         events: emitter,
         eventName: 'llm-usage',
         mapEvent: (payload) => {
-          const p = payload as { model: string; usage: { input: number; output: number } };
+          const p = payload as {
+            model: string;
+            usage: { input: number; output: number };
+          };
           return {
             model: p.model,
             usage: { inputTokens: p.usage.input, outputTokens: p.usage.output },
@@ -253,7 +282,10 @@ describe('measureTask: event sources', () => {
         },
       },
       () => {
-        emitter.emit('llm-usage', { model: 'gpt-5', usage: { input: 700, output: 70 } });
+        emitter.emit('llm-usage', {
+          model: 'gpt-5',
+          usage: { input: 700, output: 70 },
+        });
         return 1;
       },
     );
@@ -289,10 +321,13 @@ describe('measureTask: event sources', () => {
   });
 
   it('captures inline tracker.recordUsage as manual', async () => {
-    const { cost } = await measureTask({ taskId: 'task-manual', now: fixedNow }, (tracker) => {
-      tracker.recordUsage(usageRecord(100, 10));
-      return 1;
-    });
+    const { cost } = await measureTask(
+      { taskId: 'task-manual', now: fixedNow },
+      (tracker) => {
+        tracker.recordUsage(usageRecord(100, 10));
+        return 1;
+      },
+    );
     expect(cost.eventCount).toBe(1);
     expect(cost.source.capture).toEqual(['manual']);
   });
@@ -317,10 +352,13 @@ describe('measureTask: errors and aborts (REQ-F6)', () => {
     const err = new Error('task failed');
     let caught: unknown;
     try {
-      await measureTask({ taskId: 'task-fail', now: fixedNow, events: emitter }, () => {
-        emitter.emit('usage', usageRecord(1_000_000, 0));
-        throw err;
-      });
+      await measureTask(
+        { taskId: 'task-fail', now: fixedNow, events: emitter },
+        () => {
+          emitter.emit('usage', usageRecord(1_000_000, 0));
+          throw err;
+        },
+      );
     } catch (error) {
       caught = error;
     }
@@ -360,7 +398,9 @@ describe('measureTask: errors and aborts (REQ-F6)', () => {
     }
     expect(caught).toBe(err);
     const cost = (caught as { taskCost?: TaskCostReport }).taskCost;
-    expect(cost?.diagnostics.some((d) => d.code === 'collection_failed')).toBe(true);
+    expect(cost?.diagnostics.some((d) => d.code === 'collection_failed')).toBe(
+      true,
+    );
     expect(cost?.eventCount).toBe(1); // records before the failure still count
   });
 
@@ -394,7 +434,12 @@ describe('measureTask: errors and aborts (REQ-F6)', () => {
         ),
       () =>
         measureTask(
-          { sessionFiles: { harness: 'claude-code', sessionIds: ['s'] } as never },
+          {
+            sessionFiles: {
+              harness: 'claude-code',
+              sessionIds: ['s'],
+            } as never,
+          },
           () => 1,
         ),
       () =>
@@ -413,7 +458,8 @@ describe('measureTask: errors and aborts (REQ-F6)', () => {
     for (const call of calls) {
       await expect(call()).rejects.toSatisfy(
         (error: unknown) =>
-          error instanceof TaskCostMeasureError && error.code === 'INVALID_ARGUMENT',
+          error instanceof TaskCostMeasureError &&
+          error.code === 'INVALID_ARGUMENT',
       );
     }
   });
@@ -444,7 +490,10 @@ describe('measureTask: opt-in ledger', () => {
     const { cost } = await run();
     const summary = ledger.summarizeTask('task-ledger');
     expect(summary.totals.recordCount).toBe(2);
-    expect(summary.totals.tokenEquivalentMicros / 1e6).toBeCloseTo(cost.totalUsd ?? 0, 6);
+    expect(summary.totals.tokenEquivalentMicros / 1e6).toBeCloseTo(
+      cost.totalUsd ?? 0,
+      6,
+    );
 
     // A rerun with the same stable event ids persists nothing new.
     await run();
@@ -455,7 +504,10 @@ describe('measureTask: opt-in ledger', () => {
 describe('measureTask: perf guard', () => {
   it('measures the bundled fixture well under the latency bound', async () => {
     const dir = await tempDir();
-    await writeFile(join(dir, `${EXAMPLE_SESSION_ID}.jsonl`), buildExampleClaudeSessionJsonl());
+    await writeFile(
+      join(dir, `${EXAMPLE_SESSION_ID}.jsonl`),
+      buildExampleClaudeSessionJsonl(),
+    );
     const start = performance.now();
     await measureTask(
       {

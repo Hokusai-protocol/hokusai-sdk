@@ -22,7 +22,9 @@ const USAGE_FIELD_MAP = [
   ['cacheReadTokens', 'cache_read_tokens'],
   ['cacheWriteTokens', 'cache_write_tokens'],
   ['reasoningTokens', 'reasoning_tokens'],
-] as const satisfies ReadonlyArray<readonly [keyof TaskCostUsage, keyof TaskCostTokenUsage]>;
+] as const satisfies ReadonlyArray<
+  readonly [keyof TaskCostUsage, keyof TaskCostTokenUsage]
+>;
 
 export function emptyUsage(): TaskCostUsage {
   return {
@@ -111,10 +113,16 @@ export function fromAnthropicUsage(usage: unknown): TaskCostUsage {
 export function fromOpenAIUsage(usage: unknown): TaskCostUsage {
   const record = asRecord(usage);
   const prompt = countOrNull(record.prompt_tokens);
-  const cached = countOrNull(asRecord(record.prompt_tokens_details).cached_tokens);
+  const cached = countOrNull(
+    asRecord(record.prompt_tokens_details).cached_tokens,
+  );
   return {
     inputTokens:
-      prompt === null ? null : cached === null ? prompt : Math.max(0, prompt - cached),
+      prompt === null
+        ? null
+        : cached === null
+          ? prompt
+          : Math.max(0, prompt - cached),
     outputTokens: countOrNull(record.completion_tokens),
     cacheReadTokens: cached,
     cacheWriteTokens: null,
@@ -209,8 +217,13 @@ function projectAllowed<T>(
   return projected as T;
 }
 
-export function projectUsageRecord(record: Record<string, unknown>): TaskUsageRecord {
-  const projected = projectAllowed<TaskUsageRecord>(record, USAGE_RECORD_ALLOWED_KEYS);
+export function projectUsageRecord(
+  record: Record<string, unknown>,
+): TaskUsageRecord {
+  const projected = projectAllowed<TaskUsageRecord>(
+    record,
+    USAGE_RECORD_ALLOWED_KEYS,
+  );
   if (projected.usage !== undefined) {
     // Rebuild the nested usage from its own allow-list too.
     const usage = asRecord(projected.usage);
@@ -225,10 +238,14 @@ export function projectUsageRecord(record: Record<string, unknown>): TaskUsageRe
   return projected;
 }
 
-export function projectIngestInput(record: Record<string, unknown>): IngestUsageInput {
+export function projectIngestInput(
+  record: Record<string, unknown>,
+): IngestUsageInput {
   return projectAllowed<IngestUsageInput>(record, FRIENDLY_ALLOWED_KEYS);
 }
 
-export function projectPrebuiltEvent(record: Record<string, unknown>): TaskCostEventV1 {
+export function projectPrebuiltEvent(
+  record: Record<string, unknown>,
+): TaskCostEventV1 {
   return projectAllowed<TaskCostEventV1>(record, PREBUILT_ALLOWED_KEYS);
 }

@@ -34,7 +34,9 @@ export interface CollectedSessionFiles {
  * Validate the option shape eagerly — these are all programmer errors, and
  * they must fail loudly instead of silently attributing nothing.
  */
-export function validateSessionFilesOptions(options: SessionFilesOptions): void {
+export function validateSessionFilesOptions(
+  options: SessionFilesOptions,
+): void {
   if (typeof options !== 'object' || options === null) {
     throw new TaskCostMeasureError('sessionFiles must be an object');
   }
@@ -56,8 +58,13 @@ export function validateSessionFilesOptions(options: SessionFilesOptions): void 
     ['roots', options.roots],
   ] as const) {
     if (list === undefined) continue;
-    if (!Array.isArray(list) || list.some((entry) => typeof entry !== 'string')) {
-      throw new TaskCostMeasureError(`sessionFiles.${name} must be an array of strings`);
+    if (
+      !Array.isArray(list) ||
+      list.some((entry) => typeof entry !== 'string')
+    ) {
+      throw new TaskCostMeasureError(
+        `sessionFiles.${name} must be an array of strings`,
+      );
     }
   }
   if (options.paths === undefined && options.roots === undefined) {
@@ -69,7 +76,9 @@ export function validateSessionFilesOptions(options: SessionFilesOptions): void 
 
 function resolveSessionIds(options: SessionFilesOptions): readonly string[] {
   const resolved: readonly string[] =
-    typeof options.sessionIds === 'function' ? options.sessionIds() : options.sessionIds;
+    typeof options.sessionIds === 'function'
+      ? options.sessionIds()
+      : options.sessionIds;
   const candidates: unknown = resolved;
   if (
     !Array.isArray(candidates) ||
@@ -130,8 +139,13 @@ export async function collectSessionFiles(
   }
 
   const extract =
-    options.harness === 'claude-code' ? extractClaudeCodeUsage : extractCodexUsage;
-  const result: TaskCostSourceResult<IngestUsageInput> = extract({ boundary, files });
+    options.harness === 'claude-code'
+      ? extractClaudeCodeUsage
+      : extractCodexUsage;
+  const result: TaskCostSourceResult<IngestUsageInput> = extract({
+    boundary,
+    files,
+  });
   mergeDiagnostics(diagnostics, result.diagnostics);
 
   return { inputs: result.inputs, diagnostics, fileCount: files.length };
@@ -145,6 +159,7 @@ function mergeDiagnostics(
     keyof TaskCostSourceDiagnostics,
     number,
   ][]) {
-    if (count !== undefined && count > 0) into[code] = (into[code] ?? 0) + count;
+    if (count !== undefined && count > 0)
+      into[code] = (into[code] ?? 0) + count;
   }
 }

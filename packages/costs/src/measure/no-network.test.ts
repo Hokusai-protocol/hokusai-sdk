@@ -23,15 +23,23 @@ const fixedNow = (): Date => new Date('2026-01-01T00:30:00Z');
 
 const tempDirs: string[] = [];
 afterAll(async () => {
-  await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 });
 
 async function measureEverything(): Promise<TaskCostReport> {
   const dir = await mkdtemp(join(tmpdir(), 'hokusai-no-network-'));
   tempDirs.push(dir);
-  await writeFile(join(dir, `${EXAMPLE_SESSION_ID}.jsonl`), buildExampleClaudeSessionJsonl());
+  await writeFile(
+    join(dir, `${EXAMPLE_SESSION_ID}.jsonl`),
+    buildExampleClaudeSessionJsonl(),
+  );
 
-  const tracker = createTaskCostTracker({ taskId: 'side-tracker', now: fixedNow });
+  const tracker = createTaskCostTracker({
+    taskId: 'side-tracker',
+    now: fixedNow,
+  });
   tracker.recordUsage({
     model: 'claude-sonnet-5',
     usage: { inputTokens: 10, outputTokens: 5 },

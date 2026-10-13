@@ -126,9 +126,14 @@ this report-only path without manually building rows.
 
 ## Attaching cost to a contribution row
 
-Use `resolveActualCostUsd()` from `@hokusai/core` as the shared entry point when
-your harness wants to attach `actual_cost_usd` without duplicating pricing
-logic:
+Where does `actualCostUsd` come from? For multi-turn or multi-model work —
+or when you want per-model attribution, coverage, and pricing provenance —
+measure the task with [`@hokusai/costs`](../costs/README.md)
+(`measureTask` / `createTaskCostTracker`) and bridge
+`cost.totalUsd ?? undefined` into the contribution (a `null` partial total is
+passed as absent, never `0`). For a single best-effort number from one
+session, `resolveActualCostUsd()` below remains the shared entry point and is
+unchanged:
 
 ```ts
 import { resolveActualCostUsd } from '@hokusai/core';

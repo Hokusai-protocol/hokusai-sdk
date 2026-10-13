@@ -81,8 +81,11 @@ function sumLowerUsd(values: readonly (number | null)[]): number | null {
 
 /** Strict sum: `null` unless the list is non-empty and fully resolved. */
 function sumStrictUsd(values: readonly (number | null)[]): number | null {
-  if (values.length === 0 || values.some((value) => value === null)) return null;
-  return roundNanoUsd(values.reduce<number>((sum, value) => sum + (value as number), 0));
+  if (values.length === 0 || values.some((value) => value === null))
+    return null;
+  return roundNanoUsd(
+    values.reduce<number>((sum, value) => sum + (value as number), 0),
+  );
 }
 
 function addNullableCount(a: number | null, b: number | null): number | null {
@@ -106,25 +109,34 @@ function addUsage(a: TaskCostUsage, b: TaskCostUsage): TaskCostUsage {
 // ────────────────────────────────────────────────────────────────
 
 function promoteCostSource(sources: readonly TaskCostSource[]): TaskCostSource {
-  const hasProvider = sources.some((s) => s === 'provider_reported' || s === 'mixed');
-  const hasEstimate = sources.some((s) => s === 'local_estimate' || s === 'mixed');
+  const hasProvider = sources.some(
+    (s) => s === 'provider_reported' || s === 'mixed',
+  );
+  const hasEstimate = sources.some(
+    (s) => s === 'local_estimate' || s === 'mixed',
+  );
   if (hasProvider && hasEstimate) return 'mixed';
   if (hasProvider) return 'provider_reported';
   if (hasEstimate) return 'local_estimate';
   return 'none';
 }
 
-function promoteCoverage(coverages: readonly TaskCostCoverage[]): TaskCostCoverage {
+function promoteCoverage(
+  coverages: readonly TaskCostCoverage[],
+): TaskCostCoverage {
   if (coverages.length === 0) return 'unavailable';
   if (coverages.every((c) => c === 'unavailable')) return 'unavailable';
   if (coverages.every((c) => c === 'known_zero')) return 'known_zero';
-  if (coverages.every((c) => c === 'complete' || c === 'known_zero')) return 'complete';
+  if (coverages.every((c) => c === 'complete' || c === 'known_zero'))
+    return 'complete';
   return 'partial';
 }
 
 function promoteBasis(bases: readonly TaskCostBasis[]): TaskCostBasis {
   const [first, ...rest] = bases;
-  return first !== undefined && rest.every((basis) => basis === first) ? first : 'unknown';
+  return first !== undefined && rest.every((basis) => basis === first)
+    ? first
+    : 'unknown';
 }
 
 function promotePricingSource(
@@ -139,7 +151,10 @@ function promotePricingSource(
 // Breakdowns
 // ────────────────────────────────────────────────────────────────
 
-function mergeBreakdown(a: TaskCostBreakdown, b: TaskCostBreakdown): TaskCostBreakdown {
+function mergeBreakdown(
+  a: TaskCostBreakdown,
+  b: TaskCostBreakdown,
+): TaskCostBreakdown {
   return {
     totalUsd: sumStrictUsd([a.totalUsd, b.totalUsd]),
     actualUsd: sumLowerUsd([a.actualUsd, b.actualUsd]),
@@ -214,27 +229,35 @@ const DIAGNOSTIC_MESSAGES: Record<TaskCostReportDiagnosticCode, string> = {
   // Contract (summary) codes, passed through.
   missing_token_usage: 'an event lacks input/output token counts',
   invalid_token_usage: 'source usage was unparseable, negative, or non-finite',
-  unpriced_model: 'usage was complete enough to price but no price was available',
+  unpriced_model:
+    'usage was complete enough to price but no price was available',
   mixed_coverage: 'coverage is partial: some events are missing cost or usage',
-  provider_reported_cost: 'at least one event carries a provider-reported charge',
+  provider_reported_cost:
+    'at least one event carries a provider-reported charge',
   no_pricing_data: 'no price was available for the reported usage shape',
   no_priced_sessions: 'events exist but none produced a cost',
-  stale_pricing_revision: 'events were priced against more than one pricing revision',
+  stale_pricing_revision:
+    'events were priced against more than one pricing revision',
   replay_dropped: 'an event repeating a prior event_id was ignored',
-  cumulative_backward_jump: 'a cumulative snapshot regressed and its delta was clamped',
-  subscription_basis_no_charge: 'subscription-basis usage carries no actual charge',
+  cumulative_backward_jump:
+    'a cumulative snapshot regressed and its delta was clamped',
+  subscription_basis_no_charge:
+    'subscription-basis usage carries no actual charge',
   // Source (count-only) codes, passed through.
   oversized_line: 'a session-file line exceeded the parser length bound',
   truncated_input: 'a session file had more lines than the parser bound',
   missing_session_id: 'a usage row carried no resolvable session id',
-  session_not_in_boundary: 'rows from sessions outside the task boundary were dropped',
+  session_not_in_boundary:
+    'rows from sessions outside the task boundary were dropped',
   foreign_task: 'records naming a different task were dropped',
   missing_timestamp: 'a usage row carried no parseable timestamp',
   outside_time_window: 'rows outside the task time window were dropped',
   missing_usage: 'a row that should carry usage carried none',
-  invalid_usage_value: 'a present usage or cost field was malformed and treated as missing',
+  invalid_usage_value:
+    'a present usage or cost field was malformed and treated as missing',
   duplicate_row: 'a source row repeated an already-seen identity',
-  cumulative_counter_reset: 'a cumulative counter regressed; the baseline was reset',
+  cumulative_counter_reset:
+    'a cumulative counter regressed; the baseline was reset',
   // Mapped / tracker-level codes.
   malformed_line: 'a session-file line was malformed and skipped',
   invalid_record: 'a record was not a usable record shape',
@@ -243,9 +266,11 @@ const DIAGNOSTIC_MESSAGES: Record<TaskCostReportDiagnosticCode, string> = {
   invalid_usage: 'a usage record was rejected; totals are unchanged',
   no_usage_captured:
     'automatic capture requires supported usage events or session files; call tracker.recordUsage() otherwise',
-  session_file_unreadable: 'a session file could not be read or exceeded the size bound',
+  session_file_unreadable:
+    'a session file could not be read or exceeded the size bound',
   malformed_record: 'a session-file line or record was malformed and skipped',
-  duplicate_event: 'an event id was recorded more than once; later copies were ignored',
+  duplicate_event:
+    'an event id was recorded more than once; later copies were ignored',
   collection_failed: 'a usage source failed while collecting events',
   aggregation_failed: 'an engine could not summarize its events',
   ledger_flush_failed: 'persisting to the opt-in ledger failed',
@@ -281,7 +306,9 @@ const DIAGNOSTIC_ORDER: readonly TaskCostReportDiagnosticCode[] = [
 // ────────────────────────────────────────────────────────────────
 
 /** Build the camelCase report. Pure and deterministic; no I/O, no clock. */
-export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostReport {
+export function buildTaskCostReport(
+  input: BuildTaskCostReportInput,
+): TaskCostReport {
   const summaries = input.engines.map((engine) => engine.summary);
 
   // Contributing events only (superseded/duplicate events are excluded by
@@ -300,7 +327,8 @@ export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostRe
     for (const total of engine.modelTotals) {
       const next = breakdownFromModelTotal(total);
       const existing = byModel[total.model];
-      byModel[total.model] = existing === undefined ? next : mergeBreakdown(existing, next);
+      byModel[total.model] =
+        existing === undefined ? next : mergeBreakdown(existing, next);
     }
   }
 
@@ -330,17 +358,22 @@ export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostRe
       event.price_table !== undefined ? [event.price_table] : [],
     ),
   );
-  const priceTables: TaskCostPriceTable[] = TASK_COST_PRICE_TABLES.filter((table) =>
-    usedTables.has(table),
+  const priceTables: TaskCostPriceTable[] = TASK_COST_PRICE_TABLES.filter(
+    (table) => usedTables.has(table),
   );
 
   // Coverage accounting. "Priced" = the event resolved a cost; "unknown
   // model" = usage was observed but no cost evidence of any kind exists.
-  const pricedEvents = contributing.filter((event) => event.cost_source !== 'none').length;
+  const pricedEvents = contributing.filter(
+    (event) => event.cost_source !== 'none',
+  ).length;
   const unpricedWithUsage = contributing.filter(
-    (event) => event.cost_source === 'none' && event.usage_coverage !== 'unavailable',
+    (event) =>
+      event.cost_source === 'none' && event.usage_coverage !== 'unavailable',
   );
-  const unknownModels = [...new Set(unpricedWithUsage.map((event) => event.observed_model))];
+  const unknownModels = [
+    ...new Set(unpricedWithUsage.map((event) => event.observed_model)),
+  ];
 
   // Diagnostics: merge counts from the summaries, the tracker, and the
   // session-file sources, then emit in canonical order.
@@ -362,7 +395,11 @@ export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostRe
   );
   bump(
     'unpriced_model',
-    unpricedWithUsage.length > 0 ? unpricedWithUsage.length : summariesFlagUnpriced ? 1 : 0,
+    unpricedWithUsage.length > 0
+      ? unpricedWithUsage.length
+      : summariesFlagUnpriced
+        ? 1
+        : 0,
   );
   for (const [code, count] of Object.entries(input.trackerDiagnostics) as [
     TaskCostReportDiagnosticCode,
@@ -377,21 +414,26 @@ export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostRe
     bump(SOURCE_CODE_RENAMES[rawCode] ?? rawCode, count ?? 0);
   }
 
-  const eventCount = summaries.reduce((sum, summary) => sum + summary.event_count, 0);
+  const eventCount = summaries.reduce(
+    (sum, summary) => sum + summary.event_count,
+    0,
+  );
   if (eventCount === 0) bump('no_usage_captured', 1);
 
-  const diagnostics: TaskCostReportDiagnostic[] = DIAGNOSTIC_ORDER.flatMap((code) => {
-    const count = counts.get(code);
-    if (count === undefined) return [];
-    return [
-      {
-        code,
-        level: DIAGNOSTIC_LEVELS[code] ?? 'warn',
-        message: DIAGNOSTIC_MESSAGES[code],
-        count,
-      },
-    ];
-  });
+  const diagnostics: TaskCostReportDiagnostic[] = DIAGNOSTIC_ORDER.flatMap(
+    (code) => {
+      const count = counts.get(code);
+      if (count === undefined) return [];
+      return [
+        {
+          code,
+          level: DIAGNOSTIC_LEVELS[code] ?? 'warn',
+          message: DIAGNOSTIC_MESSAGES[code],
+          count,
+        },
+      ];
+    },
+  );
 
   const revision = revisions.at(-1) ?? null;
 
@@ -399,7 +441,9 @@ export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostRe
     taskId: input.taskId,
     totalUsd: sumStrictUsd(summaries.map((summary) => summary.total_cost_usd)),
     actualUsd: sumLowerUsd(summaries.map((summary) => summary.actual_cost_usd)),
-    estimatedUsd: sumLowerUsd(summaries.map((summary) => summary.estimated_cost_usd)),
+    estimatedUsd: sumLowerUsd(
+      summaries.map((summary) => summary.estimated_cost_usd),
+    ),
     byModel,
     byHarness,
     usage,
@@ -412,7 +456,9 @@ export function buildTaskCostReport(input: BuildTaskCostReportInput): TaskCostRe
       sessionFileCount: input.sessionFileCount,
     },
     pricing: {
-      source: promotePricingSource(summaries.map((summary) => summary.pricing_source)),
+      source: promotePricingSource(
+        summaries.map((summary) => summary.pricing_source),
+      ),
       revision,
       effectiveDate: revision ?? MODEL_PRICING_AS_OF,
       revisions,

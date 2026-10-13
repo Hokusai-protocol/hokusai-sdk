@@ -35,7 +35,9 @@ describe('offline ledger', () => {
       expect(source).not.toMatch(
         /from ['"](node:)?(http|https|net|dgram|undici)['"]|\bfetch\(|XMLHttpRequest/,
       );
-      expect(source).not.toMatch(/@hokusai\/router|HokusaiClient|HOKUSAI_API_KEY/);
+      expect(source).not.toMatch(
+        /@hokusai\/router|HokusaiClient|HOKUSAI_API_KEY/,
+      );
     }
   });
   it('opens, persists and queries without fetch', async () => {

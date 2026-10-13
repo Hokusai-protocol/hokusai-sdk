@@ -4,7 +4,9 @@ import { toLedgerEntries } from './from-events.js';
 import { validateLedgerInput } from './record.js';
 
 function engineWith(
-  overrides: Partial<Parameters<ReturnType<typeof createTaskCostEngine>['ingest']>[0]>,
+  overrides: Partial<
+    Parameters<ReturnType<typeof createTaskCostEngine>['ingest']>[0]
+  >,
 ) {
   const engine = createTaskCostEngine({ taskId: 'task-0001' });
   const result = engine.ingest({

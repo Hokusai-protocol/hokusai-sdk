@@ -39,7 +39,9 @@ describe('unpriced models (REQ-F4)', () => {
     expect(report.byModel['unknown-model-xyz']?.totalUsd).toBeNull();
     expect(report.byModel['unknown-model-xyz']?.estimatedUsd).toBeNull();
     expect(report.byModel['claude-sonnet-5']?.totalUsd).toBeCloseTo(3, 9);
-    const diagnostic = report.diagnostics.find((d) => d.code === 'unpriced_model');
+    const diagnostic = report.diagnostics.find(
+      (d) => d.code === 'unpriced_model',
+    );
     expect(diagnostic).toMatchObject({ level: 'warn', count: 1 });
   });
 
@@ -52,7 +54,9 @@ describe('unpriced models (REQ-F4)', () => {
 
     const report = t.summary();
     expect(report.coverage.unknownModels).toEqual(['unknown-model-xyz']);
-    const diagnostics = report.diagnostics.filter((d) => d.code === 'unpriced_model');
+    const diagnostics = report.diagnostics.filter(
+      (d) => d.code === 'unpriced_model',
+    );
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]?.count).toBe(3);
   });
@@ -70,8 +74,13 @@ describe('unpriced models (REQ-F4)', () => {
     expect(report.coverage.status).toBe('partial');
     expect(report.coverage.pricedEvents).toBe(0);
     expect(report.coverage.unpricedEvents).toBe(2);
-    expect(report.coverage.unknownModels).toEqual(['unknown-model-a', 'unknown-model-b']);
-    expect(report.diagnostics.some((d) => d.code === 'no_priced_sessions')).toBe(true);
+    expect(report.coverage.unknownModels).toEqual([
+      'unknown-model-a',
+      'unknown-model-b',
+    ]);
+    expect(
+      report.diagnostics.some((d) => d.code === 'no_priced_sessions'),
+    ).toBe(true);
     expect(JSON.stringify(report)).not.toContain('"totalUsd":0');
   });
 });

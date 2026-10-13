@@ -251,12 +251,24 @@ export type UsageEventEmitterLike =
       off(eventName: string, listener: (payload: unknown) => void): unknown;
     }
   | {
-      addListener(eventName: string, listener: (payload: unknown) => void): unknown;
-      removeListener(eventName: string, listener: (payload: unknown) => void): unknown;
+      addListener(
+        eventName: string,
+        listener: (payload: unknown) => void,
+      ): unknown;
+      removeListener(
+        eventName: string,
+        listener: (payload: unknown) => void,
+      ): unknown;
     }
   | {
-      addEventListener(eventName: string, listener: (payload: unknown) => void): unknown;
-      removeEventListener(eventName: string, listener: (payload: unknown) => void): unknown;
+      addEventListener(
+        eventName: string,
+        listener: (payload: unknown) => void,
+      ): unknown;
+      removeEventListener(
+        eventName: string,
+        listener: (payload: unknown) => void,
+      ): unknown;
     };
 
 export type UsageEventSource =

@@ -4,7 +4,10 @@
 // priced subtotal is reported as a lower bound.
 import { createTaskCostTracker } from '@hokusai/costs';
 
-const tracker = createTaskCostTracker({ taskId: 'task-tracker-example', harness: 'native' });
+const tracker = createTaskCostTracker({
+  taskId: 'task-tracker-example',
+  harness: 'native',
+});
 
 tracker.recordUsage({
   model: 'claude-sonnet-5',
@@ -22,8 +25,10 @@ tracker.recordUsage({
 });
 
 const report = tracker.summary();
-if (report.totalUsd !== null) throw new Error('an unknown model must null the total');
-if (!(report.estimatedUsd > 0)) throw new Error('expected a priced lower bound');
+if (report.totalUsd !== null)
+  throw new Error('an unknown model must null the total');
+if (!(report.estimatedUsd > 0))
+  throw new Error('expected a priced lower bound');
 if (report.coverage.unknownModels[0] !== 'some-internal-model') {
   throw new Error('expected the unknown model to be called out');
 }

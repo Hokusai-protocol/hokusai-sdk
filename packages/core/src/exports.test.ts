@@ -111,8 +111,12 @@ describe('core public surface', () => {
     expect(core.TASK_COST_EVENT_SCHEMA_VERSION).toBe('task_cost_event/v1');
     expect(core.TASK_COST_SUMMARY_SCHEMA_VERSION).toBe('task_cost_summary/v1');
     expect(core.TASK_COST_LEDGER_SCHEMA_VERSION).toBe('task_cost_ledger/v1');
-    expect(core.TASK_COST_ADAPTER_CONTRACT_VERSION).toBe('task_cost_adapter/v1');
-    expect(core.PROVIDER_CONTRACT_VERSIONS['claude-code']).toBe('claude-code/1');
+    expect(core.TASK_COST_ADAPTER_CONTRACT_VERSION).toBe(
+      'task_cost_adapter/v1',
+    );
+    expect(core.PROVIDER_CONTRACT_VERSIONS['claude-code']).toBe(
+      'claude-code/1',
+    );
     expect(core.aggregateTaskCost).toBeDefined();
     expect(core.aggregateTaskCostByModel).toBeDefined();
     expect(core.validateTaskCostEventV1).toBeDefined();
@@ -123,9 +127,15 @@ describe('core public surface', () => {
   });
 
   it('exposes the arbiter shadow record contract', () => {
-    expect(core.ARBITER_SHADOW_SCORE_SCHEMA_VERSION).toBe('arbiter_shadow_score/v1');
-    expect(core.ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION).toBe('arbiter_shadow_outcome/v1');
-    expect(core.ARBITER_SHADOW_STATE_SCHEMA_VERSION).toBe('arbiter_shadow_state/v1');
+    expect(core.ARBITER_SHADOW_SCORE_SCHEMA_VERSION).toBe(
+      'arbiter_shadow_score/v1',
+    );
+    expect(core.ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION).toBe(
+      'arbiter_shadow_outcome/v1',
+    );
+    expect(core.ARBITER_SHADOW_STATE_SCHEMA_VERSION).toBe(
+      'arbiter_shadow_state/v1',
+    );
     expect(Array.isArray(core.ARBITER_SHADOW_RUN_STATUSES)).toBe(true);
     expect(Array.isArray(core.ARBITER_SHADOW_ERROR_CODES)).toBe(true);
     expect(core.ARBITER_SHADOW_FORBIDDEN_KEYS instanceof Set).toBe(true);

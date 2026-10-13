@@ -27,10 +27,17 @@ import {
   type TaskCostEventV1,
   type TaskCostHarness,
 } from '@hokusai/core';
-import { createTaskCostEngine, type IngestUsageInput, type TaskCostEngine } from '../engine.js';
+import {
+  createTaskCostEngine,
+  type IngestUsageInput,
+  type TaskCostEngine,
+} from '../engine.js';
 import { toLedgerEntries } from '../ledger/from-events.js';
 import { buildOverrideIndex } from '../pricing-resolver.js';
-import { countDiagnostic, type TaskCostSourceDiagnostics } from '../sources/types.js';
+import {
+  countDiagnostic,
+  type TaskCostSourceDiagnostics,
+} from '../sources/types.js';
 import { TaskCostMeasureError } from './errors.js';
 import { buildTaskCostReport, type EngineSnapshot } from './report.js';
 import {
@@ -44,7 +51,12 @@ import {
   type TaskCostTrackerOptions,
   type TaskUsageRecord,
 } from './types.js';
-import { projectIngestInput, projectPrebuiltEvent, projectUsageRecord, toContractUsage } from './usage.js';
+import {
+  projectIngestInput,
+  projectPrebuiltEvent,
+  projectUsageRecord,
+  toContractUsage,
+} from './usage.js';
 
 /**
  * Mirrors the contract validators' (unexported) patterns; drift fails loudly
@@ -67,14 +79,18 @@ function notAnObject(value: unknown): boolean {
  */
 function defaultProviderContract(harness: TaskCostHarness): string {
   return (
-    (PROVIDER_CONTRACT_VERSIONS as Partial<Record<TaskCostHarness, string>>)[harness] ??
-    `${harness}/1`
+    (PROVIDER_CONTRACT_VERSIONS as Partial<Record<TaskCostHarness, string>>)[
+      harness
+    ] ?? `${harness}/1`
   );
 }
 
 /** Internal recording surface used by `measureTask`'s capture plumbing. */
 export interface TrackerInternals {
-  recordUsageVia(kind: TaskCostCaptureKind, record: TaskUsageRecord): RecordResult;
+  recordUsageVia(
+    kind: TaskCostCaptureKind,
+    record: TaskUsageRecord,
+  ): RecordResult;
   recordVia(
     kind: TaskCostCaptureKind,
     input: IngestUsageInput | TaskCostEventV1,
@@ -84,7 +100,9 @@ export interface TrackerInternals {
   bumpDiagnostic(code: TaskCostReportDiagnosticCode, by?: number): void;
 }
 
-export function createTrackerWithInternals(options: TaskCostTrackerOptions = {}): {
+export function createTrackerWithInternals(
+  options: TaskCostTrackerOptions = {},
+): {
   tracker: TaskCostTracker;
   internals: TrackerInternals;
 } {
@@ -134,7 +152,10 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
   }
 
   // ── Mutable tracker state (dropped wholesale by reset()) ────────────
-  let engines = new Map<string, { engine: TaskCostEngine; harness: TaskCostHarness }>();
+  let engines = new Map<
+    string,
+    { engine: TaskCostEngine; harness: TaskCostHarness }
+  >();
   let acceptedEvents: TaskCostEventV1[] = [];
   let seenEventIds = new Set<string>();
   let sequences = new Map<string, number>();
@@ -149,7 +170,10 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
     trackerDiagnostics.set(code, (trackerDiagnostics.get(code) ?? 0) + by);
   }
 
-  function engineFor(harness: TaskCostHarness, providerContract: string): TaskCostEngine {
+  function engineFor(
+    harness: TaskCostHarness,
+    providerContract: string,
+  ): TaskCostEngine {
     const key = `${harness}\u0000${providerContract}`;
     const existing = engines.get(key);
     if (existing !== undefined) return existing.engine;
@@ -164,7 +188,11 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
     return engine;
   }
 
-  function nextSequence(harness: string, providerContract: string, sessionId: string): number {
+  function nextSequence(
+    harness: string,
+    providerContract: string,
+    sessionId: string,
+  ): number {
     const key = `${harness}\u0000${providerContract}\u0000${sessionId}`;
     const next = (sequences.get(key) ?? 0) + 1;
     sequences.set(key, next);
@@ -197,11 +225,18 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
     return { status: 'rejected', reason: result.reason };
   }
 
-  function recordUsageVia(kind: TaskCostCaptureKind, record: TaskUsageRecord): RecordResult {
+  function recordUsageVia(
+    kind: TaskCostCaptureKind,
+    record: TaskUsageRecord,
+  ): RecordResult {
     if (notAnObject(record)) {
-      throw new TaskCostMeasureError('recordUsage requires a usage record object');
+      throw new TaskCostMeasureError(
+        'recordUsage requires a usage record object',
+      );
     }
-    const projected = projectUsageRecord(record as unknown as Record<string, unknown>);
+    const projected = projectUsageRecord(
+      record as unknown as Record<string, unknown>,
+    );
     const harness = projected.harness ?? defaultHarness;
     if (!(TASK_COST_HARNESSES as readonly string[]).includes(harness)) {
       throw new TaskCostMeasureError(
@@ -222,7 +257,10 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
       } while (seenEventIds.has(eventId));
     } else if (typeof eventId !== 'string' || eventId.length === 0) {
       bumpDiagnostic('invalid_usage');
-      return { status: 'rejected', reason: 'eventId must be a non-empty string' };
+      return {
+        status: 'rejected',
+        reason: 'eventId must be a non-empty string',
+      };
     }
     const sessionId = projected.sessionId ?? taskId;
     const occurredAt =
@@ -240,7 +278,9 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
       providerContractVersion: providerContract,
       observedModel: projected.model,
       usage: toContractUsage(projected.usage),
-      ...(projected.usageKind !== undefined ? { usageKind: projected.usageKind } : {}),
+      ...(projected.usageKind !== undefined
+        ? { usageKind: projected.usageKind }
+        : {}),
       ...(projected.providerCostUsd !== undefined
         ? { actualCostUsd: projected.providerCostUsd }
         : {}),
@@ -249,7 +289,9 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
       ...(projected.replayOfEventId !== undefined
         ? { replayOfEventId: projected.replayOfEventId }
         : {}),
-      ...(projected.isSubagent !== undefined ? { isSubagent: projected.isSubagent } : {}),
+      ...(projected.isSubagent !== undefined
+        ? { isSubagent: projected.isSubagent }
+        : {}),
     };
     return ingestInto(kind, harness, providerContract, input, eventId);
   }
@@ -265,7 +307,9 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
     }
     const raw = input as unknown as Record<string, unknown>;
     const prebuilt = raw.schema_version === TASK_COST_EVENT_SCHEMA_VERSION;
-    const projected = prebuilt ? projectPrebuiltEvent(raw) : projectIngestInput(raw);
+    const projected = prebuilt
+      ? projectPrebuiltEvent(raw)
+      : projectIngestInput(raw);
     const harness = prebuilt
       ? (projected as TaskCostEventV1).harness
       : (projected as IngestUsageInput).harness;
@@ -281,14 +325,20 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
       : (projected as IngestUsageInput).providerContractVersion;
     if (typeof providerContract !== 'string' || providerContract.length === 0) {
       bumpDiagnostic('invalid_usage');
-      return { status: 'rejected', reason: 'providerContractVersion is required' };
+      return {
+        status: 'rejected',
+        reason: 'providerContractVersion is required',
+      };
     }
     const eventId = prebuilt
       ? (projected as TaskCostEventV1).event_id
       : (projected as IngestUsageInput).eventId;
     if (typeof eventId !== 'string' || eventId.length === 0) {
       bumpDiagnostic('invalid_usage');
-      return { status: 'rejected', reason: 'eventId must be a non-empty string' };
+      return {
+        status: 'rejected',
+        reason: 'eventId must be a non-empty string',
+      };
     }
     return ingestInto(kind, harness, providerContract, projected, eventId);
   }
@@ -312,7 +362,8 @@ export function createTrackerWithInternals(options: TaskCostTrackerOptions = {})
         aggregationFailures += 1;
       }
     }
-    const diagnostics: Partial<Record<TaskCostReportDiagnosticCode, number>> = {};
+    const diagnostics: Partial<Record<TaskCostReportDiagnosticCode, number>> =
+      {};
     for (const [code, count] of trackerDiagnostics) diagnostics[code] = count;
     if (aggregationFailures > 0) {
       diagnostics.aggregation_failed =

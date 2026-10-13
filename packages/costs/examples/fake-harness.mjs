@@ -40,7 +40,10 @@ export function createFakeHarness() {
       emitter.emit('usage', {
         model: 'claude-sonnet-5',
         eventId: 'turn-0001',
-        usage: fromAnthropicUsage({ input_tokens: 12_000, output_tokens: 1_800 }),
+        usage: fromAnthropicUsage({
+          input_tokens: 12_000,
+          output_tokens: 1_800,
+        }),
       });
       return 42;
     },

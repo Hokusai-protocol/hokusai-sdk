@@ -13,7 +13,10 @@ export type TaskCostMeasureErrorCode = 'INVALID_ARGUMENT';
 export class TaskCostMeasureError extends TypeError {
   code: TaskCostMeasureErrorCode;
 
-  constructor(message: string, code: TaskCostMeasureErrorCode = 'INVALID_ARGUMENT') {
+  constructor(
+    message: string,
+    code: TaskCostMeasureErrorCode = 'INVALID_ARGUMENT',
+  ) {
     super(message);
     this.name = 'TaskCostMeasureError';
     this.code = code;

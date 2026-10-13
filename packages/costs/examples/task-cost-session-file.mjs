@@ -16,13 +16,18 @@ const { cost } = await measureTask(
       harness: 'claude-code',
       sessionIds: ['example-session-0001'],
       paths: [fixture],
-      window: { startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T01:00:00Z' },
+      window: {
+        startedAt: '2026-01-01T00:00:00Z',
+        endedAt: '2026-01-01T01:00:00Z',
+      },
     },
   },
   () => 42,
 );
 
 if (!(cost.totalUsd > 0)) throw new Error('expected a priced total');
-if (cost.coverage.status !== 'complete') throw new Error('expected complete coverage');
-if (cost.source.sessionFileCount !== 1) throw new Error('expected one session file');
+if (cost.coverage.status !== 'complete')
+  throw new Error('expected complete coverage');
+if (cost.source.sessionFileCount !== 1)
+  throw new Error('expected one session file');
 console.log(JSON.stringify(cost, null, 2));

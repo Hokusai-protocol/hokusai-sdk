@@ -25,7 +25,9 @@ const fixedNow = (): Date => new Date('2026-01-01T00:30:00Z');
 
 const tempDirs: string[] = [];
 afterAll(async () => {
-  await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 });
 
 describe('measure privacy', () => {
@@ -68,7 +70,10 @@ describe('measure privacy', () => {
   });
 
   it('drops extra keys on recordUsage records via the allow-list', () => {
-    const tracker = createTaskCostTracker({ taskId: 'task-privacy', now: fixedNow });
+    const tracker = createTaskCostTracker({
+      taskId: 'task-privacy',
+      now: fixedNow,
+    });
     tracker.recordUsage({
       model: 'claude-sonnet-5',
       usage: {
@@ -89,7 +94,10 @@ describe('measure privacy', () => {
   });
 
   it('drops extra keys on record() inputs via the allow-list', () => {
-    const tracker = createTaskCostTracker({ taskId: 'task-privacy', now: fixedNow });
+    const tracker = createTaskCostTracker({
+      taskId: 'task-privacy',
+      now: fixedNow,
+    });
     const result = tracker.record({
       eventId: 'e1',
       taskId: 'task-privacy',

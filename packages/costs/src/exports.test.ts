@@ -34,33 +34,35 @@ describe('@hokusai/costs public surface', () => {
   });
 
   it('keeps the root runtime export names stable (snapshot)', () => {
-    expect(runtimeExports(root)).toEqual([
-      // Engine + pricing (pre-existing).
-      'createTaskCostEngine',
-      'resolveEventPrice',
-      // Ledger re-exports (pre-existing + toLedgerEntries).
-      'LEDGER_RECORD_CURRENT_VERSION',
-      'TaskCostLedgerError',
-      'applyMigrations',
-      'canonicalJson',
-      'createMemoryLedgerStorage',
-      'migrations',
-      'openTaskCostLedger',
-      'parseLine',
-      'queryLedger',
-      'serializeLine',
-      'summarizeTaskRecords',
-      'toLedgerEntries',
-      'toLedgerRecord',
-      'validateLedgerInput',
-      // Drop-in API (HOK-3073).
-      'TASK_COST_CAPTURE_KINDS',
-      'TaskCostMeasureError',
-      'createTaskCostTracker',
-      'fromAnthropicUsage',
-      'fromOpenAIUsage',
-      'measureTask',
-    ].sort());
+    expect(runtimeExports(root)).toEqual(
+      [
+        // Engine + pricing (pre-existing).
+        'createTaskCostEngine',
+        'resolveEventPrice',
+        // Ledger re-exports (pre-existing + toLedgerEntries).
+        'LEDGER_RECORD_CURRENT_VERSION',
+        'TaskCostLedgerError',
+        'applyMigrations',
+        'canonicalJson',
+        'createMemoryLedgerStorage',
+        'migrations',
+        'openTaskCostLedger',
+        'parseLine',
+        'queryLedger',
+        'serializeLine',
+        'summarizeTaskRecords',
+        'toLedgerEntries',
+        'toLedgerRecord',
+        'validateLedgerInput',
+        // Drop-in API (HOK-3073).
+        'TASK_COST_CAPTURE_KINDS',
+        'TaskCostMeasureError',
+        'createTaskCostTracker',
+        'fromAnthropicUsage',
+        'fromOpenAIUsage',
+        'measureTask',
+      ].sort(),
+    );
   });
 
   it('keeps the ledger subpath export names stable (snapshot)', () => {

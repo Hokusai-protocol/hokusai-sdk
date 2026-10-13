@@ -22,11 +22,20 @@
  * @module measure/measure-task
  */
 
-import { TASK_COST_EVENT_SCHEMA_VERSION, type TaskCostEventV1 } from '@hokusai/core';
+import {
+  TASK_COST_EVENT_SCHEMA_VERSION,
+  type TaskCostEventV1,
+} from '@hokusai/core';
 import type { IngestUsageInput } from '../engine.js';
 import { TaskCostMeasureError } from './errors.js';
-import { collectSessionFiles, validateSessionFilesOptions } from './session-files.js';
-import { createTrackerWithInternals, type TrackerInternals } from './tracker.js';
+import {
+  collectSessionFiles,
+  validateSessionFilesOptions,
+} from './session-files.js';
+import {
+  createTrackerWithInternals,
+  type TrackerInternals,
+} from './tracker.js';
 import type {
   MeasureTaskOptions,
   MeasureTaskResult,
@@ -54,12 +63,21 @@ function subscriptionFor(source: UsageEventSource): Subscription | null {
     ['addListener', 'removeListener'],
     ['addEventListener', 'removeEventListener'],
   ] as const) {
-    if (typeof candidate[add] === 'function' && typeof candidate[remove] === 'function') {
+    if (
+      typeof candidate[add] === 'function' &&
+      typeof candidate[remove] === 'function'
+    ) {
       return {
         add: (eventName, listener) =>
-          (candidate[add] as (n: string, l: unknown) => void)(eventName, listener),
+          (candidate[add] as (n: string, l: unknown) => void)(
+            eventName,
+            listener,
+          ),
         remove: (eventName, listener) =>
-          (candidate[remove] as (n: string, l: unknown) => void)(eventName, listener),
+          (candidate[remove] as (n: string, l: unknown) => void)(
+            eventName,
+            listener,
+          ),
       };
     }
   }
@@ -114,7 +132,10 @@ function dispatchPayload(
       record.schema_version === TASK_COST_EVENT_SCHEMA_VERSION ||
       typeof record.observedModel === 'string'
     ) {
-      internals.recordVia('events', record as unknown as IngestUsageInput | TaskCostEventV1);
+      internals.recordVia(
+        'events',
+        record as unknown as IngestUsageInput | TaskCostEventV1,
+      );
     } else {
       internals.recordUsageVia('events', record as unknown as TaskUsageRecord);
     }
@@ -138,7 +159,10 @@ async function consumeIterable(
 }
 
 function attachTaskCost(error: unknown, cost: TaskCostReport): void {
-  if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
+  if (
+    error === null ||
+    (typeof error !== 'object' && typeof error !== 'function')
+  ) {
     return; // primitives rethrow unchanged; the cost is unavailable then
   }
   if (!Object.isExtensible(error)) return; // frozen/sealed errors stay untouched
@@ -163,16 +187,26 @@ export async function measureTask<T>(
   options: MeasureTaskOptions,
   fn: (tracker: TaskCostTracker) => T | Promise<T>,
 ): Promise<MeasureTaskResult<T>> {
-  if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+  if (
+    typeof options !== 'object' ||
+    options === null ||
+    Array.isArray(options)
+  ) {
     throw new TaskCostMeasureError('measureTask requires an options object');
   }
   if (typeof fn !== 'function') {
     throw new TaskCostMeasureError('measureTask requires a function to run');
   }
-  if (options.eventName !== undefined && typeof options.eventName !== 'string') {
+  if (
+    options.eventName !== undefined &&
+    typeof options.eventName !== 'string'
+  ) {
     throw new TaskCostMeasureError('eventName must be a string');
   }
-  if (options.mapEvent !== undefined && typeof options.mapEvent !== 'function') {
+  if (
+    options.mapEvent !== undefined &&
+    typeof options.mapEvent !== 'function'
+  ) {
     throw new TaskCostMeasureError('mapEvent must be a function');
   }
   if (options.sessionFiles !== undefined) {
@@ -209,8 +243,12 @@ export async function measureTask<T>(
     }
     if (signal.aborted) {
       const reason: unknown = (signal as { reason?: unknown }).reason;
-      if (reason instanceof Error || reason instanceof DOMException) throw reason;
-      throw new DOMException('measureTask was aborted before the task ran', 'AbortError');
+      if (reason instanceof Error || reason instanceof DOMException)
+        throw reason;
+      throw new DOMException(
+        'measureTask was aborted before the task ran',
+        'AbortError',
+      );
     }
   }
 
@@ -244,10 +282,14 @@ export async function measureTask<T>(
   }
   if (options.sessionFiles !== undefined) {
     try {
-      const collected = await collectSessionFiles(tracker.taskId, options.sessionFiles, {
-        startedAt,
-        endedAt,
-      });
+      const collected = await collectSessionFiles(
+        tracker.taskId,
+        options.sessionFiles,
+        {
+          startedAt,
+          endedAt,
+        },
+      );
       internals.addSessionFiles(collected.fileCount);
       internals.addSourceDiagnostics(collected.diagnostics);
       for (const input of collected.inputs) {

@@ -39,13 +39,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 const guardPath = path.join(repoRoot, 'scripts', 'no-network-guard.cjs');
 const CHILD_TIMEOUT_MS = 120_000;
 const MAX_TARBALL_BYTES = 500 * 1024;
 
 const registryIndex = process.argv.indexOf('--registry');
-const registryVersion = registryIndex === -1 ? null : process.argv[registryIndex + 1];
+const registryVersion =
+  registryIndex === -1 ? null : process.argv[registryIndex + 1];
 if (registryIndex !== -1 && !registryVersion) {
   fail('--registry requires a version, e.g. --registry 0.5.0');
 }
@@ -75,8 +79,12 @@ function run(command, args, options = {}) {
     });
   } catch (error) {
     const stderr = error.stderr ? `\n--- stderr ---\n${error.stderr}` : '';
-    const stdout = error.stdout ? `\n--- stdout ---\n${String(error.stdout).slice(0, 2000)}` : '';
-    fail(`\`${command} ${args.join(' ')}\` failed: ${error.message}${stderr}${stdout}`);
+    const stdout = error.stdout
+      ? `\n--- stdout ---\n${String(error.stdout).slice(0, 2000)}`
+      : '';
+    fail(
+      `\`${command} ${args.join(' ')}\` failed: ${error.message}${stderr}${stdout}`,
+    );
   }
 }
 
@@ -122,7 +130,8 @@ if (registryVersion === null) {
   const allowed = /^(package\.json$|README[^/]*$|dist\/|examples\/)/;
   const forbidden = /\.test\.|test-support|(^|\/)features\//;
   for (const entry of entries) {
-    if (!allowed.test(entry)) fail(`unexpected tarball entry: ${entry}\n${entries.join('\n')}`);
+    if (!allowed.test(entry))
+      fail(`unexpected tarball entry: ${entry}\n${entries.join('\n')}`);
     if (forbidden.test(entry)) fail(`forbidden tarball entry: ${entry}`);
   }
   for (const required of [
@@ -138,14 +147,18 @@ if (registryVersion === null) {
     fail(`tarball is ${tarballBytes} bytes (> ${MAX_TARBALL_BYTES})`);
   }
   run('tar', ['-xzf', costsTgzPath, '-C', workDir, 'package/package.json']);
-  const packedJson = JSON.parse(readFileSync(path.join(workDir, 'package', 'package.json'), 'utf8'));
+  const packedJson = JSON.parse(
+    readFileSync(path.join(workDir, 'package', 'package.json'), 'utf8'),
+  );
   const coreDep = packedJson.dependencies?.['@hokusai/core'];
   if (!coreDep || coreDep.includes('workspace')) {
     fail(`packed @hokusai/core dependency is not concrete: ${String(coreDep)}`);
   }
   installSpecs = [path.join(packDir, coreTgz), costsTgzPath];
 } else {
-  console.log(`smoke: installing @hokusai/costs@${registryVersion} from the registry…`);
+  console.log(
+    `smoke: installing @hokusai/costs@${registryVersion} from the registry…`,
+  );
   installSpecs = [
     `@hokusai/core@${registryVersion}`,
     `@hokusai/costs@${registryVersion}`,
@@ -155,60 +168,103 @@ if (registryVersion === null) {
 // ── 3. Clean consumer install (outside the workspace) ───────────────
 writeFileSync(
   path.join(consumerDir, 'package.json'),
-  JSON.stringify({ name: 'hokusai-costs-smoke-consumer', private: true, type: 'module' }, null, 2),
+  JSON.stringify(
+    { name: 'hokusai-costs-smoke-consumer', private: true, type: 'module' },
+    null,
+    2,
+  ),
 );
 const installArgs = ['install', '--no-audit', '--no-fund', '--loglevel=error'];
 // Tarball installs must not touch the network at all; a registry install is
 // the one deliberately-online step of post-publish verification.
 if (registryVersion === null) installArgs.push('--offline');
 console.log('smoke: npm install in a clean consumer…');
-run('npm', [...installArgs, ...installSpecs], { cwd: consumerDir, env: cleanEnv() });
+run('npm', [...installArgs, ...installSpecs], {
+  cwd: consumerDir,
+  env: cleanEnv(),
+});
 
-const installedCosts = path.join(consumerDir, 'node_modules', '@hokusai', 'costs');
-const installedJson = JSON.parse(readFileSync(path.join(installedCosts, 'package.json'), 'utf8'));
+const installedCosts = path.join(
+  consumerDir,
+  'node_modules',
+  '@hokusai',
+  'costs',
+);
+const installedJson = JSON.parse(
+  readFileSync(path.join(installedCosts, 'package.json'), 'utf8'),
+);
 
 // ── 4 + 5. Run every shipped example with the network blocked ───────
 const examplesDir = path.join(installedCosts, 'examples');
-const examples = readdirSync(examplesDir).filter((name) => name.endsWith('.mjs'));
-if (examples.length < 4) fail(`expected >= 4 shipped examples, found ${JSON.stringify(examples)}`);
+const examples = readdirSync(examplesDir).filter((name) =>
+  name.endsWith('.mjs'),
+);
+if (examples.length < 4)
+  fail(`expected >= 4 shipped examples, found ${JSON.stringify(examples)}`);
 
-const REPORT_KEYS = ['totalUsd', 'byModel', 'byHarness', 'usage', 'source', 'diagnostics'];
+const REPORT_KEYS = [
+  'totalUsd',
+  'byModel',
+  'byHarness',
+  'usage',
+  'source',
+  'diagnostics',
+];
 for (const example of examples.sort()) {
   console.log(`smoke: node --require no-network-guard examples/${example}`);
-  const stdout = run('node', ['--require', guardPath, path.join(examplesDir, example)], {
-    cwd: consumerDir,
-    env: cleanEnv(),
-  });
-  if (example === 'fake-harness.mjs' || example === 'ledger-offline.mjs') continue;
+  const stdout = run(
+    'node',
+    ['--require', guardPath, path.join(examplesDir, example)],
+    {
+      cwd: consumerDir,
+      env: cleanEnv(),
+    },
+  );
+  if (example === 'fake-harness.mjs' || example === 'ledger-offline.mjs')
+    continue;
   let report;
   try {
     report = JSON.parse(stdout);
   } catch {
-    fail(`Example output is not valid JSON (${example}): ${stdout.slice(0, 500)}`);
+    fail(
+      `Example output is not valid JSON (${example}): ${stdout.slice(0, 500)}`,
+    );
   }
   for (const key of REPORT_KEYS) {
     if (!(key in report)) fail(`${example}: report is missing "${key}"`);
   }
   for (const key of ['revision', 'effectiveDate']) {
-    if (!(key in report.pricing)) fail(`${example}: report.pricing is missing "${key}"`);
+    if (!(key in report.pricing))
+      fail(`${example}: report.pricing is missing "${key}"`);
   }
-  if (!('status' in report.coverage)) fail(`${example}: report.coverage is missing "status"`);
+  if (!('status' in report.coverage))
+    fail(`${example}: report.coverage is missing "status"`);
   if (example === 'task-cost-offline.mjs' && !(report.totalUsd > 0)) {
-    fail(`two-line example totalUsd must be > 0, got ${String(report.totalUsd)}`);
+    fail(
+      `two-line example totalUsd must be > 0, got ${String(report.totalUsd)}`,
+    );
   }
 }
 
 // ── 6. Every exports subpath resolves and ships types ────────────────
 for (const [subpath, target] of Object.entries(installedJson.exports)) {
-  const specifier = subpath === '.' ? '@hokusai/costs' : `@hokusai/costs/${subpath.slice(2)}`;
+  const specifier =
+    subpath === '.' ? '@hokusai/costs' : `@hokusai/costs/${subpath.slice(2)}`;
   console.log(`smoke: import('${specifier}')`);
   run(
     'node',
-    ['--require', guardPath, '--input-type=module', '-e', `await import('${specifier}');`],
+    [
+      '--require',
+      guardPath,
+      '--input-type=module',
+      '-e',
+      `await import('${specifier}');`,
+    ],
     { cwd: consumerDir, env: cleanEnv() },
   );
   const typesPath = path.join(installedCosts, target.types);
-  if (!existsSync(typesPath)) fail(`missing type declarations for ${subpath}: ${target.types}`);
+  if (!existsSync(typesPath))
+    fail(`missing type declarations for ${subpath}: ${target.types}`);
 }
 
 // ── 7. Type-check the quickstart + router-compat bridge ─────────────
@@ -255,9 +311,13 @@ writeFileSync(
   ),
 );
 console.log('smoke: type-checking consumer.ts…');
-run(path.join(repoRoot, 'node_modules', '.bin', 'tsc'), ['-p', consumerDir, '--pretty', 'false'], {
-  cwd: consumerDir,
-  env: cleanEnv(),
-});
+run(
+  path.join(repoRoot, 'node_modules', '.bin', 'tsc'),
+  ['-p', consumerDir, '--pretty', 'false'],
+  {
+    cwd: consumerDir,
+    env: cleanEnv(),
+  },
+);
 
 console.log('SMOKE OK');

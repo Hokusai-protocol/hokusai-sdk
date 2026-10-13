@@ -17,10 +17,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  countDiagnostic,
-  type TaskCostSourceDiagnostics,
-} from './types.js';
+import { countDiagnostic, type TaskCostSourceDiagnostics } from './types.js';
 
 export interface ReadSessionFilesOptions {
   /** Directories to search, explicitly supplied. Searched recursively. */
