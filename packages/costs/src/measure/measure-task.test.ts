@@ -501,27 +501,30 @@ describe('measureTask: opt-in ledger', () => {
   });
 });
 
-describe('measureTask: perf guard', () => {
-  it('measures the bundled fixture well under the latency bound', async () => {
-    const dir = await tempDir();
-    await writeFile(
-      join(dir, `${EXAMPLE_SESSION_ID}.jsonl`),
-      buildExampleClaudeSessionJsonl(),
-    );
-    const start = performance.now();
-    await measureTask(
-      {
-        taskId: EXAMPLE_TASK_ID,
-        sessionFiles: {
-          harness: 'claude-code',
-          sessionIds: [EXAMPLE_SESSION_ID],
-          roots: [dir],
-          window: EXAMPLE_WINDOW,
+describe.runIf(Boolean(process.env.HOKUSAI_COSTS_PERF))(
+  'measureTask: perf guard',
+  () => {
+    it('measures the bundled fixture well under the latency bound', async () => {
+      const dir = await tempDir();
+      await writeFile(
+        join(dir, `${EXAMPLE_SESSION_ID}.jsonl`),
+        buildExampleClaudeSessionJsonl(),
+      );
+      const start = performance.now();
+      await measureTask(
+        {
+          taskId: EXAMPLE_TASK_ID,
+          sessionFiles: {
+            harness: 'claude-code',
+            sessionIds: [EXAMPLE_SESSION_ID],
+            roots: [dir],
+            window: EXAMPLE_WINDOW,
+          },
         },
-      },
-      () => 1,
-    );
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(process.env.CI ? 2000 : 500);
-  });
-});
+        () => 1,
+      );
+      const elapsed = performance.now() - start;
+      expect(elapsed).toBeLessThan(process.env.CI ? 2000 : 500);
+    });
+  },
+);

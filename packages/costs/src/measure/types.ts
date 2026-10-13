@@ -183,7 +183,11 @@ export interface TaskCostReport {
     /** Contributing events that resolved a cost. */
     pricedEvents: number;
     unpricedEvents: number;
-    /** Models with usage but no price, de-duplicated, first-seen order. */
+    /**
+     * Models observed on unpriced events, de-duplicated, first-seen order.
+     * Includes models absent from the price table and known models whose
+     * usage was unpriceable (e.g. cache tokens without a multiplier).
+     */
     unknownModels: string[];
   };
   diagnostics: TaskCostReportDiagnostic[];

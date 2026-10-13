@@ -127,7 +127,8 @@ if (registryVersion === null) {
     .trim()
     .split('\n')
     .map((entry) => entry.replace(/^package\//, ''));
-  const allowed = /^(package\.json$|README[^/]*$|dist\/|examples\/)/;
+  const allowed =
+    /^(package\.json$|README[^/]*$|LICEN[CS]E[^/]*$|dist\/|examples\/)/;
   const forbidden = /\.test\.|test-support|(^|\/)features\//;
   for (const entry of entries) {
     if (!allowed.test(entry))

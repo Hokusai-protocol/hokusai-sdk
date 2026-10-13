@@ -171,9 +171,12 @@ These figures are **estimates, not invoices**:
 - A `subscription` cost basis means the dollar figures are token-equivalent
   estimates of what the usage _would_ cost on per-token APIs — not a bill.
 - Tiered, negotiated, batch, and regional pricing are not modeled.
-- **An unknown model yields `null`, never `$0`** — with the model named in
-  `coverage.unknownModels` and an `unpriced_model` diagnostic. The priced
-  subtotal stays visible in `estimatedUsd`/`actualUsd` as a lower bound.
+- **An unpriced event yields `null`, never `$0`** — with its model named in
+  `coverage.unknownModels` and an `unpriced_model` diagnostic. The list covers
+  any model from an unpriced event: models absent from the price table, and
+  known models whose usage was unpriceable (see the cache-token note below).
+  The priced subtotal stays visible in `estimatedUsd`/`actualUsd` as a lower
+  bound.
 - Cache tokens: Anthropic models bill cache writes at 1.25× and reads at 0.1×
   the input rate. Reported cache tokens on a non-Anthropic model are
   unpriceable from the built-in table — the event stays unpriced
