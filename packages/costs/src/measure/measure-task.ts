@@ -295,11 +295,12 @@ function ingestSourceResult(
 ): void {
   mapSourceDiagnostics(result.diagnostics, core);
   for (const input of result.inputs) {
+    const originalLabel = (input as any).harness;
     const normalized = {
       ...input,
-      harness: toContractHarness((input as any).harness ?? 'unknown'),
+      harness: toContractHarness(originalLabel ?? 'unknown'),
     };
-    core.noteIngestResult(core.engine().ingest(normalized));
+    core.noteIngestResult(core.engine().ingest(normalized), originalLabel);
   }
 }
 
