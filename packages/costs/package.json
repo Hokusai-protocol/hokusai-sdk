@@ -42,7 +42,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "examples"
   ],
   "publishConfig": {
     "access": "public"
