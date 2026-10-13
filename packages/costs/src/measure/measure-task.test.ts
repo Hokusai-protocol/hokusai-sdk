@@ -177,9 +177,7 @@ describe('measureTask — session-file path', () => {
         claudeAssistantLine({
           sessionId: 'session-many',
           uuid: `many-${String(index)}`,
-          timestamp: new Date(
-            Date.parse(T0) + index * 1000,
-          ).toISOString(),
+          timestamp: new Date(Date.parse(T0) + index * 1000).toISOString(),
           usage: claudeUsage(100, 50, 0, 0, 0),
         }),
       );
@@ -221,7 +219,7 @@ describe('measureTask — events path', () => {
     expect(Object.keys(cost.byHarness)).toEqual(['native']);
   });
 
-  it('adopts the records\' taskId when the caller omits one', async () => {
+  it("adopts the records' taskId when the caller omits one", async () => {
     const { cost } = await measureTask(
       { events: [eventRecord(1)] },
       () => undefined,
@@ -329,7 +327,10 @@ describe('measureTask — edges (REQ-F5/F6, arguments, abort, ledger)', () => {
       measureTask({ sessionFile: claudeFile }, fn),
     ).rejects.toThrowError(/harness/);
     await expect(
-      measureTask({ sessionFile: 42 as unknown as string, harness: 'claude-code' }, fn),
+      measureTask(
+        { sessionFile: 42 as unknown as string, harness: 'claude-code' },
+        fn,
+      ),
     ).rejects.toThrowError(MeasureError);
     await expect(
       measureTask(
@@ -337,9 +338,9 @@ describe('measureTask — edges (REQ-F5/F6, arguments, abort, ledger)', () => {
         fn,
       ),
     ).rejects.toThrowError(/mutually exclusive/);
-    await expect(
-      measureTask({ taskId: 'bad id!' }, fn),
-    ).rejects.toThrowError(/contract-safe/);
+    await expect(measureTask({ taskId: 'bad id!' }, fn)).rejects.toThrowError(
+      /contract-safe/,
+    );
   });
 
   it('opt-in ledger persistence round-trips the priced records (D7)', async () => {
@@ -355,9 +356,9 @@ describe('measureTask — edges (REQ-F5/F6, arguments, abort, ledger)', () => {
       () => undefined,
     );
     expect(cost.coverage.pricedRecords).toBe(2);
-    expect(
-      cost.diagnostics.some((d) => d.code === 'LEDGER_WRITE_FAILED'),
-    ).toBe(false);
+    expect(cost.diagnostics.some((d) => d.code === 'LEDGER_WRITE_FAILED')).toBe(
+      false,
+    );
 
     const totals = ledger.query({}).totals;
     expect(totals.recordCount).toBe(2);
@@ -373,7 +374,11 @@ describe('measureTask — edges (REQ-F5/F6, arguments, abort, ledger)', () => {
 
   it('without a ledger option nothing is persisted anywhere (opt-in only)', async () => {
     const { cost } = await measureTask(
-      { taskId: 'task-no-ledger', harness: 'claude-code', sessionFile: claudeFile },
+      {
+        taskId: 'task-no-ledger',
+        harness: 'claude-code',
+        sessionFile: claudeFile,
+      },
       () => undefined,
     );
     expect(cost.coverage.pricedRecords).toBe(2);

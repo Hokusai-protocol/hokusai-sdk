@@ -8,14 +8,218 @@ The wire contract (event/ledger/summary schemas, validators, and the pure
 reference reducer `aggregateTaskCost`) lives in
 [`@hokusai/core`](../core/src/task-cost/README.md) and is unchanged by this
 package. `@hokusai/costs` adds the stateful shell on top: per-event pricing
-with provenance, ingest-time dedupe, and a `snapshot()` that delegates every
-summary semantic to the reducer.
+with provenance, ingest-time dedupe, a `snapshot()` that delegates every
+summary semantic to the reducer, and the drop-in measurement layer
+(`measureTask` / `createTaskCostTracker`) documented first below.
 
 ```
 adapters (HOK-3070) ──▶ @hokusai/costs (engine) ──▶ @hokusai/core (contract)
 ```
 
-## Quick start
+## Quickstart
+
+Measure what a task actually cost, offline, in two lines:
+
+```ts
+import { measureTask } from '@hokusai/costs';
+
+const { result, cost } = await measureTask(
+  { harness: 'claude-code', sessionFile: '/path/to/session.jsonl' },
+  async () => runMyTask(),
+);
+
+cost.totalUsd; // 0.0528 — sum of every record that priced (a lower bound under partial coverage)
+cost.byModel; // { 'claude-sonnet-4-6': { usd: 0.0528, usage: { input: 4100, output: 2700, … } } }
+cost.coverage.status; // 'complete' | 'partial' | 'none'
+```
+
+No Hokusai account, no API key, no network. A runnable end-to-end example
+ships in the package tarball: `examples/task-cost-offline.mjs` reads the
+sanitized fixture in `examples/fixtures/` and prints a full report.
+
+```sh
+node node_modules/@hokusai/costs/examples/task-cost-offline.mjs
+```
+
+## Automatic capture
+
+Automatic capture needs machine-readable usage. It is supported for:
+
+- **`harness: 'claude-code'`** + `sessionFile` — Claude Code session
+  transcript JSONL (assistant-turn `usage` blocks).
+- **`harness: 'codex'`** + `sessionFile` — Codex rollout JSONL
+  (`token_count` events).
+- **`events`** — any iterable/async iterable of already-normalized usage
+  records (friendly `IngestUsageInput` shapes or prebuilt `TaskCostEventV1`
+  contract events), whatever the harness.
+
+Without `sessionFile` or `events`, nothing is captured automatically: call
+`tracker.record(…)` / `tracker.recordUsage(…)` inside your task function (the
+tracker is passed to it), or use `createTaskCostTracker` standalone. A task
+that captured nothing reports `coverage.status: 'none'`, `totalUsd: null`,
+and a `NO_USAGE_CAPTURED` diagnostic — it never throws for missing data.
+
+The task boundary is derived from the files/records you supply: naming a
+session file attributes all of its sessions to the task, with the time window
+spanning the observed timestamps. Pass `boundary` (a `TaskCostBoundaryV1`)
+to override the derivation for concurrent-session setups.
+
+## API
+
+Everything below is exported from the package root (`@hokusai/costs`).
+
+### `measureTask(options, fn)`
+
+Runs `fn(tracker)` and resolves `{ result, cost }` where `cost` is a
+`TaskCostReport`. Options:
+
+| Option        | Type                                     | Meaning                                                                                            |
+| ------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `taskId`      | `string?`                                | Contract-safe id; generated when absent (adopted from `events` records when they carry one)        |
+| `harness`     | `string?`                                | `'claude-code'`/`'codex'` (required with `sessionFile`); any label otherwise                       |
+| `sessionFile` | `string \| string[]?`                    | Transcript/rollout path(s); Node-only, read via dynamic import so other paths stay runtime-neutral |
+| `events`      | `Iterable \| AsyncIterable?`             | Already-normalized usage records (mutually exclusive with `sessionFile`)                           |
+| `boundary`    | `TaskCostBoundaryV1?`                    | Explicit correlation boundary (advanced)                                                           |
+| `ledger`      | `TaskCostLedger?`                        | Opt-in persistence: captured records are also appended to this ledger                              |
+| `pricing`     | `{ priceOverrides?, pricingRevision? }?` | Host pricing configuration (see the engine docs below)                                             |
+| `now`         | `(() => Date)?`                          | Clock for generated timestamps                                                                     |
+| `signal`      | `AbortSignal?`                           | An already-aborted signal rejects with `AbortError` before `fn` runs                               |
+
+Error contract: malformed options throw `MeasureError` with
+`code: 'INVALID_ARGUMENT'` before `fn` runs. Data problems (unreadable file,
+malformed lines, unpriced models) never throw — they become `diagnostics`
+entries. When `fn` throws, the **same instance** is rethrown; if it is an
+object, the partial report is attached as `error.taskCost`.
+
+### `createTaskCostTracker(options?)`
+
+Manual recording for harnesses without machine-readable telemetry:
+
+```ts
+import { createTaskCostTracker } from '@hokusai/costs';
+
+const tracker = createTaskCostTracker({ taskId: 'task-0001' });
+tracker.recordUsage({
+  model: 'claude-sonnet-4-6',
+  harness: 'custom',
+  usage: { input: 1000, output: 500 },
+});
+const report = tracker.summary(); // TaskCostReport
+```
+
+- `record(event)` / `recordUsage(input)` — record one usage event; identity
+  fields (`eventId`, `sessionId`, `turnId`, `observedAt`) are generated when
+  absent, and a repeated `eventId` deduplicates instead of double-counting.
+- `summary()` — build the `TaskCostReport` for everything recorded so far.
+- `reset()` — drop all recorded usage and diagnostics.
+- **Harness labels**: the contract's harness enum is closed
+  (`claude-code`, `codex`, `native`, `pi`, `wavemill`, `unknown`). Any other
+  label — for example `harness: 'custom'` — is retained for
+  `byHarness`/`source.harness` display and mapped to `'unknown'` on the
+  underlying contract event.
+- Invalid usage (negative/non-integer counters) adds an `INVALID_USAGE`
+  diagnostic and leaves totals unchanged; only non-object/shape-less input
+  throws (`MeasureError`, `code: 'INVALID_ARGUMENT'`).
+
+### `TaskCostReport`
+
+camelCase presentation DTO: `taskId`, `totalUsd`, `byModel`, `byHarness`,
+`usage` (null-preserving `TokenUsage`: `input`, `output`, `cacheRead`,
+`cacheWrite`, `reasoning`), `source` (`kind`: `'session-file' | 'events' |
+'manual'`, `harness`, `files?` — paths verbatim, never contents), `pricing`
+(`snapshotId`, `effectiveDate`, `currency: 'USD'`), `coverage` (`status`,
+`pricedRecords`, `unpricedRecords`, `unknownModels`), and `diagnostics`
+(`{ code, level, message }`, codes in `MEASURE_DIAGNOSTIC_CODES`).
+
+**`totalUsd` semantics** (deliberate): each record resolves to its
+provider-reported charge, else its local estimate; `totalUsd` sums the
+records that resolved and is `null` only when none did. Under
+`coverage.status: 'partial'` it is a **lower bound**. This differs from the
+contract summary's `total_cost_usd`, which is `null` on _any_ gap — use
+`createTaskCostEngine().snapshot()` when you need the strict contract
+semantics.
+
+### Also exported
+
+`buildTaskCostReport` (pure events → report builder), `MeasureError`,
+`MEASURE_DIAGNOSTIC_CODES`, `MEASURE_PROVIDER_CONTRACT_VERSION`,
+`emptyUsage`, `TOKEN_USAGE_FIELDS`, and the types `MeasureTaskOptions`,
+`MeasureTaskResult`, `TaskCostTracker`, `TaskCostTrackerOptions`,
+`TrackerRecordInput`, `RecordUsageInput`, `TokenUsage`, `CostCoverage`,
+`CostDiagnostic`, `CostAttributionEntry`. The engine/ledger/adapters surface
+below is unchanged.
+
+## Privacy
+
+- **Reads**: only the allow-listed usage/identity fields of session
+  telemetry — token counters, model ids, session/turn/message ids,
+  timestamps, harness versions, per-turn cost figures. Prompts, transcript
+  text, tool arguments, `cwd`, git branches, and account identity have no
+  code path into any output (enforced by the parsers' field projection and
+  `validateTaskCostEventV1`'s forbidden-key denylist, and proven by
+  sentinel-laced privacy tests).
+- **Keeps**: everything stays in process memory unless you opt in to the
+  local ledger (`options.ledger`), which persists count/cost/token fields
+  only, where you point it.
+- **Sends**: nothing. No network module is imported anywhere in the
+  measurement path, no telemetry, no credential reads — measurement never
+  reads `HOKUSAI_API_KEY` and works identically with or without one set.
+  Routing and contribution submission elsewhere in the Hokusai SDK are
+  optional and entirely separate; this package never imports
+  `@hokusai/router`.
+
+## Pricing accuracy
+
+- Estimates come from the built-in price table (snapshot date
+  `MODEL_PRICING_AS_OF`, re-exported by `@hokusai/core`; the report echoes it
+  as `pricing.effectiveDate`) or your `priceOverrides`. They are
+  **estimates, not invoices** — provider-reported charges, when present in
+  the telemetry, win per record.
+- A model missing from the table and overrides is counted but never priced
+  as `$0`: it lands in `coverage.unknownModels`, drops `coverage.status` to
+  `'partial'` (or `'none'` when nothing priced), and adds an
+  `UNPRICED_MODEL` diagnostic.
+- Prices change; pin `pricing.priceOverrides` (with `asOf`) when you need
+  figures that do not move under an SDK upgrade.
+
+## Compatibility
+
+The report plugs into the existing `@hokusai/core` surfaces without new
+glue:
+
+- **`resolveActualCostUsd`** (layered cost resolution for outcome rows):
+  pass the measured total as the tier-1 explicit override —
+
+  ```ts
+  import { resolveActualCostUsd } from '@hokusai/core';
+
+  const actualCostUsd = resolveActualCostUsd({
+    explicitActualCostUsd: cost.totalUsd ?? undefined,
+    model: Object.keys(cost.byModel)[0] ?? 'unknown',
+  });
+  ```
+
+  A finite, non-negative `explicitActualCostUsd` short-circuits the
+  sidecar/transcript fallback tiers.
+
+- **`router.reportOutcome`** (`OutcomeReport`): the outcome schema carries
+  cost as the coarse `costBucket: 'low' | 'medium' | 'high'` — there is no
+  raw-USD field on it by design. Bucket the measured total with your own
+  thresholds; exact figures, if you need to submit them, belong in
+  `extensions: { version, data }`:
+
+  ```ts
+  router.reportOutcome({
+    // …required outcome fields…
+    costBucket: cost.totalUsd === null ? 'low' : bucketFor(cost.totalUsd),
+    extensions: { version: '1', data: { totalUsd: cost.totalUsd } },
+  });
+  ```
+
+Reporting outcomes is optional and requires Hokusai credentials;
+measurement itself never does.
+
+## Engine quick start
 
 ```ts
 import { createTaskCostEngine } from '@hokusai/costs';

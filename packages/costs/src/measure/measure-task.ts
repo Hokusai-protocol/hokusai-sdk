@@ -39,7 +39,11 @@ import type {
   TaskCostSourceResult,
 } from '../sources/types.js';
 import { buildTaskCostReport } from './report.js';
-import { createTrackerCore, isContractSafeId, type TrackerCore } from './tracker.js';
+import {
+  createTrackerCore,
+  isContractSafeId,
+  type TrackerCore,
+} from './tracker.js';
 import {
   MeasureError,
   type CostDiagnostic,
@@ -167,7 +171,8 @@ function mapSourceDiagnostics(
 ): void {
   for (const [source, count] of Object.entries(diagnostics)) {
     if (count === undefined || count === 0) continue;
-    const mapped = SOURCE_DIAGNOSTIC_MAP[source as TaskCostSourceDiagnosticCode];
+    const mapped =
+      SOURCE_DIAGNOSTIC_MAP[source as TaskCostSourceDiagnosticCode];
     core.addDiagnostic({
       code: mapped.code,
       level: mapped.level,
@@ -437,7 +442,12 @@ async function collectAndFinalize(
   sessionHarness: SessionFileHarness | null,
 ): Promise<TaskCostReport> {
   if (paths !== null && sessionHarness !== null) {
-    await collectFromSessionFiles(core, sessionHarness, paths, options.boundary);
+    await collectFromSessionFiles(
+      core,
+      sessionHarness,
+      paths,
+      options.boundary,
+    );
   } else if (options.events !== undefined) {
     await collectFromEvents(core, options.events, options.boundary);
   }
@@ -447,7 +457,11 @@ async function collectAndFinalize(
   return buildTaskCostReport(core.engine().events(), {
     taskId: core.tracker.taskId,
     sourceKind:
-      paths !== null ? 'session-file' : options.events !== undefined ? 'events' : 'manual',
+      paths !== null
+        ? 'session-file'
+        : options.events !== undefined
+          ? 'events'
+          : 'manual',
     ...(typeof options.harness === 'string' && options.harness.length > 0
       ? { sourceHarness: options.harness }
       : {}),

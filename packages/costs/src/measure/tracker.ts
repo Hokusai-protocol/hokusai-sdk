@@ -67,7 +67,9 @@ export function toContractHarness(label: string): TaskCostHarness {
 }
 
 /** Convert partial camelCase usage to the contract's snake_case counters. */
-function toContractUsage(usage: Partial<TokenUsage>): Partial<TaskCostTokenUsage> {
+function toContractUsage(
+  usage: Partial<TokenUsage>,
+): Partial<TaskCostTokenUsage> {
   return {
     input_tokens: usage.input ?? null,
     output_tokens: usage.output ?? null,
@@ -104,7 +106,10 @@ export function createTrackerCore(
   }
   const now = options.now ?? ((): Date => new Date());
   if (typeof now !== 'function') {
-    throw new MeasureError('INVALID_ARGUMENT', 'options.now must be a function');
+    throw new MeasureError(
+      'INVALID_ARGUMENT',
+      'options.now must be a function',
+    );
   }
   if (options.taskId !== undefined && !isContractSafeId(options.taskId)) {
     throw new MeasureError(
@@ -139,7 +144,10 @@ export function createTrackerCore(
     diagnostics.push(diagnostic);
   }
 
-  function noteIngestResult(result: IngestResult, originalLabel?: string): void {
+  function noteIngestResult(
+    result: IngestResult,
+    originalLabel?: string,
+  ): void {
     if (result.status === 'accepted') {
       if (
         originalLabel !== undefined &&

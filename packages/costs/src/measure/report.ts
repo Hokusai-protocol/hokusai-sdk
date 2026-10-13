@@ -180,7 +180,9 @@ export function buildTaskCostReport(
 
   const sourceHarness =
     meta.sourceHarness ??
-    (harnessLabelsSeen.length > 1 ? 'mixed' : (harnessLabelsSeen[0] ?? 'unknown'));
+    (harnessLabelsSeen.length > 1
+      ? 'mixed'
+      : (harnessLabelsSeen[0] ?? 'unknown'));
 
   return {
     taskId: meta.taskId,

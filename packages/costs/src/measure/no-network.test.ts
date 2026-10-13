@@ -12,10 +12,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import {
-  claudeAssistantLine,
-  claudeUsage,
-} from '../sources/test-support.js';
+import { claudeAssistantLine, claudeUsage } from '../sources/test-support.js';
 import { measureTask } from './measure-task.js';
 import type { TaskCostReport } from './types.js';
 

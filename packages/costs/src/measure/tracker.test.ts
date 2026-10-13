@@ -60,9 +60,9 @@ describe('createTaskCostTracker', () => {
     const report = tracker.summary();
     expect(report.totalUsd).toBeCloseTo(0.0105, 9);
     expect(report.coverage.pricedRecords).toBe(1);
-    expect(
-      report.diagnostics.some((d) => d.code === 'INVALID_USAGE'),
-    ).toBe(true);
+    expect(report.diagnostics.some((d) => d.code === 'INVALID_USAGE')).toBe(
+      true,
+    );
   });
 
   it('record(null) and shape-less input throw MeasureError INVALID_ARGUMENT', () => {
@@ -87,7 +87,10 @@ describe('createTaskCostTracker', () => {
   });
 
   it('an unpriced model yields coverage none and an UNPRICED_MODEL diagnostic', () => {
-    const tracker = createTaskCostTracker({ taskId: 'task-unpriced', now: NOW });
+    const tracker = createTaskCostTracker({
+      taskId: 'task-unpriced',
+      now: NOW,
+    });
     tracker.recordUsage({
       model: 'mystery/model-x',
       usage: { input: 100, output: 50 },
@@ -96,9 +99,9 @@ describe('createTaskCostTracker', () => {
     expect(report.totalUsd).toBeNull();
     expect(report.coverage.status).toBe('none');
     expect(report.coverage.unknownModels).toEqual(['mystery/model-x']);
-    expect(
-      report.diagnostics.some((d) => d.code === 'UNPRICED_MODEL'),
-    ).toBe(true);
+    expect(report.diagnostics.some((d) => d.code === 'UNPRICED_MODEL')).toBe(
+      true,
+    );
   });
 
   it('a repeated eventId is deduplicated, not double-counted', () => {

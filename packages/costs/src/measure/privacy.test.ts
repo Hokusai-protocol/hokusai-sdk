@@ -55,7 +55,10 @@ beforeAll(async () => {
         model: 'gpt-5-codex',
         timestamp: T0,
       }),
-      codexTokenCountLine({ timestamp: T0, last: codexUsage(100, 50, 0, 0, 0) }),
+      codexTokenCountLine({
+        timestamp: T0,
+        last: codexUsage(100, 50, 0, 0, 0),
+      }),
     ].join('\n'),
     'utf8',
   );
@@ -95,7 +98,11 @@ describe('measure reports never leak raw source fields', () => {
     let caught: unknown;
     try {
       await measureTask(
-        { taskId: 'task-priv', harness: 'claude-code', sessionFile: claudeFile },
+        {
+          taskId: 'task-priv',
+          harness: 'claude-code',
+          sessionFile: claudeFile,
+        },
         () => {
           throw boom;
         },

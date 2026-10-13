@@ -18,6 +18,7 @@
     "export:candidate-features": "pnpm --filter @hokusai/core build && node scripts/export-candidate-features-fixture.mjs",
     "check:candidate-features": "pnpm --filter @hokusai/core build && node scripts/export-candidate-features-fixture.mjs --check",
     "version-packages": "changeset version && node scripts/sync-versions.mjs",
+    "smoke:costs": "node scripts/smoke-costs-consumer.mjs",
     "sync:versions": "node scripts/sync-versions.mjs",
     "check:versions": "node scripts/sync-versions.mjs --check",
     "check:docs": "node scripts/check-docs.mjs"
