@@ -102,6 +102,11 @@ jobs:
               "$artifact"
           done
 
+      # A broken @hokusai/costs tarball must never publish: pack, install into
+      # a clean consumer, and run the shipped offline examples (HOK-3073).
+      - name: Smoke-test the packed @hokusai/costs consumer
+        run: pnpm smoke:costs
+
       - name: Publish npm packages
         run: pnpm release --no-git-tag
         env:

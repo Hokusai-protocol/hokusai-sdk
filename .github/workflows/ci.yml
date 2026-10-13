@@ -35,6 +35,11 @@ jobs:
       - run: pnpm -r build
       - run: pnpm -r test
 
+      # Clean-consumer proof for @hokusai/costs: pack, install the tarballs
+      # into a temp project, and run the shipped offline examples with the
+      # network hard-blocked (HOK-3073).
+      - run: pnpm smoke:costs
+
       # The scan Action ships a committed esbuild bundle (Actions cannot
       # install dependencies on the caller's runner). Rebuild it here and fail
       # if the committed copy is stale, so drift is caught on the PR that
