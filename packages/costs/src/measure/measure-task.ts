@@ -384,14 +384,14 @@ function toLedgerInput(event: TaskCostEventV1): ToLedgerRecordInput {
       ? event.actual_cost_usd
       : event.estimated_cost_usd;
   const table = event.price_table;
+  const isKnownBackend = (t: string): t is 'anthropic' | 'openai' | 'google' | 'openrouter' | 'override' | 'external' => {
+    return ['anthropic', 'openai', 'google', 'openrouter', 'override', 'external'].includes(t);
+  };
   return {
     taskId: event.task_id,
     model: event.observed_model,
     harness: event.harness,
-    backend:
-      table === 'anthropic' || table === 'openai' || table === 'google'
-        ? table
-        : 'unknown',
+    backend: isKnownBackend(table) ? table : 'unknown',
     source: event.cost_source,
     pricingBasis:
       event.actual_cost_usd !== null
