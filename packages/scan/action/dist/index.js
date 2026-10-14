@@ -5759,14 +5759,8 @@ function discoverMerges(opts) {
   }
   const cutoffEpoch = Math.floor(now().getTime() / 1e3) - bootstrapDays * 86400;
   const format = "%H%x09%P%x09%ct%x09%s";
-  const args = useBootstrapWindow ? [
-    "log",
-    "--first-parent",
-    "--reverse",
-    `--pretty=format:${format}`,
-    `--since=${new Date(cutoffEpoch * 1e3).toISOString()}`,
-    ref
-  ] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref}`];
+  const sinceArgs = cutoffEpoch > 0 ? [`--since=${new Date(cutoffEpoch * 1e3).toISOString()}`] : [];
+  const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref}`];
   const result = runGit3(args);
   if (result.exitCode !== 0) {
     throw new ShadowError("NOT_A_GIT_REPO");
