@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { eventFactory, eventId, tokens, type EventSpec } from '../fixtures/task-cost/builders.js';
+import {
+  eventFactory,
+  eventId,
+  tokens,
+  type EventSpec,
+} from '../fixtures/task-cost/builders.js';
 import { TaskCostValidationError } from './validators.js';
-import { addNullable, deriveUsageAvailability, promoteAvailability } from './token-usage.js';
+import {
+  addNullable,
+  deriveUsageAvailability,
+  promoteAvailability,
+} from './token-usage.js';
 import {
   aggregateTaskCost,
+  aggregateTaskCostByModel,
   promoteCostSource,
   promoteCoverage,
   reconcileCumulative,
@@ -11,10 +21,18 @@ import {
 } from './aggregate.js';
 import type { TaskCostEventV1 } from './event.js';
 
-const claude = eventFactory({ harness: 'claude-code', providerContractVersion: 'claude-code/1', harnessVersion: '2.1.0' });
-const codex = eventFactory({ harness: 'codex', providerContractVersion: 'codex/1' });
+const claude = eventFactory({
+  harness: 'claude-code',
+  providerContractVersion: 'claude-code/1',
+  harnessVersion: '2.1.0',
+});
+const codex = eventFactory({
+  harness: 'codex',
+  providerContractVersion: 'codex/1',
+});
 
-const sonnet = (spec: Omit<EventSpec, 'model'>): TaskCostEventV1 => claude({ model: 'claude-sonnet-5', ...spec });
+const sonnet = (spec: Omit<EventSpec, 'model'>): TaskCostEventV1 =>
+  claude({ model: 'claude-sonnet-5', ...spec });
 
 function codeOf(fn: () => unknown): string | undefined {
   try {
@@ -40,7 +58,9 @@ describe('null-preserving arithmetic', () => {
   });
 
   it('derives usage availability', () => {
-    expect(deriveUsageAvailability(tokens(null, null, null, null, null))).toBe('unavailable');
+    expect(deriveUsageAvailability(tokens(null, null, null, null, null))).toBe(
+      'unavailable',
+    );
     expect(deriveUsageAvailability(tokens(0, 0, 0, 0, 0))).toBe('known_zero');
     expect(deriveUsageAvailability(tokens(1, null, 0, 0, 0))).toBe('partial');
     expect(deriveUsageAvailability(tokens(1, 1, 0, 0, 0))).toBe('available');
@@ -91,7 +111,11 @@ describe('null-preserving arithmetic', () => {
 describe('aggregateTaskCost: basics', () => {
   it('sums delta events and keeps missing distinct from zero', () => {
     const summary = aggregateTaskCost([
-      sonnet({ n: 1, usage: tokens(100, 10, null, null, null), estimated: 0.5 }),
+      sonnet({
+        n: 1,
+        usage: tokens(100, 10, null, null, null),
+        estimated: 0.5,
+      }),
       sonnet({ n: 2, usage: tokens(200, 20, null, null, 7), estimated: 0.25 }),
     ]);
     expect(summary.usage).toEqual(tokens(300, 30, null, null, 7));
@@ -100,7 +124,9 @@ describe('aggregateTaskCost: basics', () => {
   });
 
   it('never turns an all-null field into 0', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(1, 1, null, null, null), estimated: 0.1 })]);
+    const summary = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(1, 1, null, null, null), estimated: 0.1 }),
+    ]);
     expect(summary.usage.cache_read_tokens).toBeNull();
     expect(summary.usage.reasoning_tokens).toBeNull();
   });
@@ -117,7 +143,12 @@ describe('aggregateTaskCost: basics', () => {
 
   it('prefers the actual charge over the estimate per event when totalling', () => {
     const summary = aggregateTaskCost([
-      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), actual: 0.2, estimated: 0.1 }),
+      sonnet({
+        n: 1,
+        usage: tokens(1, 1, 0, 0, 0),
+        actual: 0.2,
+        estimated: 0.1,
+      }),
       sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.3 }),
     ]);
     expect(summary.total_cost_usd).toBe(0.5);
@@ -125,36 +156,53 @@ describe('aggregateTaskCost: basics', () => {
   });
 
   it('treats a provider-reported zero charge as known zero, not missing', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(10, 5, 0, 0, 0), actual: 0 })]);
+    const summary = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(10, 5, 0, 0, 0), actual: 0 }),
+    ]);
     expect(summary.total_cost_usd).toBe(0);
     expect(summary.coverage).toBe('known_zero');
     expect(summary.field_availability.actual_cost).toBe('known_zero');
   });
 
   it('reports known_zero coverage for fully-observed zero usage priced at zero', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(0, 0, 0, 0, 0), estimated: 0 })]);
+    const summary = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(0, 0, 0, 0, 0), estimated: 0 }),
+    ]);
     expect(summary.coverage).toBe('known_zero');
     expect(summary.field_availability.usage).toBe('known_zero');
     expect(summary.total_cost_usd).toBe(0);
   });
 
   it('reports unavailable coverage when nothing was observed', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(null, null, null, null, null) })]);
+    const summary = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(null, null, null, null, null) }),
+    ]);
     expect(summary.coverage).toBe('unavailable');
     expect(summary.field_availability.usage).toBe('unavailable');
-    expect(summary.diagnostics).toEqual(['missing_token_usage', 'no_priced_sessions']);
+    expect(summary.diagnostics).toEqual([
+      'missing_token_usage',
+      'no_priced_sessions',
+    ]);
     expect(summary.total_cost_usd).toBeNull();
     expect(summary.cost_source).toBe('none');
   });
 
   it('flags priceable-but-unpriced usage as unpriced_model with partial coverage', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(10, 5, 0, 0, 0) })]);
+    const summary = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(10, 5, 0, 0, 0) }),
+    ]);
     expect(summary.coverage).toBe('partial');
-    expect(summary.diagnostics).toEqual(['unpriced_model', 'mixed_coverage', 'no_priced_sessions']);
+    expect(summary.diagnostics).toEqual([
+      'unpriced_model',
+      'mixed_coverage',
+      'no_priced_sessions',
+    ]);
   });
 
   it('marks a charge with incomplete usage as partial', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(10, null, 0, 0, 0), actual: 0.1 })]);
+    const summary = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(10, null, 0, 0, 0), actual: 0.1 }),
+    ]);
     expect(summary.coverage).toBe('partial');
     expect(summary.total_cost_usd).toBe(0.1);
   });
@@ -169,21 +217,49 @@ describe('aggregateTaskCost: basics', () => {
 
   it('passes event-level diagnostics through and orders diagnostics by contract order', () => {
     const summary = aggregateTaskCost([
-      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1, diagnostics: ['no_pricing_data', 'invalid_token_usage'] }),
+      sonnet({
+        n: 1,
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+        diagnostics: ['no_pricing_data', 'invalid_token_usage'],
+      }),
     ]);
-    expect(summary.diagnostics).toEqual(['invalid_token_usage', 'no_pricing_data']);
+    expect(summary.diagnostics).toEqual([
+      'invalid_token_usage',
+      'no_pricing_data',
+    ]);
   });
 });
 
 describe('aggregateTaskCost: models and basis', () => {
   it('builds consecutive-run model segments and lists distinct models in first-seen order', () => {
     const summary = aggregateTaskCost([
-      claude({ n: 1, model: 'claude-opus-4-8', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
-      claude({ n: 2, model: 'claude-sonnet-5', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
-      claude({ n: 3, model: 'claude-opus-4-8', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      claude({
+        n: 1,
+        model: 'claude-opus-4-8',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      claude({
+        n: 2,
+        model: 'claude-sonnet-5',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      claude({
+        n: 3,
+        model: 'claude-opus-4-8',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
     ]);
     expect(summary.models).toEqual(['claude-opus-4-8', 'claude-sonnet-5']);
-    expect(summary.model_segments.map((segment) => [segment.model, segment.turn_count])).toEqual([
+    expect(
+      summary.model_segments.map((segment) => [
+        segment.model,
+        segment.turn_count,
+      ]),
+    ).toEqual([
       ['claude-opus-4-8', 1],
       ['claude-sonnet-5', 1],
       ['claude-opus-4-8', 1],
@@ -192,16 +268,33 @@ describe('aggregateTaskCost: models and basis', () => {
 
   it('collapses mixed cost bases to unknown and keeps subscription diagnostics', () => {
     const summary = aggregateTaskCost([
-      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1, basis: 'subscription' }),
-      sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1, basis: 'per_token_api' }),
+      sonnet({
+        n: 1,
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+        basis: 'subscription',
+      }),
+      sonnet({
+        n: 2,
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+        basis: 'per_token_api',
+      }),
     ]);
     expect(summary.cost_basis).toBe('unknown');
     expect(summary.diagnostics).toContain('subscription_basis_no_charge');
   });
 
   it('reports stale_pricing_revision when revisions differ and keeps the latest', () => {
-    const older = { ...sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }), pricing_revision: '2026-01-01' };
-    const newer = sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 });
+    const older = {
+      ...sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      pricing_revision: '2026-01-01',
+    };
+    const newer = sonnet({
+      n: 2,
+      usage: tokens(1, 1, 0, 0, 0),
+      estimated: 0.1,
+    });
     const summary = aggregateTaskCost([older, newer]);
     expect(summary.diagnostics).toContain('stale_pricing_revision');
     expect(summary.pricing_revision).toBe('2026-07-15');
@@ -209,12 +302,20 @@ describe('aggregateTaskCost: models and basis', () => {
 
   it('combines pricing sources to mixed, and omits pricing fields with no estimate', () => {
     const summary = aggregateTaskCost([
-      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1, pricingSource: 'openrouter_api', table: 'openrouter' }),
+      sonnet({
+        n: 1,
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+        pricingSource: 'openrouter_api',
+        table: 'openrouter',
+      }),
       sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
     ]);
     expect(summary.pricing_source).toBe('mixed');
 
-    const none = aggregateTaskCost([sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), actual: 0.1 })]);
+    const none = aggregateTaskCost([
+      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), actual: 0.1 }),
+    ]);
     expect(none.pricing_source).toBe('none');
     expect(none.pricing_revision).toBeUndefined();
     expect(none.pricing_timestamp).toBeUndefined();
@@ -222,17 +323,23 @@ describe('aggregateTaskCost: models and basis', () => {
 
   it('omits harness_version when events disagree', () => {
     const a = sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 });
-    const b = { ...sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }), harness_version: '2.2.0' };
+    const b = {
+      ...sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      harness_version: '2.2.0',
+    };
     expect(aggregateTaskCost([a, b]).harness_version).toBeUndefined();
   });
 
   it('applies options', () => {
-    const summary = aggregateTaskCost([sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 })], {
-      collectedAt: '2026-06-01T00:00:00Z',
-      joinConfidence: 'branch_worktree',
-      rootSessionId: 'session-root',
-      turnsTruncated: true,
-    });
+    const summary = aggregateTaskCost(
+      [sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 })],
+      {
+        collectedAt: '2026-06-01T00:00:00Z',
+        joinConfidence: 'branch_worktree',
+        rootSessionId: 'session-root',
+        turnsTruncated: true,
+      },
+    );
     expect(summary).toMatchObject({
       collected_at: '2026-06-01T00:00:00Z',
       pricing_timestamp: '2026-06-01T00:00:00Z',
@@ -246,31 +353,67 @@ describe('aggregateTaskCost: models and basis', () => {
 describe('aggregateTaskCost: scope and validation', () => {
   it('requires taskId when events span tasks, and selects one when given', () => {
     const events = [
-      sonnet({ n: 1, task: 'task-0001', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
-      sonnet({ n: 2, task: 'task-0002', usage: tokens(2, 2, 0, 0, 0), estimated: 0.2 }),
+      sonnet({
+        n: 1,
+        task: 'task-0001',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      sonnet({
+        n: 2,
+        task: 'task-0002',
+        usage: tokens(2, 2, 0, 0, 0),
+        estimated: 0.2,
+      }),
     ];
     expect(codeOf(() => aggregateTaskCost(events))).toBe('mixed_scope');
-    expect(aggregateTaskCost(events, { taskId: 'task-0002' }).usage.input_tokens).toBe(2);
+    expect(
+      aggregateTaskCost(events, { taskId: 'task-0002' }).usage.input_tokens,
+    ).toBe(2);
   });
 
   it('rejects empty input and unknown tasks', () => {
-    expect(codeOf(() => aggregateTaskCost([]))).toBe('schema_validation_failed');
-    const events = [sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 })];
-    expect(codeOf(() => aggregateTaskCost(events, { taskId: 'task-9999' }))).toBe('schema_validation_failed');
+    expect(codeOf(() => aggregateTaskCost([]))).toBe(
+      'schema_validation_failed',
+    );
+    const events = [
+      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+    ];
+    expect(
+      codeOf(() => aggregateTaskCost(events, { taskId: 'task-9999' })),
+    ).toBe('schema_validation_failed');
   });
 
   it('refuses to mix harnesses or provider contracts in one summary', () => {
     const events = [
       sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
-      codex({ n: 2, model: 'gpt-5', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      codex({
+        n: 2,
+        model: 'gpt-5',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
     ];
     expect(codeOf(() => aggregateTaskCost(events))).toBe('mixed_scope');
-    const bumped = { ...sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }), provider_contract_version: 'claude-code/2' };
-    expect(codeOf(() => aggregateTaskCost([sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }), bumped]))).toBe('mixed_scope');
+    const bumped = {
+      ...sonnet({ n: 2, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      provider_contract_version: 'claude-code/2',
+    };
+    expect(
+      codeOf(() =>
+        aggregateTaskCost([
+          sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+          bumped,
+        ]),
+      ),
+    ).toBe('mixed_scope');
   });
 
   it('rejects invalid events', () => {
-    const bad = { ...sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }), observed_at: 'nope' };
+    const bad = {
+      ...sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      observed_at: 'nope',
+    };
     expect(codeOf(() => aggregateTaskCost([bad]))).toBe('invalid_timestamp');
   });
 
@@ -284,20 +427,43 @@ describe('aggregateTaskCost: scope and validation', () => {
     const forward = aggregateTaskCost(events);
     expect(events).toEqual(snapshot);
     expect(aggregateTaskCost([...events].reverse())).toEqual(forward);
-    expect(aggregateTaskCost([events[1] as TaskCostEventV1, events[2] as TaskCostEventV1, events[0] as TaskCostEventV1])).toEqual(forward);
+    expect(
+      aggregateTaskCost([
+        events[1] as TaskCostEventV1,
+        events[2] as TaskCostEventV1,
+        events[0] as TaskCostEventV1,
+      ]),
+    ).toEqual(forward);
   });
 
   it('derives per-task summaries from one concurrent ledger', () => {
     const events = [
-      sonnet({ n: 1, task: 'task-0001', usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
-      sonnet({ n: 2, task: 'task-0002', usage: tokens(2, 2, 0, 0, 0), estimated: 0.2 }),
-      sonnet({ n: 3, task: 'task-0001', usage: tokens(3, 3, 0, 0, 0), estimated: 0.3 }),
+      sonnet({
+        n: 1,
+        task: 'task-0001',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      sonnet({
+        n: 2,
+        task: 'task-0002',
+        usage: tokens(2, 2, 0, 0, 0),
+        estimated: 0.2,
+      }),
+      sonnet({
+        n: 3,
+        task: 'task-0001',
+        usage: tokens(3, 3, 0, 0, 0),
+        estimated: 0.3,
+      }),
     ];
     const first = aggregateTaskCost(events, { taskId: 'task-0001' });
     const second = aggregateTaskCost(events, { taskId: 'task-0002' });
     expect(first.usage.input_tokens).toBe(4);
     expect(second.usage.input_tokens).toBe(2);
-    expect(first.event_ids.filter((id) => second.event_ids.includes(id))).toEqual([]);
+    expect(
+      first.event_ids.filter((id) => second.event_ids.includes(id)),
+    ).toEqual([]);
   });
 });
 
@@ -306,7 +472,11 @@ describe('replay semantics', () => {
 
   it('drops a repeated event_id (first wins) and reports replay_dropped', () => {
     const original = sonnet({ n: 1, usage, estimated: 0.1 });
-    const resubmitted = { ...original, usage: tokens(999, 99, 0, 0, 0), usage_coverage: 'available' as const };
+    const resubmitted = {
+      ...original,
+      usage: tokens(999, 99, 0, 0, 0),
+      usage_coverage: 'available' as const,
+    };
     const summary = aggregateTaskCost([original, resubmitted]);
     expect(summary.event_count).toBe(1);
     expect(summary.usage.input_tokens).toBe(100);
@@ -314,7 +484,10 @@ describe('replay semantics', () => {
   });
 
   it('is idempotent when a whole ledger is replayed', () => {
-    const events = [sonnet({ n: 1, usage, estimated: 0.1 }), sonnet({ n: 2, usage, estimated: 0.1 })];
+    const events = [
+      sonnet({ n: 1, usage, estimated: 0.1 }),
+      sonnet({ n: 2, usage, estimated: 0.1 }),
+    ];
     const once = aggregateTaskCost(events);
     const twice = aggregateTaskCost([...events, ...events]);
     expect({ ...twice, diagnostics: [] }).toEqual({ ...once, diagnostics: [] });
@@ -323,7 +496,13 @@ describe('replay semantics', () => {
 
   it('supersedes the referenced event without a replay_dropped diagnostic', () => {
     const first = sonnet({ n: 1, usage, estimated: 0.1 });
-    const retry = sonnet({ n: 2, turn: first.turn_id, usage: tokens(300, 30, 0, 0, 0), estimated: 0.3, replayOf: first.event_id });
+    const retry = sonnet({
+      n: 2,
+      turn: first.turn_id,
+      usage: tokens(300, 30, 0, 0, 0),
+      estimated: 0.3,
+      replayOf: first.event_id,
+    });
     const summary = aggregateTaskCost([first, retry]);
     expect(summary.event_ids).toEqual([retry.event_id]);
     expect(summary.usage.input_tokens).toBe(300);
@@ -332,8 +511,15 @@ describe('replay semantics', () => {
 
   it('supersedes regardless of array order', () => {
     const first = sonnet({ n: 1, usage, estimated: 0.1 });
-    const retry = sonnet({ n: 2, usage: tokens(300, 30, 0, 0, 0), estimated: 0.3, replayOf: first.event_id });
-    expect(aggregateTaskCost([retry, first])).toEqual(aggregateTaskCost([first, retry]));
+    const retry = sonnet({
+      n: 2,
+      usage: tokens(300, 30, 0, 0, 0),
+      estimated: 0.3,
+      replayOf: first.event_id,
+    });
+    expect(aggregateTaskCost([retry, first])).toEqual(
+      aggregateTaskCost([first, retry]),
+    );
   });
 
   it('resolves supersede chains to the last link', () => {
@@ -346,7 +532,12 @@ describe('replay semantics', () => {
   });
 
   it('treats a supersede of an absent event as a normal observation', () => {
-    const orphan = sonnet({ n: 2, usage, estimated: 0.1, replayOf: eventId(1) });
+    const orphan = sonnet({
+      n: 2,
+      usage,
+      estimated: 0.1,
+      replayOf: eventId(1),
+    });
     const { contributing, decisions } = resolveReplays([orphan]);
     expect(contributing).toEqual([orphan]);
     expect(decisions).toEqual(['accept_first']);
@@ -355,7 +546,11 @@ describe('replay semantics', () => {
   it('reports per-input decisions', () => {
     const a = sonnet({ n: 1, usage, estimated: 0.1 });
     const b = sonnet({ n: 2, usage, estimated: 0.1, replayOf: a.event_id });
-    expect(resolveReplays([a, b, a]).decisions).toEqual(['accept_first', 'supersede_prior', 'drop_duplicate']);
+    expect(resolveReplays([a, b, a]).decisions).toEqual([
+      'accept_first',
+      'supersede_prior',
+      'drop_duplicate',
+    ]);
     expect(resolveReplays([a, b, a]).droppedDuplicates).toBe(1);
   });
 
@@ -367,11 +562,27 @@ describe('replay semantics', () => {
 });
 
 describe('cumulative reconciliation', () => {
-  const snap = (n: number, input: number | null, output: number | null, actual: number | null, extra: Partial<EventSpec> = {}) =>
-    sonnet({ n, kind: 'cumulative', usage: tokens(input, output, 0, 0, 0), actual, ...extra });
+  const snap = (
+    n: number,
+    input: number | null,
+    output: number | null,
+    actual: number | null,
+    extra: Partial<EventSpec> = {},
+  ) =>
+    sonnet({
+      n,
+      kind: 'cumulative',
+      usage: tokens(input, output, 0, 0, 0),
+      actual,
+      ...extra,
+    });
 
   it('differences snapshots against the previous one', () => {
-    const summary = aggregateTaskCost([snap(1, 100, 10, 0.1), snap(2, 250, 40, 0.25), snap(3, 250, 40, 0.25)]);
+    const summary = aggregateTaskCost([
+      snap(1, 100, 10, 0.1),
+      snap(2, 250, 40, 0.25),
+      snap(3, 250, 40, 0.25),
+    ]);
     expect(summary.usage).toEqual(tokens(250, 40, 0, 0, 0));
     expect(summary.actual_cost_usd).toBe(0.25);
     expect(summary.diagnostics).not.toContain('cumulative_backward_jump');
@@ -384,24 +595,40 @@ describe('cumulative reconciliation', () => {
   });
 
   it('clamps a backward jump to zero, flags it, and rebases', () => {
-    const summary = aggregateTaskCost([snap(1, 100, 10, 0.1), snap(2, 60, 20, 0.06), snap(3, 90, 30, 0.09)]);
+    const summary = aggregateTaskCost([
+      snap(1, 100, 10, 0.1),
+      snap(2, 60, 20, 0.06),
+      snap(3, 90, 30, 0.09),
+    ]);
     // input: 100 + 0 (clamped) + 30 (from rebased 60); output: 10 + 10 + 10.
     expect(summary.usage.input_tokens).toBe(130);
     expect(summary.usage.output_tokens).toBe(30);
     expect(summary.actual_cost_usd).toBe(0.13);
     expect(summary.diagnostics).toContain('cumulative_backward_jump');
-    for (const value of Object.values(summary.usage)) expect(value).toBeGreaterThanOrEqual(0);
+    for (const value of Object.values(summary.usage))
+      expect(value).toBeGreaterThanOrEqual(0);
   });
 
   it('flags a backward jump on cost alone', () => {
-    const summary = aggregateTaskCost([snap(1, 100, 10, 0.1), snap(2, 110, 12, 0.05)]);
+    const summary = aggregateTaskCost([
+      snap(1, 100, 10, 0.1),
+      snap(2, 110, 12, 0.05),
+    ]);
     expect(summary.diagnostics).toContain('cumulative_backward_jump');
     expect(summary.actual_cost_usd).toBe(0.1);
   });
 
   it('treats a null counter as missing and leaves the baseline untouched', () => {
-    const { observations } = reconcileCumulative([snap(1, 100, 10, 0.1), snap(2, null, 20, 0.2), snap(3, 150, 30, 0.3)]);
-    expect(observations.map((o) => o.usage.input_tokens)).toEqual([100, null, 50]);
+    const { observations } = reconcileCumulative([
+      snap(1, 100, 10, 0.1),
+      snap(2, null, 20, 0.2),
+      snap(3, 150, 30, 0.3),
+    ]);
+    expect(observations.map((o) => o.usage.input_tokens)).toEqual([
+      100,
+      null,
+      50,
+    ]);
   });
 
   it('keeps separate baselines per session', () => {
@@ -415,8 +642,14 @@ describe('cumulative reconciliation', () => {
   });
 
   it('orders snapshots by sequence, not by array position', () => {
-    const forward = aggregateTaskCost([snap(1, 100, 10, 0.1), snap(2, 200, 20, 0.2)]);
-    const shuffled = aggregateTaskCost([snap(2, 200, 20, 0.2), snap(1, 100, 10, 0.1)]);
+    const forward = aggregateTaskCost([
+      snap(1, 100, 10, 0.1),
+      snap(2, 200, 20, 0.2),
+    ]);
+    const shuffled = aggregateTaskCost([
+      snap(2, 200, 20, 0.2),
+      snap(1, 100, 10, 0.1),
+    ]);
     expect(shuffled).toEqual(forward);
   });
 
@@ -431,10 +664,191 @@ describe('cumulative reconciliation', () => {
 
   it('derives estimated-cost deltas independently of actual-cost deltas', () => {
     const summary = aggregateTaskCost([
-      sonnet({ n: 1, kind: 'cumulative', usage: tokens(100, 10, 0, 0, 0), estimated: 0.1 }),
-      sonnet({ n: 2, kind: 'cumulative', usage: tokens(200, 20, 0, 0, 0), estimated: 0.3 }),
+      sonnet({
+        n: 1,
+        kind: 'cumulative',
+        usage: tokens(100, 10, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      sonnet({
+        n: 2,
+        kind: 'cumulative',
+        usage: tokens(200, 20, 0, 0, 0),
+        estimated: 0.3,
+      }),
     ]);
     expect(summary.estimated_cost_usd).toBe(0.3);
     expect(summary.actual_cost_usd).toBeNull();
+  });
+});
+
+describe('aggregateTaskCostByModel', () => {
+  it('reconciles cumulative usage across a model switch inside one session', () => {
+    // One session, cumulative counters that keep running across the switch:
+    // the per-model deltas must partition the task's usage exactly.
+    const events = [
+      claude({
+        n: 1,
+        model: 'claude-sonnet-5',
+        kind: 'cumulative',
+        usage: tokens(100, 10, null, null, null),
+        estimated: 0.1,
+      }),
+      claude({
+        n: 2,
+        model: 'claude-opus-4-1',
+        kind: 'cumulative',
+        usage: tokens(300, 30, null, null, null),
+        estimated: 0.3,
+      }),
+      claude({
+        n: 3,
+        model: 'claude-sonnet-5',
+        kind: 'cumulative',
+        usage: tokens(350, 45, null, null, null),
+        estimated: 0.45,
+      }),
+    ];
+    const summary = aggregateTaskCost(events);
+    const totals = aggregateTaskCostByModel(events);
+    expect(totals.map((t) => t.model)).toEqual([
+      'claude-sonnet-5',
+      'claude-opus-4-1',
+    ]);
+    const sonnetTotal = totals[0]!;
+    const opusTotal = totals[1]!;
+    expect(sonnetTotal.usage.input_tokens).toBe(150); // 100 + (350-300)
+    expect(opusTotal.usage.input_tokens).toBe(200); // 300-100
+    expect(
+      addNullable(sonnetTotal.usage.input_tokens, opusTotal.usage.input_tokens),
+    ).toBe(summary.usage.input_tokens);
+    expect(
+      addNullable(
+        sonnetTotal.usage.output_tokens,
+        opusTotal.usage.output_tokens,
+      ),
+    ).toBe(summary.usage.output_tokens);
+    expect(sonnetTotal.total_cost_usd! + opusTotal.total_cost_usd!).toBeCloseTo(
+      summary.total_cost_usd!,
+      9,
+    );
+  });
+
+  it('honors a replay that supersedes an event on another model', () => {
+    const totals = aggregateTaskCostByModel([
+      claude({
+        n: 1,
+        model: 'claude-sonnet-5',
+        usage: tokens(100, 10, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      claude({
+        n: 2,
+        model: 'claude-opus-4-1',
+        usage: tokens(100, 10, 0, 0, 0),
+        estimated: 0.5,
+        replayOf: eventId(1),
+      }),
+    ]);
+    expect(totals).toHaveLength(1);
+    expect(totals[0]!.model).toBe('claude-opus-4-1');
+    expect(totals[0]!.event_count).toBe(1);
+    expect(totals[0]!.total_cost_usd).toBe(0.5);
+  });
+
+  it('counts an event carrying both a charge and an estimate once (charge wins)', () => {
+    const totals = aggregateTaskCostByModel([
+      sonnet({
+        n: 1,
+        usage: tokens(1, 1, 0, 0, 0),
+        actual: 0.2,
+        estimated: 0.1,
+      }),
+    ]);
+    expect(totals[0]!.total_cost_usd).toBe(0.2);
+    expect(totals[0]!.actual_cost_usd).toBe(0.2);
+    expect(totals[0]!.estimated_cost_usd).toBe(0.1);
+    expect(totals[0]!.cost_source).toBe('provider_reported');
+  });
+
+  it('nulls the unpriced model total while the priced models stay intact', () => {
+    const totals = aggregateTaskCostByModel([
+      claude({
+        n: 1,
+        model: 'claude-sonnet-5',
+        usage: tokens(100, 10, 0, 0, 0),
+        estimated: 0.1,
+      }),
+      claude({ n: 2, model: 'mystery-model', usage: tokens(100, 10, 0, 0, 0) }),
+    ]);
+    expect(totals.map((t) => t.model)).toEqual([
+      'claude-sonnet-5',
+      'mystery-model',
+    ]);
+    expect(totals[0]!.total_cost_usd).toBe(0.1);
+    expect(totals[0]!.coverage).toBe('complete');
+    expect(totals[1]!.total_cost_usd).toBeNull();
+    expect(totals[1]!.actual_cost_usd).toBeNull();
+    expect(totals[1]!.estimated_cost_usd).toBeNull();
+    expect(totals[1]!.cost_source).toBe('none');
+    expect(totals[1]!.coverage).toBe('partial');
+  });
+
+  it('throws mixed_scope exactly like aggregateTaskCost', () => {
+    const events = [
+      sonnet({ n: 1, usage: tokens(1, 1, 0, 0, 0), estimated: 0.1 }),
+      codex({
+        n: 2,
+        model: 'gpt-5-codex',
+        usage: tokens(1, 1, 0, 0, 0),
+        estimated: 0.1,
+      }),
+    ];
+    expect(codeOf(() => aggregateTaskCostByModel(events))).toBe('mixed_scope');
+    expect(codeOf(() => aggregateTaskCost(events))).toBe('mixed_scope');
+  });
+
+  it('partitions every golden fixture: per-model totals reconcile with the summary', async () => {
+    const { taskCostFixtures } = await import('../fixtures/task-cost/index.js');
+    expect(taskCostFixtures).toHaveLength(16);
+    for (const fixture of taskCostFixtures) {
+      for (const expected of fixture.expectedSummaries) {
+        const options = { taskId: expected.task_id };
+        const summary = aggregateTaskCost(fixture.events, options);
+        const totals = aggregateTaskCostByModel(fixture.events, options);
+
+        // Same models, same first-appearance order, no duplicates.
+        expect(totals.map((t) => t.model)).toEqual(summary.models);
+
+        // Event and turn counts partition the summary's.
+        expect(totals.reduce((n, t) => n + t.event_count, 0)).toBe(
+          summary.event_count,
+        );
+
+        // Usage counters partition the summary's (null-consistent).
+        for (const field of [
+          'input_tokens',
+          'output_tokens',
+          'cache_read_tokens',
+          'cache_write_tokens',
+          'reasoning_tokens',
+        ] as const) {
+          const sum = totals.reduce<number | null>(
+            (acc, t) => addNullable(acc, t.usage[field]),
+            null,
+          );
+          expect(sum).toBe(summary.usage[field]);
+        }
+
+        // Resolved totals sum to the summary total, null-consistent.
+        if (summary.total_cost_usd === null) {
+          expect(totals.some((t) => t.total_cost_usd === null)).toBe(true);
+        } else {
+          expect(totals.every((t) => t.total_cost_usd !== null)).toBe(true);
+          const sum = totals.reduce((acc, t) => acc + t.total_cost_usd!, 0);
+          expect(sum).toBeCloseTo(summary.total_cost_usd, 9);
+        }
+      }
+    }
   });
 });

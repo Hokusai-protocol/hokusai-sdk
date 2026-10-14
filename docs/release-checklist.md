@@ -14,6 +14,7 @@ Use this checklist before publishing SDK package or adapter changes.
 - [ ] Run type-checking: `pnpm typecheck`
 - [ ] Run boundary checks: `pnpm check:boundaries`
 - [ ] Build all packages: `pnpm -r build`
+- [ ] Run the clean-consumer cost smoke test against the packed tarballs: `pnpm smoke:costs`
 
 ## Additional Steps for Schema or API Changes
 
@@ -52,8 +53,9 @@ Use this checklist before publishing SDK package or adapter changes.
 
 ## Post-release Verification
 
-- [ ] Confirm `npm view @hokusai/router version`, `npm view @hokusai/core version`, and each adapter package return the published version.
-- [ ] Confirm `npm install @hokusai/router @hokusai/core @hokusai/adapter-claude-code @hokusai/adapter-codex @hokusai/adapter-wavemill` succeeds in a clean temporary project.
+- [ ] Confirm `npm view @hokusai/router version`, `npm view @hokusai/core version`, `npm view @hokusai/costs version`, and each adapter package return the published version.
+- [ ] Confirm `npm install @hokusai/router @hokusai/core @hokusai/costs @hokusai/adapter-claude-code @hokusai/adapter-codex @hokusai/adapter-wavemill` succeeds in a clean temporary project.
+- [ ] Re-run the cost smoke test against the registry: `node scripts/smoke-costs-consumer.mjs --registry <version>` (gates the Wavemill dependency switch, HOK-3075).
 - [ ] Reinstall the published packages in `examples/reference-harness` and rerun its tests.
 - [ ] Run the [Claude Code Plugin Launch Smoke Checklist](plugin-launch-checklist.md) against the published plugin zip.
 - [ ] Update [Release Notes](release-notes.md) with the release summary.

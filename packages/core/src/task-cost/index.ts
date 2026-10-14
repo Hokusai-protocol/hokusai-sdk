@@ -84,5 +84,7 @@ export {
 
 export {
   aggregateTaskCost,
+  aggregateTaskCostByModel,
   type AggregateTaskCostOptions,
+  type TaskCostModelTotal,
 } from './aggregate.js';
