@@ -2,7 +2,7 @@ import { eventFactory, ledgerFor, tokens, type HarnessProfile, type TaskCostFixt
 
 const profile: HarnessProfile = {
   harness: 'codex',
-  providerContractVersion: 'codex/1',
+  providerContractVersion: 'codex/2',
   harnessVersion: '0.50.0',
 };
 const event = eventFactory(profile);
@@ -30,7 +30,7 @@ export const partialUsageFixture: TaskCostFixture = {
       session_ids: ['session-0001'],
       harness: 'codex',
       harness_version: '0.50.0',
-      provider_contract_version: 'codex/1',
+      provider_contract_version: 'codex/2',
       models: ['gpt-5'],
       model_segments: [
         {

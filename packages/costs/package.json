@@ -42,7 +42,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "examples"
   ],
   "publishConfig": {
     "access": "public"

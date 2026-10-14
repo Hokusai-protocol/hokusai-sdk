@@ -20,7 +20,8 @@
     "version-packages": "changeset version && node scripts/sync-versions.mjs",
     "sync:versions": "node scripts/sync-versions.mjs",
     "check:versions": "node scripts/sync-versions.mjs --check",
-    "check:docs": "node scripts/check-docs.mjs"
+    "check:docs": "node scripts/check-docs.mjs",
+    "smoke:costs": "node scripts/smoke-costs-consumer.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.6",

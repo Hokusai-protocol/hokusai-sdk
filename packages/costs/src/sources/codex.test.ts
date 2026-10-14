@@ -31,6 +31,7 @@ describe('golden fixture parity: sanitized rollout -> adapter -> engine', () => 
   const fixtures: TaskCostFixture[] = [
     goldenFixture('codex-simple'),
     goldenFixture('codex-unknown-pricing'),
+    goldenFixture('codex-real-cache'),
   ];
 
   it.each(fixtures.map((fixture) => [fixture.name, fixture] as const))(
@@ -273,5 +274,145 @@ describe('correlation and fail-soft behavior', () => {
     });
     expect(result.inputs).toHaveLength(1);
     expect(result.diagnostics).toEqual({ duplicate_row: 1 });
+  });
+});
+
+describe('codex/2 disjoint buckets (HOK-3104)', () => {
+  const sessionId = 'codex-session-1';
+  const meta = codexSessionMetaLine({ id: sessionId, timestamp: T0 });
+
+  it('acceptance case: raw 1M input / 900k cached / 10k output -> $0.3375', () => {
+    const rollout = [
+      meta,
+      codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T1 }),
+      codexTokenCountLine({
+        timestamp: T1,
+        last: codexUsage(1_000_000, 10_000, 900_000, 0, 2000),
+      }),
+    ].join('\n');
+    const result = extractCodexUsage({
+      boundary: boundaryFor('task-a', [sessionId]),
+      files: [rollout],
+    });
+    expect(result.diagnostics).toEqual({});
+    expect(result.inputs).toHaveLength(1);
+    // Buckets are now disjoint on ingest.
+    expect(result.inputs[0]?.usage).toEqual({
+      input_tokens: 100_000,
+      output_tokens: 10_000,
+      cache_read_tokens: 900_000,
+      cache_write_tokens: 0,
+      reasoning_tokens: 2000,
+    });
+    const engine = createTaskCostEngine({ taskId: 'task-a' });
+    for (const ingest of engine.ingestMany(result.inputs)) {
+      expect(ingest.status).toBe('accepted');
+    }
+    expect(engine.snapshot().estimated_cost_usd).toBeCloseTo(0.3375, 9);
+  });
+
+  it('sanitized real token_count: cost ~ $0.605988 on disjoint buckets', () => {
+    const rollout = [
+      meta,
+      codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T1 }),
+      codexTokenCountLine({
+        timestamp: T1,
+        // raw_input 2,978,251 = 133,579 (normalized input) + 2,844,672 (cached)
+        // total 2,986,594 = raw_input + 8,343 (output)
+        last: codexUsage(2_978_251, 8343, 2_844_672, 0, 545),
+      }),
+    ].join('\n');
+    const result = extractCodexUsage({
+      boundary: boundaryFor('task-a', [sessionId]),
+      files: [rollout],
+    });
+    expect(result.diagnostics).toEqual({});
+    expect(result.inputs).toHaveLength(1);
+    expect(result.inputs[0]?.usage).toEqual({
+      input_tokens: 133_579,
+      output_tokens: 8343,
+      cache_read_tokens: 2_844_672,
+      cache_write_tokens: 0,
+      reasoning_tokens: 545,
+    });
+    const engine = createTaskCostEngine({ taskId: 'task-a' });
+    engine.ingestMany(result.inputs);
+    expect(engine.snapshot().estimated_cost_usd).toBeCloseTo(0.605988, 9);
+  });
+
+  it('cached exceeds input: input clamps to 0 and emits one diagnostic', () => {
+    const rollout = [
+      meta,
+      codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T1 }),
+      codexTokenCountLine({ timestamp: T1, last: codexUsage(500, 10, 600, 0, 0) }),
+    ].join('\n');
+    const result = extractCodexUsage({
+      boundary: boundaryFor('task-a', [sessionId]),
+      files: [rollout],
+    });
+    expect(result.diagnostics).toEqual({ codex_cache_exceeds_input: 1 });
+    expect(result.inputs[0]?.usage).toEqual({
+      input_tokens: 0,
+      output_tokens: 10,
+      cache_read_tokens: 600,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+    });
+  });
+
+  it('cumulative-only two-event sequence yields hand-computed deltas on disjoint buckets', () => {
+    // Raw cumulative totals Codex would report:
+    //   T1: raw_in 1000 = 200 + 800 cached; out 100
+    //   T2: raw_in 3000 = 400 + 2600 cached; out 300
+    // Per-event normalized deltas (post-subtraction):
+    //   T1: in 200, cache_read 800, out 100
+    //   T2: in 200, cache_read 1800, out 200
+    const rollout = [
+      meta,
+      codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T1 }),
+      codexTokenCountLine({ timestamp: T1, total: codexUsage(1000, 100, 800, 0, 0) }),
+      codexTurnContextLine({ turnId: 'turn-2', model: 'gpt-5-codex', timestamp: T2 }),
+      codexTokenCountLine({ timestamp: T2, total: codexUsage(3000, 300, 2600, 0, 0) }),
+    ].join('\n');
+    const result = extractCodexUsage({
+      boundary: boundaryFor('task-a', [sessionId]),
+      files: [rollout],
+    });
+    expect(result.diagnostics).toEqual({});
+    expect(result.inputs).toHaveLength(2);
+    expect(result.inputs[0]?.usage).toEqual({
+      input_tokens: 200,
+      output_tokens: 100,
+      cache_read_tokens: 800,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+    });
+    expect(result.inputs[1]?.usage).toEqual({
+      input_tokens: 200,
+      output_tokens: 200,
+      cache_read_tokens: 1800,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+    });
+  });
+
+  it('subtracts cache_write_input_tokens too', () => {
+    const rollout = [
+      meta,
+      codexTurnContextLine({ turnId: 'turn-1', model: 'gpt-5-codex', timestamp: T1 }),
+      codexTokenCountLine({ timestamp: T1, last: codexUsage(1000, 50, 600, 300, 0) }),
+    ].join('\n');
+    const result = extractCodexUsage({
+      boundary: boundaryFor('task-a', [sessionId]),
+      files: [rollout],
+    });
+    expect(result.diagnostics).toEqual({});
+    expect(result.inputs[0]?.usage).toEqual({
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_tokens: 600,
+      cache_write_tokens: 300,
+      reasoning_tokens: 0,
+    });
   });
 });

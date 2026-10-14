@@ -36,7 +36,7 @@ Review the diff; a changed golden means Wavemill's behaviour moved.
 | `TaskCostJoinConfidence` | `ExecutionJoinConfidence` | Identical values |
 | `TaskCostDiagnosticCode` | `WorkflowCostAttributionReason` | Superset; Wavemill's `diagnostics` are free text |
 | `TaskCostPricingSource` | `WorkflowCostPricingSource` | Same origin names; no `provider_reported` (see `cost_source`) |
-| `PROVIDER_CONTRACT_VERSIONS` | same name | `claude-code/1`, `codex/1` identical; adds `native/1`, `pi/1` |
+| `PROVIDER_CONTRACT_VERSIONS` | same name | `claude-code/1` identical; `codex/2` is the SDK (HOK-3104 disjoint-buckets fix) vs Wavemill's `codex/1` (double-bills reasoning); adds `native/1`, `pi/1` |
 | `TaskCostTokenUsage.input_tokens` ... | `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens` | snake_case; `null` means missing in both |
 | `usage_coverage` | turn `usageCoverage` | Same values; SDK enforces the derivation |
 | `observed_model` | turn `model` | |
@@ -66,14 +66,23 @@ value"; and the pricing-table revision (`MODEL_PRICING_AS_OF`).
 
 | Fixture | Field(s) | SDK | Wavemill | Why |
 | --- | --- | --- | --- | --- |
+| `codex-simple` | `estimatedCostUsd` | `0.02125` (prices `output_tokens` only) | `0.025750000000000002` (adds `reasoning_tokens` to output) | HOK-3104: Codex `reasoning_output_tokens` is a subset of `output_tokens`; Wavemill double-bills reasoning. The SDK's `codex/2` contract makes buckets disjoint — expected fix |
+| `codex-simple` | `providerContractVersion` | `codex/2` | `codex/1` | HOK-3104: SDK bumps the contract alongside the fix; Wavemill still writes `codex/1` |
+| `codex-provider-override` | `providerContractVersion` | `codex/2` | `codex/1` | HOK-3104 contract bump; no estimate drift (reasoning is 0 here) |
+| `codex-unknown-pricing` | `providerContractVersion` | `codex/2` | `codex/1` | HOK-3104 contract bump |
 | `codex-unknown-pricing` | `estimatedCostUsd` | Lower bound over the priced turn (`0.00525`) with `field_availability.estimated_cost: partial` | `null` | Wavemill discards the whole estimate when any model is unpriced; the SDK keeps the known part, flags it, and still withholds `total_cost_usd` |
 | `codex-unknown-pricing` | `costSource` | `local_estimate` | `none` | Follows from the row above |
 | `codex-unknown-pricing` | `pricingRevision`, `pricingTimestamp` | Set (an estimate exists) | `null` | Follows from the row above |
+| `partial-usage` | `providerContractVersion` | `codex/2` | `codex/1` | HOK-3104 contract bump |
 | `partial-usage` | `estimatedCostUsd` | Lower bound over the complete turn (`0.0075`); `total_cost_usd: null` | `0.00875` (a total) | Wavemill prices a single-model session's *totals*. A turn with `output_tokens: null` is summed away, so the estimate silently undercounts. The SDK reasons per event |
 | `partial-usage` | `coverage` | `partial` | `complete` | Same cause: Wavemill derives session coverage from the summed totals, which look complete |
 
-The last two rows are a Wavemill defect the migration should fix rather than
-reproduce. Migrate Wavemill to the SDK behaviour and delete these two exemptions.
+The `codex-simple` divergence, the `codex-unknown-pricing` /
+`partial-usage` `estimatedCostUsd`/`coverage` rows, and the `codex/2` version
+drift are Wavemill defects the migration should fix rather than reproduce.
+Migrate Wavemill to the SDK behaviour and delete these exemptions. The
+`providerContractVersion` drift on every Codex fixture resolves once Wavemill
+ships its own double-bill fix and bumps to `codex/2`.
 
 ### Contract-level (not exercised by a Wavemill golden)
 
@@ -123,15 +132,27 @@ migrating, or pass the SDK's table into Wavemill.
 | `claude-code-simple` | `buildExecutionEconomics` golden | Exact |
 | `claude-code-model-switch` | golden (multi-model per-turn pricing) | Exact |
 | `claude-code-cache-tiers` | golden | Exact |
-| `codex-simple` | golden (reasoning billed as output) | Exact |
-| `codex-provider-override` | golden (session actual + estimate) | Exact |
+| `codex-simple` | golden (`codex/1`; double-bills reasoning) | Exact except the documented `codex/2` differences above (HOK-3104 / HOK-3074 EF-3) |
+| `codex-provider-override` | golden (session actual + estimate) | Exact except `providerContractVersion` (`codex/2` vs Wavemill's `codex/1`) |
 | `wavemill-parity` | golden (multi-model, cache tiers, actual) | Exact |
 | `codex-unknown-pricing` | golden | Exact except the documented differences above |
 | `partial-usage` | golden | Exact except the documented differences above |
 | `claude-code-retry` | N/A (new) | Wavemill has no replay concept |
 | `claude-code-cumulative-snapshot` | N/A (new) | Wavemill reads final session totals |
 | `claude-code-subscription` | N/A (new) | No cost basis in Wavemill |
+| `codex-real-cache` | N/A (new) | Sanitized real `token_count`; asserts the `codex/2` disjoint-buckets contract end-to-end (HOK-3104) |
 | `mixed-model` | N/A (new) | Wavemill's session enum has no `mixed` |
 | `native-simple` | Native workflow cost (`workflow-cost.ts`), not execution economics | Not mechanically comparable |
 | `pi-simple` | N/A (new) | `pi/1` is new |
 | `concurrent-tasks` | N/A (new) | Wavemill joins sessions to tasks by branch/window |
+
+### Codex `codex/1` vs `codex/2`
+
+`codex/1` reflects Wavemill's double-bill: raw `input_tokens` priced at the
+input rate while `cached_input_tokens` is a subset, and `reasoning_output_tokens`
+added onto `output_tokens` for billing. `codex/2` (HOK-3104) makes the buckets
+disjoint on ingest — the Codex adapter subtracts `cached + cache_write` from
+`input_tokens` and clamps at zero (`codex_cache_exceeds_input` on underflow) —
+and treats `reasoning_tokens` as a reporting-only breakdown of `output_tokens`.
+See HOK-3074 EF-3 for the Wavemill side. Historical `codex/1` ledger rows keep
+their old meaning; new rows written by this adapter are `codex/2`.

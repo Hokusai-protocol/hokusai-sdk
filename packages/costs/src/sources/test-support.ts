@@ -206,8 +206,22 @@ export function codexTokenCountLine(spec: {
   });
 }
 
-/** Rollout lines reproducing one golden `TaskCostEventV1` exactly. */
+/**
+ * Rollout lines reproducing one golden `TaskCostEventV1` exactly. The SDK
+ * event stores disjoint buckets (`codex/2`); the raw rollout `input_tokens`
+ * field is their sum, so this inverts the adapter's `normalizeCodexBuckets`
+ * on the way out — emit `raw_input = input + cache_read + cache_write`.
+ * `cached_input_tokens`, `cache_write_input_tokens` and
+ * `reasoning_output_tokens` stay as the SDK's disjoint counts.
+ */
 export function codexLinesFromGolden(event: TaskCostEventV1): string[] {
+  const sdkInput = event.usage.input_tokens;
+  const cacheRead = event.usage.cache_read_tokens;
+  const cacheWrite = event.usage.cache_write_tokens;
+  const rawInput =
+    sdkInput === null
+      ? null
+      : sdkInput + (cacheRead ?? 0) + (cacheWrite ?? 0);
   return [
     codexTurnContextLine({
       turnId: event.event_id,
@@ -217,10 +231,10 @@ export function codexLinesFromGolden(event: TaskCostEventV1): string[] {
     codexTokenCountLine({
       timestamp: event.observed_at,
       last: codexUsage(
-        event.usage.input_tokens,
+        rawInput,
         event.usage.output_tokens,
-        event.usage.cache_read_tokens,
-        event.usage.cache_write_tokens,
+        cacheRead,
+        cacheWrite,
         event.usage.reasoning_tokens,
       ),
     }),

@@ -17,10 +17,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  countDiagnostic,
-  type TaskCostSourceDiagnostics,
-} from './types.js';
+import { countDiagnostic, type TaskCostSourceDiagnostics } from './types.js';
 
 export interface ReadSessionFilesOptions {
   /** Directories to search, explicitly supplied. Searched recursively. */
@@ -100,6 +97,45 @@ export function readSessionFiles(
     visit(root, 0);
   }
   return { files, diagnostics };
+}
+
+export interface ReadSessionFilePathsOptions {
+  /** Explicit session file paths to read, as supplied by the caller. */
+  paths: readonly string[];
+  /** Skip files larger than this many bytes (default 64 MiB). */
+  maxFileBytes?: number;
+}
+
+export interface ReadSessionFilePathsResult {
+  /** Raw JSONL contents, in input order (unreadable entries omitted). */
+  contents: readonly string[];
+  /** Count-only diagnostics; unreadable entries are counted, never named. */
+  diagnostics: TaskCostSourceDiagnostics;
+}
+
+/**
+ * Read explicitly named session files. Same bounds and count-only
+ * `unreadable_file` / `oversized_file` diagnostics as {@link readSessionFiles};
+ * a missing or unreadable path degrades to a count, never a throw.
+ */
+export function readSessionFilePaths(
+  options: ReadSessionFilePathsOptions,
+): ReadSessionFilePathsResult {
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const diagnostics: TaskCostSourceDiagnostics = {};
+  const contents: string[] = [];
+  for (const path of options.paths) {
+    try {
+      if (statSync(path).size > maxFileBytes) {
+        countDiagnostic(diagnostics, 'oversized_file');
+        continue;
+      }
+      contents.push(readFileSync(path, 'utf8'));
+    } catch {
+      countDiagnostic(diagnostics, 'unreadable_file');
+    }
+  }
+  return { contents, diagnostics };
 }
 
 export {

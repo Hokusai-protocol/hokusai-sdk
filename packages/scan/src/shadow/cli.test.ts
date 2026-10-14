@@ -184,6 +184,16 @@ describe('shadow CLI failures exit 0 (REQ-F7)', () => {
     expect(parsed.repos[0]?.n_scored).toBe(2);
     expect(readdirSync(join(dataDir, 'reports'))).toHaveLength(1);
   });
+
+  it('a bootstrap window reaching before 1970 still discovers every merge', () => {
+    const repo = fixture();
+    const dataDir = tempDir('hokusai-shadow-wide-');
+    const args = ['--data-dir', dataDir, '--integration-branch', 'auto/integration', '--repo', repo.dir, '--github-repo', 'o/r'];
+
+    // 36500 days puts the cutoff in 1925; git matches nothing for a pre-1970 --since.
+    const result = run('shadow-score', [...args, '--bootstrap-days', '36500'], repo.dir);
+    expect(result.lines.at(-1)).toMatch(/^SHADOW_OK scored=3 /);
+  });
 });
 
 describe('cli-core routing', () => {

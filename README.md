@@ -6,7 +6,7 @@ This repository currently includes:
 
 - `@hokusai/router` for routing a task from application code — the front door, and where most integrations should start
 - `@hokusai/core` for the harness-agnostic SDK contracts and API client
-- `@hokusai/costs` for the provider-neutral task cost engine — offline per-event pricing and cost/token totals over the `@hokusai/core` task-cost contract
+- `@hokusai/costs` for drop-in per-task cost measurement (`measureTask` / `createTaskCostTracker`) plus the provider-neutral pricing engine, source adapters, and local ledger underneath — entirely offline, over the `@hokusai/core` task-cost contract
 - `@hokusai/adapter-claude-code` for the installable Claude Code plugin and Claude-specific adapter
 - `@hokusai/adapter-codex` for the installable Codex plugin, MCP server, task context, model mapping, and outcome builders
 - `@hokusai/adapter-wavemill` for a richer replay-aware reference adapter used by Wavemill-style harnesses
@@ -15,6 +15,30 @@ This repository currently includes:
 - `examples/reference-harness` for the smallest complete generic integration flow
 - `examples/litellm-integration` for a Python-side LiteLLM metadata-only routing prototype
 - `examples/openhands-integration` for the Python-side `@hokusai/adapter-openhands` equivalent — Hokusai-backed `RouterLLM` plus SDK-metrics contribution rows
+
+## Measure task cost — no account needed
+
+Per-task cost measurement is a standalone, local feature: no Hokusai account,
+no `HOKUSAI_API_KEY`, no network calls, no default disk writes. One import,
+one wrapper call:
+
+```sh
+npm install @hokusai/costs
+```
+
+```ts
+import { measureTask } from '@hokusai/costs';
+
+const { result, cost } = await measureTask({ events: harness }, () =>
+  harness.run(task),
+);
+// cost.totalUsd, cost.byModel, cost.byHarness, cost.usage, cost.coverage, cost.diagnostics
+```
+
+It captures usage from supported usage events or Claude Code/Codex session
+files (always behind an explicit session boundary), or from your own
+`tracker.recordUsage(...)` calls. Routing and contribution stay entirely
+optional. See [packages/costs/README.md](packages/costs/README.md).
 
 ## Install Packages
 
@@ -32,7 +56,10 @@ import { route } from '@hokusai/router';
 
 const { model } = await route({ task, availableModels, maxCostUsd: 1 });
 const result = await models[model].run(task);
-await route.reportOutcome({ status: 'succeeded', actualCostUsd: result.costUsd });
+await route.reportOutcome({
+  status: 'succeeded',
+  actualCostUsd: result.costUsd,
+});
 ```
 
 See [packages/router/README.md](packages/router/README.md). Pass `maxCostUsd`
@@ -399,7 +426,7 @@ See [docs/payload-schemas.md](docs/payload-schemas.md) for the complete wire sch
 ## Package Map
 
 - `packages/core`: shared contracts, schemas, consent/config helpers, redaction, client, model registry, storage, fixtures, and conformance utilities
-- `packages/costs`: provider-neutral task cost engine (`@hokusai/costs`) — offline usage-event ingest, per-event pricing with host overrides, and summary snapshots; see [packages/costs/README.md](packages/costs/README.md)
+- `packages/costs`: drop-in task cost measurement (`@hokusai/costs`) — `measureTask`/`createTaskCostTracker` over the offline pricing engine, session-file source adapters, and local ledger; see [packages/costs/README.md](packages/costs/README.md)
 - `packages/adapter-claude-code`: Claude Code plugin, CLI commands, doctor/privacy/report tooling, and Claude-specific adapter
 - `packages/adapter-codex`: Codex command descriptors, task context builders, outcome builders, model provider, and harness adapter
 - `packages/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers and conformance fixtures

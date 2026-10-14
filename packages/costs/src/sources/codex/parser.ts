@@ -28,7 +28,7 @@ import {
 import { countDiagnostic, type TaskCostSourceDiagnostics } from '../types.js';
 
 /** Parsing contract implemented by this parser (`provider_contract_version`). */
-export const CODEX_PROVIDER_CONTRACT_VERSION = 'codex/1';
+export const CODEX_PROVIDER_CONTRACT_VERSION = 'codex/2';
 
 /** One `token_count` observation, tied to the turn context in force. */
 export interface CodexUsageObservation {
@@ -50,6 +50,14 @@ export interface CodexParsedSession {
   observations: CodexUsageObservation[];
 }
 
+/**
+ * Project a raw Codex usage record onto the SDK's shape. Codex reports
+ * `cached_input_tokens ⊆ input_tokens` and `reasoning_output_tokens ⊆
+ * output_tokens`; this projection keeps the raw values as-is. The disjoint
+ * `codex/2` invariant (`input_tokens` and `cache_read_tokens` disjoint;
+ * `reasoning_tokens` reporting-only) is restored by the adapter's
+ * `normalizeCodexBuckets` after a per-event usage is finalized.
+ */
 function projectUsage(
   raw: Record<string, unknown>,
   flag: { usageInvalid: boolean },

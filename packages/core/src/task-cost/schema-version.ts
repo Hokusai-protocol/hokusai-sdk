@@ -24,13 +24,16 @@ export const TASK_COST_LEDGER_SCHEMA_VERSION = 'task_cost_ledger/v1';
 export const TASK_COST_ADAPTER_CONTRACT_VERSION = 'task_cost_adapter/v1';
 
 /**
- * Provider parsing-contract versions per harness. `claude-code` and `codex`
- * mirror Wavemill's `PROVIDER_CONTRACT_VERSIONS` (HOK-2958) so migrated records
- * keep their provenance; `native` and `pi` are new in this contract.
+ * Provider parsing-contract versions per harness. `claude-code/1` mirrors
+ * Wavemill's `PROVIDER_CONTRACT_VERSIONS` (HOK-2958) so migrated records
+ * keep their provenance; `codex` advanced to `codex/2` in HOK-3104 to record
+ * the disjoint-buckets fix (cached subtracted from input on ingest;
+ * reasoning not double-billed as output) — historical `codex/1` ledgers keep
+ * the old interpretation. `native` and `pi` are new in this contract.
  */
 export const PROVIDER_CONTRACT_VERSIONS = Object.freeze({
   'claude-code': 'claude-code/1',
-  codex: 'codex/1',
+  codex: 'codex/2',
   native: 'native/1',
   pi: 'pi/1',
 } as const);

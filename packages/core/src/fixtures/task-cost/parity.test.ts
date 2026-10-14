@@ -77,16 +77,27 @@ const PERMITTED_DIFFERENCES: Readonly<Record<string, readonly string[]>> = {
   'claude-code-simple': [],
   'claude-code-model-switch': [],
   'claude-code-cache-tiers': [],
-  'codex-simple': [],
-  'codex-provider-override': [],
   'wavemill-parity': [],
+  // HOK-3104: `codex/2` bumps the provider contract and drops Wavemill's
+  // output + reasoning double-bill. The Wavemill golden is frozen at
+  // `codex/1` with the old (higher) estimate; the SDK now prices
+  // `output_tokens` as-is and labels every row `codex/2`.
+  'codex-simple': ['providerContractVersion', 'estimatedCostUsd'],
+  'codex-provider-override': ['providerContractVersion'],
   // SDK keeps the priced turn's estimate as a lower bound and its pricing
   // revision; Wavemill withholds the whole estimate when any model is unpriced.
-  'codex-unknown-pricing': ['estimatedCostUsd', 'costSource', 'pricingRevision', 'pricingTimestamp'],
+  'codex-unknown-pricing': [
+    'providerContractVersion',
+    'estimatedCostUsd',
+    'costSource',
+    'pricingRevision',
+    'pricingTimestamp',
+  ],
   // Wavemill prices session *totals* for single-model sessions, so a turn with
   // missing output silently undercounts and still reports `complete`. The SDK
-  // reasons per event and reports `partial` with no total.
-  'partial-usage': ['estimatedCostUsd', 'coverage'],
+  // reasons per event and reports `partial` with no total. `providerContractVersion`
+  // additionally drifts for the `codex/2` bump.
+  'partial-usage': ['providerContractVersion', 'estimatedCostUsd', 'coverage'],
 };
 
 describe('Wavemill parity oracle', () => {

@@ -9,6 +9,25 @@ This document defines the shared privacy posture for Hokusai adapters, including
 - Local storage keeps correlation ids, timestamps, bounded metadata, submission audit entries, and HMAC hashes only. Raw prompts, code, logs, and outcome notes are not persisted.
 - Adapters expose redacted previews before network submission for both routing payloads and outcome reports.
 
+## Cost-measurement data (`@hokusai/costs`)
+
+Task cost measurement is local-only and holds a stricter posture than the
+routing/outcome flows above:
+
+- No network calls, ever: measurement never constructs a client, never
+  submits anything, and never reads `HOKUSAI_API_KEY`.
+- Reports, stored events, and ledger records carry only allow-listed numeric
+  and categorical fields (token counts, USD amounts, model ids, harness
+  names, enum values, timestamps, caller-chosen ids). Extra keys on inputs
+  are dropped by allow-list projection, and the contract validator rejects
+  prompt/path/credential/account keys at any depth.
+- Session-file capture reads only usage/identity fields from transcripts;
+  prompts, transcript text, `cwd`, branches, and account attributes have no
+  code path into output, and file problems become count-only diagnostics —
+  no path ever appears in a report.
+- Nothing is written to disk unless the host passes an explicit opt-in
+  ledger with an explicit path.
+
 ## Consent and auth
 
 - `resolveConsent()` defaults routing to enabled and outcome opt-in to `false`.

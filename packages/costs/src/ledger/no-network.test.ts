@@ -24,13 +24,21 @@ function walkProductionSources(root: string): string[] {
 }
 
 describe('offline ledger', () => {
-  it('contains no networking calls in production source', () => {
-    const root = new URL('.', import.meta.url).pathname;
+  it('contains no networking, router, client, or credential code in ANY production source', () => {
+    // The whole package (engine, sources, ledger, measure) must stay
+    // network-free and credential-free, not just the ledger (D6/HOK-3073).
+    const root = new URL('..', import.meta.url).pathname;
     const files = walkProductionSources(root);
-    for (const file of files)
-      expect(readFileSync(file, 'utf8')).not.toMatch(
+    expect(files.length).toBeGreaterThan(10);
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      expect(source).not.toMatch(
         /from ['"](node:)?(http|https|net|dgram|undici)['"]|\bfetch\(|XMLHttpRequest/,
       );
+      expect(source).not.toMatch(
+        /@hokusai\/router|HokusaiClient|HOKUSAI_API_KEY/,
+      );
+    }
   });
   it('opens, persists and queries without fetch', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {

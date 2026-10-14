@@ -12,15 +12,15 @@ import { taskCostFixtures } from './index.js';
 
 /** Price an event the way the fixtures' estimates were derived. */
 function priceEvent(event: TaskCostEventV1): number | undefined {
-  const { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens } =
-    event.usage;
+  const { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens } = event.usage;
   if (input_tokens === null || output_tokens === null) return undefined;
-  // Codex bills reasoning tokens as output; Claude Code's are already inside output.
-  const output = event.harness === 'codex' ? output_tokens + (reasoning_tokens ?? 0) : output_tokens;
+  // `codex/2` disjoint-buckets contract (HOK-3104): `reasoning_tokens` is a
+  // reporting-only breakdown of `output_tokens` — never billed separately —
+  // for every harness; cache tokens are already disjoint from input tokens.
   return computeActualCostUsd({
     model: event.observed_model,
     inputTokens: input_tokens,
-    outputTokens: output,
+    outputTokens: output_tokens,
     cacheReadTokens: cache_read_tokens ?? 0,
     cacheCreationTokens: cache_write_tokens ?? 0,
   });
@@ -38,6 +38,7 @@ describe('task-cost fixtures', () => {
       'codex-simple',
       'codex-unknown-pricing',
       'codex-provider-override',
+      'codex-real-cache',
       'mixed-model',
       'native-simple',
       'pi-simple',
