@@ -35,7 +35,10 @@ import {
   promoteAvailability,
   type TaskCostTokenUsage,
 } from './token-usage.js';
-import { TaskCostValidationError, validateTaskCostEventV1 } from './validators.js';
+import {
+  TaskCostValidationError,
+  validateTaskCostEventV1,
+} from './validators.js';
 
 export interface AggregateTaskCostOptions {
   /** Required when `events` span more than one task. */
@@ -93,7 +96,9 @@ export interface ReplayResolution {
  *   event that is not present is harmless.
  * - Reference cycles are a contract violation and throw `replay_cycle`.
  */
-export function resolveReplays(events: readonly TaskCostEventV1[]): ReplayResolution {
+export function resolveReplays(
+  events: readonly TaskCostEventV1[],
+): ReplayResolution {
   const firstById = new Map<string, TaskCostEventV1>();
   const decisions: TaskCostReplayDecision[] = [];
   let droppedDuplicates = 0;
@@ -105,7 +110,9 @@ export function resolveReplays(events: readonly TaskCostEventV1[]): ReplayResolu
     } else {
       firstById.set(event.event_id, event);
       decisions.push(
-        event.replay_of_event_id !== undefined ? 'supersede_prior' : 'accept_first',
+        event.replay_of_event_id !== undefined
+          ? 'supersede_prior'
+          : 'accept_first',
       );
     }
   }
@@ -127,7 +134,10 @@ export function resolveReplays(events: readonly TaskCostEventV1[]): ReplayResolu
 
   const superseded = new Set<string>();
   for (const event of firstById.values()) {
-    if (event.replay_of_event_id !== undefined && firstById.has(event.replay_of_event_id)) {
+    if (
+      event.replay_of_event_id !== undefined &&
+      firstById.has(event.replay_of_event_id)
+    ) {
       superseded.add(event.replay_of_event_id);
     }
   }
@@ -135,13 +145,16 @@ export function resolveReplays(events: readonly TaskCostEventV1[]): ReplayResolu
   // A supersede that targeted nothing present is just a first observation.
   const resolvedDecisions = decisions.map((decision, index) => {
     const target = events[index]?.replay_of_event_id;
-    return decision === 'supersede_prior' && (target === undefined || !firstById.has(target))
+    return decision === 'supersede_prior' &&
+      (target === undefined || !firstById.has(target))
       ? 'accept_first'
       : decision;
   });
 
   return {
-    contributing: [...firstById.values()].filter((event) => !superseded.has(event.event_id)),
+    contributing: [...firstById.values()].filter(
+      (event) => !superseded.has(event.event_id),
+    ),
     decisions: resolvedDecisions,
     droppedDuplicates,
   };
@@ -175,7 +188,8 @@ function differenceField(
 ): { delta: number | null; baseline: number | null } {
   if (current === null) return { delta: null, baseline: previous };
   if (previous === null) return { delta: current, baseline: current };
-  if (current >= previous) return { delta: round(current - previous), baseline: current };
+  if (current >= previous)
+    return { delta: round(current - previous), baseline: current };
   onBackward();
   return { delta: 0, baseline: current };
 }
@@ -215,7 +229,8 @@ export function reconcileCumulative(
       estimated: null,
     };
     const ordered = [...sessionEvents].sort(
-      (a, b) => a.sequence - b.sequence || compareStrings(a.event_id, b.event_id),
+      (a, b) =>
+        a.sequence - b.sequence || compareStrings(a.event_id, b.event_id),
     );
     for (const event of ordered) {
       if (event.usage_kind === 'delta') {
@@ -239,7 +254,12 @@ export function reconcileCumulative(
         usage[field] = result.delta;
         baseline.usage[field] = result.baseline;
       }
-      const actual = differenceField(event.actual_cost_usd, baseline.actual, markBackward, roundUsd);
+      const actual = differenceField(
+        event.actual_cost_usd,
+        baseline.actual,
+        markBackward,
+        roundUsd,
+      );
       const estimated = differenceField(
         event.estimated_cost_usd,
         baseline.estimated,
@@ -270,8 +290,12 @@ export function reconcileCumulative(
 export function promoteCostSource(
   sources: readonly (TaskCostEventSource | TaskCostSource)[],
 ): TaskCostSource {
-  const hasProvider = sources.some((s) => s === 'provider_reported' || s === 'mixed');
-  const hasEstimate = sources.some((s) => s === 'local_estimate' || s === 'mixed');
+  const hasProvider = sources.some(
+    (s) => s === 'provider_reported' || s === 'mixed',
+  );
+  const hasEstimate = sources.some(
+    (s) => s === 'local_estimate' || s === 'mixed',
+  );
   if (hasProvider && hasEstimate) return 'mixed';
   if (hasProvider) return 'provider_reported';
   if (hasEstimate) return 'local_estimate';
@@ -284,11 +308,14 @@ export function promoteCostSource(
  * Empty -> `unavailable`; all `unavailable` -> `unavailable`; all `known_zero`
  * -> `known_zero`; all `complete`/`known_zero` -> `complete`; else `partial`.
  */
-export function promoteCoverage(coverages: readonly TaskCostCoverage[]): TaskCostCoverage {
+export function promoteCoverage(
+  coverages: readonly TaskCostCoverage[],
+): TaskCostCoverage {
   if (coverages.length === 0) return 'unavailable';
   if (coverages.every((c) => c === 'unavailable')) return 'unavailable';
   if (coverages.every((c) => c === 'known_zero')) return 'known_zero';
-  if (coverages.every((c) => c === 'complete' || c === 'known_zero')) return 'complete';
+  if (coverages.every((c) => c === 'complete' || c === 'known_zero'))
+    return 'complete';
   return 'partial';
 }
 
@@ -296,7 +323,9 @@ function resolvedCost(observation: EffectiveObservation): number | null {
   return observation.actual ?? observation.estimated;
 }
 
-function observationSource(observation: EffectiveObservation): TaskCostEventSource {
+function observationSource(
+  observation: EffectiveObservation,
+): TaskCostEventSource {
   if (observation.actual !== null) return 'provider_reported';
   if (observation.estimated !== null) return 'local_estimate';
   return 'none';
@@ -308,11 +337,14 @@ function observationSource(observation: EffectiveObservation): TaskCostEventSour
  * cost -> `known_zero`; a cost with fully-observed usage -> `complete`; a cost
  * with incomplete usage -> `partial`.
  */
-function observationCoverage(observation: EffectiveObservation): TaskCostCoverage {
+function observationCoverage(
+  observation: EffectiveObservation,
+): TaskCostCoverage {
   const usage = deriveUsageAvailability(observation.usage);
   const cost = resolvedCost(observation);
   if (cost === null) return usage === 'unavailable' ? 'unavailable' : 'partial';
-  if (observation.actual === 0 || (cost === 0 && usage === 'known_zero')) return 'known_zero';
+  if (observation.actual === 0 || (cost === 0 && usage === 'known_zero'))
+    return 'known_zero';
   return usage === 'available' ? 'complete' : 'partial';
 }
 
@@ -343,7 +375,9 @@ function turnKey(event: TaskCostEventV1): string {
   return `${event.session_id}\u0000${event.turn_id}`;
 }
 
-function buildSegments(observations: readonly EffectiveObservation[]): TaskCostModelSegment[] {
+function buildSegments(
+  observations: readonly EffectiveObservation[],
+): TaskCostModelSegment[] {
   const runs: { model: string; members: EffectiveObservation[] }[] = [];
   for (const observation of observations) {
     const model = observation.event.observed_model;
@@ -366,25 +400,40 @@ function buildSegments(observations: readonly EffectiveObservation[]): TaskCostM
 
 function promoteBasis(bases: readonly TaskCostBasis[]): TaskCostBasis {
   const [first, ...rest] = bases;
-  return first !== undefined && rest.every((basis) => basis === first) ? first : 'unknown';
+  return first !== undefined && rest.every((basis) => basis === first)
+    ? first
+    : 'unknown';
 }
 
-function promotePricingSource(sources: readonly TaskCostPricingSource[]): TaskCostPricingSource {
+function promotePricingSource(
+  sources: readonly TaskCostPricingSource[],
+): TaskCostPricingSource {
   const [first, ...rest] = distinct(sources.filter((s) => s !== 'none'));
   if (first === undefined) return 'none';
   return rest.length === 0 ? first : 'mixed';
 }
 
 /**
- * Summarize one task. Throws {@link TaskCostValidationError} for invalid
- * events (`schema_validation_failed` and friends), events spanning several
- * tasks/harnesses/provider contracts (`mixed_scope`), or replay cycles
- * (`replay_cycle`).
+ * The shared prelude of {@link aggregateTaskCost} and
+ * {@link aggregateTaskCostByModel}: validate every event, select exactly one
+ * task (and enforce the one-harness/one-provider-contract scope), resolve
+ * replays, and reconcile cumulative snapshots into effective observations.
  */
-export function aggregateTaskCost(
+interface PreparedTaskObservations {
+  taskId: string;
+  taskEvents: TaskCostEventV1[];
+  harness: TaskCostEventV1['harness'];
+  providerContract: string;
+  replay: ReplayResolution;
+  /** Effective per-event contributions, in canonical order. */
+  observations: EffectiveObservation[];
+  backwardJump: boolean;
+}
+
+function prepareTaskObservations(
   events: readonly TaskCostEventV1[],
-  options: AggregateTaskCostOptions = {},
-): TaskCostSummaryV1 {
+  options: AggregateTaskCostOptions,
+): PreparedTaskObservations {
   for (const event of events) validateTaskCostEventV1(event);
 
   const taskIds = distinct(events.map((event) => event.task_id));
@@ -409,7 +458,8 @@ export function aggregateTaskCost(
   if (
     taskEvents.some(
       (event) =>
-        event.harness !== harness || event.provider_contract_version !== providerContract,
+        event.harness !== harness ||
+        event.provider_contract_version !== providerContract,
     )
   ) {
     throw new TaskCostValidationError(
@@ -419,7 +469,39 @@ export function aggregateTaskCost(
   }
 
   const replay = resolveReplays(taskEvents);
-  const { observations, backwardJump } = reconcileCumulative(replay.contributing);
+  const { observations, backwardJump } = reconcileCumulative(
+    replay.contributing,
+  );
+  return {
+    taskId,
+    taskEvents,
+    harness,
+    providerContract,
+    replay,
+    observations,
+    backwardJump,
+  };
+}
+
+/**
+ * Summarize one task. Throws {@link TaskCostValidationError} for invalid
+ * events (`schema_validation_failed` and friends), events spanning several
+ * tasks/harnesses/provider contracts (`mixed_scope`), or replay cycles
+ * (`replay_cycle`).
+ */
+export function aggregateTaskCost(
+  events: readonly TaskCostEventV1[],
+  options: AggregateTaskCostOptions = {},
+): TaskCostSummaryV1 {
+  const {
+    taskId,
+    taskEvents,
+    harness,
+    providerContract,
+    replay,
+    observations,
+    backwardJump,
+  } = prepareTaskObservations(events, options);
   const contributing = observations.map((o) => o.event);
 
   const resolved = observations.map(resolvedCost);
@@ -429,37 +511,52 @@ export function aggregateTaskCost(
   const costSource = promoteCostSource(observations.map(observationSource));
   const bases = contributing.map((event) => event.cost_basis);
 
-  const pricedEvents = contributing.filter((event) => event.estimated_cost_usd !== null);
+  const pricedEvents = contributing.filter(
+    (event) => event.estimated_cost_usd !== null,
+  );
   const revisions = distinct(
-    pricedEvents.flatMap((event) => (event.pricing_revision ? [event.pricing_revision] : [])),
+    pricedEvents.flatMap((event) =>
+      event.pricing_revision ? [event.pricing_revision] : [],
+    ),
   ).sort();
   const pricingRevision = revisions[revisions.length - 1];
 
   const collectedAt =
     options.collectedAt ??
     taskEvents.reduce((latest, event) =>
-      Date.parse(event.observed_at) > Date.parse(latest.observed_at) ? event : latest,
+      Date.parse(event.observed_at) > Date.parse(latest.observed_at)
+        ? event
+        : latest,
     ).observed_at;
 
   const derived = new Set<TaskCostDiagnosticCode>();
-  if (observations.some((o) => o.usage.input_tokens === null || o.usage.output_tokens === null)) {
+  if (
+    observations.some(
+      (o) => o.usage.input_tokens === null || o.usage.output_tokens === null,
+    )
+  ) {
     derived.add('missing_token_usage');
   }
   if (
     observations.some(
       (o) =>
-        resolvedCost(o) === null && o.usage.input_tokens !== null && o.usage.output_tokens !== null,
+        resolvedCost(o) === null &&
+        o.usage.input_tokens !== null &&
+        o.usage.output_tokens !== null,
     )
   ) {
     derived.add('unpriced_model');
   }
   if (coverage === 'partial') derived.add('mixed_coverage');
-  if (observations.some((o) => o.actual !== null)) derived.add('provider_reported_cost');
-  if (resolved.every((cost) => cost === null)) derived.add('no_priced_sessions');
+  if (observations.some((o) => o.actual !== null))
+    derived.add('provider_reported_cost');
+  if (resolved.every((cost) => cost === null))
+    derived.add('no_priced_sessions');
   if (revisions.length > 1) derived.add('stale_pricing_revision');
   if (replay.droppedDuplicates > 0) derived.add('replay_dropped');
   if (backwardJump) derived.add('cumulative_backward_jump');
-  if (bases.includes('subscription')) derived.add('subscription_basis_no_charge');
+  if (bases.includes('subscription'))
+    derived.add('subscription_basis_no_charge');
   for (const event of contributing) {
     for (const code of event.diagnostics ?? []) derived.add(code);
   }
@@ -472,7 +569,9 @@ export function aggregateTaskCost(
     schema_version: TASK_COST_SUMMARY_SCHEMA_VERSION,
     task_id: taskId,
     session_ids: distinct(contributing.map((event) => event.session_id)).sort(),
-    ...(options.rootSessionId !== undefined ? { root_session_id: options.rootSessionId } : {}),
+    ...(options.rootSessionId !== undefined
+      ? { root_session_id: options.rootSessionId }
+      : {}),
     harness,
     ...(harnessVersion !== undefined && otherVersions.length === 0
       ? { harness_version: harnessVersion }
@@ -490,23 +589,99 @@ export function aggregateTaskCost(
     cost_basis: promoteBasis(bases),
     coverage,
     field_availability: {
-      usage: promoteAvailability(observations.map((o) => deriveUsageAvailability(o.usage))),
-      actual_cost: promoteAvailability(observations.map((o) => costAvailability(o.actual))),
-      estimated_cost: promoteAvailability(observations.map((o) => costAvailability(o.estimated))),
+      usage: promoteAvailability(
+        observations.map((o) => deriveUsageAvailability(o.usage)),
+      ),
+      actual_cost: promoteAvailability(
+        observations.map((o) => costAvailability(o.actual)),
+      ),
+      estimated_cost: promoteAvailability(
+        observations.map((o) => costAvailability(o.estimated)),
+      ),
       pricing: promoteAvailability(
-        observations.map((o): TaskCostFieldAvailability =>
-          o.estimated !== null ? 'available' : 'unavailable',
+        observations.map(
+          (o): TaskCostFieldAvailability =>
+            o.estimated !== null ? 'available' : 'unavailable',
         ),
       ),
     },
     ...(pricingRevision !== undefined
       ? { pricing_revision: pricingRevision, pricing_timestamp: collectedAt }
       : {}),
-    pricing_source: promotePricingSource(contributing.map((event) => event.pricing_source)),
+    pricing_source: promotePricingSource(
+      contributing.map((event) => event.pricing_source),
+    ),
     join_confidence: options.joinConfidence ?? 'unattributed',
     collected_at: collectedAt,
     event_count: contributing.length,
     event_ids: contributing.map((event) => event.event_id),
     diagnostics: TASK_COST_DIAGNOSTIC_CODES.filter((code) => derived.has(code)),
   };
+}
+
+/**
+ * Per-model totals for one task, derived from the *same* effective
+ * observations as {@link aggregateTaskCost} (post replay resolution and
+ * cumulative reconciliation), so the per-model rows reconcile exactly with the
+ * task summary. This is an SDK read-model, not a wire record: unlike
+ * `model_segments` (consecutive same-model runs), each model appears once.
+ */
+export interface TaskCostModelTotal {
+  model: string;
+  /** Contributing events observed for this model. */
+  event_count: number;
+  /** Distinct `(session_id, turn_id)` pairs among those events. */
+  turn_count: number;
+  usage: TaskCostTokenUsage;
+  /** Lower bound when some of the model's events carry no charge. */
+  actual_cost_usd: number | null;
+  /** Lower bound when some of the model's events carry no estimate. */
+  estimated_cost_usd: number | null;
+  /**
+   * `actual ?? estimated` summed per event — `null` unless *every* observation
+   * for this model resolved to a cost (same never-an-undercount rule as the
+   * summary's `total_cost_usd`).
+   */
+  total_cost_usd: number | null;
+  cost_source: TaskCostSource;
+  coverage: TaskCostCoverage;
+}
+
+/**
+ * Break one task's cost down by observed model. Models appear in order of
+ * first appearance (canonical event order). Grouping partitions the task's
+ * observations, so the resolved per-model totals sum to the task summary's
+ * `total_cost_usd` (and stay `null`-consistent with it). Throws exactly the
+ * same errors as {@link aggregateTaskCost} for the same inputs.
+ */
+export function aggregateTaskCostByModel(
+  events: readonly TaskCostEventV1[],
+  options: AggregateTaskCostOptions = {},
+): TaskCostModelTotal[] {
+  const { observations } = prepareTaskObservations(events, options);
+
+  const byModel = new Map<string, EffectiveObservation[]>();
+  for (const observation of observations) {
+    const model = observation.event.observed_model;
+    const group = byModel.get(model);
+    if (group === undefined) byModel.set(model, [observation]);
+    else group.push(observation);
+  }
+
+  return [...byModel.entries()].map(([model, group]) => {
+    const resolved = group.map(resolvedCost);
+    return {
+      model,
+      event_count: group.length,
+      turn_count: new Set(group.map((o) => turnKey(o.event))).size,
+      usage: sumUsage(group.map((o) => o.usage)),
+      actual_cost_usd: sumUsd(group.map((o) => o.actual)),
+      estimated_cost_usd: sumUsd(group.map((o) => o.estimated)),
+      total_cost_usd: resolved.every((cost) => cost !== null)
+        ? sumUsd(resolved)
+        : null,
+      cost_source: promoteCostSource(group.map(observationSource)),
+      coverage: promoteCoverage(group.map(observationCoverage)),
+    };
+  });
 }

@@ -4,6 +4,24 @@
 
 ## Package Installation
 
+Only measuring what tasks cost? Install `@hokusai/costs` — it is a standalone
+starting point that needs no Hokusai account, no `HOKUSAI_API_KEY`, and no
+network access:
+
+```sh
+npm install @hokusai/costs
+```
+
+```ts
+import { measureTask } from '@hokusai/costs';
+const { result, cost } = await measureTask({ events: harness }, () =>
+  harness.run(task),
+);
+```
+
+See [packages/costs/README.md](../packages/costs/README.md) for the report
+shape, capture requirements, and the record/summary tracker API.
+
 Routing a task from your own application code? Install `@hokusai/router`:
 
 ```sh
@@ -54,6 +72,7 @@ $hokusai-doctor
 
 - `@hokusai/router`: the front-door façade for routing a task from application code. Owns the client, dispatch builder, consent snapshot, and model registry so the common case does not have to. Built entirely on `@hokusai/core`'s public API.
 - `@hokusai/core`: shared client, schemas, validation, model mapping, consent, anonymization, storage, fixtures, and conformance helpers.
+- `@hokusai/costs`: drop-in task cost measurement (`measureTask` / `createTaskCostTracker`) plus the offline pricing engine, Claude Code/Codex session-file adapters, and the local ledger. Standalone and local-only: no credentials, no network, routing/contribution not required.
 - `@hokusai/adapter-claude-code`: Claude Code plugin-facing adapter, CLI commands, config loading, and doctor helpers built on `@hokusai/core`.
 - `@hokusai/adapter-codex`: Codex plugin, MCP server, task/outcome builders, and OpenAI-only routing helpers built on `@hokusai/core`.
 - `@hokusai/adapter-wavemill`: Wavemill reference adapter with replay-aware task/outcome helpers built on `@hokusai/core`.

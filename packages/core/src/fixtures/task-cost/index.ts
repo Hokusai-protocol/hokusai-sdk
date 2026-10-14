@@ -5,6 +5,7 @@ import { claudeCodeRetryFixture } from './claude-code-retry.js';
 import { claudeCodeSimpleFixture } from './claude-code-simple.js';
 import { claudeCodeSubscriptionFixture } from './claude-code-subscription.js';
 import { codexProviderOverrideFixture } from './codex-provider-override.js';
+import { codexRealCacheFixture } from './codex-real-cache.js';
 import { codexSimpleFixture } from './codex-simple.js';
 import { codexUnknownPricingFixture } from './codex-unknown-pricing.js';
 import { concurrentTasksFixture } from './concurrent-tasks.js';
@@ -24,6 +25,7 @@ export {
   claudeCodeSimpleFixture,
   claudeCodeSubscriptionFixture,
   codexProviderOverrideFixture,
+  codexRealCacheFixture,
   codexSimpleFixture,
   codexUnknownPricingFixture,
   concurrentTasksFixture,
@@ -44,6 +46,7 @@ export const taskCostFixtures: readonly TaskCostFixture[] = [
   codexSimpleFixture,
   codexUnknownPricingFixture,
   codexProviderOverrideFixture,
+  codexRealCacheFixture,
   mixedModelFixture,
   nativeSimpleFixture,
   piSimpleFixture,

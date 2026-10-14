@@ -168,21 +168,6 @@ function builtInPriceTable(price: ModelPrice): TaskCostPriceTable {
   return 'external';
 }
 
-/**
- * The output tokens to bill. Codex reports reasoning tokens separately and
- * bills them as output; Claude Code's thinking tokens are already inside
- * `output_tokens`. Mirrors the rule the golden fixtures were priced with.
- */
-function billableOutputTokens(
-  usage: TaskCostTokenUsage,
-  harness: TaskCostHarness | undefined,
-): number | null {
-  if (usage.output_tokens === null) return null;
-  return harness === 'codex'
-    ? usage.output_tokens + (usage.reasoning_tokens ?? 0)
-    : usage.output_tokens;
-}
-
 interface EstimateResolution {
   estimated: number | null;
   pricingSource: TaskCostPricingSource;
@@ -299,9 +284,12 @@ function resolveEstimate(
   }
 
   // Pricing needs both input and output counts; a gap stays a gap (the
-  // reducer reports `missing_token_usage` for it).
+  // reducer reports `missing_token_usage` for it). Under the `codex/2`
+  // disjoint-buckets contract (HOK-3104), `reasoning_tokens` is reporting-
+  // only — never billed separately — for every harness, so output billing
+  // uses `output_tokens` as-is.
   const inputTokens = req.usage.input_tokens;
-  const outputTokens = billableOutputTokens(req.usage, req.harness);
+  const outputTokens = req.usage.output_tokens;
   if (inputTokens === null || outputTokens === null) {
     return { estimated: null, pricingSource: 'none', diagnostics: [] };
   }

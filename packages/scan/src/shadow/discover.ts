@@ -61,15 +61,12 @@ export function discoverMerges(opts: DiscoverMergesOptions): DiscoverMergesResul
 
   const cutoffEpoch = Math.floor(now().getTime() / 1000) - bootstrapDays * 86400;
   const format = '%H%x09%P%x09%ct%x09%s';
+  // git cannot parse a pre-1970 `--since` and silently matches nothing, so a
+  // window reaching past the epoch omits it and relies on the re-filter below.
+  const sinceArgs =
+    cutoffEpoch > 0 ? [`--since=${new Date(cutoffEpoch * 1000).toISOString()}`] : [];
   const args = useBootstrapWindow
-    ? [
-        'log',
-        '--first-parent',
-        '--reverse',
-        `--pretty=format:${format}`,
-        `--since=${new Date(cutoffEpoch * 1000).toISOString()}`,
-        ref,
-      ]
+    ? ['log', '--first-parent', '--reverse', `--pretty=format:${format}`, ...sinceArgs, ref]
     : ['log', '--first-parent', '--reverse', `--pretty=format:${format}`, `${cursor}..${ref}`];
 
   const result = runGit(args);

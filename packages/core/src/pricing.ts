@@ -215,11 +215,14 @@ function nonNegativeOrNull(value: number | undefined): number | null {
 
 /**
  * Compute `actual_cost_usd` from token counts and the resolved model. Cache
- * write/read tokens are billed at their reduced rates relative to input. Returns
- * `undefined` — never a fabricated value — when the model is unknown, when any
- * supplied token count is not a finite, non-negative number, or when non-zero
- * cache tokens are supplied for a non-Anthropic model (whose cache pricing is
- * not represented here).
+ * write/read tokens are billed at their reduced rates relative to input,
+ * using the shared {@link CACHE_WRITE_INPUT_MULTIPLIER} /
+ * {@link CACHE_READ_INPUT_MULTIPLIER} for both Anthropic and OpenAI tables.
+ * Returns `undefined` — never a fabricated value — when the model is unknown,
+ * when any supplied token count is not a finite, non-negative number, or when
+ * non-zero cache tokens are supplied for a model whose cache pricing is not
+ * represented here (today: Gemini, whose read tier is 0.25× and is out of
+ * scope for this helper; adapters should pass a measured charge for those).
  */
 export function computeActualCostUsd(input: TokenCostInput): number | undefined {
   const price = resolveModelPrice(input.model);
@@ -240,11 +243,10 @@ export function computeActualCostUsd(input: TokenCostInput): number | undefined 
     return undefined;
   }
 
-  if (
-    (cacheCreationTokens > 0 || cacheReadTokens > 0) &&
-    !isAnthropicModel(input.model)
-  ) {
-    return undefined;
+  if (cacheCreationTokens > 0 || cacheReadTokens > 0) {
+    if (!isAnthropicModel(input.model) && !isOpenAIModel(input.model)) {
+      return undefined;
+    }
   }
 
   const cost =
@@ -267,4 +269,12 @@ function isAnthropicModel(model: string): boolean {
     return true;
   }
   return Boolean(ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]);
+}
+
+function isOpenAIModel(model: string): boolean {
+  const normalized = normalizeModelId(model);
+  if (OPENAI_MODEL_PRICING[normalized]) {
+    return true;
+  }
+  return Boolean(OPENAI_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]);
 }

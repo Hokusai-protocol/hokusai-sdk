@@ -2425,7 +2425,7 @@ var TASK_COST_SUMMARY_SCHEMA_VERSION = "task_cost_summary/v1";
 var TASK_COST_LEDGER_SCHEMA_VERSION = "task_cost_ledger/v1";
 var PROVIDER_CONTRACT_VERSIONS = Object.freeze({
   "claude-code": "claude-code/1",
-  codex: "codex/1",
+  codex: "codex/2",
   native: "native/1",
   pi: "pi/1"
 });
@@ -2811,15 +2811,15 @@ function validateTaskCostLedgerV1(value) {
   if (!Array.isArray(record.events)) fail("ledger.events must be an array");
   if (record.events.length !== eventCount) fail("ledger.event_count must equal events.length");
   const seenTaskIds = /* @__PURE__ */ new Set();
-  for (const [index, event16] of record.events.entries()) {
-    validateTaskCostEventV1(event16);
+  for (const [index, event17] of record.events.entries()) {
+    validateTaskCostEventV1(event17);
     const label = `ledger.events[${index}]`;
-    if (event16.session_id !== sessionId) fail(`${label}.session_id must match ledger.session_id`);
-    if (event16.harness !== harness) fail(`${label}.harness must match ledger.harness`);
-    if (event16.provider_contract_version !== providerContract) {
+    if (event17.session_id !== sessionId) fail(`${label}.session_id must match ledger.session_id`);
+    if (event17.harness !== harness) fail(`${label}.harness must match ledger.harness`);
+    if (event17.provider_contract_version !== providerContract) {
       fail(`${label}.provider_contract_version must match ledger.provider_contract_version`);
     }
-    seenTaskIds.add(event16.task_id);
+    seenTaskIds.add(event17.task_id);
   }
   const expected = [...seenTaskIds].sort();
   if (taskIds.length !== expected.length || taskIds.some((id, index) => id !== expected[index])) {
@@ -2869,7 +2869,7 @@ function defaultTable(model) {
   if (model.startsWith("gemini-")) return "google";
   return "openai";
 }
-function eventFactory(profile16) {
+function eventFactory(profile17) {
   return (spec) => {
     const actual = spec.actual ?? null;
     const estimated = spec.estimated ?? null;
@@ -2883,9 +2883,9 @@ function eventFactory(profile16) {
       ...spec.parent !== void 0 ? { parent_event_id: spec.parent } : {},
       ...spec.isSubagent !== void 0 ? { is_subagent: spec.isSubagent } : {},
       ...spec.replayOf !== void 0 ? { replay_of_event_id: spec.replayOf } : {},
-      harness: profile16.harness,
-      ...profile16.harnessVersion !== void 0 ? { harness_version: profile16.harnessVersion } : {},
-      provider_contract_version: profile16.providerContractVersion,
+      harness: profile17.harness,
+      ...profile17.harnessVersion !== void 0 ? { harness_version: profile17.harnessVersion } : {},
+      provider_contract_version: profile17.providerContractVersion,
       observed_model: spec.model,
       usage_kind: spec.kind ?? "delta",
       usage: spec.usage,
@@ -2904,22 +2904,22 @@ function eventFactory(profile16) {
     };
   };
 }
-function ledgerFor(profile16, events16, sessionId = FIXTURE_SESSION_ID) {
-  const first = events16[0];
-  const last = events16[events16.length - 1];
+function ledgerFor(profile17, events17, sessionId = FIXTURE_SESSION_ID) {
+  const first = events17[0];
+  const last = events17[events17.length - 1];
   if (!first || !last) throw new Error("ledgerFor requires at least one event");
   return {
     schema_version: TASK_COST_LEDGER_SCHEMA_VERSION,
-    harness: profile16.harness,
-    ...profile16.harnessVersion !== void 0 ? { harness_version: profile16.harnessVersion } : {},
-    provider_contract_version: profile16.providerContractVersion,
+    harness: profile17.harness,
+    ...profile17.harnessVersion !== void 0 ? { harness_version: profile17.harnessVersion } : {},
+    provider_contract_version: profile17.providerContractVersion,
     session_id: sessionId,
-    task_ids: [...new Set(events16.map((event16) => event16.task_id))].sort(),
+    task_ids: [...new Set(events17.map((event17) => event17.task_id))].sort(),
     opened_at: first.observed_at,
     closed_at: last.observed_at,
     truncated: false,
-    event_count: events16.length,
-    events: [...events16]
+    event_count: events17.length,
+    events: [...events17]
   };
 }
 
@@ -3349,7 +3349,7 @@ var claudeCodeSubscriptionFixture = {
 // ../core/src/fixtures/task-cost/codex-provider-override.ts
 var profile7 = {
   harness: "codex",
-  providerContractVersion: "codex/1",
+  providerContractVersion: "codex/2",
   harnessVersion: "0.50.0"
 };
 var event7 = eventFactory(profile7);
@@ -3369,7 +3369,7 @@ var codexProviderOverrideFixture = {
       session_ids: ["session-0001"],
       harness: "codex",
       harness_version: "0.50.0",
-      provider_contract_version: "codex/1",
+      provider_contract_version: "codex/2",
       models: ["gpt-5"],
       model_segments: [
         {
@@ -3411,20 +3411,24 @@ var codexProviderOverrideFixture = {
   ]
 };
 
-// ../core/src/fixtures/task-cost/codex-simple.ts
+// ../core/src/fixtures/task-cost/codex-real-cache.ts
 var profile8 = {
   harness: "codex",
-  providerContractVersion: "codex/1",
+  providerContractVersion: "codex/2",
   harnessVersion: "0.50.0"
 };
 var event8 = eventFactory(profile8);
 var events8 = [
-  event8({ n: 1, model: "gpt-5-codex", usage: tokens(2e3, 600, 0, 0, 150), estimated: 0.01 }),
-  event8({ n: 2, model: "gpt-5-codex", usage: tokens(3e3, 900, 0, 0, 300), estimated: 0.01575 })
+  event8({
+    n: 1,
+    model: "gpt-5-codex",
+    usage: tokens(133579, 8343, 2844672, 0, 545),
+    estimated: 0.605988
+  })
 ];
-var codexSimpleFixture = {
-  name: "codex-simple",
-  description: "OpenAI-priced happy path; Codex reports no charge, so the estimate stands.",
+var codexRealCacheFixture = {
+  name: "codex-real-cache",
+  description: "Sanitized real `token_count` with cache-heavy input; disjoint buckets per codex/2 (HOK-3104).",
   events: events8,
   ledger: ledgerFor(profile8, events8),
   expectedSummaries: [
@@ -3434,7 +3438,69 @@ var codexSimpleFixture = {
       session_ids: ["session-0001"],
       harness: "codex",
       harness_version: "0.50.0",
-      provider_contract_version: "codex/1",
+      provider_contract_version: "codex/2",
+      models: ["gpt-5-codex"],
+      model_segments: [
+        {
+          model: "gpt-5-codex",
+          turn_count: 1,
+          usage: tokens(133579, 8343, 2844672, 0, 545),
+          actual_cost_usd: null,
+          estimated_cost_usd: 0.605988,
+          cost_source: "local_estimate"
+        }
+      ],
+      turn_count: 1,
+      turns_truncated: false,
+      usage: tokens(133579, 8343, 2844672, 0, 545),
+      actual_cost_usd: null,
+      estimated_cost_usd: 0.605988,
+      total_cost_usd: 0.605988,
+      cost_source: "local_estimate",
+      cost_basis: "per_token_api",
+      coverage: "complete",
+      field_availability: {
+        usage: "available",
+        actual_cost: "unavailable",
+        estimated_cost: "available",
+        pricing: "available"
+      },
+      pricing_revision: "2026-07-15",
+      pricing_timestamp: "2026-01-01T00:01:00Z",
+      pricing_source: "local_estimate",
+      join_confidence: "unattributed",
+      collected_at: "2026-01-01T00:01:00Z",
+      event_count: 1,
+      event_ids: ["01900000-0000-7000-8000-000000000001"],
+      diagnostics: []
+    }
+  ]
+};
+
+// ../core/src/fixtures/task-cost/codex-simple.ts
+var profile9 = {
+  harness: "codex",
+  providerContractVersion: "codex/2",
+  harnessVersion: "0.50.0"
+};
+var event9 = eventFactory(profile9);
+var events9 = [
+  event9({ n: 1, model: "gpt-5-codex", usage: tokens(2e3, 600, 0, 0, 150), estimated: 85e-4 }),
+  event9({ n: 2, model: "gpt-5-codex", usage: tokens(3e3, 900, 0, 0, 300), estimated: 0.01275 })
+];
+var codexSimpleFixture = {
+  name: "codex-simple",
+  description: "OpenAI-priced happy path; Codex reports no charge, so the estimate stands.",
+  events: events9,
+  ledger: ledgerFor(profile9, events9),
+  expectedSummaries: [
+    {
+      schema_version: "task_cost_summary/v1",
+      task_id: "task-0001",
+      session_ids: ["session-0001"],
+      harness: "codex",
+      harness_version: "0.50.0",
+      provider_contract_version: "codex/2",
       models: ["gpt-5-codex"],
       model_segments: [
         {
@@ -3442,7 +3508,7 @@ var codexSimpleFixture = {
           turn_count: 2,
           usage: tokens(5e3, 1500, 0, 0, 450),
           actual_cost_usd: null,
-          estimated_cost_usd: 0.02575,
+          estimated_cost_usd: 0.02125,
           cost_source: "local_estimate"
         }
       ],
@@ -3450,8 +3516,8 @@ var codexSimpleFixture = {
       turns_truncated: false,
       usage: tokens(5e3, 1500, 0, 0, 450),
       actual_cost_usd: null,
-      estimated_cost_usd: 0.02575,
-      total_cost_usd: 0.02575,
+      estimated_cost_usd: 0.02125,
+      total_cost_usd: 0.02125,
       cost_source: "local_estimate",
       cost_basis: "per_token_api",
       coverage: "complete",
@@ -3477,21 +3543,21 @@ var codexSimpleFixture = {
 };
 
 // ../core/src/fixtures/task-cost/codex-unknown-pricing.ts
-var profile9 = {
+var profile10 = {
   harness: "codex",
-  providerContractVersion: "codex/1",
+  providerContractVersion: "codex/2",
   harnessVersion: "0.50.0"
 };
-var event9 = eventFactory(profile9);
-var events9 = [
-  event9({ n: 1, model: "gpt-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 525e-5 }),
-  event9({ n: 2, model: "codex-unlisted-model", usage: tokens(2e3, 700, 0, 0, 0) })
+var event10 = eventFactory(profile10);
+var events10 = [
+  event10({ n: 1, model: "gpt-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 525e-5 }),
+  event10({ n: 2, model: "codex-unlisted-model", usage: tokens(2e3, 700, 0, 0, 0) })
 ];
 var codexUnknownPricingFixture = {
   name: "codex-unknown-pricing",
   description: "A model missing from the price table yields a null cost, partial coverage, and no total.",
-  events: events9,
-  ledger: ledgerFor(profile9, events9),
+  events: events10,
+  ledger: ledgerFor(profile10, events10),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -3499,7 +3565,7 @@ var codexUnknownPricingFixture = {
       session_ids: ["session-0001"],
       harness: "codex",
       harness_version: "0.50.0",
-      provider_contract_version: "codex/1",
+      provider_contract_version: "codex/2",
       models: ["gpt-5", "codex-unlisted-model"],
       model_segments: [
         {
@@ -3550,25 +3616,25 @@ var codexUnknownPricingFixture = {
 };
 
 // ../core/src/fixtures/task-cost/concurrent-tasks.ts
-var profile10 = {
+var profile11 = {
   harness: "claude-code",
   providerContractVersion: "claude-code/1",
   harnessVersion: "2.1.0"
 };
-var event10 = eventFactory(profile10);
-var events10 = [
-  event10({ n: 1, task: "task-0001", model: "claude-sonnet-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 9e-3 }),
-  event10({ n: 2, task: "task-0002", model: "claude-sonnet-5", usage: tokens(4e3, 1e3, 0, 0, 0), estimated: 0.027 }),
-  event10({ n: 3, task: "task-0001", model: "claude-sonnet-5", usage: tokens(2e3, 600, 0, 0, 0), estimated: 0.015 }),
-  event10({ n: 4, task: "task-0002", model: "claude-sonnet-5", usage: tokens(1500, 500, 0, 0, 0), estimated: 0.012 }),
-  event10({ n: 5, task: "task-0001", model: "claude-sonnet-5", usage: tokens(500, 200, 0, 0, 0), estimated: 45e-4 }),
-  event10({ n: 6, task: "task-0002", model: "claude-sonnet-5", usage: tokens(800, 300, 0, 0, 0), estimated: 69e-4 })
+var event11 = eventFactory(profile11);
+var events11 = [
+  event11({ n: 1, task: "task-0001", model: "claude-sonnet-5", usage: tokens(1e3, 400, 0, 0, 0), estimated: 9e-3 }),
+  event11({ n: 2, task: "task-0002", model: "claude-sonnet-5", usage: tokens(4e3, 1e3, 0, 0, 0), estimated: 0.027 }),
+  event11({ n: 3, task: "task-0001", model: "claude-sonnet-5", usage: tokens(2e3, 600, 0, 0, 0), estimated: 0.015 }),
+  event11({ n: 4, task: "task-0002", model: "claude-sonnet-5", usage: tokens(1500, 500, 0, 0, 0), estimated: 0.012 }),
+  event11({ n: 5, task: "task-0001", model: "claude-sonnet-5", usage: tokens(500, 200, 0, 0, 0), estimated: 45e-4 }),
+  event11({ n: 6, task: "task-0002", model: "claude-sonnet-5", usage: tokens(800, 300, 0, 0, 0), estimated: 69e-4 })
 ];
 var concurrentTasksFixture = {
   name: "concurrent-tasks",
   description: "One session, two interleaved tasks: one ledger, two disjoint summaries.",
-  events: events10,
-  ledger: ledgerFor(profile10, events10),
+  events: events11,
+  ledger: ledgerFor(profile11, events11),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -3666,22 +3732,22 @@ var concurrentTasksFixture = {
 };
 
 // ../core/src/fixtures/task-cost/mixed-model.ts
-var profile11 = {
+var profile12 = {
   harness: "claude-code",
   providerContractVersion: "claude-code/1",
   harnessVersion: "2.1.0"
 };
-var event11 = eventFactory(profile11);
-var events11 = [
-  event11({ n: 1, model: "claude-sonnet-5", usage: tokens(2e3, 1e3, 0, 0, 0), actual: 0.0212, estimated: 0.021 }),
-  event11({ n: 2, model: "claude-sonnet-5", usage: tokens(1e3, 200, 0, 0, 0), actual: 61e-4, estimated: 6e-3 }),
-  event11({ n: 3, model: "gpt-5", usage: tokens(3e3, 1e3, 0, 0, 0), estimated: 0.01375 })
+var event12 = eventFactory(profile12);
+var events12 = [
+  event12({ n: 1, model: "claude-sonnet-5", usage: tokens(2e3, 1e3, 0, 0, 0), actual: 0.0212, estimated: 0.021 }),
+  event12({ n: 2, model: "claude-sonnet-5", usage: tokens(1e3, 200, 0, 0, 0), actual: 61e-4, estimated: 6e-3 }),
+  event12({ n: 3, model: "gpt-5", usage: tokens(3e3, 1e3, 0, 0, 0), estimated: 0.01375 })
 ];
 var mixedModelFixture = {
   name: "mixed-model",
   description: "Anthropic (charged) then OpenAI (estimated) turns: cost_source mixed, two model segments.",
-  events: events11,
-  ledger: ledgerFor(profile11, events11),
+  events: events12,
+  ledger: ledgerFor(profile12, events12),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -3741,21 +3807,21 @@ var mixedModelFixture = {
 };
 
 // ../core/src/fixtures/task-cost/native-simple.ts
-var profile12 = {
+var profile13 = {
   harness: "native",
   providerContractVersion: "native/1",
   harnessVersion: "1.0.0"
 };
-var event12 = eventFactory(profile12);
-var events12 = [
-  event12({ n: 1, model: "claude-haiku-4-5", usage: tokens(1200, 300, 0, 0, 0), estimated: 27e-4 }),
-  event12({ n: 2, model: "claude-haiku-4-5", usage: tokens(0, 0, 0, 0, 0), estimated: 0 })
+var event13 = eventFactory(profile13);
+var events13 = [
+  event13({ n: 1, model: "claude-haiku-4-5", usage: tokens(1200, 300, 0, 0, 0), estimated: 27e-4 }),
+  event13({ n: 2, model: "claude-haiku-4-5", usage: tokens(0, 0, 0, 0, 0), estimated: 0 })
 ];
 var nativeSimpleFixture = {
   name: "native-simple",
   description: "Native harness: known-zero counters and a known-zero turn stay distinct from missing.",
-  events: events12,
-  ledger: ledgerFor(profile12, events12),
+  events: events13,
+  ledger: ledgerFor(profile13, events13),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -3806,21 +3872,21 @@ var nativeSimpleFixture = {
 };
 
 // ../core/src/fixtures/task-cost/partial-usage.ts
-var profile13 = {
+var profile14 = {
   harness: "codex",
-  providerContractVersion: "codex/1",
+  providerContractVersion: "codex/2",
   harnessVersion: "0.50.0"
 };
-var event13 = eventFactory(profile13);
-var events13 = [
-  event13({ n: 1, model: "gpt-5", usage: tokens(1e3, null, 0, 0, null) }),
-  event13({ n: 2, model: "gpt-5", usage: tokens(2e3, 500, 0, 0, 0), estimated: 75e-4 })
+var event14 = eventFactory(profile14);
+var events14 = [
+  event14({ n: 1, model: "gpt-5", usage: tokens(1e3, null, 0, 0, null) }),
+  event14({ n: 2, model: "gpt-5", usage: tokens(2e3, 500, 0, 0, 0), estimated: 75e-4 })
 ];
 var partialUsageFixture = {
   name: "partial-usage",
   description: "Missing (null) output tokens stay null, mark usage partial, and block pricing for that turn.",
-  events: events13,
-  ledger: ledgerFor(profile13, events13),
+  events: events14,
+  ledger: ledgerFor(profile14, events14),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -3828,7 +3894,7 @@ var partialUsageFixture = {
       session_ids: ["session-0001"],
       harness: "codex",
       harness_version: "0.50.0",
-      provider_contract_version: "codex/1",
+      provider_contract_version: "codex/2",
       models: ["gpt-5"],
       model_segments: [
         {
@@ -3871,15 +3937,15 @@ var partialUsageFixture = {
 };
 
 // ../core/src/fixtures/task-cost/pi-simple.ts
-var profile14 = {
+var profile15 = {
   harness: "pi",
   providerContractVersion: "pi/1",
   harnessVersion: "0.9.0"
 };
-var event14 = eventFactory(profile14);
-var events14 = [
-  event14({ n: 1, model: "gemini-2.5-flash", usage: tokens(1e4, 2e3, 0, 0, 0), estimated: 8e-3 }),
-  event14({
+var event15 = eventFactory(profile15);
+var events15 = [
+  event15({ n: 1, model: "gemini-2.5-flash", usage: tokens(1e4, 2e3, 0, 0, 0), estimated: 8e-3 }),
+  event15({
     n: 2,
     model: "gemini-2.5-flash",
     usage: tokens(6e3, 1500, 0, 0, 0),
@@ -3891,8 +3957,8 @@ var events14 = [
 var piSimpleFixture = {
   name: "pi-simple",
   description: "Pi harness contract (pi/1) with a nested subagent turn.",
-  events: events14,
-  ledger: ledgerFor(profile14, events14),
+  events: events15,
+  ledger: ledgerFor(profile15, events15),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -3943,22 +4009,22 @@ var piSimpleFixture = {
 };
 
 // ../core/src/fixtures/task-cost/wavemill-parity.ts
-var profile15 = {
+var profile16 = {
   harness: "claude-code",
   providerContractVersion: "claude-code/1",
   harnessVersion: "2.1.0"
 };
-var event15 = eventFactory(profile15);
-var events15 = [
-  event15({ n: 1, model: "claude-opus-4-8", usage: tokens(2500, 900, 12e3, 3e3, 200), actual: 0.0601, estimated: 0.05975 }),
-  event15({ n: 2, model: "claude-opus-4-8", usage: tokens(1200, 700, 15e3, 0, 100), actual: 0.0312, estimated: 0.031 }),
-  event15({ n: 3, model: "claude-sonnet-4-6", usage: tokens(3e3, 1e3, 2e4, 500, 0), actual: 0.032, estimated: 0.031875 })
+var event16 = eventFactory(profile16);
+var events16 = [
+  event16({ n: 1, model: "claude-opus-4-8", usage: tokens(2500, 900, 12e3, 3e3, 200), actual: 0.0601, estimated: 0.05975 }),
+  event16({ n: 2, model: "claude-opus-4-8", usage: tokens(1200, 700, 15e3, 0, 100), actual: 0.0312, estimated: 0.031 }),
+  event16({ n: 3, model: "claude-sonnet-4-6", usage: tokens(3e3, 1e3, 2e4, 500, 0), actual: 0.032, estimated: 0.031875 })
 ];
 var wavemillParityFixture = {
   name: "wavemill-parity",
   description: "Multi-model, cache-tier session with provider-reported cost; matches a real Wavemill golden.",
-  events: events15,
-  ledger: ledgerFor(profile15, events15),
+  events: events16,
+  ledger: ledgerFor(profile16, events16),
   expectedSummaries: [
     {
       schema_version: "task_cost_summary/v1",
@@ -5447,10 +5513,10 @@ function createDefaultDeps(target, options = {}) {
         return [];
       }
       try {
-        const events16 = JSON.parse(result.stdout);
-        return events16.filter((event16) => event16.event === "cross-referenced" && event16.created_at).map((event16) => ({
-          createdAtEpoch: Math.floor(Date.parse(event16.created_at) / 1e3),
-          url: event16.source?.issue?.html_url ?? ""
+        const events17 = JSON.parse(result.stdout);
+        return events17.filter((event17) => event17.event === "cross-referenced" && event17.created_at).map((event17) => ({
+          createdAtEpoch: Math.floor(Date.parse(event17.created_at) / 1e3),
+          url: event17.source?.issue?.html_url ?? ""
         })).filter((ref) => Number.isFinite(ref.createdAtEpoch));
       } catch {
         return [];
@@ -5693,14 +5759,8 @@ function discoverMerges(opts) {
   }
   const cutoffEpoch = Math.floor(now().getTime() / 1e3) - bootstrapDays * 86400;
   const format = "%H%x09%P%x09%ct%x09%s";
-  const args = useBootstrapWindow ? [
-    "log",
-    "--first-parent",
-    "--reverse",
-    `--pretty=format:${format}`,
-    `--since=${new Date(cutoffEpoch * 1e3).toISOString()}`,
-    ref
-  ] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref}`];
+  const sinceArgs = cutoffEpoch > 0 ? [`--since=${new Date(cutoffEpoch * 1e3).toISOString()}`] : [];
+  const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref}`];
   const result = runGit3(args);
   if (result.exitCode !== 0) {
     throw new ShadowError("NOT_A_GIT_REPO");

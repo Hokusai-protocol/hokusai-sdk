@@ -171,17 +171,33 @@ describe('computeActualCostUsd', () => {
     );
   });
 
-  it('returns undefined when non-zero cache tokens are supplied for a non-Anthropic model', () => {
-    // OpenAI/Gemini cache pricing is not modeled; refuse to fabricate a cost
-    // by applying Anthropic-specific multipliers.
+  it('prices OpenAI cache tokens at the shared multipliers (HOK-3104)', () => {
+    // gpt-5 at $1.25 input / $10 output per MTok, read at 0.1× input.
+    // 100k input + 900k cache_read + 10k output
+    //   = 100000/1e6×1.25 + 900000/1e6×1.25×0.1 + 10000/1e6×10
+    //   = 0.125 + 0.1125 + 0.1 = 0.3375
     expect(
       computeActualCostUsd({
-        model: 'gpt-4o',
+        model: 'gpt-5-codex',
+        inputTokens: 100_000,
+        outputTokens: 10_000,
+        cacheReadTokens: 900_000,
+      }),
+    ).toBeCloseTo(0.3375, 9);
+    // Snapshot-suffixed OpenAI ids also price through.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-4o-2024-08-06',
         inputTokens: 1000,
         outputTokens: 1000,
         cacheReadTokens: 500,
       }),
-    ).toBeUndefined();
+    ).not.toBeUndefined();
+  });
+
+  it('returns undefined when non-zero cache tokens are supplied for a Gemini model', () => {
+    // Gemini's cache read tier (0.25×) is not the Anthropic/OpenAI shared
+    // multiplier; refuse to fabricate a cost rather than mispricing it.
     expect(
       computeActualCostUsd({
         model: 'gemini-2.5-pro',
@@ -190,18 +206,26 @@ describe('computeActualCostUsd', () => {
         cacheCreationTokens: 500,
       }),
     ).toBeUndefined();
-  });
-
-  it('accepts zero cache token counts for non-Anthropic models', () => {
     expect(
       computeActualCostUsd({
-        model: 'gpt-4o',
+        model: 'gemini-2.5-pro',
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheReadTokens: 500,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('accepts zero cache token counts for Gemini models', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'gemini-2.5-pro',
         inputTokens: 1000,
         outputTokens: 1000,
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
       }),
-    ).toBe(0.0125);
+    ).toBe(0.01125);
   });
 
   it('returns undefined for a negative cache token count', () => {
