@@ -134,7 +134,7 @@ export function buildTaskCostReport(
     harnessEntry.usd = addNullable(harnessEntry.usd, resolved);
     addUsage(harnessEntry.usage, event.usage);
 
-    if (event.estimated_cost_usd !== null) {
+    if (resolved !== null) {
       if (
         event.price_table !== undefined &&
         !priceTables.includes(event.price_table)
