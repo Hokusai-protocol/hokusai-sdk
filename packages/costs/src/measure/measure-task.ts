@@ -295,7 +295,7 @@ function ingestSourceResult(
 ): void {
   mapSourceDiagnostics(result.diagnostics, core);
   for (const input of result.inputs) {
-    const originalLabel = (input as any).harness;
+    const originalLabel: string | undefined = input.harness;
     const normalized = {
       ...input,
       harness: toContractHarness(originalLabel ?? 'unknown'),
@@ -397,7 +397,7 @@ function toLedgerInput(event: TaskCostEventV1): ToLedgerRecordInput {
     taskId: event.task_id,
     model: event.observed_model,
     harness: event.harness,
-    backend: isKnownBackend(table) ? table : 'unknown',
+    backend: table !== undefined && isKnownBackend(table) ? table : 'unknown',
     source: event.cost_source,
     pricingBasis:
       event.actual_cost_usd !== null
