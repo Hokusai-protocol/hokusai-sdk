@@ -26,4 +26,6 @@ export {
   type ResolvedEventPricing,
 } from './pricing-resolver.js';
 
+export * from './measure/index.js';
+
 export * from './ledger/index.js';

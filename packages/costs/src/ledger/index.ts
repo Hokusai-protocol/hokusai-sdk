@@ -27,6 +27,7 @@ export {
   type AppendResult,
   type RecordsFilter,
 } from './ledger.js';
+export { toLedgerEntries, type LedgerEntry } from './from-events.js';
 export {
   queryLedger,
   summarizeTaskRecords,

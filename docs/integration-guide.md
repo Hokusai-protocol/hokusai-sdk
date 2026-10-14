@@ -4,6 +4,13 @@ This repository is intentionally split between reusable contracts and harness ad
 
 ## Recommended integration flow
 
+0. Only measuring per-task cost? Start (and possibly stop) with
+   `@hokusai/costs`: `measureTask` wraps one run and returns a typed cost
+   report, entirely offline, with no Hokusai account or API key. Routing and
+   contribution are separate, optional steps you can add later — the measured
+   `cost.totalUsd` bridges into `route.reportOutcome({ actualCostUsd })` when
+   you do (pass a `null` total as _absent_, never as `0`). See
+   [packages/costs/README.md](../packages/costs/README.md).
 1. Depend on `@hokusai/core` for the shared `HokusaiClient`, payload types, validation helpers, and typed error classes.
 2. Choose an adapter package when a harness needs opinionated command or manifest metadata.
 3. Use `HokusaiDispatchBuilder` only when you need the offline dispatch-preparation helper.

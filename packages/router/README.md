@@ -23,8 +23,12 @@ import { route } from '@hokusai/router';
 // Your own model runners. Hokusai never calls a model — it only tells you which
 // one to call, ranked across the pool you give it.
 const models = {
-  'claude-sonnet-4-6': { run: async (task: string) => ({ ok: true, costUsd: 0.42 }) },
-  'claude-opus-4-8': { run: async (task: string) => ({ ok: true, costUsd: 1.10 }) },
+  'claude-sonnet-4-6': {
+    run: async (task: string) => ({ ok: true, costUsd: 0.42 }),
+  },
+  'claude-opus-4-8': {
+    run: async (task: string) => ({ ok: true, costUsd: 1.1 }),
+  },
 };
 
 const task = 'Refactor the billing webhook retry handling.';
@@ -50,6 +54,17 @@ await route.reportOutcome({
 `confidence`, ranked `alternatives`, a `routeId`, and a `correlationId`.
 `route.reportOutcome` attributes the outcome to the most recent `route()` call,
 so the common single-flight loop needs nothing threaded through.
+
+### Where does `actualCostUsd` come from?
+
+If your harness doesn't already know what the run cost, measure it with
+[`@hokusai/costs`](../costs/README.md): wrap the run in `measureTask` (or
+record usage on `createTaskCostTracker`) and bridge the result as
+`actualCostUsd: cost.totalUsd ?? undefined`. A `null` total means the
+measurement is partial and must be passed as _absent_, never as `0`.
+Measurement is local-only and never calls the router; for a single
+best-effort number from one session, `resolveActualCostUsd` in
+`@hokusai/core` also remains available and unchanged.
 
 ## Report External Outcomes
 
@@ -82,16 +97,19 @@ trains on. The server scores it and returns a `fidelityTier`, and **only
 `training_eligible` rows train the router or earn rewards**:
 
 ```ts
-const { fidelityTier } = await route.reportOutcome({ status: 'succeeded', actualCostUsd: 0.42 });
+const { fidelityTier } = await route.reportOutcome({
+  status: 'succeeded',
+  actualCostUsd: 0.42,
+});
 // 'training_eligible'
 ```
 
 To reach that tier the server needs to score the cost against the budget, so it
 needs **both**:
 
-| You must pass | Where |
-| --- | --- |
-| `maxCostUsd` — the budget | `route({ ... })` |
+| You must pass                         | Where                          |
+| ------------------------------------- | ------------------------------ |
+| `maxCostUsd` — the budget             | `route({ ... })`               |
 | `actualCostUsd` — what it really cost | `route.reportOutcome({ ... })` |
 
 Omit either and the row is accepted but classified `partial`: stored as
