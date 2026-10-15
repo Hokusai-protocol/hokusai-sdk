@@ -40,9 +40,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DATA_DIR: ${{ runner.temp }}/arbiter-shadow
       NIGHTLY: ${{ github.event.schedule == '17 3 * * *' || github.event_name == 'workflow_dispatch' }}
     steps:
+      # The `runner` context is not available in job-level `env`; using it
+      # there makes GitHub reject the whole file, so resolve the path here.
+      - name: Resolve data directory
+        run: echo "DATA_DIR=$RUNNER_TEMP/arbiter-shadow" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
         with:
           ref: auto/integration

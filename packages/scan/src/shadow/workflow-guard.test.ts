@@ -53,7 +53,10 @@ interface WorkflowDoc {
   on?: Record<string, unknown>;
   true?: Record<string, unknown>;
   permissions?: Record<string, unknown>;
-  jobs?: Record<string, { 'timeout-minutes'?: number; permissions?: unknown; steps?: WorkflowStep[] }>;
+  jobs?: Record<
+    string,
+    { 'timeout-minutes'?: number; permissions?: unknown; env?: Record<string, unknown>; steps?: WorkflowStep[] }
+  >;
   [key: string]: unknown;
 }
 
@@ -102,6 +105,13 @@ export function checkShadowWorkflow(doc: WorkflowDoc, rawText: string): string[]
   for (const job of Object.values(jobs)) {
     if (job.permissions !== undefined) {
       violations.push('job-level permissions escalation is forbidden');
+    }
+    // GitHub rejects the whole file (and so never schedules it) when job-level
+    // `env` uses a context only available at step level, e.g. `runner.temp`.
+    for (const [key, value] of Object.entries(job.env ?? {})) {
+      if (typeof value === 'string' && /\$\{\{[^}]*\b(runner|env|steps|job)\./.test(value)) {
+        violations.push(`job-level env ${key} uses a step-only context`);
+      }
     }
     const timeout = job['timeout-minutes'];
     if (typeof timeout !== 'number' || timeout > 15) {
@@ -217,6 +227,13 @@ describe('arbiter-shadow workflow guard (REQ-F8)', () => {
   it('rejects GITHUB_STEP_SUMMARY writes', () => {
     const { doc, raw } = mutate((r) => `${r}\n# echo "x" >> $GITHUB_STEP_SUMMARY\n`);
     expect(checkShadowWorkflow(doc, raw).some((v) => v.includes('GITHUB_STEP_SUMMARY'))).toBe(true);
+  });
+
+  it('rejects a step-only context in job-level env', () => {
+    const { doc, raw } = mutate((r) =>
+      r.replace('    env:\n      NIGHTLY:', '    env:\n      DATA_DIR: ${{ runner.temp }}/x\n      NIGHTLY:'),
+    );
+    expect(checkShadowWorkflow(doc, raw).some((v) => v.includes('DATA_DIR'))).toBe(true);
   });
 
   it('rejects job-level permission escalation', () => {
