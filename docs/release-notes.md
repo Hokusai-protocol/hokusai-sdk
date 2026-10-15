@@ -49,6 +49,28 @@ git push origin v0.x.y
   router APIs keep their current behavior, and any opt-in ledger files remain
   readable (the record schema is versioned).
 
+Also in 0.5.0:
+
+- **Codex cost fix (HOK-3104).** Codex reports cached input as a subset of
+  `input_tokens` and reasoning as a subset of `output_tokens`; these are now
+  normalized to disjoint buckets, so cache-heavy Codex estimates drop (≈6.9× on
+  the motivating rollout). `PROVIDER_CONTRACT_VERSIONS.codex` is now `codex/2`;
+  use `provider_contract_version` to tell historical `codex/1` ledger rows apart.
+- **`@hokusai/scan` is published for the first time** — the Arbiter survival
+  labeller and candidate-feature extractor, with a `hokusai-scan` CLI and
+  shadow-mode `shadow-score` / `shadow-backfill` / `shadow-report` commands.
+  `@hokusai/core` gains the `candidate_features/v1`,
+  `arbiter_survival_label/v1`, and `arbiter_shadow_*/v1` contracts.
+- **`@hokusai/adapter-aider` is published for the first time** — a thin Aider
+  CLI wrapper that routes through Hokusai and submits one
+  `harness_outcome_row/v1` contribution per run.
+- **`@hokusai/core`** adds the host integration kit, multi-provider
+  `actual_cost_usd` capture (OpenAI and Google pricing, `normalizeModelId`), and
+  exports `HARNESS_OUTCOME_ROW_FIELDS`.
+- **OpenHands integration example** (`examples/openhands-integration`, a Python
+  package, not published to npm): wires OpenHands `RouterLLM` and SDK metrics
+  into Hokusai routing and contribution rows.
+
 ### 0.3.0 — unreleased
 
 - **`@hokusai/router` is published for the first time.** The façade existed in the repo but had never been released, so the documented install (`npm install @hokusai/router`) did not resolve.
