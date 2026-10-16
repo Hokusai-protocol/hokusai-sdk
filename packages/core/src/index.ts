@@ -310,6 +310,24 @@ export {
 } from './arbiter-survival-label.js';
 export { ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA } from './arbiter-survival-label-schema.js';
 export {
+  ARBITER_REPORT_SCHEMA_VERSION,
+  ARBITER_REPORT_V1_JSON_SCHEMA,
+  ARBITER_REPORT_INVARIANT_CODES,
+  REPORT_ATTRIBUTION_METHODS,
+  REPORT_FEATURE_BUCKETS,
+  REPORT_FORBIDDEN_KEYS,
+  REPORT_SUPPRESSION_REASONS,
+  projectSurvivalLabel,
+  validateArbiterReportV1,
+  type ArbiterReportV1,
+  type ReportBasis,
+  type ReportCell,
+  type ReportPolicy,
+  type ReportSection,
+  type SuppressionReason,
+  type SurvivalLabelProjectionV1,
+} from './arbiter-report.js';
+export {
   ARBITER_SHADOW_SCORE_SCHEMA_VERSION,
   ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION,
   ARBITER_SHADOW_STATE_SCHEMA_VERSION,

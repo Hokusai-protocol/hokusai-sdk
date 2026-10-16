@@ -1,0 +1,2924 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hokus.ai/arbiter_report/v1.json",
+  "title": "Hokusai arbiter_report/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_origin",
+    "repo",
+    "scan",
+    "policy",
+    "coverage",
+    "prs",
+    "aggregates",
+    "retrospective",
+    "cost",
+    "model_provenance",
+    "eligibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "arbiter_report/v1"
+    },
+    "data_origin": {
+      "enum": [
+        "scan",
+        "fixture"
+      ]
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "owner",
+        "name"
+      ],
+      "properties": {
+        "host": {
+          "const": "github"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,100}$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scanned_at",
+        "as_of",
+        "scanner",
+        "integration_branch",
+        "lookback_days",
+        "window",
+        "horizons_days",
+        "contracts"
+      ],
+      "properties": {
+        "scanned_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+        },
+        "as_of": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+        },
+        "scanner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "package",
+            "version"
+          ],
+          "properties": {
+            "package": {
+              "const": "@hokusai/scan"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$"
+            }
+          }
+        },
+        "integration_branch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+        },
+        "lookback_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "merged_from",
+            "merged_to"
+          ],
+          "properties": {
+            "merged_from": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "merged_to": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            }
+          }
+        },
+        "horizons_days": {
+          "type": "array",
+          "items": {
+            "enum": [
+              14,
+              30,
+              60
+            ]
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "contracts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidate_features",
+            "survival_label",
+            "labeller_version",
+            "normalization_version"
+          ],
+          "properties": {
+            "candidate_features": {
+              "const": "candidate_features/v1"
+            },
+            "survival_label": {
+              "const": "1.0.0"
+            },
+            "labeller_version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$"
+            },
+            "normalization_version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$"
+            }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_version",
+        "min_cell_n",
+        "min_agent_coverage",
+        "min_harness_coverage",
+        "min_exact_model_coverage",
+        "min_cost_coverage",
+        "min_reworked_for_retrospective",
+        "ci_method",
+        "ci_level"
+      ],
+      "properties": {
+        "policy_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$"
+        },
+        "min_cell_n": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_agent_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_harness_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_exact_model_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_cost_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_reworked_for_retrospective": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ci_method": {
+          "enum": [
+            "wilson",
+            "katz_log"
+          ]
+        },
+        "ci_level": {
+          "const": 0.95
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "prs_enumerated",
+        "prs_eligible",
+        "labels_by_horizon",
+        "attribution"
+      ],
+      "properties": {
+        "basis": {
+          "const": "descriptive"
+        },
+        "prs_enumerated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prs_eligible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "labels_by_horizon": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "horizon_days",
+              "labelled",
+              "missing"
+            ],
+            "properties": {
+              "horizon_days": {
+                "enum": [
+                  14,
+                  30,
+                  60
+                ]
+              },
+              "labelled": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "reason",
+                    "count"
+                  ],
+                  "properties": {
+                    "reason": {
+                      "enum": [
+                        "unmerged_pr",
+                        "missing_horizon",
+                        "insufficient_history",
+                        "insufficient_line_range_substrate",
+                        "inaccessible_history",
+                        "ambiguous_change"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "attribution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "agent",
+            "harness",
+            "exact_model",
+            "methods"
+          ],
+          "properties": {
+            "agent": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "identified_agent",
+                "identified_human_signal",
+                "unknown",
+                "rate"
+              ],
+              "properties": {
+                "identified_agent": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "identified_human_signal": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            },
+            "harness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "identified",
+                "unknown",
+                "rate"
+              ],
+              "properties": {
+                "identified": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            },
+            "exact_model": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "identified",
+                "unknown",
+                "rate"
+              ],
+              "properties": {
+                "identified": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            },
+            "methods": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "dimension",
+                  "method",
+                  "count"
+                ],
+                "properties": {
+                  "dimension": {
+                    "enum": [
+                      "agent",
+                      "harness",
+                      "exact_model"
+                    ]
+                  },
+                  "method": {
+                    "enum": [
+                      "first_party_route_metadata",
+                      "bot_author",
+                      "branch_prefix",
+                      "co_authored_by_trailer",
+                      "pr_label",
+                      "commit_signature",
+                      "owner_config"
+                    ]
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "prs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pr_number",
+          "merged_at",
+          "attribution",
+          "features",
+          "labels",
+          "cost",
+          "prediction"
+        ],
+        "properties": {
+          "pr_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "merged_at": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+          },
+          "attribution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent",
+              "harness",
+              "exact_model"
+            ],
+            "properties": {
+              "agent": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status",
+                  "confidence",
+                  "methods"
+                ],
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "agent",
+                      "not_agent_signal",
+                      "unknown"
+                    ]
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "first_party_route_metadata",
+                        "bot_author",
+                        "branch_prefix",
+                        "co_authored_by_trailer",
+                        "pr_label",
+                        "commit_signature",
+                        "owner_config"
+                      ]
+                    }
+                  }
+                }
+              },
+              "harness": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "confidence",
+                  "methods"
+                ],
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "first_party_route_metadata",
+                        "bot_author",
+                        "branch_prefix",
+                        "co_authored_by_trailer",
+                        "pr_label",
+                        "commit_signature",
+                        "owner_config"
+                      ]
+                    }
+                  }
+                }
+              },
+              "exact_model": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "confidence",
+                  "methods",
+                  "evidence"
+                ],
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._:/@-]{0,119}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "first_party_route_metadata",
+                        "bot_author",
+                        "branch_prefix",
+                        "co_authored_by_trailer",
+                        "pr_label",
+                        "commit_signature",
+                        "owner_config"
+                      ]
+                    }
+                  },
+                  "evidence": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "first_party_executed",
+                          "heuristic"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "features": {
+            "$ref": "#/$defs/candidateFeatures"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "horizon_days",
+                "label_provenance",
+                "outcome",
+                "label_hash"
+              ],
+              "properties": {
+                "horizon_days": {
+                  "enum": [
+                    14,
+                    30,
+                    60
+                  ]
+                },
+                "label_provenance": {
+                  "enum": [
+                    "harvested",
+                    "owner_corrected"
+                  ]
+                },
+                "outcome": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "survived",
+                    "survival_ratio",
+                    "reverted",
+                    "undone_by",
+                    "followup",
+                    "report_outcome",
+                    "reason_codes"
+                  ],
+                  "properties": {
+                    "survived": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "survival_ratio": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reverted": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "undone_by": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "human",
+                            "agent"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "followup": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "report_outcome": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "survived",
+                            "followup",
+                            "substantially_rewritten",
+                            "reverted"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reason_codes": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "exact_revert",
+                          "line_range_followup",
+                          "linked_issue_or_pr",
+                          "pre_merge_human_edit",
+                          "task_redispatch",
+                          "substantial_rewrite",
+                          "no_evidence",
+                          "unmerged_pr",
+                          "missing_horizon",
+                          "insufficient_history",
+                          "insufficient_line_range_substrate",
+                          "inaccessible_history",
+                          "ambiguous_change"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "label_hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "maxItems": 3
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "actual_usd",
+                  "estimated_usd",
+                  "cost_source",
+                  "coverage",
+                  "pricing_revision"
+                ],
+                "properties": {
+                  "actual_usd": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "estimated_usd": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cost_source": {
+                    "enum": [
+                      "provider_reported",
+                      "local_estimate",
+                      "mixed",
+                      "none"
+                    ]
+                  },
+                  "coverage": {
+                    "enum": [
+                      "complete",
+                      "partial",
+                      "unavailable",
+                      "known_zero"
+                    ]
+                  },
+                  "pricing_revision": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prediction": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "basis",
+                  "score",
+                  "flagged"
+                ],
+                "properties": {
+                  "basis": {
+                    "const": "out_of_sample_prediction"
+                  },
+                  "score": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "flagged": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "maxItems": 20000
+    },
+    "aggregates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "survival_by_horizon",
+        "risk_ratios",
+        "survival_by_model",
+        "survival_by_harness",
+        "cost_adjusted_survival_by_model"
+      ],
+      "properties": {
+        "survival_by_horizon": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "status",
+            "suppression_reasons",
+            "rows"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "descriptive",
+                "out_of_sample_prediction"
+              ]
+            },
+            "status": {
+              "enum": [
+                "shown",
+                "suppressed"
+              ]
+            },
+            "suppression_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "n_below_floor",
+                  "agent_coverage_below_floor",
+                  "harness_coverage_below_floor",
+                  "exact_model_coverage_below_floor",
+                  "harness_only_evidence",
+                  "cost_coverage_below_floor",
+                  "reworked_below_floor",
+                  "no_model_provenance",
+                  "horizon_not_mature"
+                ]
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "horizon_days",
+                  "outcome",
+                  "cell"
+                ],
+                "properties": {
+                  "horizon_days": {
+                    "enum": [
+                      14,
+                      30,
+                      60
+                    ]
+                  },
+                  "outcome": {
+                    "enum": [
+                      "survived",
+                      "followup",
+                      "substantially_rewritten",
+                      "reverted"
+                    ]
+                  },
+                  "cell": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "risk_ratios": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "status",
+            "suppression_reasons",
+            "rows"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "descriptive",
+                "out_of_sample_prediction"
+              ]
+            },
+            "status": {
+              "enum": [
+                "shown",
+                "suppressed"
+              ]
+            },
+            "suppression_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "n_below_floor",
+                  "agent_coverage_below_floor",
+                  "harness_coverage_below_floor",
+                  "exact_model_coverage_below_floor",
+                  "harness_only_evidence",
+                  "cost_coverage_below_floor",
+                  "reworked_below_floor",
+                  "no_model_provenance",
+                  "horizon_not_mature"
+                ]
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "horizon_days",
+                  "feature",
+                  "bucket",
+                  "rework_rate",
+                  "baseline_rate",
+                  "ratio"
+                ],
+                "properties": {
+                  "horizon_days": {
+                    "enum": [
+                      14,
+                      30,
+                      60
+                    ]
+                  },
+                  "feature": {
+                    "enum": [
+                      "tests_changed",
+                      "files_touched_bucket",
+                      "loc_touched"
+                    ]
+                  },
+                  "bucket": {
+                    "enum": [
+                      "true",
+                      "false",
+                      "1",
+                      "2_5",
+                      "6_15",
+                      "16_plus",
+                      "q1",
+                      "q2",
+                      "q3",
+                      "q4"
+                    ]
+                  },
+                  "rework_rate": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "baseline_rate": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "ratio": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "survival_by_model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "status",
+            "suppression_reasons",
+            "rows"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "descriptive",
+                "out_of_sample_prediction"
+              ]
+            },
+            "status": {
+              "enum": [
+                "shown",
+                "suppressed"
+              ]
+            },
+            "suppression_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "n_below_floor",
+                  "agent_coverage_below_floor",
+                  "harness_coverage_below_floor",
+                  "exact_model_coverage_below_floor",
+                  "harness_only_evidence",
+                  "cost_coverage_below_floor",
+                  "reworked_below_floor",
+                  "no_model_provenance",
+                  "horizon_not_mature"
+                ]
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "horizon_days",
+                  "model_id",
+                  "cell"
+                ],
+                "properties": {
+                  "horizon_days": {
+                    "enum": [
+                      14,
+                      30,
+                      60
+                    ]
+                  },
+                  "model_id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._:/@-]{0,119}$"
+                  },
+                  "cell": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "survival_by_harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "status",
+            "suppression_reasons",
+            "rows"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "descriptive",
+                "out_of_sample_prediction"
+              ]
+            },
+            "status": {
+              "enum": [
+                "shown",
+                "suppressed"
+              ]
+            },
+            "suppression_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "n_below_floor",
+                  "agent_coverage_below_floor",
+                  "harness_coverage_below_floor",
+                  "exact_model_coverage_below_floor",
+                  "harness_only_evidence",
+                  "cost_coverage_below_floor",
+                  "reworked_below_floor",
+                  "no_model_provenance",
+                  "horizon_not_mature"
+                ]
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "horizon_days",
+                  "harness_id",
+                  "cell"
+                ],
+                "properties": {
+                  "horizon_days": {
+                    "enum": [
+                      14,
+                      30,
+                      60
+                    ]
+                  },
+                  "harness_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+                  },
+                  "cell": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cost_adjusted_survival_by_model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "status",
+            "suppression_reasons",
+            "rows"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "descriptive",
+                "out_of_sample_prediction"
+              ]
+            },
+            "status": {
+              "enum": [
+                "shown",
+                "suppressed"
+              ]
+            },
+            "suppression_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "n_below_floor",
+                  "agent_coverage_below_floor",
+                  "harness_coverage_below_floor",
+                  "exact_model_coverage_below_floor",
+                  "harness_only_evidence",
+                  "cost_coverage_below_floor",
+                  "reworked_below_floor",
+                  "no_model_provenance",
+                  "horizon_not_mature"
+                ]
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "horizon_days",
+                  "model_id",
+                  "cost_basis",
+                  "cell"
+                ],
+                "properties": {
+                  "horizon_days": {
+                    "enum": [
+                      14,
+                      30,
+                      60
+                    ]
+                  },
+                  "model_id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._:/@-]{0,119}$"
+                  },
+                  "cost_basis": {
+                    "const": "actual"
+                  },
+                  "cell": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "basis",
+                      "n",
+                      "value",
+                      "ci",
+                      "suppressed",
+                      "suppression_reasons"
+                    ],
+                    "properties": {
+                      "basis": {
+                        "enum": [
+                          "descriptive",
+                          "out_of_sample_prediction"
+                        ]
+                      },
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000000,
+                            "maximum": 1000000000000000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ci": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "low",
+                              "high",
+                              "level"
+                            ],
+                            "properties": {
+                              "low": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "high": {
+                                "type": "number",
+                                "minimum": -1000000000000000,
+                                "maximum": 1000000000000000
+                              },
+                              "level": {
+                                "const": 0.95
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "suppressed": {
+                        "type": "boolean"
+                      },
+                      "suppression_reasons": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "n_below_floor",
+                            "agent_coverage_below_floor",
+                            "harness_coverage_below_floor",
+                            "exact_model_coverage_below_floor",
+                            "harness_only_evidence",
+                            "cost_coverage_below_floor",
+                            "reworked_below_floor",
+                            "no_model_provenance",
+                            "horizon_not_mature"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "retrospective": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "horizon_days",
+            "threshold",
+            "calibration",
+            "n_reworked",
+            "precision",
+            "recall",
+            "flagged_share",
+            "suppressed",
+            "suppression_reasons"
+          ],
+          "properties": {
+            "basis": {
+              "const": "out_of_sample_prediction"
+            },
+            "horizon_days": {
+              "enum": [
+                14,
+                30,
+                60
+              ]
+            },
+            "threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "calibration": {
+              "enum": [
+                "portable",
+                "repo_calibrated"
+              ]
+            },
+            "n_reworked": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "precision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "basis",
+                "n",
+                "value",
+                "ci",
+                "suppressed",
+                "suppression_reasons"
+              ],
+              "properties": {
+                "basis": {
+                  "enum": [
+                    "descriptive",
+                    "out_of_sample_prediction"
+                  ]
+                },
+                "n": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -1000000000000000,
+                      "maximum": 1000000000000000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ci": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "low",
+                        "high",
+                        "level"
+                      ],
+                      "properties": {
+                        "low": {
+                          "type": "number",
+                          "minimum": -1000000000000000,
+                          "maximum": 1000000000000000
+                        },
+                        "high": {
+                          "type": "number",
+                          "minimum": -1000000000000000,
+                          "maximum": 1000000000000000
+                        },
+                        "level": {
+                          "const": 0.95
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "suppressed": {
+                  "type": "boolean"
+                },
+                "suppression_reasons": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "n_below_floor",
+                      "agent_coverage_below_floor",
+                      "harness_coverage_below_floor",
+                      "exact_model_coverage_below_floor",
+                      "harness_only_evidence",
+                      "cost_coverage_below_floor",
+                      "reworked_below_floor",
+                      "no_model_provenance",
+                      "horizon_not_mature"
+                    ]
+                  }
+                }
+              }
+            },
+            "recall": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "basis",
+                "n",
+                "value",
+                "ci",
+                "suppressed",
+                "suppression_reasons"
+              ],
+              "properties": {
+                "basis": {
+                  "enum": [
+                    "descriptive",
+                    "out_of_sample_prediction"
+                  ]
+                },
+                "n": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -1000000000000000,
+                      "maximum": 1000000000000000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ci": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "low",
+                        "high",
+                        "level"
+                      ],
+                      "properties": {
+                        "low": {
+                          "type": "number",
+                          "minimum": -1000000000000000,
+                          "maximum": 1000000000000000
+                        },
+                        "high": {
+                          "type": "number",
+                          "minimum": -1000000000000000,
+                          "maximum": 1000000000000000
+                        },
+                        "level": {
+                          "const": 0.95
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "suppressed": {
+                  "type": "boolean"
+                },
+                "suppression_reasons": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "n_below_floor",
+                      "agent_coverage_below_floor",
+                      "harness_coverage_below_floor",
+                      "exact_model_coverage_below_floor",
+                      "harness_only_evidence",
+                      "cost_coverage_below_floor",
+                      "reworked_below_floor",
+                      "no_model_provenance",
+                      "horizon_not_mature"
+                    ]
+                  }
+                }
+              }
+            },
+            "flagged_share": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "basis",
+                "n",
+                "value",
+                "ci",
+                "suppressed",
+                "suppression_reasons"
+              ],
+              "properties": {
+                "basis": {
+                  "enum": [
+                    "descriptive",
+                    "out_of_sample_prediction"
+                  ]
+                },
+                "n": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -1000000000000000,
+                      "maximum": 1000000000000000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ci": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "low",
+                        "high",
+                        "level"
+                      ],
+                      "properties": {
+                        "low": {
+                          "type": "number",
+                          "minimum": -1000000000000000,
+                          "maximum": 1000000000000000
+                        },
+                        "high": {
+                          "type": "number",
+                          "minimum": -1000000000000000,
+                          "maximum": 1000000000000000
+                        },
+                        "level": {
+                          "const": 0.95
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "suppressed": {
+                  "type": "boolean"
+                },
+                "suppression_reasons": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "n_below_floor",
+                      "agent_coverage_below_floor",
+                      "harness_coverage_below_floor",
+                      "exact_model_coverage_below_floor",
+                      "harness_only_evidence",
+                      "cost_coverage_below_floor",
+                      "reworked_below_floor",
+                      "no_model_provenance",
+                      "horizon_not_mature"
+                    ]
+                  }
+                }
+              }
+            },
+            "suppressed": {
+              "type": "boolean"
+            },
+            "suppression_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "n_below_floor",
+                  "agent_coverage_below_floor",
+                  "harness_coverage_below_floor",
+                  "exact_model_coverage_below_floor",
+                  "harness_only_evidence",
+                  "cost_coverage_below_floor",
+                  "reworked_below_floor",
+                  "no_model_provenance",
+                  "horizon_not_mature"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cost": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "actual",
+            "estimated"
+          ],
+          "properties": {
+            "actual": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "basis",
+                "total_usd",
+                "cost_source",
+                "coverage",
+                "prs_priced",
+                "prs_unknown",
+                "suppressed",
+                "suppression_reasons"
+              ],
+              "properties": {
+                "basis": {
+                  "const": "descriptive"
+                },
+                "total_usd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cost_source": {
+                  "const": "provider_reported"
+                },
+                "coverage": {
+                  "enum": [
+                    "complete",
+                    "partial",
+                    "unavailable",
+                    "known_zero"
+                  ]
+                },
+                "prs_priced": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "prs_unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "suppressed": {
+                  "type": "boolean"
+                },
+                "suppression_reasons": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "n_below_floor",
+                      "agent_coverage_below_floor",
+                      "harness_coverage_below_floor",
+                      "exact_model_coverage_below_floor",
+                      "harness_only_evidence",
+                      "cost_coverage_below_floor",
+                      "reworked_below_floor",
+                      "no_model_provenance",
+                      "horizon_not_mature"
+                    ]
+                  }
+                }
+              }
+            },
+            "estimated": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "basis",
+                "kind",
+                "total_usd",
+                "cost_source",
+                "pricing_revision",
+                "pricing_timestamp",
+                "coverage",
+                "prs_priced",
+                "prs_unknown",
+                "unpriced_models",
+                "suppressed",
+                "suppression_reasons"
+              ],
+              "properties": {
+                "basis": {
+                  "const": "descriptive"
+                },
+                "kind": {
+                  "const": "estimate"
+                },
+                "total_usd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cost_source": {
+                  "const": "local_estimate"
+                },
+                "pricing_revision": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pricing_timestamp": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "coverage": {
+                  "enum": [
+                    "complete",
+                    "partial",
+                    "unavailable",
+                    "known_zero"
+                  ]
+                },
+                "prs_priced": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "prs_unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unpriced_models": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "suppressed": {
+                  "type": "boolean"
+                },
+                "suppression_reasons": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "n_below_floor",
+                      "agent_coverage_below_floor",
+                      "harness_coverage_below_floor",
+                      "exact_model_coverage_below_floor",
+                      "harness_only_evidence",
+                      "cost_coverage_below_floor",
+                      "reworked_below_floor",
+                      "no_model_provenance",
+                      "horizon_not_mature"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model_provenance": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head_id",
+            "head_version",
+            "trained_on",
+            "training_repo_count",
+            "split",
+            "split_date",
+            "repo_in_training_set",
+            "trained_at"
+          ],
+          "properties": {
+            "head_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+            },
+            "head_version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$"
+            },
+            "trained_on": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+            },
+            "training_repo_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "split": {
+              "enum": [
+                "time_split",
+                "leave_repo_out"
+              ]
+            },
+            "split_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "repo_in_training_set": {
+              "type": "boolean"
+            },
+            "trained_at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exact_model_table",
+        "harness_table",
+        "cost_adjusted_by_model",
+        "retrospective",
+        "model_routing_cta",
+        "reasons"
+      ],
+      "properties": {
+        "exact_model_table": {
+          "type": "boolean"
+        },
+        "harness_table": {
+          "type": "boolean"
+        },
+        "cost_adjusted_by_model": {
+          "type": "boolean"
+        },
+        "retrospective": {
+          "type": "boolean"
+        },
+        "model_routing_cta": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "n_below_floor",
+              "agent_coverage_below_floor",
+              "harness_coverage_below_floor",
+              "exact_model_coverage_below_floor",
+              "harness_only_evidence",
+              "cost_coverage_below_floor",
+              "reworked_below_floor",
+              "no_model_provenance",
+              "horizon_not_mature"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "candidateFeatures": {
+      "title": "Hokusai candidate_features/v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "files_touched",
+        "lines_added",
+        "lines_deleted",
+        "loc_touched",
+        "dependency_depth",
+        "module_hotspot_score",
+        "diff_uncertain",
+        "type_errors",
+        "lint_errors",
+        "build_ok",
+        "complexity_delta",
+        "tests_changed",
+        "test_pass_rate",
+        "test_runtime_seconds",
+        "task_type",
+        "language",
+        "domain",
+        "complexity",
+        "repo_size_bucket",
+        "files_touched_bucket",
+        "description_length_bucket",
+        "is_greenfield",
+        "is_migration",
+        "requires_tests",
+        "cross_service",
+        "ui_heavy",
+        "risk_level",
+        "touched_out_of_scope_files",
+        "human_intervention_count",
+        "review_rounds",
+        "change_requests",
+        "self_review_iterations",
+        "agent_iterations"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "candidate_features/v1"
+        },
+        "files_touched": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of files changed by the candidate. Null means: The candidate diff could not be enumerated."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lines_added": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of added lines in the candidate diff. Null means: Directional diff statistics were unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lines_deleted": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of deleted lines in the candidate diff. Null means: Directional diff statistics were unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loc_touched": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total added plus deleted lines in the candidate diff. Null means: The candidate diff could not be measured."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dependency_depth": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum dependency-graph depth reached by changed modules. Null means: No supported dependency graph could be derived."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "module_hotspot_score": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Repository-history hotspot score for changed modules. Null means: Sufficient repository history was unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diff_uncertain": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether diff parsing produced internally suspicious measurements. Null means: No diff analysis was attempted."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type_errors": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Type-check errors reported for the candidate. Null means: No supported type checker completed successfully."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lint_errors": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Lint errors reported for the candidate. Null means: No supported linter completed successfully."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "build_ok": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether the configured build completed successfully. Null means: No build ran to a terminal result or collection failed."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complexity_delta": {
+          "anyOf": [
+            {
+              "type": "number",
+              "description": "Candidate-minus-base change in the configured code-complexity metric. Null means: No supported complexity analyzer completed on both revisions."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tests_changed": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether the candidate adds or modifies test files. Null means: Test files could not be classified from the diff."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "test_pass_rate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Fraction of executed tests that passed. Null means: No supported test result completed with a measurable rate."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "test_runtime_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "description": "Elapsed seconds for the candidate test execution. Null means: Test runtime was not reported."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "bugfix",
+                "feature",
+                "refactor",
+                "infra",
+                "tests",
+                "migration",
+                "docs",
+                "unknown"
+              ],
+              "description": "Coarse category of the requested change. Null means: No task category could be derived without guessing."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "python",
+                "typescript",
+                "javascript",
+                "go",
+                "rust",
+                "java",
+                "bash",
+                "multi",
+                "unknown"
+              ],
+              "description": "Dominant implementation language category. Null means: No supported dominant language could be derived."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "backend",
+                "frontend",
+                "fullstack",
+                "devops",
+                "data",
+                "ml",
+                "mobile",
+                "unknown"
+              ],
+              "description": "Coarse product or engineering domain category. Null means: No domain evidence was available; do not default to backend."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complexity": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10,
+              "description": "Normalized estimated task complexity on the Hokusai 0–10 scale. Null means: Complexity could not be derived without a fallback."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repo_size_bucket": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "small",
+                "medium",
+                "large",
+                "xlarge"
+              ],
+              "description": "Bucketed repository size. Null means: Repository size could not be measured."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_touched_bucket": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "1",
+                "2_5",
+                "6_15",
+                "16_plus"
+              ],
+              "description": "Bucketed number of files changed by the candidate. Null means: The candidate diff could not be enumerated."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description_length_bucket": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "short",
+                "medium",
+                "long"
+              ],
+              "description": "Bucketed length of the locally inspected task description. Null means: No task description was available to classify locally."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_greenfield": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether the task creates a new subsystem rather than changing one. Null means: The change kind could not be classified."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_migration": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether the task includes a schema or data migration. Null means: Migration intent could not be classified."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requires_tests": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether the task intent requires test work. Null means: Test intent could not be classified."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cross_service": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether the task spans multiple services or repositories. Null means: Service scope could not be classified."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ui_heavy": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "description": "Whether UI work is a substantial part of the task. Null means: UI intent could not be classified."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "risk_level": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "Coarse locally derived implementation-risk category. Null means: Risk could not be classified from bounded derived signals."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "touched_out_of_scope_files": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of changed files outside the authoritative task scope. Null means: No task scope authority existed or the scope guard errored."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "human_intervention_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of recorded human interventions before arbitration. Null means: Intervention collection was unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "review_rounds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of distinct pre-arbitration human review rounds. Null means: Review history was unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "change_requests": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of pre-arbitration change-request reviews. Null means: Review history was unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "self_review_iterations": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of recorded automated self-review repair iterations. Null means: Self-review iteration telemetry was unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_iterations": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of recorded implementation iterations before arbitration. Null means: Implementation iteration telemetry was unavailable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

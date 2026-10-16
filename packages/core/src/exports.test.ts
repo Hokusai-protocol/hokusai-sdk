@@ -72,6 +72,9 @@ describe('core public surface', () => {
     );
     expect(core.CANDIDATE_FEATURE_FIELDS).toHaveLength(33);
     expect(core.CANDIDATE_FEATURES_V1_JSON_SCHEMA).toBeDefined();
+    expect(core.ARBITER_REPORT_SCHEMA_VERSION).toBe('arbiter_report/v1');
+    expect(core.ARBITER_REPORT_V1_JSON_SCHEMA).toBeDefined();
+    expect(core.validateArbiterReportV1).toBeDefined();
     expect(core.CANDIDATE_FEATURE_DEFINITIONS).toBeDefined();
     expect(core.validateCandidateFeaturesV1).toBeDefined();
     expect(core.finalizeCandidateFeaturesV1).toBeDefined();
