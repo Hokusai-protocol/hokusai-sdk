@@ -33,6 +33,7 @@ jobs:
       - run: pnpm check:versions
       - run: pnpm check:docs
       - run: pnpm -r build
+      - run: pnpm check:arbiter-report
       - run: pnpm -r test
 
       # Clean-consumer proof for @hokusai/costs: pack, install the tarballs

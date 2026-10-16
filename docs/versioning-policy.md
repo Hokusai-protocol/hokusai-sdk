@@ -25,6 +25,7 @@ The canonical schema versions are exported from `@hokusai/core`:
 - `OUTCOME_REPORT_SCHEMA_VERSION = "1"`
 - `CANDIDATE_FEATURES_SCHEMA_VERSION = "candidate_features/v1"`
 - `ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = "1.0.0"` (the `arbiter_survival_label/v1` wire contract)
+- `ARBITER_REPORT_SCHEMA_VERSION = "arbiter_report/v1"`
 
 Rules:
 
@@ -45,6 +46,9 @@ Rules:
   requires bumping `ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION`, coordinated with
   the `Hokusai/hokusai-data-pipeline` consumer. The TS schema mirror and the
   JSON file must change together (a core test enforces deep equality).
+- The report payload is frozen as `arbiter_report/vN`. Any field or semantic
+  change requires a new major wire version. Consumers must accept that version
+  before the scanner emits it; unknown versions are rejected.
 
 ## The Scan Contract
 

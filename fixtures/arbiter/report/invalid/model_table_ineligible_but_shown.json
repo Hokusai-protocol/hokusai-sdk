@@ -1,0 +1,2077 @@
+{
+  "expect": {
+    "code": "model_table_ineligible_but_shown",
+    "path": "aggregates.survival_by_model"
+  },
+  "payload": {
+    "schema_version": "arbiter_report/v1",
+    "data_origin": "fixture",
+    "repo": {
+      "host": "github",
+      "owner": "hokusai-fixtures",
+      "name": ".github"
+    },
+    "scan": {
+      "scanned_at": "2026-10-14T00:00:00Z",
+      "as_of": "2026-10-14T00:00:00Z",
+      "scanner": {
+        "package": "@hokusai/scan",
+        "version": "0.4.0"
+      },
+      "integration_branch": "auto/integration",
+      "lookback_days": 180,
+      "window": {
+        "merged_from": "2026-04-14T00:00:00Z",
+        "merged_to": "2026-10-14T00:00:00Z"
+      },
+      "horizons_days": [
+        30
+      ],
+      "contracts": {
+        "candidate_features": "candidate_features/v1",
+        "survival_label": "1.0.0",
+        "labeller_version": "0.1.0",
+        "normalization_version": "1.0.0"
+      }
+    },
+    "policy": {
+      "policy_version": "1.0.0",
+      "min_cell_n": 20,
+      "min_agent_coverage": 0.6,
+      "min_harness_coverage": 0.6,
+      "min_exact_model_coverage": 0.6,
+      "min_cost_coverage": 0.6,
+      "min_reworked_for_retrospective": 20,
+      "ci_method": "wilson",
+      "ci_level": 0.95
+    },
+    "coverage": {
+      "basis": "descriptive",
+      "prs_enumerated": 20,
+      "prs_eligible": 20,
+      "labels_by_horizon": [
+        {
+          "horizon_days": 30,
+          "labelled": 20,
+          "missing": []
+        }
+      ],
+      "attribution": {
+        "agent": {
+          "identified_agent": 20,
+          "identified_human_signal": 0,
+          "unknown": 0,
+          "rate": 1
+        },
+        "harness": {
+          "identified": 20,
+          "unknown": 0,
+          "rate": 1
+        },
+        "exact_model": {
+          "identified": 20,
+          "unknown": 0,
+          "rate": 1
+        },
+        "methods": [
+          {
+            "dimension": "agent",
+            "method": "first_party_route_metadata",
+            "count": 20
+          },
+          {
+            "dimension": "harness",
+            "method": "first_party_route_metadata",
+            "count": 20
+          },
+          {
+            "dimension": "exact_model",
+            "method": "first_party_route_metadata",
+            "count": 20
+          }
+        ]
+      }
+    },
+    "prs": [
+      {
+        "pr_number": 1,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 2,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 3,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 4,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 5,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 6,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 7,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 8,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 9,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 10,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 11,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 12,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 13,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 14,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 15,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 16,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 17,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 18,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 19,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      },
+      {
+        "pr_number": 20,
+        "merged_at": "2026-08-01T00:00:00Z",
+        "attribution": {
+          "agent": {
+            "status": "agent",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "harness": {
+            "id": "codex",
+            "confidence": 0.9,
+            "methods": [
+              "first_party_route_metadata"
+            ]
+          },
+          "exact_model": {
+            "id": "openai/gpt-6",
+            "confidence": 1,
+            "methods": [
+              "first_party_route_metadata"
+            ],
+            "evidence": "first_party_executed"
+          }
+        },
+        "features": {
+          "schema_version": "candidate_features/v1",
+          "files_touched": 4,
+          "lines_added": 80,
+          "lines_deleted": 12,
+          "loc_touched": 92,
+          "dependency_depth": 2,
+          "module_hotspot_score": 37.5,
+          "diff_uncertain": false,
+          "type_errors": 0,
+          "lint_errors": 0,
+          "build_ok": true,
+          "complexity_delta": -1.25,
+          "tests_changed": true,
+          "test_pass_rate": 1,
+          "test_runtime_seconds": 12.4,
+          "task_type": "feature",
+          "language": "typescript",
+          "domain": "backend",
+          "complexity": 5,
+          "repo_size_bucket": "medium",
+          "files_touched_bucket": "2_5",
+          "description_length_bucket": "medium",
+          "is_greenfield": false,
+          "is_migration": false,
+          "requires_tests": true,
+          "cross_service": false,
+          "ui_heavy": false,
+          "risk_level": "medium",
+          "touched_out_of_scope_files": 0,
+          "human_intervention_count": 0,
+          "review_rounds": 1,
+          "change_requests": 0,
+          "self_review_iterations": 1,
+          "agent_iterations": 3
+        },
+        "labels": [
+          {
+            "horizon_days": 30,
+            "label_provenance": "harvested",
+            "outcome": {
+              "survived": true,
+              "survival_ratio": 1,
+              "reverted": false,
+              "undone_by": null,
+              "followup": false,
+              "reason_codes": [
+                "no_evidence"
+              ],
+              "report_outcome": "survived"
+            },
+            "label_hash": "fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22"
+          }
+        ],
+        "cost": {
+          "actual_usd": 1.25,
+          "estimated_usd": 1.1,
+          "cost_source": "provider_reported",
+          "coverage": "complete",
+          "pricing_revision": "pricing-2026-09"
+        },
+        "prediction": null
+      }
+    ],
+    "aggregates": {
+      "survival_by_horizon": {
+        "basis": "descriptive",
+        "status": "shown",
+        "suppression_reasons": [],
+        "rows": [
+          {
+            "horizon_days": 30,
+            "outcome": "survived",
+            "cell": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.75,
+              "ci": {
+                "low": 0.7,
+                "high": 0.8,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            }
+          }
+        ]
+      },
+      "risk_ratios": {
+        "basis": "descriptive",
+        "status": "shown",
+        "suppression_reasons": [],
+        "rows": [
+          {
+            "horizon_days": 30,
+            "feature": "tests_changed",
+            "bucket": "true",
+            "rework_rate": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.2,
+              "ci": {
+                "low": 0.15000000000000002,
+                "high": 0.25,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            },
+            "baseline_rate": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.3,
+              "ci": {
+                "low": 0.25,
+                "high": 0.35,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            },
+            "ratio": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.67,
+              "ci": {
+                "low": 0.62,
+                "high": 0.7200000000000001,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            }
+          }
+        ]
+      },
+      "survival_by_model": {
+        "basis": "descriptive",
+        "status": "shown",
+        "suppression_reasons": [],
+        "rows": [
+          {
+            "horizon_days": 30,
+            "model_id": "openai/gpt-6",
+            "cell": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.8,
+              "ci": {
+                "low": 0.75,
+                "high": 0.8500000000000001,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            }
+          }
+        ]
+      },
+      "survival_by_harness": {
+        "basis": "descriptive",
+        "status": "shown",
+        "suppression_reasons": [],
+        "rows": [
+          {
+            "horizon_days": 30,
+            "harness_id": "codex",
+            "cell": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.75,
+              "ci": {
+                "low": 0.7,
+                "high": 0.8,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            }
+          }
+        ]
+      },
+      "cost_adjusted_survival_by_model": {
+        "basis": "descriptive",
+        "status": "shown",
+        "suppression_reasons": [],
+        "rows": [
+          {
+            "horizon_days": 30,
+            "model_id": "openai/gpt-6",
+            "cost_basis": "actual",
+            "cell": {
+              "basis": "descriptive",
+              "n": 20,
+              "value": 0.65,
+              "ci": {
+                "low": 0.6,
+                "high": 0.7000000000000001,
+                "level": 0.95
+              },
+              "suppressed": false,
+              "suppression_reasons": []
+            }
+          }
+        ]
+      }
+    },
+    "retrospective": null,
+    "cost": {
+      "actual": {
+        "basis": "descriptive",
+        "total_usd": 25,
+        "cost_source": "provider_reported",
+        "coverage": "partial",
+        "prs_priced": 20,
+        "prs_unknown": 0,
+        "suppressed": false,
+        "suppression_reasons": []
+      },
+      "estimated": {
+        "basis": "descriptive",
+        "kind": "estimate",
+        "total_usd": 22,
+        "cost_source": "local_estimate",
+        "pricing_revision": "pricing-2026-09",
+        "pricing_timestamp": "2026-09-07T00:00:00Z",
+        "coverage": "complete",
+        "prs_priced": 20,
+        "prs_unknown": 0,
+        "unpriced_models": 0,
+        "suppressed": false,
+        "suppression_reasons": []
+      }
+    },
+    "model_provenance": null,
+    "eligibility": {
+      "exact_model_table": false,
+      "harness_table": true,
+      "cost_adjusted_by_model": true,
+      "retrospective": false,
+      "model_routing_cta": false,
+      "reasons": []
+    }
+  }
+}
