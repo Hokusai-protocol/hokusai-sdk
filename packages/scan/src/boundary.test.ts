@@ -45,6 +45,11 @@ const FORBIDDEN_PATTERNS = [
 const ALLOWED_LEGACY_LITERALS: Record<string, string[]> = {
   'static-features.ts': ['.wavemill-config.json', 'wavemill-cyclomatic/v1'],
 };
+const NEW_PURE_DIRS = ['attribution', 'report', 'orchestrate'];
+const ALLOWED_PROTOCOL_LITERALS: Record<string, string[]> = {
+  'attribution/engine.ts': ['wavemill'],
+  'attribution/metadata-block.ts': ['wavemill-meta'],
+};
 
 describe('scanner core boundary', () => {
   for (const file of CORE_FILES) {
@@ -79,6 +84,28 @@ describe('scanner core boundary', () => {
           `${literal} must appear exactly once in ${file}`,
         ).toBe(1);
       }
+    }
+  });
+
+  it('new report, attribution, and orchestration modules stay pure', () => {
+    const visit = (dir: string, prefix = ''): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return visit(full, relative);
+      return entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [relative] : [];
+    });
+    for (const group of NEW_PURE_DIRS) {
+      const files = visit(join(srcDir, group), group);
+      for (const file of files) {
+        let source = readFileSync(join(srcDir, file), 'utf-8');
+        for (const pattern of FORBIDDEN_PATTERNS) expect(pattern.test(source), `${file} matches ${pattern}`).toBe(false);
+        for (const literal of ALLOWED_PROTOCOL_LITERALS[file] ?? []) source = source.split(literal).join('');
+        expect(/wavemill/i.test(source), `${file} references wavemill outside its protocol literal`).toBe(false);
+      }
+    }
+    for (const [file, literals] of Object.entries(ALLOWED_PROTOCOL_LITERALS)) {
+      const source = readFileSync(join(srcDir, file), 'utf-8');
+      for (const literal of literals) expect(source.split(literal).length - 1, `${literal} appears once in ${file}`).toBe(1);
     }
   });
 

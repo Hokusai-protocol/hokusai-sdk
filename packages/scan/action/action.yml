@@ -21,14 +21,14 @@ branding:
 inputs:
   mode:
     description: >-
-      What to run: label | extract | scan, or the silent shadow modes
+      What to run: label | extract | scan | report, or the silent shadow modes
       shadow-score | shadow-backfill | shadow-report (HOK-2820). Shadow
       modes always exit 0, write nothing outside the data dir and stdout,
       and never write the Action outputs or a step summary.
     required: true
   integration-branch:
     description: >-
-      Integration branch whose first-parent history is walked (label/scan
+      Integration branch whose first-parent history is walked (label/scan/report
       modes). "main" is rejected by the v1.0.0 label contract.
     required: false
   pr-number:
@@ -79,6 +79,19 @@ inputs:
     description: 'Dump stack traces to the log on failure.'
     required: false
     default: 'false'
+  lookback-days:
+    description: 'Report mode: merge window in days (1–3650, default 180).'
+    required: false
+  report-max-prs:
+    description: 'Report mode: maximum newest PRs to include (default 500).'
+    required: false
+    default: '500'
+  state-dir:
+    description: 'Report mode: opt-in local derived-only incremental state directory.'
+    required: false
+  attribution-config:
+    description: 'Report mode: path to a local attribution JSON config.'
+    required: false
   data-dir:
     description: 'Shadow modes only: directory holding state.json/scores.jsonl/outcomes.jsonl/reports (the arbiter-shadow branch worktree).'
     required: false

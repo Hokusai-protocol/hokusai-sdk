@@ -6,7 +6,7 @@ lives in the Hokusai SDK. One core, three equivalent entry points that
 produce byte-identical output for the same inputs:
 
 - a **library** (`import { labelMergedPr, extractCandidateFeatures } from '@hokusai/scan'`)
-- the **CLI**: `npx @hokusai/scan` → `hokusai-scan {label|extract|scan}`
+- the **CLI**: `npx @hokusai/scan` → `hokusai-scan {label|extract|scan|report}`
 - a one-shot **GitHub Action** (`packages/scan/action`, `workflow_dispatch`-friendly)
 
 Wire formats stay in `@hokusai/core` (`candidate_features/v1`,
@@ -62,6 +62,18 @@ hokusai-scan scan    --repo <path> --integration-branch <name> --pr <n>
   HEAD as PR `<n>`, keys sorted canonically.
 - `scan` labels one PR and extracts its features, emitting a combined object
   `{ scan_contract, candidate_features, survival_labels }`.
+- `report` scans a public GitHub repo URL or `owner/name`; `--repo` selects an
+  existing local checkout for private or offline runs. It enumerates first-parent
+  merges, enriches and labels them, then emits a validated `arbiter_report/v1`
+  envelope. If the default branch is `main`, a durable promotion branch is
+  detected from recent pull requests; otherwise pass `--integration-branch`.
+  The frozen S2 contract continues to reject `main`.
+- Report `--state-dir` opts into local incremental caching. The CLI default is
+  under the checkout's `.git/hokusai-scan/`; the Action defaults to no state.
+  The cache stores only merge keys and derived report fields.
+- `--contribute` validates and submits a report using the `HOKUSAI_API_KEY`
+  value named by `--api-key-env`; the endpoint is experimental and pending.
+  `--contribute --dry-run` writes the exact request body without posting.
 
 Conventions:
 
@@ -89,7 +101,7 @@ Exit codes:
 
 ## GitHub Action
 
-`packages/scan/action` is a `node20` Action running the committed bundle at
+`packages/scan/action` supports `report` mode in addition to label/extract/scan and is a `node20` Action running the committed bundle at
 `action/dist/index.js` (rebuilt and drift-checked in CI; the runner installs
 nothing). All inputs are explicit — see `action/action.yml`, and
 `action/example-workflow.yml` for a `workflow_dispatch` caller. Requires
@@ -141,3 +153,15 @@ the wavemill repo — see
 Released with the fixed `@hokusai/*` version group by the tag-triggered
 release workflow; the npm tarball carries `dist/`, `action/` (manifest +
 bundle), and this README only.
+
+## Arbiter report building
+
+The library exports the `arbiter_report/v1` report pipeline primitives:
+
+- `runReportScan(target, deps, options)` enumerates first-parent merges, collects GitHub metadata, attributes PRs, extracts features in a detached checkout, and labels horizons. It returns a report draft.
+- `buildAggregates` and `buildCoverage` derive descriptive sections. `buildReportDraft` assembles the frozen envelope and `emitReport` applies the core suppression policy, validates the final report, and serializes deterministic JSON.
+- `wilsonInterval`, `katzLogRatioInterval`, and nearest-rank quartile helpers are available for consumers that need the same aggregate definitions.
+- `readScanState` and `writeScanState` store derived-only cache rows locally. The caller supplies the state directory; cache headers invalidate on scanner, labeller, normalization, config, integration-branch, or ancestry changes. Raw PR text, authors, paths, and messages are not written to the cache.
+- `buildContributionPayload` validates scan origin and forbidden keys. `submitReport` is experimental because the report endpoint is pending; it requires an explicit transport, base URL, and API key.
+
+The frozen `arbiter_report/v1` wire contract and fixture provenance are documented in [`docs/arbiter/report-contract.md`](../../docs/arbiter/report-contract.md). Report orchestration is currently exposed as a library API; the existing `label`, `extract`, and `scan` CLI commands keep their current behavior.

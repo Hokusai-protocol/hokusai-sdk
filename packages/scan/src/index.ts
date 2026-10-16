@@ -100,6 +100,7 @@ export {
   ScanUpstreamError,
   classifyUpstreamFailure,
   createDefaultDeps,
+  createDefaultScanGitHubClient,
   createOfflineGitHubClient,
   type CreateDefaultDepsOptions,
 } from './default-deps.js';
@@ -185,3 +186,19 @@ export {
   type SurvivalOutcome,
   type UndoneBy,
 } from '@hokusai/core';
+
+
+export {
+  buildAggregates,
+  buildCoverage,
+} from './report/aggregate.js';
+export { buildReportDraft, emitReport, type BuildReportDraftInput } from './report/build.js';
+export { wilsonInterval, katzLogRatioInterval, nearestRankQuartiles, quartileOf, type Interval, type RatioInterval } from './report/stats.js';
+export { attributePullRequest, resolveAttributionConfig, toReportAttribution, AttributionConfigError, HARNESS_REGISTRY, MODEL_SIGNATURES, GENERIC_AGENT_SIGNATURES, extractMetadataBlock, type AttributionPrInput, type AttributionConfig, type PrAttribution, type AttributionMethod } from './attribution/index.js';
+export { enumerateWindow, type EnumerateWindowOptions, type EnumerateWindowResult, type WindowMerge } from './orchestrate/enumerate.js';
+export { resolveIntegrationBranch, IntegrationBranchError, type IntegrationBranchEvidence } from './orchestrate/integration-branch.js';
+export { runReportScan, type RunReportScanOptions, type ScanReportDeps, type ScanReportTarget } from './orchestrate/scan-report.js';
+export { createOfflineScanGitHubClient, type ScanGitHubClient, type ScanPullRequest, type ScanRepository, type CheckConclusion } from './orchestrate/github.js';
+
+export { readScanState, writeScanState, scanConfigHash, type ScanStateHeader, type ScanStateRow, type ScanStateSnapshot, type ScanStateVersions } from './orchestrate/state.js';
+export { buildContributionPayload, submitReport, ContributionPayloadError } from './report/contribute.js';

@@ -10,6 +10,7 @@
  */
 
 import { execArgvCommand } from './shell-utils.js';
+import type { ScanGitHubClient, ScanPullRequest, CheckConclusion } from './orchestrate/github.js';
 import {
   GIT_OUTPUT_MAX_BUFFER,
   type GitCommandResult,
@@ -152,5 +153,54 @@ export function createOfflineGitHubClient(): SurvivalGitHubClient {
   return {
     getPrMetadata: () => null,
     listCrossReferences: () => [],
+  };
+}
+
+
+/** GitHub API adapter for report scans. This ambient shell is the only place the token is read. */
+export function createDefaultScanGitHubClient(target: { owner: string; repo: string; repoDir: string; token?: string }): ScanGitHubClient {
+  const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+  const api = (path: string): string => {
+    const result = execArgvCommand('gh', ['api', path, '-H', 'Accept: application/vnd.github+json'], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 });
+    if (result.exitCode !== 0) {
+      if (/HTTP 404/i.test(result.stderr)) return '';
+      throw new ScanUpstreamError(classifyUpstreamFailure(result));
+    }
+    return result.stdout;
+  };
+  const parse = <T>(text: string): T | null => { try { return text ? JSON.parse(text) as T : null; } catch { throw new ScanUpstreamError('GitHub returned malformed JSON'); } };
+  return {
+    async getRepo() {
+      await Promise.resolve();
+      const repo = parse<{ default_branch?: string; private?: boolean }>(api(`repos/${target.owner}/${target.repo}`));
+      if (!repo?.default_branch) throw new ScanUpstreamError('GitHub repository metadata is unavailable');
+      return { defaultBranch: repo.default_branch, private: repo.private === true };
+    },
+    async getPullRequest(number: number): Promise<ScanPullRequest | null> {
+      await Promise.resolve();
+      const raw = parse<{ number?: number; title?: string; body?: string | null; user?: { login?: string; type?: string } | null; head?: { ref?: string; sha?: string }; labels?: { name?: string }[]; merged_at?: string | null }>(api(`repos/${target.owner}/${target.repo}/pulls/${number}`));
+      if (!raw) return null;
+      if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
+      return { number: raw.number, title: raw.title ?? '', body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label) => label.name ? [label.name] : []), mergedAt: raw.merged_at };
+    },
+    async listPullCommits(number: number): Promise<string[]> {
+      await Promise.resolve();
+      const messages: string[] = [];
+      for (let page = 1; page <= 100; page++) {
+        const commits = parse<{ commit?: { message?: string } }[]>(api(`repos/${target.owner}/${target.repo}/pulls/${number}/commits?per_page=100&page=${page}`)) ?? [];
+        messages.push(...commits.flatMap((commit) => commit.commit?.message ? [commit.commit.message] : []));
+        if (commits.length < 100) break;
+      }
+      return messages;
+    },
+    async getCheckConclusion(sha: string): Promise<CheckConclusion> {
+      await Promise.resolve();
+      const checks = parse<{ check_runs?: { conclusion?: string | null }[] }>(api(`repos/${target.owner}/${target.repo}/commits/${sha}/check-runs?per_page=100`));
+      const conclusions = (checks?.check_runs ?? []).map((check) => check.conclusion).filter((x): x is string => typeof x === 'string');
+      if (!conclusions.length) return 'none';
+      if (conclusions.some((x) => x === 'failure' || x === 'timed_out' || x === 'action_required')) return 'failure';
+      if (conclusions.every((x) => x === 'success')) return 'success';
+      return 'neutral';
+    },
   };
 }
