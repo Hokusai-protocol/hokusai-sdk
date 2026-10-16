@@ -53,6 +53,8 @@ import {
   type SurvivalLabellerTarget,
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
+import { runReportCli } from './report-cli.js';
+import type { ReportScanDeps } from './orchestrate/scan-report.js';
 
 export const EXIT_OK = 0;
 export const EXIT_INTERNAL = 1;
@@ -64,6 +66,7 @@ export interface CliIo {
   writeStdout: (text: string) => void;
   writeStderr: (text: string) => void;
   env: Record<string, string | undefined>;
+  reportDepsFactory?: (target: { owner: string; repo: string; repoDir: string; integrationBranch: string }) => ReportScanDeps;
 }
 
 export interface CliRunResult {
@@ -76,7 +79,7 @@ export interface CliRunResult {
   summaryLines: string[];
 }
 
-const USAGE = `usage: hokusai-scan <label|extract|scan> [options]
+const USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
 label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
@@ -84,6 +87,11 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+report   <owner/repo|https://github.com/owner/repo> [--repo <path>]
+         [--integration-branch <name>] [--lookback-days 180] [--max-prs 500]
+         [--horizons 14,30,60] [--state-dir <path>] [--attribution-config <json>]
+         [--static-analysis off|committed] [--contribute [--dry-run]]
+         [--api-key-env HOKUSAI_API_KEY] [--out <path|->]
 
 shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--threshold 0.5]
@@ -138,6 +146,18 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
     if (command === undefined || command === '--help' || command === 'help') {
       io.writeStderr(USAGE);
       return { exitCode: command === undefined ? EXIT_INVALID_INPUT : EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (command === 'report') {
+      if (rest.includes('--help')) {
+        io.writeStderr(USAGE);
+        return { exitCode: EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
+      }
+      const result = runReportCli(rest, { env: io.env, diagnostic: (line) => io.writeStderr(`${line}\n`), depsFactory: io.reportDepsFactory });
+      let outputPath: string | null = null;
+      if (result.out === '-') io.writeStdout(result.output);
+      else { outputPath = resolve(result.out); mkdirSync(dirname(outputPath), { recursive: true }); writeFileSync(outputPath, result.output); }
+      for (const line of result.summary) diag.info(line);
+      return { exitCode: EXIT_OK, rowCount: result.rows, outputPath, summaryLines: result.summary };
     }
     if (command.startsWith('shadow-')) {
       // Shadow mode is fail-silent (HOK-2820): the sub-CLI always exits 0

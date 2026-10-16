@@ -154,3 +154,53 @@ export function createOfflineGitHubClient(): SurvivalGitHubClient {
     listCrossReferences: () => [],
   };
 }
+
+import type { ScanGitHubClient } from './orchestrate/github.js';
+/** Repository report API adapter. Raw metadata stays in process memory. */
+export function createDefaultScanGitHubClient(owner: string, repo: string, token?: string): ScanGitHubClient {
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  const api = (path: string): unknown => {
+    const result = execArgvCommand('gh', ['api', path], { env });
+    if (result.exitCode !== 0) {
+      if (/HTTP 404|Not Found/i.test(result.stderr)) return null;
+      throw new ScanUpstreamError(classifyUpstreamFailure(result));
+    }
+    try { return JSON.parse(result.stdout); }
+    catch { throw new ScanUpstreamError(`Invalid GitHub response for ${path.split('?')[0]}`); }
+  };
+  const root = `repos/${owner}/${repo}`;
+  return {
+    getRepo() {
+      const data = api(root) as { default_branch: string; private: boolean } | null;
+      if (!data) throw new ScanUpstreamError('GitHub repository not found');
+      return { defaultBranch: data.default_branch, private: data.private };
+    },
+    getPullRequest(number) {
+      const data = api(`${root}/pulls/${number}`) as { number: number; title: string; body: string | null; user: { login: string; type: string }; head: { ref: string; sha: string }; labels: { name: string }[]; merged_at: string | null } | null;
+      if (!data || !data.merged_at) return null;
+      return { number: data.number, title: data.title, body: data.body, authorLogin: data.user?.login ?? null, authorType: data.user?.type ?? null, headRef: data.head?.ref ?? null, headSha: data.head?.sha ?? '', labels: (data.labels ?? []).map((label) => label.name), mergedAt: data.merged_at };
+    },
+    listPullCommits(number) {
+      const messages: string[] = [];
+      for (let page = 1; page <= 100; page++) {
+        const data = api(`${root}/pulls/${number}/commits?per_page=100&page=${page}`) as { commit: { message: string } }[] | null;
+        if (!data) return messages;
+        messages.push(...data.map((item) => item.commit.message));
+        if (data.length < 100) break;
+      }
+      return messages;
+    },
+    getCheckConclusion(sha) {
+      const data = api(`${root}/commits/${sha}/check-runs?per_page=100`) as { check_runs: { conclusion: string | null }[] } | null;
+      if (!data) return null;
+      const conclusions = data.check_runs.map((run) => run.conclusion);
+      if (conclusions.includes('failure')) return 'failure';
+      if (conclusions.includes('success')) return 'success';
+      if (conclusions.includes('neutral')) return 'neutral';
+      return 'none';
+    },
+  };
+}
+export function createOfflineScanGitHubClient(): ScanGitHubClient {
+  return { getRepo: () => ({ defaultBranch: 'master', private: false }), getPullRequest: () => null, listPullCommits: () => [], getCheckConclusion: () => null };
+}

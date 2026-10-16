@@ -21,11 +21,23 @@ branding:
 inputs:
   mode:
     description: >-
-      What to run: label | extract | scan, or the silent shadow modes
+      What to run: label | extract | scan | report, or the silent shadow modes
       shadow-score | shadow-backfill | shadow-report (HOK-2820). Shadow
       modes always exit 0, write nothing outside the data dir and stdout,
       and never write the Action outputs or a step summary.
     required: true
+  lookback-days:
+    description: 'Report lookback window in days (report mode). Default 180.'
+    required: false
+  max-prs:
+    description: 'Maximum merged PRs in report mode. Default 500.'
+    required: false
+  attribution-config:
+    description: 'Path to a local attribution configuration JSON file.'
+    required: false
+  state-dir:
+    description: 'Local incremental checkpoint directory (report mode). Optional.'
+    required: false
   integration-branch:
     description: >-
       Integration branch whose first-parent history is walked (label/scan

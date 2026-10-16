@@ -56,7 +56,7 @@ function main(): number {
 
   if (result.exitCode === 0) {
     writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'output-path', result.outputPath ?? outputPath);
-    writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'contract-version', scanContractVersion());
+    writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'contract-version', actionEnv.input('mode') === 'report' ? 'arbiter_report/v1' : scanContractVersion());
     writeGithubKeyValue(process.env.GITHUB_OUTPUT, 'row-count', String(result.rowCount));
     if (process.env.GITHUB_STEP_SUMMARY) {
       const summary = [

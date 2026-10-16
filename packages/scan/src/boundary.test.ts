@@ -94,6 +94,27 @@ describe('scanner core boundary', () => {
     }
   });
 
+  it('report, attribution and orchestration modules take ambient inputs explicitly', () => {
+    const allowedProtocolLiterals: Record<string, number> = {
+      'attribution/engine.ts': 23,
+      'attribution/index.ts': 1,
+      'attribution/metadata-block.ts': 1,
+    };
+    for (const dir of ['attribution', 'report', 'orchestrate']) {
+      for (const file of readdirSync(join(srcDir, dir))) {
+        if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
+        let source = readFileSync(join(srcDir, dir, file), 'utf-8');
+        for (const pattern of FORBIDDEN_PATTERNS) expect(pattern.test(source), `${dir}/${file}: ${pattern}`).toBe(false);
+        const allowance = allowedProtocolLiterals[`${dir}/${file}`];
+        if (allowance !== undefined) {
+          expect(source.split('wavemill').length - 1).toBe(allowance);
+          source = source.split('wavemill').join('');
+        }
+        expect(/wavemill/i.test(source), `${dir}/${file} contains a legacy reference`).toBe(false);
+      }
+    }
+  });
+
   it('shipped shadow modules read no ambient process state (HOK-2820)', () => {
     const shadowDir = join(srcDir, 'shadow');
     for (const file of readdirSync(shadowDir)) {

@@ -21,6 +21,15 @@ export {
   ArbiterReportBuildError,
   type ArbiterReportDraftV1,
 } from './report/suppression.js';
+export { buildAggregates, buildCoverage } from './report/aggregate.js';
+export { buildReportDraft, emitReport, type ReportDraftInput } from './report/build.js';
+export { buildContributionPayload, submitReport } from './report/contribute.js';
+export { wilsonInterval, katzLogRatioInterval, nearestRankQuartiles, quartileOf } from './report/stats.js';
+export { attributePullRequest, resolveAttributionConfig, toReportAttribution, AttributionConfigError, type AttributionConfig, type AttributionPrInput, type ReportAttribution } from './attribution/index.js';
+export { enumerateWindow, type EnumeratedMerge } from './orchestrate/enumerate.js';
+export { resolveIntegrationBranch, type IntegrationBranchInput } from './orchestrate/integration-branch.js';
+export { runReportScan, type ReportScanDeps, type ReportScanOptions, type ReportScanResult, type ReportScanTarget } from './orchestrate/scan-report.js';
+export { validateGithubTarget } from './report-cli.js';
 
 // Shadow mode (HOK-2820): silent scheduled scoring of merged PRs. Never
 // visible on a PR, never gating; see docs/arbiter/shadow-mode.md.

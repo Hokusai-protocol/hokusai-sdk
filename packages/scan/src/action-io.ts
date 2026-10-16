@@ -60,6 +60,22 @@ export function buildShadowActionArgv(env: ActionEnv): { argv: string[] } {
 export function buildActionArgv(env: ActionEnv): { argv: string[]; outputPath: string } {
   const mode = env.input('mode') ?? '';
   const argv: string[] = [mode];
+  if (mode === 'report') {
+    const githubRepo = env.input('github-repo');
+    if (githubRepo !== undefined) argv.push(githubRepo);
+    const repoPath = env.input('repo-path') ?? env.workspace;
+    if (repoPath !== undefined) argv.push('--repo', repoPath);
+    for (const flag of ['integration-branch', 'lookback-days', 'max-prs', 'horizons', 'attribution-config', 'state-dir', 'as-of']) {
+      const value = env.input(flag);
+      if (value !== undefined) argv.push(`--${flag}`, value);
+    }
+    if (env.input('state-dir') === undefined) argv.push('--no-state');
+    if (actionFlagIsTrue(env.input('offline'))) argv.push('--offline');
+    const requestedOut = env.input('output-path') ?? 'hokusai-report.json';
+    const outputPath = isAbsolute(requestedOut) ? requestedOut : join(env.runnerTemp ?? '.', requestedOut);
+    argv.push('--out', outputPath);
+    return { argv, outputPath };
+  }
 
   const repo = env.input('repo-path') ?? env.workspace ?? '.';
   argv.push('--repo', repo);
