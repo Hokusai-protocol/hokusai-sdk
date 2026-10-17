@@ -464,4 +464,13 @@ describe('report CLI mode', () => {
     expect(Array.isArray(report.prs)).toBe(true);
     expect(stderr.every((line) => /^(info|warn|error):/.test(line))).toBe(true);
   });
+  it('reports invalid attribution configuration as input error', async () => {
+    const { repoDir, inputs } = restoreFixture('case-01-simple-merge');
+    const config = join(tempDir('scan-cli-config-'), 'attribution.json');
+    writeFileSync(config, '{"unknown":true}');
+    const stderr: string[] = [];
+    const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', inputs.github_repo, '--integration-branch', inputs.integration_branch, '--offline', '--attribution-config', config], { writeStdout: () => {}, writeStderr: (text) => stderr.push(text), env: {} });
+    expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
+    expect(stderr.join('')).toContain('Unknown attribution config key: unknown');
+  });
 });

@@ -27,4 +27,10 @@ describe('local report state', () => {
     const bytes = fs.readFileSync(path.join(root, 'prs.jsonl'), 'utf8');
     expect(bytes).not.toMatch(/title|body|author|branch|sha/i);
   });
+  it('rejects caller-controlled raw metadata in cache rows', () => {
+    const root = dir();
+    const source = reportDraftFixtures.full().prs[0]!;
+    const row = { merge_sha: 'a'.repeat(40), merged_at_epoch: 1_780_272_000, pr_number: source.pr_number, merged_at: source.merged_at, attribution: source.attribution, features: source.features, labels_by_horizon: Object.fromEntries(source.labels.map((label) => [String(label.horizon_days), label])), title: 'raw PR title' };
+    expect(() => writeScanState(root, versions, null, [row as ScanStateRow])).toThrow('Invalid derived scan cache row');
+  });
 });

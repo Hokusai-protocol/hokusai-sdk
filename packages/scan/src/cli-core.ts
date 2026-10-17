@@ -58,6 +58,7 @@ import { runShadowCli } from './shadow/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
 import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
+import { AttributionConfigError, resolveAttributionConfig } from './attribution/engine.js';
 import { emitReport } from './report/build.js';
 import { buildContributionPayload, submitReport } from './report/contribute.js';
 import type { FetchTransport } from '@hokusai/core';
@@ -329,6 +330,8 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     let attributionConfig = {};
     const configPath = values['attribution-config'] as string | undefined;
     if (configPath) { try { attributionConfig = JSON.parse(readFileSync(resolve(configPath), 'utf8')) as object; } catch { throw new ScanInputError('--attribution-config must point to valid JSON'); } }
+    try { resolveAttributionConfig(attributionConfig); }
+    catch (error) { if (error instanceof AttributionConfigError) throw new ScanInputError(error.message); throw error; }
     const stateDir = (values['state-dir'] as string | undefined) ?? (values['no-state'] === true ? undefined : join(repoDir, '.git', 'hokusai-scan', `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState: (() => void) | undefined;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
