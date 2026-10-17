@@ -36,7 +36,7 @@ describe('incremental report cache', () => {
     let now = new Date('2026-06-10T00:00:00Z');
     let prLookups = 0, extractions = 0, labels = 0;
     const runGit = (args: readonly string[]): GitCommandResult => ({
-      stdout: args[0] === 'log' ? `${merge}\t${parent} ${head}\t1780272000\tMerge pull request #123 from org/agent` : '', stderr: '', exitCode: 0,
+      stdout: args[0] === 'log' && !args.some((arg) => arg === `${merge}..develop`) ? `${merge}\t${parent} ${head}\t1780272000\tMerge pull request #123 from org/agent` : '', stderr: '', exitCode: 0,
     });
     const deps = {
       runGit, now: () => now,
@@ -47,7 +47,10 @@ describe('incremental report cache', () => {
         async listPullCommits() { await Promise.resolve(); return ['private commit']; }, async getCheckConclusion() { await Promise.resolve(); return null; },
       },
       extract: () => { extractions++; return completeCandidateFeaturesV1Fixture; },
-      label: (() => { labels++; return [harvestedSurvivalLabelFixture]; }) as never,
+      label: (() => {
+        labels++;
+        return [labels === 1 ? { ...harvestedSurvivalLabelFixture, outcome: { ...harvestedSurvivalLabelFixture.outcome, reason_codes: ['missing_horizon'] } } : harvestedSurvivalLabelFixture];
+      }) as never,
     };
     const target = { owner: 'org', repo: 'repo', repoDir: '/repo', integrationBranch: 'develop' };
     const options = { horizons: [harvestedSurvivalLabelFixture.horizon_days], scannerVersion: '1.0.0', stateDir };
@@ -57,7 +60,7 @@ describe('incremental report cache', () => {
       const incremental = await runReportScan(target, deps, options);
       expect(prLookups).toBe(1);
       expect(extractions).toBe(1);
-      expect(labels).toBe(1);
+      expect(labels).toBe(2);
       const cacheBytes = fs.readFileSync(path.join(stateDir, 'prs.jsonl'), 'utf8');
       for (const secret of ['private title', 'private body', 'private author', 'private commit']) expect(cacheBytes).not.toContain(secret);
       const fullOptions = { horizons: options.horizons, scannerVersion: options.scannerVersion };

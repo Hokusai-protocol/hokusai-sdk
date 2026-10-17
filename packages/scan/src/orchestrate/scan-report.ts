@@ -135,6 +135,33 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
       deps.onDiagnostic?.(`error: failed to process PR #${merge.prNumber}`);
     }
   }
+  // An incremental window contains only merges after the cursor, but a cached
+  // PR can become mature between scans. Refresh its provisional labels so an
+  // incremental report has the same horizon outcomes as a full scan.
+  const processedShas = new Set(merges.map((merge) => merge.mergeSha));
+  for (const previous of cached?.rows ?? []) {
+    if (processedShas.has(previous.merge_sha) || previous.merged_at_epoch < Math.floor(from.getTime() / 1000) || previous.merged_at_epoch > Math.floor(now.getTime() / 1000)) continue;
+    const ref = refBySha.get(previous.merge_sha);
+    if (!ref) continue;
+    const labelsByHorizon = new Map<number, ReturnType<typeof projectSurvivalLabel>>();
+    for (const horizon of horizons) {
+      const old = previous.labels_by_horizon[String(horizon)];
+      const matured = previous.merged_at_epoch + horizon * 86_400 <= Math.floor(now.getTime() / 1000);
+      if (old && matured && !old.outcome.reason_codes.includes('missing_horizon')) labelsByHorizon.set(horizon, old);
+    }
+    if (horizons.some((horizon) => !labelsByHorizon.has(horizon))) {
+      const fresh = label(labellerTarget, deps.labeller, ref, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
+      for (const item of fresh) {
+        const old = previous.labels_by_horizon[String(item.horizon_days)];
+        const matured = previous.merged_at_epoch + item.horizon_days * 86_400 <= Math.floor(now.getTime() / 1000);
+        labelsByHorizon.set(item.horizon_days, old && matured && !old.outcome.reason_codes.includes('missing_horizon') ? old : item);
+      }
+    }
+    const labels = horizons.map((horizon) => labelsByHorizon.get(horizon)).filter((item): item is ReturnType<typeof projectSurvivalLabel> => !!item);
+    const reportRow: ArbiterReportV1['prs'][number] = { pr_number: previous.pr_number, merged_at: previous.merged_at, attribution: previous.attribution, features: previous.features, labels, cost: null, prediction: null };
+    reportRows.set(previous.merge_sha, reportRow);
+    stateBySha.set(previous.merge_sha, { ...previous, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
+  }
   if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
