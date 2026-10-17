@@ -8175,7 +8175,7 @@ async function runReportCli(argv, io) {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : values.repo ? join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`) : void 0);
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
       runGit: reportDeps.deps.runGit,
       labeller: reportDeps.deps,
