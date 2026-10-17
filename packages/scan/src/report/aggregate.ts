@@ -9,8 +9,8 @@ function makeCell(k: number, n: number): ReportCell {
   const ci = wilsonInterval(k, n);
   return { basis: 'descriptive', n, value: n ? Math.round(k / n * 10_000) / 10_000 : null, ci: ci ? { ...ci, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
-function ratioCell(ratio: number, n: number, ci: { low: number; high: number }): ReportCell {
-  return { basis: 'descriptive', n, value: ratio, ci: { low: ci.low, high: ci.high, level: 0.95 }, suppressed: false, suppression_reasons: [] };
+function ratioCell(ratio: number | null, n: number, ci: { low: number; high: number } | null): ReportCell {
+  return { basis: 'descriptive', n, value: ratio, ci: ci ? { low: ci.low, high: ci.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
 function labelAt(pr: Pr, horizon: H): SurvivalLabelProjectionV1 | undefined { return pr.labels.find((label) => label.horizon_days === horizon); }
 function bucketFor(pr: Pr, feature: keyof typeof REPORT_FEATURE_BUCKETS, cuts: [number, number, number] | null): string | null {
@@ -44,8 +44,8 @@ export function buildAggregates(prs: readonly Pr[], horizons: readonly H[]): Arb
         const ko = outside.filter(({ l }) => reworked(l)).length;
         const ciRate = wilsonInterval(ki, group.length);
         const ciBase = wilsonInterval(ko, outside.length);
-        const rr = katzLogRatioInterval(ki, group.length, ko, outside.length);
-        risks.push({ horizon_days: h, feature, bucket, rework_rate: makeCell(ki, group.length), baseline_rate: makeCell(ko, outside.length), ratio: ratioCell(rr.ratio, Math.min(group.length, outside.length), rr) });
+        const rr = group.length && outside.length ? katzLogRatioInterval(ki, group.length, ko, outside.length) : null;
+        risks.push({ horizon_days: h, feature, bucket, rework_rate: makeCell(ki, group.length), baseline_rate: makeCell(ko, outside.length), ratio: ratioCell(rr?.ratio ?? null, Math.min(group.length, outside.length), rr) });
         // Keep explicit null CIs for empty groups; suppression supplies the reason.
         if (!ciRate || !ciBase) { /* no additional mutation needed */ }
       }

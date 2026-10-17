@@ -28,6 +28,11 @@ export interface RunReportScanOptions {
 }
 export type ScanReportTarget = SurvivalLabellerTarget;
 
+/** Raised when continuing per-PR failures would make the report misleading. */
+export class ScanStageFailureError extends Error {
+  constructor() { super('STAGE_FAILURE_THRESHOLD'); this.name = 'ScanStageFailureError'; }
+}
+
 /** Dependency-injected scan orchestration; raw GitHub text is consumed in memory and never returned. */
 export async function runReportScan(target: ScanReportTarget, deps: ScanReportDeps, options: RunReportScanOptions) {
   const now = deps.now();
@@ -37,15 +42,20 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   if (requested > maxLookback) deps.onDiagnostic?.(`warn: lookback clamped to ${maxLookback} days`);
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 86_400_000);
-  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, maxPrs: maxPrs + 1 });
+  const stateVersions: ScanStateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? 'off', features: ['candidate_features/v1'] } };
+  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
+  if (cached?.invalidated) deps.onDiagnostic?.('info: incremental cache invalidated; performing a full rescan');
+  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
   let merges = enumerated.merges;
   if (merges.length > maxPrs) { merges = merges.slice(-maxPrs); deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`); }
   const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: new Date(0), to: now }).merges;
   const config = resolveAttributionConfig(options.attributionConfig);
-  const reportRows: ArbiterReportV1['prs'] = [];
-  const stateVersions: ScanStateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? 'off', features: ['candidate_features/v1'] } };
-  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
-  if (cached?.invalidated) deps.onDiagnostic?.('info: incremental cache invalidated; performing a full rescan');
+  const reportRows = new Map<number, ArbiterReportV1['prs'][number]>((cached?.rows ?? []).flatMap((row) => {
+    const mergedAt = new Date(row.merged_at).getTime();
+    return Number.isFinite(mergedAt) && mergedAt >= from.getTime() && mergedAt <= now.getTime()
+      ? [{ pr_number: row.pr_number, merged_at: row.merged_at, attribution: row.attribution, features: row.features, labels: Object.values(row.labels_by_horizon), cost: null, prediction: null }]
+      : [];
+  }).map((row) => [row.pr_number, row]));
   const cachedBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const stateBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const horizons = options.horizons ?? [14, 30, 60];
@@ -57,6 +67,8 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
     mergedAtEpoch: merge.mergedAtEpoch, subject: `#${merge.prNumber}`,
   }]);
   const refBySha = new Map(refs.map((ref) => [ref.mergeSha, ref]));
+  let failedPrs = 0;
+  const attemptedPrs = merges.filter((merge) => merge.prNumber !== null).length;
   for (const merge of merges) {
     if (merge.prNumber === null) { deps.onDiagnostic?.('info: skipped commit without a PR number'); continue; }
     try {
@@ -80,7 +92,8 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
       if (deps.extract) {
         features = deps.extract({ ...merge, prNumber: merge.prNumber }, { taskText: `${pr.title}\n\n${pr.body ?? ''}` });
       } else {
-        const checkoutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hokusai-scan-report-'));
+        const checkoutParent = fs.mkdtempSync(path.join(os.tmpdir(), 'hokusai-scan-report-'));
+        const checkoutDir = path.join(checkoutParent, 'checkout');
         try {
           const add = deps.runGit(['worktree', 'add', '--detach', '--no-checkout', checkoutDir, merge.mergeSha]);
           if (add.exitCode !== 0) throw new Error('Unable to prepare PR checkout');
@@ -93,7 +106,7 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
           });
         } finally {
           deps.runGit(['worktree', 'remove', '--force', checkoutDir]);
-          fs.rmSync(checkoutDir, { recursive: true, force: true });
+          fs.rmSync(checkoutParent, { recursive: true, force: true });
         }
       }
       await deps.github.getCheckConclusion(pr.headSha);
@@ -116,21 +129,24 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
     }
     const labels = horizons.map((horizon) => labelsByHorizon.get(horizon)).filter((item): item is ReturnType<typeof projectSurvivalLabel> => !!item);
     const reportRow: ArbiterReportV1['prs'][number] = { pr_number: prNumber, merged_at: mergedAt, attribution, features, labels, cost: null, prediction: null };
-    reportRows.push(reportRow);
+    reportRows.set(reportRow.pr_number, reportRow);
     stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
     } catch (error) {
       if (error instanceof ScanUpstreamError) throw error;
+      failedPrs++;
       deps.onDiagnostic?.(`error: failed to process PR #${merge.prNumber}`);
     }
   }
+  if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
     writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
   }
-  const dates = reportRows.map((pr) => pr.merged_at).sort();
+  const rows = [...reportRows.values()];
+  const dates = rows.map((pr) => pr.merged_at).sort();
   return buildReportDraft({
     owner: target.owner, repo: target.repo, integrationBranch: target.integrationBranch,
     scannerVersion: options.scannerVersion, scannedAt: now.toISOString(), asOf: now.toISOString(), lookbackDays,
-    mergedFrom: dates[0] ?? from.toISOString(), mergedTo: now.toISOString(), horizons, prs: reportRows, ...(options.policy ? { policy: options.policy } : {}),
+    mergedFrom: dates[0] ?? from.toISOString(), mergedTo: now.toISOString(), horizons, prs: rows, ...(options.policy ? { policy: options.policy } : {}),
   });
 }
