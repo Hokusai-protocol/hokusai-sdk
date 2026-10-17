@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateGithubTarget } from './report-cli.js';
+import { runReportCli, validateGithubTarget } from './report-cli.js';
 import { resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { buildActionArgv } from './action-io.js';
 
@@ -18,5 +18,8 @@ describe('report inputs', () => {
     expect(buildActionArgv({ input, runnerTemp: '/tmp', workspace: '/tmp/repo' }).argv).toEqual(['report', 'octo/repo', '--repo', '/tmp/repo', '--state-dir', '/tmp/state', '--out', '/tmp/hokusai-report.json']);
     const withoutState = buildActionArgv({ input: (name) => ({ mode: 'report', 'github-repo': 'octo/repo' } as Record<string, string>)[name], runnerTemp: '/tmp', workspace: '/tmp/repo' });
     expect(withoutState.argv).toContain('--no-state');
+  });
+  it('rejects report scan caps above 2000', () => {
+    expect(() => runReportCli(['owner/repo', '--repo', '.', '--max-prs', '2001'], { env: {}, diagnostic: () => {} })).toThrow('--max-prs must be at most 2000');
   });
 });

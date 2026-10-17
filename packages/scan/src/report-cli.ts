@@ -45,6 +45,8 @@ export function runReportCli(args: readonly string[], world: ReportCliWorld): { 
   if (parsed.positionals.length !== 1) throw new ScanInputError('report requires one GitHub owner/repo or URL');
   const { owner, repo } = validateGithubTarget(parsed.positionals[0]!);
   const values = parsed.values;
+  const maxPrs = positive(values['max-prs'], '--max-prs', 500);
+  if (maxPrs > 2000) throw new ScanInputError('--max-prs must be at most 2000');
   const tokenName = validateTokenEnvName(values['token-env']);
   const token = world.env[tokenName];
   const github: ScanGitHubClient = values.offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient(owner, repo, token);
@@ -96,7 +98,6 @@ export function runReportCli(args: readonly string[], world: ReportCliWorld): { 
     if (staticAnalysis !== 'off' && staticAnalysis !== 'committed') throw new ScanInputError('--static-analysis must be off or committed');
     const lookbackDays = positive(values['lookback-days'], '--lookback-days', 180);
     if (lookbackDays > 3650) throw new ScanInputError('--lookback-days must be at most 3650');
-    const maxPrs = positive(values['max-prs'], '--max-prs', 500);
     const gitDir = runGit(['rev-parse', '--absolute-git-dir']);
     if (gitDir.exitCode !== 0) throw new ScanInputError('--repo is not a git worktree');
     const stateDir = values['no-state'] ? undefined : values['state-dir'] ? resolve(values['state-dir']) : join(gitDir.stdout.trim(), 'hokusai-scan', `${owner}__${repo}`);

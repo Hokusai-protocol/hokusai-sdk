@@ -9,6 +9,7 @@ import { GIT_OUTPUT_MAX_BUFFER, SURVIVAL_LABELLER_VERSION, SURVIVAL_NORMALIZATIO
 import { execArgvCommand } from '../shell-utils.js';
 import { ScanUpstreamError } from '../default-deps.js';
 import { buildReportDraft, emitReport } from '../report/build.js';
+import { DEFAULT_REPORT_POLICY } from '../report/suppression.js';
 import { enumerateWindow } from './enumerate.js';
 import { configHash, readScanState, writeScanState, type CachedPr } from './state.js';
 import type { ScanGitHubClient } from './github.js';
@@ -47,7 +48,7 @@ export function runReportScan(target: ReportScanTarget, deps: ReportScanDeps, op
   const from = new Date(asOf.getTime() - lookback * 86_400_000);
   const horizons = opts.horizons ?? [14, 30, 60];
   const maxPrs = opts.maxPrs ?? 500;
-  const expected = { scanner_version: opts.scannerVersion, labeller_version: SURVIVAL_LABELLER_VERSION, normalization_version: SURVIVAL_NORMALIZATION_VERSION, config_hash: configHash({ horizons, attributionConfig: opts.attributionConfig ?? {}, staticAnalysis: opts.staticAnalysis ?? 'off' }), integration_branch: target.integrationBranch };
+  const expected = { scanner_version: opts.scannerVersion, labeller_version: SURVIVAL_LABELLER_VERSION, normalization_version: SURVIVAL_NORMALIZATION_VERSION, config_hash: configHash({ lookbackDays: lookback, maxPrs, horizons, attributionConfig: opts.attributionConfig ?? {}, staticAnalysis: opts.staticAnalysis ?? 'off' }), integration_branch: target.integrationBranch };
   const cache = opts.stateDir ? readScanState(opts.stateDir, expected, deps.runGit) : null;
   const discovered = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, owner: target.owner, repo: target.repo, from, asOf, cursor: cache?.state.last_seen_merge_sha ?? null });
   const cached = cache && !discovered.cursorReset ? cache.prs.filter((entry) => new Date(entry.row.merged_at).getTime() >= from.getTime()) : [];
@@ -116,7 +117,16 @@ export function runReportScan(target: ReportScanTarget, deps: ReportScanDeps, op
   }
   const finalEntries = [...bySha.values()].filter((entry) => selectedSet.has(entry.merge_sha) && entry.row);
   const mergedFrom = finalEntries.length ? new Date(Math.min(...finalEntries.map((entry) => new Date(entry.row.merged_at).getTime()))) : from;
-  const { report, json } = emitReport(buildReportDraft({ owner: target.owner, repo: target.repo, integrationBranch: target.integrationBranch, asOf, lookbackDays: lookback, mergedFrom, horizons, rows: finalEntries.map((entry) => entry.row), scannerVersion: opts.scannerVersion }), opts.policy);
+  const attributionPolicy = opts.attributionConfig
+    ? {
+        ...DEFAULT_REPORT_POLICY,
+        min_cell_n: opts.attributionConfig.minEligiblePrs,
+        min_agent_coverage: opts.attributionConfig.coverageFloorPercent / 100,
+        min_harness_coverage: opts.attributionConfig.coverageFloorPercent / 100,
+        min_exact_model_coverage: opts.attributionConfig.coverageFloorPercent / 100,
+      }
+    : DEFAULT_REPORT_POLICY;
+  const { report, json } = emitReport(buildReportDraft({ owner: target.owner, repo: target.repo, integrationBranch: target.integrationBranch, asOf, lookbackDays: lookback, mergedFrom, horizons, rows: finalEntries.map((entry) => entry.row), scannerVersion: opts.scannerVersion }), { ...attributionPolicy, ...opts.policy });
   // A pinned historical clock may be earlier than the branch tip. Advancing
   // the cursor to that future tip would permanently skip merges on the next
   // scan. Keep it at the latest merge actually inside this run's window.

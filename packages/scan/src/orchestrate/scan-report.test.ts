@@ -77,6 +77,9 @@ describe('runReportScan', () => {
     calls.length = 0;
     runReportScan(target, deps, { ...opts, attributionConfig: resolveAttributionConfig({ extraLabelNames: ['agent'] }) });
     expect(calls).toHaveLength(4);
+    calls.length = 0;
+    runReportScan(target, deps, { ...opts, maxPrs: 2 });
+    expect(calls).toEqual([3, 4]);
     fixture.runGit(['reset', '--hard', 'HEAD~2']);
     fixture.addMerges([{ prNumber: 5, epoch: BASE + 5 * DAY }]);
     calls.length = 0;
@@ -84,5 +87,14 @@ describe('runReportScan', () => {
     const rewrittenFull = runReportScan(target, deps, { scannerVersion: '0.4.0' });
     expect(calls.length).toBeGreaterThan(0);
     expect(rewritten.report.aggregates).toEqual(rewrittenFull.report.aggregates);
+  }, 30_000);
+  it('applies attribution gate configuration to report policy', () => {
+    const { fixture, deps, target } = setup();
+    fixture.addMerges([{ prNumber: 1, epoch: BASE + DAY }]);
+    const report = runReportScan(target, deps, {
+      scannerVersion: '0.4.0',
+      attributionConfig: resolveAttributionConfig({ coverageFloorPercent: 75, minEligiblePrs: 25 }),
+    }).report;
+    expect(report.policy).toMatchObject({ min_cell_n: 25, min_agent_coverage: 0.75, min_harness_coverage: 0.75, min_exact_model_coverage: 0.75 });
   }, 30_000);
 });
