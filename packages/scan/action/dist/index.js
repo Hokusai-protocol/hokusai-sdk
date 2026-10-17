@@ -2216,8 +2216,8 @@ function structural(schema, value, path4, errors, root) {
       fail2("invalid_type", "Expected object.");
       return;
     }
-    const object = value, props = schema.properties;
-    for (const key of Object.keys(object))
+    const object2 = value, props = schema.properties;
+    for (const key of Object.keys(object2))
       if (!(key in props))
         errors.push({
           path: path4 ? `${path4}.${key}` : key,
@@ -2225,15 +2225,15 @@ function structural(schema, value, path4, errors, root) {
           message: "Unknown key."
         });
     for (const key of schema.required)
-      if (!(key in object))
+      if (!(key in object2))
         errors.push({
           path: path4 ? `${path4}.${key}` : key,
           code: "required",
           message: "Field is required."
         });
     for (const [key, s] of Object.entries(props))
-      if (key in object)
-        structural(s, object[key], path4 ? `${path4}.${key}` : key, errors, root);
+      if (key in object2)
+        structural(s, object2[key], path4 ? `${path4}.${key}` : key, errors, root);
   } else if (schema.type === "array") {
     if (!Array.isArray(value)) {
       fail2("invalid_type", "Expected array.");
@@ -7507,8 +7507,8 @@ function buildReportDraft(input) {
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
-    const object = value;
-    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
+    const object2 = value;
+    return `{${Object.keys(object2).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object2[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -7697,7 +7697,33 @@ function validHeader(value) {
 function validRow(value) {
   if (!value || typeof value !== "object") return false;
   const row = value;
-  return typeof row.merge_sha === "string" && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.merged_at_epoch) && row.merged_at_epoch >= 0 && Number.isInteger(row.pr_number) && row.pr_number > 0 && typeof row.merged_at === "string" && !!row.attribution && !!row.features && !!row.labels_by_horizon && typeof row.labels_by_horizon === "object";
+  return exactKeys(row, ["merge_sha", "merged_at_epoch", "pr_number", "merged_at", "attribution", "features", "labels_by_horizon"]) && typeof row.merge_sha === "string" && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.merged_at_epoch) && row.merged_at_epoch >= 0 && Number.isInteger(row.pr_number) && row.pr_number > 0 && typeof row.merged_at === "string" && validAttribution(row.attribution) && validateCandidateFeaturesV1(row.features).ok && validLabelsByHorizon(row.labels_by_horizon);
+}
+function object(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+function exactKeys(value, keys) {
+  return Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key));
+}
+function validMethods(value) {
+  return Array.isArray(value) && value.every((method) => typeof method === "string" && REPORT_ATTRIBUTION_METHODS.includes(method));
+}
+function validDimension(value, status, ids, evidence = false) {
+  if (!object(value)) return false;
+  const keys = evidence ? ["id", "confidence", "methods", "evidence"] : ids ? ["id", "confidence", "methods"] : ["status", "confidence", "methods"];
+  return exactKeys(value, keys) && (ids ? typeof value.id === "string" || value.id === null : status.includes(value.status)) && (typeof value.confidence === "number" || value.confidence === null) && validMethods(value.methods) && (!evidence || value.evidence === "first_party_executed" || value.evidence === "heuristic" || value.evidence === null);
+}
+function validAttribution(value) {
+  if (!object(value) || !exactKeys(value, ["agent", "harness", "exact_model"])) return false;
+  return validDimension(value.agent, ["agent", "not_agent_signal", "unknown"], false) && validDimension(value.harness, [], true) && validDimension(value.exact_model, [], true, true);
+}
+function validLabel(value) {
+  if (!object(value) || !exactKeys(value, ["horizon_days", "label_provenance", "outcome", "label_hash"]) || !HORIZONS.includes(value.horizon_days) || value.label_provenance !== "harvested" && value.label_provenance !== "owner_corrected" || typeof value.label_hash !== "string" || !/^[0-9a-f]{64}$/.test(value.label_hash) || !object(value.outcome)) return false;
+  const outcome = value.outcome;
+  return exactKeys(outcome, ["survived", "survival_ratio", "reverted", "undone_by", "followup", "report_outcome", "reason_codes"]) && (typeof outcome.survived === "boolean" || outcome.survived === null) && (typeof outcome.survival_ratio === "number" || outcome.survival_ratio === null) && (typeof outcome.reverted === "boolean" || outcome.reverted === null) && (outcome.undone_by === "human" || outcome.undone_by === "agent" || outcome.undone_by === null) && (typeof outcome.followup === "boolean" || outcome.followup === null) && ["survived", "followup", "substantially_rewritten", "reverted", null].includes(outcome.report_outcome) && Array.isArray(outcome.reason_codes) && outcome.reason_codes.every((code) => typeof code === "string" && REASON_CODES.includes(code));
+}
+function validLabelsByHorizon(value) {
+  return object(value) && Object.entries(value).every(([horizon2, label2]) => /^(14|30|60)$/.test(horizon2) && validLabel(label2) && String(label2.horizon_days) === horizon2);
 }
 function readScanState(dir, versions, isAncestor2) {
   const statePath = path2.join(dir, "state.json");
@@ -7938,8 +7964,8 @@ function findForbidden(value, prefix = "") {
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
-    const object = value;
-    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonical(object[key])}`).join(",")}}`;
+    const object2 = value;
+    return `{${Object.keys(object2).sort().map((key) => `${JSON.stringify(key)}:${canonical(object2[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -8217,6 +8243,12 @@ async function runReportCli(argv, io) {
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
+    }
+    try {
+      resolveAttributionConfig(attributionConfig);
+    } catch (error) {
+      if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
+      throw error;
     }
     const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
