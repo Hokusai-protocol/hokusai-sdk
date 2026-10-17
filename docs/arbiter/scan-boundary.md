@@ -70,6 +70,16 @@ in `packages/core/src/arbiter-shadow-record.ts` and the runners in
 `packages/scan/src/shadow/`. See [shadow-mode.md](./shadow-mode.md) for the
 install steps, data layout, and the never-gate guarantees.
 
+## Report orchestration
+
+`hokusai-scan report` composes enumeration, attribution, extraction, and
+survival labelling into an `arbiter_report/v1` payload. Its checkpoint stores
+only derived rows and is invalidated when its versioned scan configuration or
+integration history no longer matches. Suppression is applied by the scanner,
+so locally generated and hosted reports expose the same cells. See
+[scan-orchestration.md](./scan-orchestration.md) for inputs, incremental
+scanning, and contribution behaviour.
+
 ## Where things are
 
 - Contract modules: `packages/core/src/{candidate-features,arbiter-survival-label}.ts`

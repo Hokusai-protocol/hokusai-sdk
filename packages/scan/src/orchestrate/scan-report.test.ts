@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -96,5 +96,17 @@ describe('runReportScan', () => {
       attributionConfig: resolveAttributionConfig({ coverageFloorPercent: 75, minEligiblePrs: 25 }),
     }).report;
     expect(report.policy).toMatchObject({ min_cell_n: 25, min_agent_coverage: 0.75, min_harness_coverage: 0.75, min_exact_model_coverage: 0.75 });
+  }, 30_000);
+  it('ignores a truncated checkpoint and performs a full rescan', () => {
+    const { fixture, stateDir, calls, deps, target } = setup();
+    fixture.addMerges([1, 2].map((prNumber) => ({ prNumber, epoch: BASE + prNumber * DAY })));
+    const opts = { scannerVersion: '0.4.0', stateDir };
+    runReportScan(target, deps, opts);
+    const path = join(stateDir, 'prs.jsonl');
+    const cached = JSON.parse(readFileSync(path, 'utf8').trim().split('\n')[0]!) as { merge_sha: string; row: { pr_number: number } };
+    writeFileSync(path, `${JSON.stringify({ merge_sha: cached.merge_sha, row: { pr_number: cached.row.pr_number } })}\n`);
+    calls.length = 0;
+    runReportScan(target, deps, opts);
+    expect(calls).toEqual([1, 2]);
   }, 30_000);
 });
