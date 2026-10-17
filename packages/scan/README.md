@@ -52,6 +52,11 @@ hokusai-scan extract --repo <path> --pr <n> [--base-ref <ref>]
                      [--out <path|->] [--debug]
 hokusai-scan scan    --repo <path> --integration-branch <name> --pr <n>
                      [all common flags]
+hokusai-scan report  <owner/repo|https://github.com/owner/repo>
+                     [--repo <path>] [--integration-branch <name>]
+                     [--lookback-days <n>] [--max-prs <n>]
+                     [--horizons 14,30,60] [--attribution-config <path>]
+                     [--state-dir <path>|--no-state] [--contribute --dry-run]
 ```
 
 - `label` walks the integration branch's first-parent history (never `main`
@@ -62,6 +67,11 @@ hokusai-scan scan    --repo <path> --integration-branch <name> --pr <n>
   HEAD as PR `<n>`, keys sorted canonically.
 - `scan` labels one PR and extracts its features, emitting a combined object
   `{ scan_contract, candidate_features, survival_labels }`.
+- `report` enumerates merged PRs, attributes their agent/model evidence,
+  extracts features, labels survival, and emits an `arbiter_report/v1` payload.
+  It defaults to a 180-day, 500-PR window (with a hard 2,000-PR cap) and uses
+  the repository default branch unless a squash-promotion integration branch
+  is detected. As with `label`, `main` is rejected by the v1 label contract.
 
 Conventions:
 
@@ -77,6 +87,27 @@ Conventions:
   to explicit `null`s / absent link evidence, never to guesses.
 - `--github-repo` is required context for label runs; when omitted the CLI
   shell (not the core) detects it from the `origin` remote and says so.
+
+### Report privacy, state, and contribution
+
+`report` writes only derived feature, attribution, and label projections to
+its incremental state directory. The checkpoint is keyed by the last seen
+merge SHA and scan configuration; changing the lookback, PR cap, horizons, or
+attribution configuration causes a complete compatible re-scan. Raw PR text,
+diffs, paths, commit messages, and identity details never enter the payload or
+checkpoint.
+
+The scanner applies the report's suppression policy before emitting JSON, so
+local/private and hosted renderers receive identical cell visibility and named
+suppression reasons. Cells below the configured minimum eligible PR floor
+(20 by default) are suppressed. An attribution config can set
+`coverageFloorPercent` and `minEligiblePrs`, alongside attribution signals;
+the resolved values control the corresponding report eligibility gates.
+
+`--contribute` prepares the derived report for the Arbiter ingestion endpoint.
+Use `--dry-run` to print that contribution payload without making a network
+request. A real contribution requires the API key named by `--api-key-env`
+(default `HOKUSAI_API_KEY`); it never uploads source PR content.
 
 Exit codes:
 

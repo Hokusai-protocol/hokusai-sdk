@@ -8301,7 +8301,7 @@ function runReportScan(target, deps, opts) {
   const from = new Date(asOf.getTime() - lookback * 864e5);
   const horizons = opts.horizons ?? [14, 30, 60];
   const maxPrs = opts.maxPrs ?? 500;
-  const expected = { scanner_version: opts.scannerVersion, labeller_version: SURVIVAL_LABELLER_VERSION, normalization_version: SURVIVAL_NORMALIZATION_VERSION, config_hash: configHash({ horizons, attributionConfig: opts.attributionConfig ?? {}, staticAnalysis: opts.staticAnalysis ?? "off" }), integration_branch: target.integrationBranch };
+  const expected = { scanner_version: opts.scannerVersion, labeller_version: SURVIVAL_LABELLER_VERSION, normalization_version: SURVIVAL_NORMALIZATION_VERSION, config_hash: configHash({ lookbackDays: lookback, maxPrs, horizons, attributionConfig: opts.attributionConfig ?? {}, staticAnalysis: opts.staticAnalysis ?? "off" }), integration_branch: target.integrationBranch };
   const cache = opts.stateDir ? readScanState(opts.stateDir, expected, deps.runGit) : null;
   const discovered = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, owner: target.owner, repo: target.repo, from, asOf, cursor: cache?.state.last_seen_merge_sha ?? null });
   const cached = cache && !discovered.cursorReset ? cache.prs.filter((entry) => new Date(entry.row.merged_at).getTime() >= from.getTime()) : [];
@@ -8383,7 +8383,14 @@ ${pr.body ?? ""}`.slice(0, 1e5) } });
   }
   const finalEntries = [...bySha.values()].filter((entry) => selectedSet.has(entry.merge_sha) && entry.row);
   const mergedFrom = finalEntries.length ? new Date(Math.min(...finalEntries.map((entry) => new Date(entry.row.merged_at).getTime()))) : from;
-  const { report, json } = emitReport(buildReportDraft({ owner: target.owner, repo: target.repo, integrationBranch: target.integrationBranch, asOf, lookbackDays: lookback, mergedFrom, horizons, rows: finalEntries.map((entry) => entry.row), scannerVersion: opts.scannerVersion }), opts.policy);
+  const attributionPolicy = opts.attributionConfig ? {
+    ...DEFAULT_REPORT_POLICY,
+    min_cell_n: opts.attributionConfig.minEligiblePrs,
+    min_agent_coverage: opts.attributionConfig.coverageFloorPercent / 100,
+    min_harness_coverage: opts.attributionConfig.coverageFloorPercent / 100,
+    min_exact_model_coverage: opts.attributionConfig.coverageFloorPercent / 100
+  } : DEFAULT_REPORT_POLICY;
+  const { report, json } = emitReport(buildReportDraft({ owner: target.owner, repo: target.repo, integrationBranch: target.integrationBranch, asOf, lookbackDays: lookback, mergedFrom, horizons, rows: finalEntries.map((entry) => entry.row), scannerVersion: opts.scannerVersion }), { ...attributionPolicy, ...opts.policy });
   const lastSeen = discovered.merges.at(-1)?.mergeSha ?? cache?.state.last_seen_merge_sha;
   if (opts.stateDir && lastSeen && failed === 0) writeScanState(opts.stateDir, { state_version: 1, ...expected, last_seen_merge_sha: lastSeen }, finalEntries);
   deps.onDiagnostic?.(`info: scanned ${finalEntries.length} PRs; failed ${failed}`);
@@ -8465,6 +8472,8 @@ function runReportCli(args, world) {
   if (parsed.positionals.length !== 1) throw new ScanInputError("report requires one GitHub owner/repo or URL");
   const { owner, repo } = validateGithubTarget(parsed.positionals[0]);
   const values = parsed.values;
+  const maxPrs = positive(values["max-prs"], "--max-prs", 500);
+  if (maxPrs > 2e3) throw new ScanInputError("--max-prs must be at most 2000");
   const tokenName = validateTokenEnvName(values["token-env"]);
   const token = world.env[tokenName];
   const github = values.offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient(owner, repo, token);
@@ -8516,7 +8525,6 @@ function runReportCli(args, world) {
     if (staticAnalysis !== "off" && staticAnalysis !== "committed") throw new ScanInputError("--static-analysis must be off or committed");
     const lookbackDays = positive(values["lookback-days"], "--lookback-days", 180);
     if (lookbackDays > 3650) throw new ScanInputError("--lookback-days must be at most 3650");
-    const maxPrs = positive(values["max-prs"], "--max-prs", 500);
     const gitDir = runGit3(["rev-parse", "--absolute-git-dir"]);
     if (gitDir.exitCode !== 0) throw new ScanInputError("--repo is not a git worktree");
     const stateDir = values["no-state"] ? void 0 : values["state-dir"] ? resolve4(values["state-dir"]) : join9(gitDir.stdout.trim(), "hokusai-scan", `${owner}__${repo}`);
