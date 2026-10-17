@@ -1,5 +1,22 @@
 # Payload Schemas
 
+## Arbiter report (`arbiter_report/v1`)
+
+The canonical report content contract is `ARBITER_REPORT_V1_JSON_SCHEMA` in
+`@hokusai/core`, mirrored byte-for-byte at
+`packages/core/schemas/arbiter-report.v1.schema.json`. The scanner emits it
+through `applyReportSuppression`; the site vendors that schema and the
+scanner-generated fixtures. Coverage, suppression reasons, statistical basis,
+cost provenance, and model provenance are explicit fields. Each PR carries the
+complete `candidate_features/v1` vector and a privacy-safe projection of its
+S2 survival labels. A v1 field or meaning change requires `arbiter_report/v2`.
+
+The content envelope does not grant access to a hosted report. Website
+visibility is held separately in the site's `ArbiterReport.visibility` row.
+Consumers join by lowercasing `(repo.owner, repo.name)`, while preserving the
+payload's case for display. `repo.owner` follows GitHub login syntax;
+`repo.name` permits a leading dot but excludes `.` and `..`.
+
 `@hokusai/core` exposes the SDK payloads adapters use locally and the wire payload sent to the Hokusai Technical Task Router.
 
 ## Route request

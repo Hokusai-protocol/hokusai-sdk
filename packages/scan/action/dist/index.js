@@ -888,7 +888,7 @@ var CANDIDATE_FEATURE_PROVENANCE_FIELDS = fieldsForGroup("provenance");
 var CANDIDATE_FEATURE_FIELDS = Object.freeze(
   Object.keys(CANDIDATE_FEATURE_DEFINITIONS)
 );
-function definitionJsonSchema(definition, nullable) {
+function definitionJsonSchema(definition, nullable2) {
   let valueSchema;
   if (definition.kind === "enum") {
     valueSchema = { type: "string", enum: [...definition.values] };
@@ -904,7 +904,7 @@ function definitionJsonSchema(definition, nullable) {
     }
   }
   valueSchema.description = `${definition.description} Null means: ${definition.nullMeaning}`;
-  return nullable ? { anyOf: [valueSchema, { type: "null" }] } : valueSchema;
+  return nullable2 ? { anyOf: [valueSchema, { type: "null" }] } : valueSchema;
 }
 var CANDIDATE_FEATURES_V1_JSON_SCHEMA = Object.freeze({
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -1078,8 +1078,8 @@ function finalizeCandidateFeaturesV1(...projections) {
   }
   return result.value;
 }
-function candidateFeatureValueJsonSchema(name, nullable = true) {
-  return definitionJsonSchema(CANDIDATE_FEATURE_DEFINITIONS[name], nullable);
+function candidateFeatureValueJsonSchema(name, nullable2 = true) {
+  return definitionJsonSchema(CANDIDATE_FEATURE_DEFINITIONS[name], nullable2);
 }
 
 // ../core/src/arbiter-survival-label.ts
@@ -1087,6 +1087,32 @@ import { createHash } from "node:crypto";
 var ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = "1.0.0";
 var SUBSTANTIAL_REWRITE_THRESHOLD = 0.5;
 var HORIZONS = [14, 30, 60];
+var REASON_CODES = [
+  // positive-signal codes
+  "exact_revert",
+  "line_range_followup",
+  "linked_issue_or_pr",
+  "pre_merge_human_edit",
+  "task_redispatch",
+  "substantial_rewrite",
+  // negative-signal / non-event
+  "no_evidence",
+  // missing / ineligible causes
+  "unmerged_pr",
+  "missing_horizon",
+  "insufficient_history",
+  "insufficient_line_range_substrate",
+  "inaccessible_history",
+  "ambiguous_change"
+];
+var MISSING_REASON_CODES = [
+  "unmerged_pr",
+  "missing_horizon",
+  "insufficient_history",
+  "insufficient_line_range_substrate",
+  "inaccessible_history",
+  "ambiguous_change"
+];
 function deriveReportOutcome(inputs, threshold = SUBSTANTIAL_REWRITE_THRESHOLD) {
   const { survived, survival_ratio, reverted, followup } = inputs;
   if (survived === null || survival_ratio === null || reverted === null || followup === null) {
@@ -1110,11 +1136,11 @@ function canonicalize(value) {
   }
   return value;
 }
-function canonicalSerialize(label) {
-  return JSON.stringify(canonicalize(label));
+function canonicalSerialize(label2) {
+  return JSON.stringify(canonicalize(label2));
 }
-function canonicalHash(label) {
-  return createHash("sha256").update(canonicalSerialize(label), "utf-8").digest("hex");
+function canonicalHash(label2) {
+  return createHash("sha256").update(canonicalSerialize(label2), "utf-8").digest("hex");
 }
 function buildArbiterSurvivalLabel(input) {
   const report_outcome = deriveReportOutcome(
@@ -1126,7 +1152,7 @@ function buildArbiterSurvivalLabel(input) {
     },
     input.substantialRewriteThreshold
   );
-  const label = {
+  const label2 = {
     schema_version: "1.0.0",
     prUrl: input.prUrl,
     horizon_days: input.horizon_days,
@@ -1139,9 +1165,9 @@ function buildArbiterSurvivalLabel(input) {
     }
   };
   if (input.owner_correction !== void 0) {
-    label.owner_correction = input.owner_correction;
+    label2.owner_correction = input.owner_correction;
   }
-  return label;
+  return label2;
 }
 
 // ../core/src/arbiter-survival-label-schema.ts
@@ -1719,6 +1745,409 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/task-cost/enums.ts
+var TASK_COST_FIELD_AVAILABILITIES = [
+  "available",
+  "partial",
+  "unavailable",
+  "known_zero"
+];
+var TASK_COST_COVERAGES = [
+  "complete",
+  "partial",
+  "unavailable",
+  "known_zero"
+];
+var TASK_COST_SOURCES = [
+  "provider_reported",
+  "local_estimate",
+  "mixed",
+  "none"
+];
+var TASK_COST_EVENT_SOURCES = ["provider_reported", "local_estimate", "none"];
+var TASK_COST_BASES = ["per_token_api", "subscription", "unknown"];
+var TASK_COST_JOIN_CONFIDENCES = [
+  "branch_worktree",
+  "timestamp_window",
+  "unattributed"
+];
+var TASK_COST_HARNESSES = [
+  "claude-code",
+  "codex",
+  "native",
+  "pi",
+  "wavemill",
+  "unknown"
+];
+var TASK_COST_USAGE_KINDS = ["delta", "cumulative"];
+var TASK_COST_PRICING_SOURCES = [
+  "local_estimate",
+  "openrouter_api",
+  "mixed",
+  "none"
+];
+var TASK_COST_PRICE_TABLES = [
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "override",
+  "external"
+];
+var TASK_COST_DIAGNOSTIC_CODES = [
+  /** reducer: an event lacks input/output token counts. */
+  "missing_token_usage",
+  /** adapter: source usage was unparseable, negative, or non-finite. */
+  "invalid_token_usage",
+  /** reducer: usage was complete enough to price but no price was applied. */
+  "unpriced_model",
+  /** reducer: summary coverage is `partial`. */
+  "mixed_coverage",
+  /** reducer: at least one event was resolved from a provider-reported charge. */
+  "provider_reported_cost",
+  /** adapter: no price table was available at all. */
+  "no_pricing_data",
+  /** reducer: events exist but none produced a cost. */
+  "no_priced_sessions",
+  /** reducer: events were priced against more than one pricing revision. */
+  "stale_pricing_revision",
+  /** reducer: an event repeating a prior `event_id` was ignored. */
+  "replay_dropped",
+  /** reducer: a cumulative snapshot regressed and its delta was clamped. */
+  "cumulative_backward_jump",
+  /** reducer: subscription-basis events carry no actual charge. */
+  "subscription_basis_no_charge"
+];
+
+// ../core/src/arbiter-report.ts
+var ARBITER_REPORT_SCHEMA_VERSION = "arbiter_report/v1";
+var REPORT_SUPPRESSION_REASONS = [
+  "n_below_floor",
+  "agent_coverage_below_floor",
+  "harness_coverage_below_floor",
+  "exact_model_coverage_below_floor",
+  "harness_only_evidence",
+  "cost_coverage_below_floor",
+  "reworked_below_floor",
+  "no_model_provenance",
+  "horizon_not_mature"
+];
+var REPORT_ATTRIBUTION_METHODS = [
+  "first_party_route_metadata",
+  "bot_author",
+  "branch_prefix",
+  "co_authored_by_trailer",
+  "pr_label",
+  "commit_signature",
+  "owner_config"
+];
+var REPORT_FEATURE_BUCKETS = Object.freeze({
+  tests_changed: ["true", "false"],
+  files_touched_bucket: ["1", "2_5", "6_15", "16_plus"],
+  loc_touched: ["q1", "q2", "q3", "q4"]
+});
+var str = (pattern) => ({ type: "string", pattern });
+var en = (values) => ({ enum: [...values] });
+var num = (minimum = 0, maximum) => ({
+  type: "number",
+  minimum,
+  ...maximum === void 0 ? {} : { maximum }
+});
+var int = (minimum = 0, maximum) => ({
+  type: "integer",
+  minimum,
+  ...maximum === void 0 ? {} : { maximum }
+});
+var nullable = (schema) => ({
+  anyOf: [schema, { type: "null" }]
+});
+var arr = (items, maxItems) => ({
+  type: "array",
+  items,
+  ...maxItems === void 0 ? {} : { maxItems }
+});
+var obj = (properties) => ({
+  type: "object",
+  additionalProperties: false,
+  required: Object.keys(properties),
+  properties
+});
+var ref = (name) => ({ $ref: `#/$defs/${name}` });
+var id = str("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$");
+var modelId = str("^[a-z0-9][a-z0-9._:/@-]{0,119}$");
+var timestamp = str(
+  "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+);
+var date = str("^\\d{4}-\\d{2}-\\d{2}$");
+var semver = str("^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$");
+var reasons = arr(en(REPORT_SUPPRESSION_REASONS));
+var basis = en(["descriptive", "out_of_sample_prediction"]);
+var cell = obj({
+  basis,
+  n: int(),
+  value: nullable(num(-1e15, 1e15)),
+  ci: nullable(
+    obj({
+      low: num(-1e15, 1e15),
+      high: num(-1e15, 1e15),
+      level: { const: 0.95 }
+    })
+  ),
+  suppressed: { type: "boolean" },
+  suppression_reasons: reasons
+});
+var section = (row) => obj({
+  basis,
+  status: en(["shown", "suppressed"]),
+  suppression_reasons: reasons,
+  rows: arr(row)
+});
+var horizon = en(HORIZONS);
+var label = obj({
+  horizon_days: horizon,
+  label_provenance: en(["harvested", "owner_corrected"]),
+  outcome: obj({
+    survived: nullable({ type: "boolean" }),
+    survival_ratio: nullable(num(0, 1)),
+    reverted: nullable({ type: "boolean" }),
+    undone_by: nullable(en(["human", "agent"])),
+    followup: nullable({ type: "boolean" }),
+    report_outcome: nullable(
+      en(["survived", "followup", "substantially_rewritten", "reverted"])
+    ),
+    reason_codes: arr(en(REASON_CODES))
+  }),
+  label_hash: str("^[0-9a-f]{64}$")
+});
+var methods = arr(en(REPORT_ATTRIBUTION_METHODS));
+var dimension = en(["agent", "harness", "exact_model"]);
+var costCoverage = en(TASK_COST_COVERAGES);
+var costSource = en(TASK_COST_SOURCES);
+var featureSchema = { ...CANDIDATE_FEATURES_V1_JSON_SCHEMA };
+delete featureSchema.$schema;
+delete featureSchema.$id;
+var ARBITER_REPORT_V1_JSON_SCHEMA = Object.freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.hokus.ai/arbiter_report/v1.json",
+  title: "Hokusai arbiter_report/v1",
+  ...obj({
+    schema_version: { const: ARBITER_REPORT_SCHEMA_VERSION },
+    data_origin: en(["scan", "fixture"]),
+    repo: obj({
+      host: { const: "github" },
+      owner: str("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"),
+      name: { ...str("^[A-Za-z0-9._-]{1,100}$"), not: { enum: [".", ".."] } }
+    }),
+    scan: obj({
+      scanned_at: timestamp,
+      as_of: timestamp,
+      scanner: obj({ package: { const: "@hokusai/scan" }, version: semver }),
+      integration_branch: str("^[A-Za-z0-9._/-]{1,200}$"),
+      lookback_days: int(1, 3650),
+      window: obj({ merged_from: timestamp, merged_to: timestamp }),
+      horizons_days: { ...arr(horizon, 3), minItems: 1, uniqueItems: true },
+      contracts: obj({
+        candidate_features: { const: "candidate_features/v1" },
+        survival_label: { const: "1.0.0" },
+        labeller_version: semver,
+        normalization_version: semver
+      })
+    }),
+    policy: obj({
+      policy_version: semver,
+      min_cell_n: int(1),
+      min_agent_coverage: num(0, 1),
+      min_harness_coverage: num(0, 1),
+      min_exact_model_coverage: num(0, 1),
+      min_cost_coverage: num(0, 1),
+      min_reworked_for_retrospective: int(),
+      ci_method: en(["wilson", "katz_log"]),
+      ci_level: { const: 0.95 }
+    }),
+    coverage: obj({
+      basis: { const: "descriptive" },
+      prs_enumerated: int(),
+      prs_eligible: int(),
+      labels_by_horizon: arr(
+        obj({
+          horizon_days: horizon,
+          labelled: int(),
+          missing: arr(obj({ reason: en(MISSING_REASON_CODES), count: int() }))
+        })
+      ),
+      attribution: obj({
+        agent: obj({
+          identified_agent: int(),
+          identified_human_signal: int(),
+          unknown: int(),
+          rate: num(0, 1)
+        }),
+        harness: obj({ identified: int(), unknown: int(), rate: num(0, 1) }),
+        exact_model: obj({
+          identified: int(),
+          unknown: int(),
+          rate: num(0, 1)
+        }),
+        methods: arr(
+          obj({
+            dimension,
+            method: en(REPORT_ATTRIBUTION_METHODS),
+            count: int()
+          })
+        )
+      })
+    }),
+    prs: arr(
+      obj({
+        pr_number: int(1),
+        merged_at: timestamp,
+        attribution: obj({
+          agent: obj({
+            status: en(["agent", "not_agent_signal", "unknown"]),
+            confidence: nullable(num(0, 1)),
+            methods
+          }),
+          harness: obj({
+            id: nullable(id),
+            confidence: nullable(num(0, 1)),
+            methods
+          }),
+          exact_model: obj({
+            id: nullable(modelId),
+            confidence: nullable(num(0, 1)),
+            methods,
+            evidence: nullable(en(["first_party_executed", "heuristic"]))
+          })
+        }),
+        features: ref("candidateFeatures"),
+        labels: arr(label, 3),
+        cost: nullable(
+          obj({
+            actual_usd: nullable(num()),
+            estimated_usd: nullable(num()),
+            cost_source: costSource,
+            coverage: costCoverage,
+            pricing_revision: nullable(id)
+          })
+        ),
+        prediction: nullable(
+          obj({
+            basis: { const: "out_of_sample_prediction" },
+            score: num(0, 1),
+            flagged: { type: "boolean" }
+          })
+        )
+      }),
+      2e4
+    ),
+    aggregates: obj({
+      survival_by_horizon: section(
+        obj({
+          horizon_days: horizon,
+          outcome: en([
+            "survived",
+            "followup",
+            "substantially_rewritten",
+            "reverted"
+          ]),
+          cell
+        })
+      ),
+      risk_ratios: section(
+        obj({
+          horizon_days: horizon,
+          feature: en(Object.keys(REPORT_FEATURE_BUCKETS)),
+          bucket: en([
+            ...REPORT_FEATURE_BUCKETS.tests_changed,
+            ...REPORT_FEATURE_BUCKETS.files_touched_bucket,
+            ...REPORT_FEATURE_BUCKETS.loc_touched
+          ]),
+          rework_rate: cell,
+          baseline_rate: cell,
+          ratio: cell
+        })
+      ),
+      survival_by_model: section(
+        obj({ horizon_days: horizon, model_id: modelId, cell })
+      ),
+      survival_by_harness: section(
+        obj({ horizon_days: horizon, harness_id: id, cell })
+      ),
+      cost_adjusted_survival_by_model: section(
+        obj({
+          horizon_days: horizon,
+          model_id: modelId,
+          cost_basis: { const: "actual" },
+          cell
+        })
+      )
+    }),
+    retrospective: nullable(
+      obj({
+        basis: { const: "out_of_sample_prediction" },
+        horizon_days: horizon,
+        threshold: num(0, 1),
+        calibration: en(["portable", "repo_calibrated"]),
+        n_reworked: int(),
+        precision: cell,
+        recall: cell,
+        flagged_share: cell,
+        suppressed: { type: "boolean" },
+        suppression_reasons: reasons
+      })
+    ),
+    cost: nullable(
+      obj({
+        actual: obj({
+          basis: { const: "descriptive" },
+          total_usd: nullable(num()),
+          cost_source: { const: "provider_reported" },
+          coverage: costCoverage,
+          prs_priced: int(),
+          prs_unknown: int(),
+          suppressed: { type: "boolean" },
+          suppression_reasons: reasons
+        }),
+        estimated: obj({
+          basis: { const: "descriptive" },
+          kind: { const: "estimate" },
+          total_usd: nullable(num()),
+          cost_source: { const: "local_estimate" },
+          pricing_revision: nullable(id),
+          pricing_timestamp: nullable(timestamp),
+          coverage: costCoverage,
+          prs_priced: int(),
+          prs_unknown: int(),
+          unpriced_models: int(),
+          suppressed: { type: "boolean" },
+          suppression_reasons: reasons
+        })
+      })
+    ),
+    model_provenance: nullable(
+      obj({
+        head_id: id,
+        head_version: semver,
+        trained_on: id,
+        training_repo_count: int(),
+        split: en(["time_split", "leave_repo_out"]),
+        split_date: date,
+        repo_in_training_set: { type: "boolean" },
+        trained_at: timestamp
+      })
+    ),
+    eligibility: obj({
+      exact_model_table: { type: "boolean" },
+      harness_table: { type: "boolean" },
+      cost_adjusted_by_model: { type: "boolean" },
+      retrospective: { type: "boolean" },
+      model_routing_cta: { type: "boolean" },
+      reasons
+    })
+  }),
+  $defs: { candidateFeatures: featureSchema }
+});
+
 // ../core/src/arbiter-shadow-record.ts
 var ARBITER_SHADOW_SCORE_SCHEMA_VERSION = "arbiter_shadow_score/v1";
 var ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION = "arbiter_shadow_outcome/v1";
@@ -1765,12 +2194,12 @@ function isPlainObject2(value) {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
-function findForbiddenKeys(obj, path2 = "$") {
+function findForbiddenKeys(obj2, path2 = "$") {
   const errors = [];
-  if (!isPlainObject2(obj)) {
+  if (!isPlainObject2(obj2)) {
     return errors;
   }
-  for (const [key, value] of Object.entries(obj)) {
+  for (const [key, value] of Object.entries(obj2)) {
     if (ARBITER_SHADOW_FORBIDDEN_KEYS.has(key)) {
       errors.push(fieldError2(path2 === "$" ? key : `${path2}.${key}`, `Forbidden key.`, "invalid_value"));
     }
@@ -2174,11 +2603,11 @@ var HOKUSAI_LANGUAGE_BY_LABEL = {
   shell: "bash",
   bash: "bash"
 };
-function normalizeHokusaiLanguage(label) {
-  if (typeof label !== "string") {
+function normalizeHokusaiLanguage(label2) {
+  if (typeof label2 !== "string") {
     return "unknown";
   }
-  return HOKUSAI_LANGUAGE_BY_LABEL[label.trim().toLowerCase()] ?? "unknown";
+  return HOKUSAI_LANGUAGE_BY_LABEL[label2.trim().toLowerCase()] ?? "unknown";
 }
 var TASK_FAMILY_TO_HOKUSAI_TYPE = {
   bugfix: "bugfix",
@@ -2430,80 +2859,6 @@ var PROVIDER_CONTRACT_VERSIONS = Object.freeze({
   pi: "pi/1"
 });
 
-// ../core/src/task-cost/enums.ts
-var TASK_COST_FIELD_AVAILABILITIES = [
-  "available",
-  "partial",
-  "unavailable",
-  "known_zero"
-];
-var TASK_COST_COVERAGES = [
-  "complete",
-  "partial",
-  "unavailable",
-  "known_zero"
-];
-var TASK_COST_SOURCES = [
-  "provider_reported",
-  "local_estimate",
-  "mixed",
-  "none"
-];
-var TASK_COST_EVENT_SOURCES = ["provider_reported", "local_estimate", "none"];
-var TASK_COST_BASES = ["per_token_api", "subscription", "unknown"];
-var TASK_COST_JOIN_CONFIDENCES = [
-  "branch_worktree",
-  "timestamp_window",
-  "unattributed"
-];
-var TASK_COST_HARNESSES = [
-  "claude-code",
-  "codex",
-  "native",
-  "pi",
-  "wavemill",
-  "unknown"
-];
-var TASK_COST_USAGE_KINDS = ["delta", "cumulative"];
-var TASK_COST_PRICING_SOURCES = [
-  "local_estimate",
-  "openrouter_api",
-  "mixed",
-  "none"
-];
-var TASK_COST_PRICE_TABLES = [
-  "anthropic",
-  "openai",
-  "google",
-  "openrouter",
-  "override",
-  "external"
-];
-var TASK_COST_DIAGNOSTIC_CODES = [
-  /** reducer: an event lacks input/output token counts. */
-  "missing_token_usage",
-  /** adapter: source usage was unparseable, negative, or non-finite. */
-  "invalid_token_usage",
-  /** reducer: usage was complete enough to price but no price was applied. */
-  "unpriced_model",
-  /** reducer: summary coverage is `partial`. */
-  "mixed_coverage",
-  /** reducer: at least one event was resolved from a provider-reported charge. */
-  "provider_reported_cost",
-  /** adapter: no price table was available at all. */
-  "no_pricing_data",
-  /** reducer: events exist but none produced a cost. */
-  "no_priced_sessions",
-  /** reducer: events were priced against more than one pricing revision. */
-  "stale_pricing_revision",
-  /** reducer: an event repeating a prior `event_id` was ignored. */
-  "replay_dropped",
-  /** reducer: a cumulative snapshot regressed and its delta was clamped. */
-  "cumulative_backward_jump",
-  /** reducer: subscription-basis events carry no actual charge. */
-  "subscription_basis_no_charge"
-];
-
 // ../core/src/task-cost/token-usage.ts
 var TASK_COST_TOKEN_FIELDS = [
   "input_tokens",
@@ -2601,92 +2956,92 @@ function isPlainObject3(value) {
 function fail(message, code = "schema_validation_failed") {
   throw new TaskCostValidationError(code, message);
 }
-function requireObject(value, label) {
-  if (!isPlainObject3(value)) fail(`${label} must be an object`);
+function requireObject(value, label2) {
+  if (!isPlainObject3(value)) fail(`${label2} must be an object`);
   return value;
 }
-function requireEnum(value, allowed, label) {
+function requireEnum(value, allowed, label2) {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    fail(`${label} must be one of: ${allowed.join(", ")}`);
+    fail(`${label2} must be one of: ${allowed.join(", ")}`);
   }
   return value;
 }
-function requireId(value, label) {
+function requireId(value, label2) {
   if (typeof value !== "string" || !ID_PATTERN.test(value)) {
-    fail(`${label} must be an identifier matching ${ID_PATTERN}`);
+    fail(`${label2} must be an identifier matching ${ID_PATTERN}`);
   }
   return value;
 }
-function optionalId(value, label) {
-  return value === void 0 ? void 0 : requireId(value, label);
+function optionalId(value, label2) {
+  return value === void 0 ? void 0 : requireId(value, label2);
 }
-function requirePattern(value, pattern, label) {
+function requirePattern(value, pattern, label2) {
   if (typeof value !== "string" || !pattern.test(value)) {
-    fail(`${label} must match ${pattern}`);
+    fail(`${label2} must match ${pattern}`);
   }
   return value;
 }
-function requireModel(value, label) {
-  const model = requirePattern(value, MODEL_PATTERN, label);
+function requireModel(value, label2) {
+  const model = requirePattern(value, MODEL_PATTERN, label2);
   if (model.includes("..") || model.includes("//")) {
-    fail(`${label} must not contain path-like sequences`);
+    fail(`${label2} must not contain path-like sequences`);
   }
   return model;
 }
-function requireTimestamp(value, label) {
-  if (typeof value !== "string") fail(`${label} must be an ISO-8601 UTC timestamp`, "invalid_timestamp");
+function requireTimestamp(value, label2) {
+  if (typeof value !== "string") fail(`${label2} must be an ISO-8601 UTC timestamp`, "invalid_timestamp");
   const match = TIMESTAMP_PATTERN.exec(value);
-  if (!match) fail(`${label} must be an ISO-8601 UTC timestamp`, "invalid_timestamp");
+  if (!match) fail(`${label2} must be an ISO-8601 UTC timestamp`, "invalid_timestamp");
   const [year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0] = match.slice(1).map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
-  const roundTrips = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day && date.getUTCHours() === hour && date.getUTCMinutes() === minute && date.getUTCSeconds() === second;
-  if (!roundTrips) fail(`${label} is not a real calendar time`, "invalid_timestamp");
+  const date2 = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const roundTrips = date2.getUTCFullYear() === year && date2.getUTCMonth() === month - 1 && date2.getUTCDate() === day && date2.getUTCHours() === hour && date2.getUTCMinutes() === minute && date2.getUTCSeconds() === second;
+  if (!roundTrips) fail(`${label2} is not a real calendar time`, "invalid_timestamp");
   return value;
 }
-function requireBoolean(value, label) {
-  if (typeof value !== "boolean") fail(`${label} must be a boolean`);
+function requireBoolean(value, label2) {
+  if (typeof value !== "boolean") fail(`${label2} must be a boolean`);
   return value;
 }
-function requireCount(value, label) {
+function requireCount(value, label2) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    fail(`${label} must be a non-negative integer`, "usage_out_of_range");
+    fail(`${label2} must be a non-negative integer`, "usage_out_of_range");
   }
   return value;
 }
-function requireNullableCount(value, label) {
-  return value === null ? null : requireCount(value, label);
+function requireNullableCount(value, label2) {
+  return value === null ? null : requireCount(value, label2);
 }
-function requireNullableUsd(value, label) {
+function requireNullableUsd(value, label2) {
   if (value === null) return null;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    fail(`${label} must be null or a finite non-negative number`, "usage_out_of_range");
+    fail(`${label2} must be null or a finite non-negative number`, "usage_out_of_range");
   }
   return value;
 }
-function requireDiagnostics(value, label) {
-  if (!Array.isArray(value)) fail(`${label} must be an array`);
+function requireDiagnostics(value, label2) {
+  if (!Array.isArray(value)) fail(`${label2} must be an array`);
   for (const [index, code] of value.entries()) {
-    requireEnum(code, TASK_COST_DIAGNOSTIC_CODES, `${label}[${index}]`);
+    requireEnum(code, TASK_COST_DIAGNOSTIC_CODES, `${label2}[${index}]`);
   }
 }
-function requireStringArray(value, label, item) {
-  if (!Array.isArray(value)) fail(`${label} must be an array`);
-  return value.map((entry, index) => item(entry, `${label}[${index}]`));
+function requireStringArray(value, label2, item) {
+  if (!Array.isArray(value)) fail(`${label2} must be an array`);
+  return value.map((entry, index) => item(entry, `${label2}[${index}]`));
 }
-function requireTokenUsage(value, label) {
-  const record = requireObject(value, label);
+function requireTokenUsage(value, label2) {
+  const record = requireObject(value, label2);
   const usage = {};
   for (const field of TASK_COST_TOKEN_FIELDS) {
-    if (!(field in record)) fail(`${label}.${field} is required (use null for missing)`);
-    usage[field] = requireNullableCount(record[field], `${label}.${field}`);
+    if (!(field in record)) fail(`${label2}.${field} is required (use null for missing)`);
+    usage[field] = requireNullableCount(record[field], `${label2}.${field}`);
   }
   return usage;
 }
-function checkSchemaVersion(record, expected, label) {
+function checkSchemaVersion(record, expected, label2) {
   const version = record.schema_version;
-  if (typeof version !== "string") fail(`${label}.schema_version is required`);
+  if (typeof version !== "string") fail(`${label2}.schema_version is required`);
   if (version !== expected) {
-    fail(`${label}.schema_version "${version}" is not supported (expected ${expected})`, "unknown_schema_version");
+    fail(`${label2}.schema_version "${version}" is not supported (expected ${expected})`, "unknown_schema_version");
   }
 }
 function validateTaskCostEventV1(value) {
@@ -2717,13 +3072,13 @@ function validateTaskCostEventV1(value) {
   }
   const actual = requireNullableUsd(record.actual_cost_usd, "event.actual_cost_usd");
   const estimated = requireNullableUsd(record.estimated_cost_usd, "event.estimated_cost_usd");
-  const costSource = requireEnum(record.cost_source, TASK_COST_EVENT_SOURCES, "event.cost_source");
+  const costSource2 = requireEnum(record.cost_source, TASK_COST_EVENT_SOURCES, "event.cost_source");
   const expectedSource = actual !== null ? "provider_reported" : estimated !== null ? "local_estimate" : "none";
-  if (costSource !== expectedSource) {
-    fail(`event.cost_source is "${costSource}" but the cost fields imply "${expectedSource}"`);
+  if (costSource2 !== expectedSource) {
+    fail(`event.cost_source is "${costSource2}" but the cost fields imply "${expectedSource}"`);
   }
-  const basis = requireEnum(record.cost_basis, TASK_COST_BASES, "event.cost_basis");
-  if (basis === "subscription" && actual !== null) {
+  const basis2 = requireEnum(record.cost_basis, TASK_COST_BASES, "event.cost_basis");
+  if (basis2 === "subscription" && actual !== null) {
     fail('event.actual_cost_usd must be null when cost_basis is "subscription"');
   }
   const pricingSource = requireEnum(record.pricing_source, TASK_COST_PRICING_SOURCES, "event.pricing_source");
@@ -2755,14 +3110,14 @@ function validateTaskCostSummaryV1(value) {
   requireStringArray(record.models, "summary.models", requireModel);
   if (!Array.isArray(record.model_segments)) fail("summary.model_segments must be an array");
   for (const [index, entry] of record.model_segments.entries()) {
-    const label = `summary.model_segments[${index}]`;
-    const segment = requireObject(entry, label);
-    requireModel(segment.model, `${label}.model`);
-    requireCount(segment.turn_count, `${label}.turn_count`);
-    requireTokenUsage(segment.usage, `${label}.usage`);
-    requireNullableUsd(segment.actual_cost_usd, `${label}.actual_cost_usd`);
-    requireNullableUsd(segment.estimated_cost_usd, `${label}.estimated_cost_usd`);
-    requireEnum(segment.cost_source, TASK_COST_SOURCES, `${label}.cost_source`);
+    const label2 = `summary.model_segments[${index}]`;
+    const segment = requireObject(entry, label2);
+    requireModel(segment.model, `${label2}.model`);
+    requireCount(segment.turn_count, `${label2}.turn_count`);
+    requireTokenUsage(segment.usage, `${label2}.usage`);
+    requireNullableUsd(segment.actual_cost_usd, `${label2}.actual_cost_usd`);
+    requireNullableUsd(segment.estimated_cost_usd, `${label2}.estimated_cost_usd`);
+    requireEnum(segment.cost_source, TASK_COST_SOURCES, `${label2}.cost_source`);
   }
   requireCount(record.turn_count, "summary.turn_count");
   requireBoolean(record.turns_truncated, "summary.turns_truncated");
@@ -2813,16 +3168,16 @@ function validateTaskCostLedgerV1(value) {
   const seenTaskIds = /* @__PURE__ */ new Set();
   for (const [index, event17] of record.events.entries()) {
     validateTaskCostEventV1(event17);
-    const label = `ledger.events[${index}]`;
-    if (event17.session_id !== sessionId) fail(`${label}.session_id must match ledger.session_id`);
-    if (event17.harness !== harness) fail(`${label}.harness must match ledger.harness`);
+    const label2 = `ledger.events[${index}]`;
+    if (event17.session_id !== sessionId) fail(`${label2}.session_id must match ledger.session_id`);
+    if (event17.harness !== harness) fail(`${label2}.harness must match ledger.harness`);
     if (event17.provider_contract_version !== providerContract) {
-      fail(`${label}.provider_contract_version must match ledger.provider_contract_version`);
+      fail(`${label2}.provider_contract_version must match ledger.provider_contract_version`);
     }
     seenTaskIds.add(event17.task_id);
   }
   const expected = [...seenTaskIds].sort();
-  if (taskIds.length !== expected.length || taskIds.some((id, index) => id !== expected[index])) {
+  if (taskIds.length !== expected.length || taskIds.some((id2, index) => id2 !== expected[index])) {
     fail("ledger.task_ids must be the sorted, de-duplicated task_ids of its events");
   }
 }
@@ -5011,7 +5366,7 @@ function resolveMergedPr(target, deps, prUrl, options = {}) {
   const prNumber = numberMatch ? Number(numberMatch[1]) : null;
   if (prNumber !== null) {
     const enumerated = enumerateMergedPrs(target, deps, { maxCount: options.searchLimit ?? 5e3 });
-    const match = enumerated.find((ref) => ref.prNumber === prNumber);
+    const match = enumerated.find((ref2) => ref2.prNumber === prNumber);
     if (match) return { ...match, prUrl };
   }
   const metadata = deps.github.getPrMetadata(prUrl);
@@ -5255,10 +5610,10 @@ var REASON_CODE_ORDER = [
   "substantial_rewrite",
   "no_evidence"
 ];
-function missingLabel(pr, target, deps, horizon, reason, options = {}) {
+function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
   return buildArbiterSurvivalLabel({
     prUrl: pr.prUrl,
-    horizon_days: horizon,
+    horizon_days: horizon2,
     label_provenance: "harvested",
     line_ranges: options.lineRanges ?? [],
     outcome: {
@@ -5310,7 +5665,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
       }
     }
     return crossReferences.some(
-      (ref) => ref.createdAtEpoch > pr.mergedAtEpoch && ref.createdAtEpoch <= cutoffEpoch
+      (ref2) => ref2.createdAtEpoch > pr.mergedAtEpoch && ref2.createdAtEpoch <= cutoffEpoch
     );
   };
   const issueKeys = extractIssueKeys(pr.subject);
@@ -5321,32 +5676,32 @@ function labelMergedPr(target, deps, pr, options = {}) {
     );
   };
   const labels = [];
-  for (const horizon of horizons) {
-    const cutoffEpoch = pr.mergedAtEpoch + horizon * DAY_SECONDS;
+  for (const horizon2 of horizons) {
+    const cutoffEpoch = pr.mergedAtEpoch + horizon2 * DAY_SECONDS;
     if (cutoffEpoch > nowEpoch) {
-      labels.push(missingLabel(pr, target, deps, horizon, "missing_horizon", {
+      labels.push(missingLabel(pr, target, deps, horizon2, "missing_horizon", {
         lineRanges: substrate?.lineRanges
       }));
       continue;
     }
     if (!substrate) {
-      labels.push(missingLabel(pr, target, deps, horizon, "inaccessible_history"));
+      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history"));
       continue;
     }
     if (substrate.totalLines === 0) {
-      labels.push(missingLabel(pr, target, deps, horizon, "insufficient_line_range_substrate"));
+      labels.push(missingLabel(pr, target, deps, horizon2, "insufficient_line_range_substrate"));
       continue;
     }
     const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch);
     if (!terminalSha) {
-      labels.push(missingLabel(pr, target, deps, horizon, "inaccessible_history", {
+      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
         lineRanges: substrate.lineRanges
       }));
       continue;
     }
     const analysis = analyseForward(deps, pr, substrate, terminalSha);
     if (!analysis) {
-      labels.push(missingLabel(pr, target, deps, horizon, "inaccessible_history", {
+      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
         terminalSha,
         lineRanges: substrate.lineRanges
       }));
@@ -5377,7 +5732,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
     if (codes.size === 0) codes.add("no_evidence");
     labels.push(buildArbiterSurvivalLabel({
       prUrl: pr.prUrl,
-      horizon_days: horizon,
+      horizon_days: horizon2,
       label_provenance: "harvested",
       line_ranges: substrate.lineRanges,
       outcome: {
@@ -5403,8 +5758,8 @@ function labelMergedPr(target, deps, pr, options = {}) {
 }
 function summarizeLabels(repo, labels) {
   const horizons = {};
-  for (const label of labels) {
-    const key = String(label.horizon_days);
+  for (const label2 of labels) {
+    const key = String(label2.horizon_days);
     const bucket = horizons[key] ?? {
       rows: 0,
       missing: 0,
@@ -5415,7 +5770,7 @@ function summarizeLabels(repo, labels) {
       survival_rate: null
     };
     bucket.rows += 1;
-    const outcome = label.outcome.report_outcome;
+    const outcome = label2.outcome.report_outcome;
     if (outcome === null) bucket.missing += 1;
     else bucket[outcome] += 1;
     horizons[key] = bucket;
@@ -5517,7 +5872,7 @@ function createDefaultDeps(target, options = {}) {
         return events17.filter((event17) => event17.event === "cross-referenced" && event17.created_at).map((event17) => ({
           createdAtEpoch: Math.floor(Date.parse(event17.created_at) / 1e3),
           url: event17.source?.issue?.html_url ?? ""
-        })).filter((ref) => Number.isFinite(ref.createdAtEpoch));
+        })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
       } catch {
         return [];
       }
@@ -5638,7 +5993,7 @@ function collectKeysSorted(value) {
 }
 function serializeSurvivalLabels(labels) {
   if (labels.length === 0) return "";
-  return labels.map((label) => `${JSON.stringify(label)}
+  return labels.map((label2) => `${JSON.stringify(label2)}
 `).join("");
 }
 function sortMergedPrsForEmission(prs) {
@@ -5740,27 +6095,27 @@ import { join as join4 } from "node:path";
 
 // src/shadow/discover.ts
 var EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-function isAncestor(runGit3, sha, ref) {
+function isAncestor(runGit3, sha, ref2) {
   try {
-    const result = runGit3(["merge-base", "--is-ancestor", sha, ref]);
+    const result = runGit3(["merge-base", "--is-ancestor", sha, ref2]);
     return result.exitCode === 0;
   } catch {
     return false;
   }
 }
 function discoverMerges(opts) {
-  const { runGit: runGit3, ref, cursor, bootstrapDays, now, maxPrs } = opts;
+  const { runGit: runGit3, ref: ref2, cursor, bootstrapDays, now, maxPrs } = opts;
   const merges = [];
   let cursorReset = false;
   let useBootstrapWindow = cursor === null;
-  if (cursor !== null && !isAncestor(runGit3, cursor, ref)) {
+  if (cursor !== null && !isAncestor(runGit3, cursor, ref2)) {
     cursorReset = true;
     useBootstrapWindow = true;
   }
   const cutoffEpoch = Math.floor(now().getTime() / 1e3) - bootstrapDays * 86400;
   const format = "%H%x09%P%x09%ct%x09%s";
   const sinceArgs = cutoffEpoch > 0 ? [`--since=${new Date(cutoffEpoch * 1e3).toISOString()}`] : [];
-  const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref}`];
+  const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref2] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref2}`];
   const result = runGit3(args);
   if (result.exitCode !== 0) {
     throw new ShadowError("NOT_A_GIT_REPO");
@@ -5910,10 +6265,10 @@ function writeState(dir, state) {
   }
   writeFileAtomic(stateFile, JSON.stringify(state, null, 2));
 }
-function writeReport(dir, date, serialized) {
+function writeReport(dir, date2, serialized) {
   const reportsDir = path.join(dir, "reports");
   fs.mkdirSync(reportsDir, { recursive: true });
-  writeFileAtomic(path.join(reportsDir, `${date}.json`), serialized);
+  writeFileAtomic(path.join(reportsDir, `${date2}.json`), serialized);
 }
 
 // src/shadow/score.ts
@@ -6081,7 +6436,7 @@ function runShadowBackfill(opts) {
     log,
     maxCount = 1e4,
     enumerate = enumerateMergedPrs,
-    label = labelMergedPr
+    label: label2 = labelMergedPr
   } = opts;
   ensureWritableDataDir(dataDir);
   const scoresFile = join5(dataDir, "scores.jsonl");
@@ -6123,7 +6478,7 @@ function runShadowBackfill(opts) {
           skipped++;
           continue;
         }
-        const labelResults = label(target, deps, prRef, {
+        const labelResults = label2(target, deps, prRef, {
           horizons: [horizonDays],
           allMergedPrs,
           includeLinkedReferences: false
@@ -6298,8 +6653,8 @@ function runShadowReport(opts) {
   report.malformed_lines.scores = scoresResult.malformed;
   report.malformed_lines.outcomes = outcomesResult.malformed;
   const serialized = JSON.stringify(report, null, 2);
-  const date = now().toISOString().slice(0, 10);
-  writeReport(dataDir, date, serialized);
+  const date2 = now().toISOString().slice(0, 10);
+  writeReport(dataDir, date2, serialized);
   log(serialized);
   return report;
 }
@@ -6338,11 +6693,11 @@ function parsePositiveInt(raw, fallback) {
 }
 function parseHorizon(raw) {
   const value = raw === void 0 ? 30 : Number(raw);
-  const horizon = HORIZONS.find((h) => h === value);
-  if (horizon === void 0) {
+  const horizon2 = HORIZONS.find((h) => h === value);
+  if (horizon2 === void 0) {
     throw new ShadowError("INVALID_ARG");
   }
-  return horizon;
+  return horizon2;
 }
 function makeGitRunner(dir) {
   return (args) => execArgvCommand("git", ["-C", dir, ...args], { maxBuffer: GIT_OUTPUT_MAX_BUFFER });
@@ -6692,9 +7047,9 @@ function collectLabels(context, params, prFilter) {
   }
   const summary = summarizeLabels(`${target.owner}/${target.repo}`, labels);
   diag.info(`summary ${JSON.stringify(summary)}`);
-  for (const [horizon, bucket] of Object.entries(summary.horizons)) {
+  for (const [horizon2, bucket] of Object.entries(summary.horizons)) {
     context.summaryLines.push(
-      `${horizon}d: ${bucket.rows} rows, ${bucket.missing} missing, survival_rate ${bucket.survival_rate ?? "n/a"}`
+      `${horizon2}d: ${bucket.rows} rows, ${bucket.missing} missing, survival_rate ${bucket.survival_rate ?? "n/a"}`
     );
   }
   return labels;

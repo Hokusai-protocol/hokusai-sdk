@@ -10,7 +10,17 @@
  * convenience; execution stays on this side of the boundary (Arbiter R1).
  */
 
-export { SCAN_CONTRACT, scanContractVersion, type ScanContract } from './contract.js';
+export {
+  SCAN_CONTRACT,
+  scanContractVersion,
+  type ScanContract,
+} from './contract.js';
+export {
+  applyReportSuppression,
+  DEFAULT_REPORT_POLICY,
+  ArbiterReportBuildError,
+  type ArbiterReportDraftV1,
+} from './report/suppression.js';
 
 // Shadow mode (HOK-2820): silent scheduled scoring of merged PRs. Never
 // visible on a PR, never gating; see docs/arbiter/shadow-mode.md.
