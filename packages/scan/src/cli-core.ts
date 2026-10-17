@@ -56,7 +56,7 @@ import {
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
-import { resolveIntegrationBranch } from './orchestrate/integration-branch.js';
+import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
 import { emitReport } from './report/build.js';
 import { buildContributionPayload, submitReport } from './report/contribute.js';
@@ -330,10 +330,11 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     const configPath = values['attribution-config'] as string | undefined;
     if (configPath) { try { attributionConfig = JSON.parse(readFileSync(resolve(configPath), 'utf8')) as object; } catch { throw new ScanInputError('--attribution-config must point to valid JSON'); } }
     const stateDir = (values['state-dir'] as string | undefined) ?? (values['no-state'] === true ? undefined : join(repoDir, '.git', 'hokusai-scan', `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    let saveState: (() => void) | undefined;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
       runGit: reportDeps.deps.runGit, labeller: reportDeps.deps, github: scanGithub, now: () => asOf,
       onDiagnostic: (line) => io.writeStderr(`${line.startsWith('info:') || line.startsWith('warn:') || line.startsWith('error:') ? '' : 'info: '}${line}\n`),
-    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: '0.4.0', ...(stateDir ? { stateDir } : {}) });
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: '0.4.0', onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
     const output = emitReport(draft);
     const outSpec = (values.out as string | undefined) ?? '-';
     const outputPath = outSpec === '-' ? null : resolve(outSpec);
@@ -350,10 +351,12 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
       }
     } else if (outSpec === '-') io.writeStdout(output);
     else { mkdirSync(dirname(outputPath!), { recursive: true }); writeFileSync(outputPath!, output); }
+    try { saveState?.(); }
+    catch (error) { diag.warn(`could not save incremental state: ${(error as Error).message}`); }
     context.summaryLines.push(`report ${resolvedGithub.owner}/${resolvedGithub.repo}`, `PRs ${draft.prs.length}`, `lookback ${draft.scan.lookback_days} days`);
     return { exitCode: EXIT_OK, rowCount: draft.prs.length, outputPath, summaryLines: context.summaryLines };
   } catch (error) {
-    if (error instanceof ScanInputError) { diag.error(error.message); return { exitCode: EXIT_INVALID_INPUT, rowCount: 0, outputPath: null, summaryLines: [] }; }
+    if (error instanceof ScanInputError || error instanceof IntegrationBranchError) { diag.error(error.message); return { exitCode: EXIT_INVALID_INPUT, rowCount: 0, outputPath: null, summaryLines: [] }; }
     if (error instanceof ScanUpstreamError) { diag.error(error.message); return { exitCode: EXIT_UPSTREAM, rowCount: 0, outputPath: null, summaryLines: [] }; }
     diag.error(`unexpected: ${(error as Error).message}`);
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };

@@ -25,6 +25,8 @@ export interface ScanReportDeps {
 export interface RunReportScanOptions {
   lookbackDays?: number; maxLookbackDays?: number; maxPrs?: number; horizons?: HorizonDays[];
   attributionConfig?: AttributionConfig; staticAnalysis?: 'off' | 'committed'; policy?: ReportPolicy; scannerVersion: string; stateDir?: string;
+  /** Allows the CLI to checkpoint only after it has successfully emitted the report. */
+  onStateSave?: (save: () => void) => void;
 }
 export type ScanReportTarget = SurvivalLabellerTarget;
 
@@ -165,7 +167,9 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
-    writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
+    const save = () => writeScanState(options.stateDir!, stateVersions, lastSeen, [...stateBySha.values()]);
+    if (options.onStateSave) options.onStateSave(save);
+    else save();
   }
   const rows = [...reportRows.values()];
   const dates = rows.map((pr) => pr.merged_at).sort();
