@@ -63,6 +63,19 @@ describe('buildActionArgv', () => {
     expect(outputPath).toBe('/tmp/runner/result.jsonl');
   });
 
+  it('maps report inputs and opts out of state caching by default', () => {
+    const { argv, outputPath } = buildActionArgv({
+      input: envOf({ mode: 'report', 'integration-branch': 'develop', 'github-repo': 'org/repo', 'lookback-days': '90', 'report-max-prs': '250', 'state-dir': '/tmp/state' }),
+      runnerTemp: '/tmp/runner', workspace: '/work',
+    });
+    expect(argv).toContain('--lookback-days');
+    expect(argv).toContain('/tmp/state');
+    expect(argv).not.toContain('--no-state');
+    expect(outputPath).toBe('/tmp/runner/arbiter-report.json');
+    const noCache = buildActionArgv({ input: envOf({ mode: 'report' }), runnerTemp: '/tmp/runner', workspace: '/work' });
+    expect(noCache.argv).toContain('--no-state');
+  });
+
   it('keeps an absolute output-path as given', () => {
     const { outputPath } = buildActionArgv({
       input: envOf({ mode: 'extract', 'pr-number': '3', 'output-path': '/data/out.json' }),

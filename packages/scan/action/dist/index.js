@@ -49,18 +49,26 @@ function buildActionArgv(env) {
   if (horizons !== void 0) argv.push("--horizons", horizons);
   const baseRef = env.input("base-ref");
   if (baseRef !== void 0) argv.push("--base-ref", baseRef);
+  if (mode === "report") {
+    for (const [input, flag] of [["lookback-days", "--lookback-days"], ["report-max-prs", "--max-prs"], ["state-dir", "--state-dir"], ["attribution-config", "--attribution-config"]]) {
+      const value = env.input(input);
+      if (value !== void 0) argv.push(flag, value);
+    }
+    if (env.input("state-dir") === void 0) argv.push("--no-state");
+  }
   if (actionFlagIsTrue(env.input("no-links"))) argv.push("--no-links");
   if (actionFlagIsTrue(env.input("offline"))) argv.push("--offline");
   if (actionFlagIsTrue(env.input("debug"))) argv.push("--debug");
-  const requestedOut = env.input("output-path") ?? "hokusai-scan-output.jsonl";
+  const requestedOut = env.input("output-path") ?? (mode === "report" ? "arbiter-report.json" : "hokusai-scan-output.jsonl");
   const outputPath = isAbsolute(requestedOut) ? requestedOut : join(env.runnerTemp ?? ".", requestedOut);
   argv.push("--out", outputPath);
   return { argv, outputPath };
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, mkdtempSync as mkdtempSync3, readFileSync as readFileSync4, rmSync as rmSync3, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname as dirname2, join as join9, resolve as resolve4 } from "node:path";
+import { tmpdir as tmpdir3 } from "node:os";
 import { parseArgs as parseArgs2 } from "node:util";
 
 // src/candidate-features.ts
@@ -938,8 +946,8 @@ function isPlainObject(value) {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
-function fieldError(path2, message, code) {
-  return { path: path2, message, code };
+function fieldError(path4, message, code) {
+  return { path: path4, message, code };
 }
 function validateFeatureValue(name, value) {
   if (value === null) {
@@ -1846,6 +1854,36 @@ var REPORT_FEATURE_BUCKETS = Object.freeze({
   files_touched_bucket: ["1", "2_5", "6_15", "16_plus"],
   loc_touched: ["q1", "q2", "q3", "q4"]
 });
+var REPORT_FORBIDDEN_KEYS = [
+  "title",
+  "body",
+  "diff",
+  "patch",
+  "source_code",
+  "file_contents",
+  "path",
+  "paths",
+  "files",
+  "commit_message",
+  "author",
+  "author_email",
+  "author_name",
+  "prompt",
+  "raw*",
+  "line_ranges",
+  "prUrl",
+  "sha",
+  "merge_sha",
+  "pr_head_sha"
+];
+function projectSurvivalLabel(label2) {
+  return {
+    horizon_days: label2.horizon_days,
+    label_provenance: label2.label_provenance,
+    outcome: { ...label2.outcome },
+    label_hash: canonicalHash(label2)
+  };
+}
 var str = (pattern) => ({ type: "string", pattern });
 var en = (values) => ({ enum: [...values] });
 var num = (minimum = 0, maximum) => ({
@@ -2147,6 +2185,208 @@ var ARBITER_REPORT_V1_JSON_SCHEMA = Object.freeze({
   }),
   $defs: { candidateFeatures: featureSchema }
 });
+function structural(schema, value, path4, errors, root) {
+  const fail2 = (code, message) => errors.push({ path: path4 || "$", code, message });
+  if ("$ref" in schema) {
+    const name = String(schema.$ref).split("/").at(-1);
+    structural(
+      root.$defs[name],
+      value,
+      path4,
+      errors,
+      root
+    );
+    return;
+  }
+  if ("anyOf" in schema) {
+    if (!schema.anyOf.some((s) => {
+      const e = [];
+      structural(s, value, path4, e, root);
+      return e.length === 0;
+    }))
+      fail2("invalid_type", "No allowed shape matched.");
+    return;
+  }
+  if ("const" in schema && value !== schema.const)
+    fail2("invalid_value", "Unexpected constant.");
+  if ("enum" in schema && !schema.enum.includes(value))
+    fail2("invalid_value", "Unexpected enum value.");
+  if (schema.type === "object") {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      fail2("invalid_type", "Expected object.");
+      return;
+    }
+    const object2 = value, props = schema.properties;
+    for (const key of Object.keys(object2))
+      if (!(key in props))
+        errors.push({
+          path: path4 ? `${path4}.${key}` : key,
+          code: "invalid_value",
+          message: "Unknown key."
+        });
+    for (const key of schema.required)
+      if (!(key in object2))
+        errors.push({
+          path: path4 ? `${path4}.${key}` : key,
+          code: "required",
+          message: "Field is required."
+        });
+    for (const [key, s] of Object.entries(props))
+      if (key in object2)
+        structural(s, object2[key], path4 ? `${path4}.${key}` : key, errors, root);
+  } else if (schema.type === "array") {
+    if (!Array.isArray(value)) {
+      fail2("invalid_type", "Expected array.");
+      return;
+    }
+    if (typeof schema.maxItems === "number" && value.length > schema.maxItems)
+      fail2("invalid_value", "Too many items.");
+    if (typeof schema.minItems === "number" && value.length < schema.minItems)
+      fail2("invalid_value", "Too few items.");
+    if (schema.uniqueItems === true && new Set(value).size !== value.length)
+      fail2("invalid_value", "Duplicate items.");
+    value.forEach(
+      (v, i) => structural(schema.items, v, `${path4}[${i}]`, errors, root)
+    );
+  } else if (schema.type === "string") {
+    if (typeof value !== "string") {
+      fail2("invalid_type", "Expected string.");
+      return;
+    }
+    if (schema.pattern && !new RegExp(schema.pattern).test(value))
+      fail2("invalid_value", "String does not match pattern.");
+    if (schema.not && schema.not.enum.includes(value))
+      fail2("invalid_value", "Reserved value.");
+  } else if (schema.type === "number" || schema.type === "integer") {
+    if (typeof value !== "number" || !Number.isFinite(value) || schema.type === "integer" && !Number.isInteger(value)) {
+      fail2("invalid_type", "Expected finite number.");
+      return;
+    }
+    if (typeof schema.minimum === "number" && value < schema.minimum || typeof schema.maximum === "number" && value > schema.maximum)
+      fail2("invalid_value", "Number out of bounds.");
+  } else if (schema.type === "boolean" && typeof value !== "boolean")
+    fail2("invalid_type", "Expected boolean.");
+  else if (schema.type === "null" && value !== null)
+    fail2("invalid_type", "Expected null.");
+}
+function invariant(report) {
+  const errors = [];
+  const add = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
+  if (report.scan.horizons_days.some(
+    (horizon2, index) => index > 0 && horizon2 <= report.scan.horizons_days[index - 1]
+  ))
+    add("horizons_not_ascending", "scan.horizons_days");
+  const checkCell = (c, path4, basis2) => {
+    if (c.suppressed && (c.value !== null || c.ci !== null || !c.suppression_reasons.length))
+      add("suppressed_cell_has_value", path4);
+    if (!c.suppressed && (c.value === null || c.suppression_reasons.length))
+      add("shown_cell_missing_value", path4);
+    if (c.ci && c.value !== null && !(c.ci.low <= c.value && c.value <= c.ci.high))
+      add("ci_out_of_order", path4);
+    if (basis2 && c.basis !== basis2)
+      add("descriptive_section_with_prediction_cell", path4);
+    if (c.basis === "out_of_sample_prediction" && !report.model_provenance)
+      add("prediction_without_provenance", path4);
+  };
+  const sections = report.aggregates;
+  for (const [name, s] of Object.entries(sections)) {
+    if (s.basis === "out_of_sample_prediction" && !report.model_provenance)
+      add("prediction_without_provenance", `aggregates.${name}`);
+    if (s.status === "suppressed" && !s.suppression_reasons.length)
+      add("section_status_mismatch", `aggregates.${name}`);
+    s.rows.forEach((row, i) => {
+      for (const [k, v] of Object.entries(row))
+        if (k === "cell" || k.endsWith("_rate") || k === "ratio") {
+          const c = v;
+          checkCell(c, `aggregates.${name}.rows[${i}].${k}`, s.basis);
+          if (s.status === "suppressed" && !c.suppressed)
+            add(
+              "section_status_mismatch",
+              `aggregates.${name}.rows[${i}].${k}`
+            );
+        }
+      if (typeof row.horizon_days === "number" && !report.scan.horizons_days.includes(row.horizon_days))
+        add(
+          "horizon_not_declared",
+          `aggregates.${name}.rows[${i}].horizon_days`
+        );
+    });
+  }
+  report.aggregates.risk_ratios.rows.forEach((row, index) => {
+    const allowed = REPORT_FEATURE_BUCKETS[row.feature];
+    if (!allowed || !allowed.includes(row.bucket))
+      add(
+        "feature_bucket_mismatch",
+        `aggregates.risk_ratios.rows[${index}].bucket`
+      );
+  });
+  if (report.eligibility.model_routing_cta && !report.eligibility.exact_model_table)
+    add("cta_without_exact_model", "eligibility.model_routing_cta");
+  for (const [flag, name] of [
+    ["exact_model_table", "survival_by_model"],
+    ["harness_table", "survival_by_harness"],
+    ["cost_adjusted_by_model", "cost_adjusted_survival_by_model"]
+  ])
+    if (!report.eligibility[flag] && report.aggregates[name].status === "shown")
+      add("model_table_ineligible_but_shown", `aggregates.${name}`);
+  if (report.eligibility.cost_adjusted_by_model && (!report.cost || report.cost.actual.suppressed))
+    add(
+      "cost_adjusted_needs_actual_cost",
+      "eligibility.cost_adjusted_by_model"
+    );
+  if (report.prs.length !== report.coverage.prs_enumerated || report.coverage.attribution.agent.identified_agent + report.coverage.attribution.agent.identified_human_signal + report.coverage.attribution.agent.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.harness.identified + report.coverage.attribution.harness.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.exact_model.identified + report.coverage.attribution.exact_model.unknown !== report.coverage.prs_enumerated)
+    add("coverage_sum_mismatch", "coverage");
+  report.prs.forEach((pr, i) => {
+    if (pr.prediction && !report.model_provenance)
+      add("prediction_without_provenance", `prs[${i}].prediction`);
+    if (pr.labels.length !== report.scan.horizons_days.length || new Set(pr.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
+      add("labels_horizon_mismatch", `prs[${i}].labels`);
+    pr.labels.forEach((l, j) => {
+      if (!report.scan.horizons_days.includes(l.horizon_days))
+        add("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
+      if (l.outcome.report_outcome !== deriveReportOutcome(l.outcome))
+        add(
+          "label_outcome_inconsistent",
+          `prs[${i}].labels[${j}].outcome.report_outcome`
+        );
+    });
+  });
+  if (report.retrospective) {
+    if (!report.model_provenance)
+      add("prediction_without_provenance", "retrospective");
+    for (const k of ["precision", "recall", "flagged_share"])
+      checkCell(
+        report.retrospective[k],
+        `retrospective.${k}`,
+        report.retrospective.basis
+      );
+    if (!report.eligibility.retrospective && !report.retrospective.suppressed)
+      add("model_table_ineligible_but_shown", "retrospective");
+  }
+  return errors;
+}
+function validateArbiterReportV1(input) {
+  try {
+    const errors = [];
+    structural(
+      ARBITER_REPORT_V1_JSON_SCHEMA,
+      input,
+      "",
+      errors,
+      ARBITER_REPORT_V1_JSON_SCHEMA
+    );
+    if (errors.length) return { ok: false, errors };
+    const report = input;
+    return errors.push(...invariant(report)), errors.length ? { ok: false, errors } : { ok: true, value: report };
+  } catch {
+    return {
+      ok: false,
+      errors: [
+        { path: "$", code: "invalid_value", message: "Malformed report." }
+      ]
+    };
+  }
+}
 
 // ../core/src/arbiter-shadow-record.ts
 var ARBITER_SHADOW_SCORE_SCHEMA_VERSION = "arbiter_shadow_score/v1";
@@ -2184,8 +2424,8 @@ var ARBITER_SHADOW_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
   "line_ranges",
   "path"
 ]);
-function fieldError2(path2, message, code) {
-  return { path: path2, message, code };
+function fieldError2(path4, message, code) {
+  return { path: path4, message, code };
 }
 function isPlainObject2(value) {
   if (typeof value !== "object" || value === null) {
@@ -2194,22 +2434,22 @@ function isPlainObject2(value) {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
-function findForbiddenKeys(obj2, path2 = "$") {
+function findForbiddenKeys(obj2, path4 = "$") {
   const errors = [];
   if (!isPlainObject2(obj2)) {
     return errors;
   }
   for (const [key, value] of Object.entries(obj2)) {
     if (ARBITER_SHADOW_FORBIDDEN_KEYS.has(key)) {
-      errors.push(fieldError2(path2 === "$" ? key : `${path2}.${key}`, `Forbidden key.`, "invalid_value"));
+      errors.push(fieldError2(path4 === "$" ? key : `${path4}.${key}`, `Forbidden key.`, "invalid_value"));
     }
     if (isPlainObject2(value)) {
-      errors.push(...findForbiddenKeys(value, path2 === "$" ? key : `${path2}.${key}`));
+      errors.push(...findForbiddenKeys(value, path4 === "$" ? key : `${path4}.${key}`));
     } else if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) {
         const item = value[i];
         if (isPlainObject2(item)) {
-          errors.push(...findForbiddenKeys(item, `${path2 === "$" ? key : `${path2}.${key}`}[${i}]`));
+          errors.push(...findForbiddenKeys(item, `${path4 === "$" ? key : `${path4}.${key}`}[${i}]`));
         }
       }
     }
@@ -2925,10 +3165,10 @@ var TASK_COST_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
 function normalizeKey(key) {
   return key.toLowerCase().replaceAll("_", "").replaceAll("-", "");
 }
-function assertNoForbiddenKeys(value, path2 = []) {
+function assertNoForbiddenKeys(value, path4 = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys(item, [...path2, String(index)]);
+      assertNoForbiddenKeys(item, [...path4, String(index)]);
     }
     return;
   }
@@ -2939,10 +3179,10 @@ function assertNoForbiddenKeys(value, path2 = []) {
     if (TASK_COST_FORBIDDEN_KEYS.has(normalizeKey(key))) {
       throw new TaskCostValidationError(
         "forbidden_field",
-        `Forbidden field at ${[...path2, key].join(".")}`
+        `Forbidden field at ${[...path4, key].join(".")}`
       );
     }
-    assertNoForbiddenKeys(child, [...path2, key]);
+    assertNoForbiddenKeys(child, [...path4, key]);
   }
 }
 var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -4865,9 +5105,9 @@ function parseNameStatus(output) {
   }
   return results;
 }
-function getExtension(path2) {
-  const lastSlash = path2.lastIndexOf("/");
-  const base = lastSlash >= 0 ? path2.slice(lastSlash + 1) : path2;
+function getExtension(path4) {
+  const lastSlash = path4.lastIndexOf("/");
+  const base = lastSlash >= 0 ? path4.slice(lastSlash + 1) : path4;
   const lastDot = base.lastIndexOf(".");
   if (lastDot <= 0) return "";
   return base.slice(lastDot).toLowerCase();
@@ -5184,7 +5424,7 @@ function nullIntent() {
 function collectTouchedOutOfScopeFiles(diffStats, contract) {
   if (!diffStats || !contract?.scope) return null;
   const allowedFiles = new Set((contract.scope.allowedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
-  const allowedPrefixes = (contract.scope.allowedPrefixes ?? []).map(normalizeRepoPath).filter((path2) => Boolean(path2)).map((path2) => path2.endsWith("/") ? path2 : `${path2}/`);
+  const allowedPrefixes = (contract.scope.allowedPrefixes ?? []).map(normalizeRepoPath).filter((path4) => Boolean(path4)).map((path4) => path4.endsWith("/") ? path4 : `${path4}/`);
   if (allowedFiles.size === 0 && allowedPrefixes.length === 0) return null;
   let outOfScope = 0;
   for (const file of diffStats.changedFiles) {
@@ -5198,15 +5438,15 @@ function collectTouchedOutOfScopeFiles(diffStats, contract) {
   }
   return outOfScope;
 }
-function normalizeRepoPath(path2) {
-  const normalized = path2.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+function normalizeRepoPath(path4) {
+  const normalized = path4.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../")) {
     return null;
   }
   return normalized;
 }
-function isTestFile(path2) {
-  return TEST_FILE_PATTERN.test(path2);
+function isTestFile(path4) {
+  return TEST_FILE_PATTERN.test(path4);
 }
 function normalizeNonNegativeInteger(value) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
@@ -5261,9 +5501,9 @@ function bucketDescription(taskText) {
   if (tokens2 < 200) return "medium";
   return "long";
 }
-function isExistingDir(path2) {
+function isExistingDir(path4) {
   try {
-    return statSync2(path2).isDirectory();
+    return statSync2(path4).isDirectory();
   } catch {
     return false;
   }
@@ -5296,10 +5536,10 @@ function parseNameStatusOutput(output) {
     const [statusToken, firstPath = "", secondPath = ""] = line.split("	");
     const status = statusToken?.trim() ?? "";
     const normalizedStatus = status[0] ?? "";
-    const path2 = normalizedStatus === "R" || normalizedStatus === "C" ? secondPath : firstPath;
+    const path4 = normalizedStatus === "R" || normalizedStatus === "C" ? secondPath : firstPath;
     return {
       status: normalizedStatus,
-      path: path2,
+      path: path4,
       previousPath: normalizedStatus === "R" || normalizedStatus === "C" ? firstPath : void 0
     };
   }).filter((entry) => entry.status && entry.path);
@@ -5472,9 +5712,9 @@ function buildSubstrate(deps, pr) {
   const files = [];
   for (const entry of parseZeroContextDiff(result.stdout)) {
     if (entry.hunks.length === 0) continue;
-    const path2 = entry.newPath ?? entry.oldPath;
-    if (!path2) continue;
-    files.push({ path: path2, oldPath: entry.oldPath ?? path2, hunks: entry.hunks });
+    const path4 = entry.newPath ?? entry.oldPath;
+    if (!path4) continue;
+    files.push({ path: path4, oldPath: entry.oldPath ?? path4, hunks: entry.hunks });
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const lineRanges = [];
@@ -5491,8 +5731,8 @@ function buildSubstrate(deps, pr) {
   }
   return { files, lineRanges, totalLines };
 }
-function blobAt(deps, sha, path2) {
-  const result = deps.runGit(["rev-parse", "-q", "--verify", `${sha}:${path2}`]);
+function blobAt(deps, sha, path4) {
+  const result = deps.runGit(["rev-parse", "-q", "--verify", `${sha}:${path4}`]);
   if (result.exitCode !== 0) return null;
   return result.stdout.trim() || null;
 }
@@ -5884,6 +6124,58 @@ function createOfflineGitHubClient() {
   return {
     getPrMetadata: () => null,
     listCrossReferences: () => []
+  };
+}
+function createDefaultScanGitHubClient(target) {
+  const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+  const api = (path4) => {
+    const result = execArgvCommand("gh", ["api", path4, "-H", "Accept: application/vnd.github+json"], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 });
+    if (result.exitCode !== 0) {
+      if (/HTTP 404/i.test(result.stderr)) return "";
+      throw new ScanUpstreamError(classifyUpstreamFailure(result));
+    }
+    return result.stdout;
+  };
+  const parse = (text) => {
+    try {
+      return text ? JSON.parse(text) : null;
+    } catch {
+      throw new ScanUpstreamError("GitHub returned malformed JSON");
+    }
+  };
+  return {
+    async getRepo() {
+      await Promise.resolve();
+      const repo = parse(api(`repos/${target.owner}/${target.repo}`));
+      if (!repo?.default_branch) throw new ScanUpstreamError("GitHub repository metadata is unavailable");
+      return { defaultBranch: repo.default_branch, private: repo.private === true };
+    },
+    async getPullRequest(number) {
+      await Promise.resolve();
+      const raw = parse(api(`repos/${target.owner}/${target.repo}/pulls/${number}`));
+      if (!raw) return null;
+      if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
+      return { number: raw.number, title: raw.title ?? "", body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label2) => label2.name ? [label2.name] : []), mergedAt: raw.merged_at };
+    },
+    async listPullCommits(number) {
+      await Promise.resolve();
+      const messages = [];
+      for (let page = 1; page <= 100; page++) {
+        const commits = parse(api(`repos/${target.owner}/${target.repo}/pulls/${number}/commits?per_page=100&page=${page}`)) ?? [];
+        messages.push(...commits.flatMap((commit) => commit.commit?.message ? [commit.commit.message] : []));
+        if (commits.length < 100) break;
+      }
+      return messages;
+    },
+    async getCheckConclusion(sha) {
+      await Promise.resolve();
+      const checks = parse(api(`repos/${target.owner}/${target.repo}/commits/${sha}/check-runs?per_page=100`));
+      const conclusions = (checks?.check_runs ?? []).map((check) => check.conclusion).filter((x) => typeof x === "string");
+      if (!conclusions.length) return "none";
+      if (conclusions.some((x) => x === "failure" || x === "timed_out" || x === "action_required")) return "failure";
+      if (conclusions.every((x) => x === "success")) return "success";
+      return "neutral";
+    }
   };
 }
 
@@ -6807,12 +7099,904 @@ function runShadowCli(command, args, io) {
   }
 }
 
+// src/orchestrate/github.ts
+function createOfflineScanGitHubClient() {
+  return {
+    offline: true,
+    async getRepo() {
+      await Promise.resolve();
+      return { defaultBranch: "", private: false };
+    },
+    async getPullRequest() {
+      await Promise.resolve();
+      return null;
+    },
+    async listPullCommits() {
+      await Promise.resolve();
+      return [];
+    },
+    async getCheckConclusion() {
+      await Promise.resolve();
+      return null;
+    }
+  };
+}
+
+// src/orchestrate/integration-branch.ts
+var IntegrationBranchError = class extends Error {
+  exitCode = 2;
+  constructor(message) {
+    super(message);
+    this.name = "IntegrationBranchError";
+  }
+};
+var MAIN_GUIDANCE = "integration branch resolves to main; S2 v1.0.0 rejects main. Pass --integration-branch <ref> or wait for S2 v1.1.0 (advisory main).";
+var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
+var SQUASH = /\(#(\d+)\)\s*$/;
+function resolveIntegrationBranch(evidence) {
+  const explicit = evidence.explicitBranch?.trim();
+  if (explicit) {
+    if (explicit.toLowerCase() === "main") throw new IntegrationBranchError(MAIN_GUIDANCE);
+    return { branch: explicit, detected: false, summary: "explicit integration branch" };
+  }
+  if (!evidence.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
+  if (evidence.defaultBranch.toLowerCase() !== "main") return { branch: evidence.defaultBranch, detected: false, summary: "repository default branch" };
+  const counts = /* @__PURE__ */ new Map();
+  let promotions = 0;
+  for (const subject of evidence.recentFirstParentSubjects.slice(0, 200)) {
+    let number = null;
+    let ref2 = null;
+    const merge = subject.match(PR_MERGE);
+    const squash = subject.match(SQUASH);
+    if (merge) {
+      number = Number(merge[1]);
+      ref2 = merge[2];
+    } else if (squash) {
+      number = Number(squash[1]);
+      ref2 = evidence.headRefLookup(number);
+    }
+    if (!number || !ref2 || !ref2.includes("/")) continue;
+    promotions++;
+    counts.set(ref2, (counts.get(ref2) ?? 0) + 1);
+  }
+  const winner = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence.remoteBranchExists(winner[0])) {
+    return { branch: winner[0], detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
+  }
+  throw new IntegrationBranchError(MAIN_GUIDANCE);
+}
+
+// src/orchestrate/scan-report.ts
+import * as fs3 from "node:fs";
+import * as os from "node:os";
+import * as path3 from "node:path";
+
+// src/report/suppression.ts
+var DEFAULT_REPORT_POLICY = Object.freeze({
+  policy_version: "1.0.0",
+  min_cell_n: 20,
+  min_agent_coverage: 0.6,
+  min_harness_coverage: 0.6,
+  min_exact_model_coverage: 0.6,
+  min_cost_coverage: 0.6,
+  min_reworked_for_retrospective: 20,
+  ci_method: "wilson",
+  ci_level: 0.95
+});
+var ArbiterReportBuildError = class extends Error {
+  constructor(errors) {
+    super(
+      `Cannot build arbiter_report/v1: ${errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`
+    );
+    this.errors = errors;
+    this.name = "ArbiterReportBuildError";
+  }
+  errors;
+};
+var ordered = (reasons2) => REPORT_SUPPRESSION_REASONS.filter((r) => reasons2.includes(r));
+function hide(cell2, reasons2) {
+  cell2.suppressed = true;
+  cell2.value = null;
+  cell2.ci = null;
+  cell2.suppression_reasons = ordered([...cell2.suppression_reasons, ...reasons2]);
+}
+function rowsCells(row) {
+  return Object.entries(row).filter(
+    ([key]) => key === "cell" || key === "ratio" || key.endsWith("_rate")
+  ).map(([, value]) => value);
+}
+function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
+  const report = structuredClone(draft);
+  report.policy = structuredClone(policy);
+  const executed = report.prs.filter(
+    (pr) => pr.attribution.exact_model.evidence === "first_party_executed"
+  );
+  const executedRate = executed.length / Math.max(1, report.coverage.prs_enumerated);
+  const exact = report.coverage.attribution.exact_model.rate >= policy.min_exact_model_coverage && executedRate >= policy.min_exact_model_coverage;
+  const harness = report.coverage.attribution.harness.rate >= policy.min_harness_coverage;
+  const comparablePriced = executed.filter(
+    (pr) => pr.cost?.actual_usd !== null && pr.cost?.actual_usd !== void 0
+  ).length;
+  const priced = Math.min(
+    report.cost?.actual.prs_priced ?? 0,
+    comparablePriced
+  );
+  const actualCoverage = priced / Math.max(1, executed.length);
+  const actual = !!report.cost && !report.cost.actual.suppressed && priced >= policy.min_cell_n && actualCoverage >= policy.min_cost_coverage;
+  const eligibility = report.eligibility;
+  eligibility.exact_model_table = exact;
+  eligibility.harness_table = harness;
+  eligibility.cost_adjusted_by_model = exact && actual;
+  eligibility.retrospective = !!report.model_provenance && !!report.retrospective && report.retrospective.n_reworked >= policy.min_reworked_for_retrospective;
+  const modelReasons = exact ? [] : harness ? ["exact_model_coverage_below_floor", "harness_only_evidence"] : ["exact_model_coverage_below_floor"];
+  const harnessReasons = harness ? [] : ["harness_coverage_below_floor"];
+  const costReasons = exact ? actual ? [] : ["cost_coverage_below_floor"] : modelReasons;
+  const sectionReasons = {
+    survival_by_horizon: [],
+    risk_ratios: [],
+    survival_by_model: modelReasons,
+    survival_by_harness: harnessReasons,
+    cost_adjusted_survival_by_model: costReasons
+  };
+  for (const [name, section2] of Object.entries(report.aggregates)) {
+    const reason = sectionReasons[name];
+    for (const row of section2.rows)
+      for (const cell2 of rowsCells(row)) {
+        if (cell2.n < policy.min_cell_n) hide(cell2, ["n_below_floor"]);
+        if (reason.length) hide(cell2, reason);
+      }
+    const cells = section2.rows.flatMap(
+      rowsCells
+    );
+    if (reason.length || !cells.length || cells.every((c) => c.suppressed)) {
+      section2.status = "suppressed";
+      section2.suppression_reasons = ordered([
+        ...section2.suppression_reasons,
+        ...reason,
+        ...cells.flatMap((c) => c.suppression_reasons),
+        ...!cells.length ? ["n_below_floor"] : []
+      ]);
+    } else {
+      section2.status = "shown";
+      section2.suppression_reasons = [];
+    }
+  }
+  eligibility.cost_adjusted_by_model = eligibility.cost_adjusted_by_model && report.aggregates.cost_adjusted_survival_by_model.rows.some(
+    (row) => !row.cell.suppressed
+  );
+  eligibility.model_routing_cta = exact && report.aggregates.survival_by_model.rows.some((r) => !r.cell.suppressed);
+  eligibility.reasons = ordered([
+    ...modelReasons,
+    ...harnessReasons,
+    ...costReasons,
+    ...report.coverage.attribution.agent.rate < policy.min_agent_coverage ? ["agent_coverage_below_floor"] : []
+  ]);
+  if (report.retrospective) {
+    const reasons2 = [];
+    if (!report.model_provenance) reasons2.push("no_model_provenance");
+    if (report.retrospective.n_reworked < policy.min_reworked_for_retrospective)
+      reasons2.push("reworked_below_floor");
+    for (const [name, cell2] of Object.entries({
+      precision: report.retrospective.precision,
+      recall: report.retrospective.recall,
+      flagged_share: report.retrospective.flagged_share
+    })) {
+      if (cell2.n < policy.min_cell_n) hide(cell2, ["n_below_floor"]);
+      if (name !== "flagged_share" && cell2.n < policy.min_reworked_for_retrospective)
+        hide(cell2, ["reworked_below_floor"]);
+      if (reasons2.length) hide(cell2, reasons2);
+    }
+    report.retrospective.suppressed = !eligibility.retrospective || [
+      report.retrospective.precision,
+      report.retrospective.recall,
+      report.retrospective.flagged_share
+    ].every((c) => c.suppressed);
+    report.retrospective.suppression_reasons = report.retrospective.suppressed ? ordered([
+      ...reasons2,
+      ...report.retrospective.precision.suppression_reasons
+    ]) : [];
+  }
+  if (report.cost) {
+    for (const part of [report.cost.actual, report.cost.estimated])
+      if (part.prs_priced < policy.min_cell_n) {
+        part.total_usd = null;
+        part.suppressed = true;
+        part.suppression_reasons = ordered([
+          ...part.suppression_reasons,
+          "n_below_floor"
+        ]);
+      }
+  }
+  const valid = validateArbiterReportV1(report);
+  if (!valid.ok) throw new ArbiterReportBuildError(valid.errors);
+  return valid.value;
+}
+
+// src/report/stats.ts
+function round42(value) {
+  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+}
+function roundedInterval(low, high, value) {
+  let lo = round42(Math.max(0, Math.min(1, low)));
+  let hi = round42(Math.max(0, Math.min(1, high)));
+  if (value !== void 0) {
+    lo = Math.min(lo, round42(value));
+    hi = Math.max(hi, round42(value));
+  }
+  return { low: lo, high: hi };
+}
+function wilsonInterval(k, n, z = 1.959964) {
+  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
+    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
+  }
+  if (n === 0) return null;
+  const p = k / n;
+  const z2 = z * z;
+  const den = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / den;
+  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
+  return roundedInterval(center - half, center + half, p);
+}
+function katzLogRatioInterval(k1, n1, k2, n2) {
+  for (const [k, n] of [[k1, n1], [k2, n2]]) {
+    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
+      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
+    }
+  }
+  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
+  const a = k1 + (corrected ? 0.5 : 0);
+  const b = n1 - k1 + (corrected ? 0.5 : 0);
+  const c = k2 + (corrected ? 0.5 : 0);
+  const d = n2 - k2 + (corrected ? 0.5 : 0);
+  const ratio2 = a / (a + b) / (c / (c + d));
+  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
+  const low = Math.exp(Math.log(ratio2) - 1.959964 * se);
+  const high = Math.exp(Math.log(ratio2) + 1.959964 * se);
+  const r = round42(ratio2);
+  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
+}
+function nearestRankQuartiles(sorted) {
+  if (!sorted.length) return null;
+  for (let i = 0; i < sorted.length; i++) {
+    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
+      throw new RangeError("nearestRankQuartiles requires finite ascending values");
+    }
+  }
+  const at = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  return [at(0.25), at(0.5), at(0.75)];
+}
+function quartileOf(value, cuts) {
+  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
+    throw new RangeError("quartileOf requires finite values and ascending cuts");
+  }
+  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
+}
+
+// src/report/aggregate.ts
+var OUTCOMES = ["survived", "followup", "substantially_rewritten", "reverted"];
+var emptySection = (rows) => ({ basis: "descriptive", status: "shown", suppression_reasons: [], rows });
+function makeCell(k, n) {
+  const ci = wilsonInterval(k, n);
+  return { basis: "descriptive", n, value: n ? Math.round(k / n * 1e4) / 1e4 : null, ci: ci ? { ...ci, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
+}
+function ratioCell(ratio2, n, ci) {
+  return { basis: "descriptive", n, value: ratio2, ci: ci ? { low: ci.low, high: ci.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
+}
+function labelAt(pr, horizon2) {
+  return pr.labels.find((label2) => label2.horizon_days === horizon2);
+}
+function bucketFor(pr, feature, cuts) {
+  if (feature === "tests_changed") return pr.features.tests_changed === null ? null : pr.features.tests_changed ? "true" : "false";
+  if (feature === "files_touched_bucket") return pr.features.files_touched_bucket;
+  if (pr.features.loc_touched === null || !cuts) return null;
+  return quartileOf(pr.features.loc_touched, cuts);
+}
+var reworked = (label2) => ["followup", "substantially_rewritten", "reverted"].includes(label2.outcome.report_outcome ?? "");
+function buildAggregates(prs, horizons) {
+  const survival = [];
+  const risks = [];
+  const models = [];
+  const harnesses = [];
+  for (const h of [...horizons].sort((a, b) => a - b)) {
+    const labelled = prs.flatMap((pr) => {
+      const l = labelAt(pr, h);
+      return l?.outcome.report_outcome ? [{ pr, l }] : [];
+    });
+    for (const outcome of OUTCOMES) {
+      const selected = labelled.filter(({ l }) => l.outcome.report_outcome === outcome);
+      survival.push({ horizon_days: h, outcome, cell: makeCell(selected.length, labelled.length) });
+    }
+    for (const feature of Object.keys(REPORT_FEATURE_BUCKETS)) {
+      const locValues = feature === "loc_touched" ? labelled.map(({ pr }) => pr.features.loc_touched).filter((v) => v !== null).sort((a, b) => a - b) : [];
+      const cuts = nearestRankQuartiles(locValues);
+      const buckets = REPORT_FEATURE_BUCKETS[feature];
+      for (const bucket of buckets) {
+        const group = labelled.filter(({ pr }) => bucketFor(pr, feature, cuts) === bucket);
+        const outside = labelled.filter(({ pr }) => bucketFor(pr, feature, cuts) !== null && bucketFor(pr, feature, cuts) !== bucket);
+        const ki = group.filter(({ l }) => reworked(l)).length;
+        const ko = outside.filter(({ l }) => reworked(l)).length;
+        const ciRate = wilsonInterval(ki, group.length);
+        const ciBase = wilsonInterval(ko, outside.length);
+        const rr = group.length && outside.length ? katzLogRatioInterval(ki, group.length, ko, outside.length) : null;
+        risks.push({ horizon_days: h, feature, bucket, rework_rate: makeCell(ki, group.length), baseline_rate: makeCell(ko, outside.length), ratio: ratioCell(rr?.ratio ?? null, Math.min(group.length, outside.length), rr) });
+        if (!ciRate || !ciBase) {
+        }
+      }
+    }
+    const modelIds = [...new Set(labelled.map(({ pr }) => pr.attribution.exact_model.id).filter((v) => !!v))].sort();
+    for (const id2 of modelIds) {
+      const group = labelled.filter(({ pr }) => pr.attribution.exact_model.id === id2);
+      models.push({ horizon_days: h, model_id: id2, cell: makeCell(group.filter(({ l }) => l.outcome.survived === true).length, group.length) });
+    }
+    const harnessIds = [...new Set(labelled.map(({ pr }) => pr.attribution.harness.id).filter((v) => !!v))].sort();
+    for (const id2 of harnessIds) {
+      const group = labelled.filter(({ pr }) => pr.attribution.harness.id === id2);
+      harnesses.push({ horizon_days: h, harness_id: id2, cell: makeCell(group.filter(({ l }) => l.outcome.survived === true).length, group.length) });
+    }
+  }
+  return {
+    survival_by_horizon: emptySection(survival),
+    risk_ratios: emptySection(risks),
+    survival_by_model: emptySection(models),
+    survival_by_harness: emptySection(harnesses),
+    cost_adjusted_survival_by_model: emptySection([])
+  };
+}
+function buildCoverage(prs, horizons) {
+  const missingByHorizon = [...horizons].sort((a, b) => a - b).map((h) => {
+    const labels = prs.map((pr) => labelAt(pr, h)).filter((label2) => !!label2);
+    const missing = /* @__PURE__ */ new Map();
+    for (const label2 of labels) if (!label2.outcome.report_outcome) for (const reason of label2.outcome.reason_codes) missing.set(reason, (missing.get(reason) ?? 0) + 1);
+    return { horizon_days: h, labelled: labels.filter((label2) => !!label2.outcome.report_outcome).length, missing: [...missing.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([reason, count]) => ({ reason, count })) };
+  });
+  const identifiedAgent = prs.filter((pr) => pr.attribution.agent.status === "agent").length;
+  const identifiedHarness = prs.filter((pr) => !!pr.attribution.harness.id).length;
+  const identifiedModel = prs.filter((pr) => !!pr.attribution.exact_model.id).length;
+  const methods2 = [];
+  const tallies = /* @__PURE__ */ new Map();
+  for (const pr of prs) for (const [dimension2, values] of [["agent", pr.attribution.agent.methods], ["harness", pr.attribution.harness.methods], ["exact_model", pr.attribution.exact_model.methods]]) for (const method of values) {
+    const key = `${dimension2}	${method}`;
+    tallies.set(key, (tallies.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of [...tallies.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const [dimension2, method] = key.split("	");
+    methods2.push({ dimension: dimension2, method, count });
+  }
+  return {
+    basis: "descriptive",
+    prs_enumerated: prs.length,
+    prs_eligible: prs.filter((pr) => pr.labels.some((label2) => !!label2.outcome.report_outcome)).length,
+    labels_by_horizon: missingByHorizon,
+    attribution: {
+      agent: { identified_agent: identifiedAgent, identified_human_signal: 0, unknown: prs.length - identifiedAgent, rate: prs.length ? Math.round(identifiedAgent / prs.length * 1e4) / 1e4 : 0 },
+      harness: { identified: identifiedHarness, unknown: prs.length - identifiedHarness, rate: prs.length ? Math.round(identifiedHarness / prs.length * 1e4) / 1e4 : 0 },
+      exact_model: { identified: identifiedModel, unknown: prs.length - identifiedModel, rate: prs.length ? Math.round(identifiedModel / prs.length * 1e4) / 1e4 : 0 },
+      methods: methods2
+    }
+  };
+}
+
+// src/report/build.ts
+function buildReportDraft(input) {
+  const horizons = [...input.horizons].sort((a, b) => a - b);
+  const prs = [...input.prs].sort((a, b) => a.merged_at.localeCompare(b.merged_at) || a.pr_number - b.pr_number);
+  return {
+    schema_version: "arbiter_report/v1",
+    data_origin: "scan",
+    repo: { host: "github", owner: input.owner, name: input.repo },
+    scan: {
+      scanned_at: input.scannedAt,
+      as_of: input.asOf,
+      scanner: { package: "@hokusai/scan", version: input.scannerVersion },
+      integration_branch: input.integrationBranch,
+      lookback_days: input.lookbackDays,
+      window: { merged_from: input.mergedFrom, merged_to: input.mergedTo },
+      horizons_days: horizons,
+      contracts: { candidate_features: "candidate_features/v1", survival_label: "1.0.0", labeller_version: SCAN_CONTRACT.labellerVersion, normalization_version: SCAN_CONTRACT.normalizationVersion }
+    },
+    policy: structuredClone(input.policy ?? DEFAULT_REPORT_POLICY),
+    coverage: buildCoverage(prs, horizons),
+    prs,
+    aggregates: buildAggregates(prs, horizons),
+    cost: null,
+    retrospective: null,
+    model_provenance: null,
+    eligibility: { exact_model_table: false, harness_table: false, cost_adjusted_by_model: false, retrospective: false, model_routing_cta: false, reasons: [] }
+  };
+}
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const object2 = value;
+    return `{${Object.keys(object2).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object2[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function emitReport(draft, policy = DEFAULT_REPORT_POLICY) {
+  const report = applyReportSuppression(draft, policy);
+  const validation = validateArbiterReportV1(report);
+  if (!validation.ok) throw new Error(`Invalid arbiter_report/v1: ${validation.errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`);
+  return `${JSON.stringify(JSON.parse(canonicalJson(report)), null, 2)}
+`;
+}
+
+// src/attribution/metadata-block.ts
+function extractMetadataBlock(body) {
+  if (!body) return null;
+  const match = body.match(/<!--\s*wavemill-meta\s*([\s\S]*?)\s*-->/i);
+  if (!match) return null;
+  const data = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const pair = line.match(/^\s*([A-Za-z][\w.-]{0,63})\s*:\s*(.{1,256})\s*$/);
+    if (pair) data[pair[1].toLowerCase()] = pair[2].trim().replace(/^['"]|['"]$/g, "");
+  }
+  return data;
+}
+
+// src/attribution/engine.ts
+var AttributionConfigError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AttributionConfigError";
+  }
+};
+var HARNESS_REGISTRY = Object.freeze(["aider", "claude-code", "codex", "openhands", "wavemill"]);
+var MODEL_SIGNATURES = Object.freeze(["claude-", "gpt-", "o1", "o3", "gemini-"]);
+var GENERIC_AGENT_SIGNATURES = Object.freeze(["bot", "[bot]"]);
+var known = /* @__PURE__ */ new Set(["botLogins", "branchPrefixes", "labels", "extraBotLogins", "extraBranchPrefixes"]);
+function resolveAttributionConfig(input = {}) {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) throw new AttributionConfigError("Attribution config must be an object");
+  const config = input;
+  const unknown = Object.keys(config).filter((key) => !known.has(key));
+  if (unknown.length) throw new AttributionConfigError(`Unknown attribution config key: ${unknown[0]}`);
+  for (const key of ["botLogins", "branchPrefixes", "extraBotLogins", "extraBranchPrefixes"]) {
+    const values = config[key];
+    if (values !== void 0 && (!Array.isArray(values) || values.some((value) => typeof value !== "string" || value.length > 200))) {
+      throw new AttributionConfigError(`${key} must be an array of bounded strings`);
+    }
+  }
+  if (config.labels !== void 0 && (!config.labels || typeof config.labels !== "object" || Array.isArray(config.labels))) throw new AttributionConfigError("labels must be an object");
+  return config;
+}
+var unique = (values) => [...new Set(values)];
+var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some((signature) => value.toLowerCase().startsWith(signature));
+function attributePullRequest(pr, config = {}) {
+  const metadata = extractMetadataBlock(pr.body);
+  const agentMethods = [];
+  const harnessMethods = [];
+  const modelMethods = [];
+  let identifiedAgent = false;
+  const routeRole = typeof metadata?.["executedroute"] === "string" ? metadata["executedroute"].toLowerCase() : "";
+  const metadataHead = typeof metadata?.["headsha"] === "string" ? metadata["headsha"].toLowerCase() : null;
+  const routeVerified = routeRole === "coder" && recognizedModel(typeof metadata?.["model"] === "string" ? metadata["model"] : null) && (!metadataHead || metadataHead === pr.headSha.toLowerCase());
+  if (routeVerified) {
+    identifiedAgent = true;
+    agentMethods.push("first_party_route_metadata");
+    harnessMethods.push("first_party_route_metadata");
+    modelMethods.push("first_party_route_metadata");
+  }
+  const login = (pr.authorLogin ?? "").toLowerCase();
+  const configuredBot = [...config.botLogins ?? [], ...config.extraBotLogins ?? []].some((value) => value.toLowerCase() === login);
+  const botAuthor = configuredBot || /\[bot\]$/i.test(pr.authorLogin ?? "") || (pr.authorType ?? "").toLowerCase() === "bot";
+  if (botAuthor) {
+    identifiedAgent = true;
+    agentMethods.push(configuredBot ? "owner_config" : "bot_author");
+  }
+  if (pr.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
+    identifiedAgent = true;
+    agentMethods.push("co_authored_by_trailer");
+  }
+  const configuredPrefix = config.branchPrefixes?.find((value) => pr.headRef.startsWith(value));
+  const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr.headRef.startsWith(value));
+  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr.headRef);
+  if (configuredPrefix || ownerPrefix || builtInPrefix) {
+    identifiedAgent = true;
+    agentMethods.push(ownerPrefix ? "owner_config" : "branch_prefix");
+  }
+  const matchedLabel = pr.labels.find((label2) => config.labels?.[label2] !== void 0);
+  if (matchedLabel) {
+    identifiedAgent = true;
+    agentMethods.push("pr_label");
+  }
+  const signatureMatches = pr.commitMessages.join("\n").match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
+  const signatureModels = [...new Set(signatureMatches.map((value) => value.toLowerCase()))];
+  if (signatureModels.length) {
+    identifiedAgent = true;
+    agentMethods.push("commit_signature");
+  }
+  const metadataHarness = typeof metadata?.["harness"] === "string" ? metadata["harness"].toLowerCase() : null;
+  const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
+  const prefixHarness = builtInPrefix ? pr.headRef.split("/")[0]?.toLowerCase() ?? null : null;
+  const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value) => !!value);
+  const harnessIds = [...new Set(harnessEvidence.filter((value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)))];
+  const harness = harnessIds.length === 1 ? harnessIds[0] : null;
+  if (harness && !routeVerified) harnessMethods.push(metadataHarness ? "first_party_route_metadata" : labelHarness ? "pr_label" : "branch_prefix");
+  const metadataModel = typeof metadata?.["model"] === "string" ? metadata["model"].toLowerCase() : null;
+  const labelModel = matchedLabel ? config.labels?.[matchedLabel]?.model?.toLowerCase() ?? null : null;
+  const modelEvidence = routeVerified ? [metadataModel] : [labelModel, ...signatureModels].filter((value) => !!value && recognizedModel(value));
+  const modelIds = [...new Set(modelEvidence.filter((value) => recognizedModel(value)))];
+  const exactModel = modelIds.length === 1 ? modelIds[0] : null;
+  if (exactModel && !routeVerified) modelMethods.push(signatureModels.includes(exactModel) ? "commit_signature" : "pr_label");
+  return {
+    agent: { status: identifiedAgent ? "agent" : "unknown", confidence: identifiedAgent ? 1 : null, methods: unique(agentMethods) },
+    harness: { id: harness, confidence: harness ? routeVerified ? 1 : 0.8 : null, methods: unique(harnessMethods) },
+    exactModel: { id: exactModel, confidence: exactModel ? routeVerified ? 1 : 0.5 : null, methods: unique(modelMethods), evidence: exactModel ? routeVerified ? "first_party_executed" : "heuristic" : null }
+  };
+}
+function toReportAttribution(value) {
+  return { agent: value.agent, harness: value.harness, exact_model: value.exactModel };
+}
+
+// src/orchestrate/enumerate.ts
+var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+function enumerateWindow(options) {
+  const { runGit: runGit3, branch, from, to, cursor = null, maxPrs = Number.MAX_SAFE_INTEGER } = options;
+  const cutoff = Math.floor(from.getTime() / 1e3);
+  const end = Math.floor(to.getTime() / 1e3);
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from.getTime() > to.getTime() || cutoff > end) throw new RangeError("Invalid merge window");
+  let reset = false;
+  let bootstrap = cursor === null;
+  if (cursor !== null && !isAncestor(runGit3, cursor, branch)) {
+    reset = true;
+    bootstrap = true;
+  }
+  const fmt = "%H%x09%P%x09%ct%x09%s";
+  const args = bootstrap ? ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, ...cutoff > 0 ? [`--since=${from.toISOString()}`] : [], branch] : ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, `${cursor}..${branch}`];
+  const result = runGit3(args);
+  if (result.exitCode !== 0) throw new Error("Unable to enumerate integration branch history");
+  const merges = [];
+  for (const line of result.stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [sha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
+    if (!sha || !/^[0-9a-f]{40}$/.test(sha)) continue;
+    const epoch = Number.parseInt(epochText, 10);
+    if (!Number.isFinite(epoch) || epoch < cutoff || epoch > end) continue;
+    const parents = parentsText.trim().split(/\s+/).filter(Boolean);
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA2;
+    const subject = subjectParts.join("	");
+    merges.push({ mergeSha: sha, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha });
+  }
+  const cap = Math.max(0, Math.floor(maxPrs));
+  return { merges: cap < merges.length ? merges.slice(-cap) : merges, cursorReset: reset };
+}
+
+// src/orchestrate/state.ts
+import * as fs2 from "node:fs";
+import * as path2 from "node:path";
+import { createHash as createHash2 } from "node:crypto";
+function scanConfigHash(config) {
+  return createHash2("sha256").update(stableJson(config)).digest("hex");
+}
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const o = value;
+    return `{${Object.keys(o).sort().map((key) => `${JSON.stringify(key)}:${stableJson(o[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function atomicWrite(file, contents) {
+  fs2.mkdirSync(path2.dirname(file), { recursive: true });
+  const temp = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  try {
+    fs2.writeFileSync(temp, contents, { mode: 384 });
+    fs2.renameSync(temp, file);
+  } catch (error) {
+    try {
+      fs2.unlinkSync(temp);
+    } catch {
+    }
+    throw error;
+  }
+}
+function validHeader(value) {
+  if (!value || typeof value !== "object") return false;
+  const h = value;
+  return h.state_version === 1 && ["scanner_version", "labeller_version", "normalization_version", "integration_branch"].every((key) => typeof h[key] === "string") && typeof h.config_hash === "string" && /^[0-9a-f]{64}$/.test(h.config_hash) && (h.last_seen_merge_sha === null || typeof h.last_seen_merge_sha === "string" && /^[0-9a-f]{40}$/.test(h.last_seen_merge_sha));
+}
+function validRow(value) {
+  if (!value || typeof value !== "object") return false;
+  const row = value;
+  return exactKeys(row, ["merge_sha", "merged_at_epoch", "pr_number", "merged_at", "attribution", "features", "labels_by_horizon"]) && typeof row.merge_sha === "string" && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.merged_at_epoch) && row.merged_at_epoch >= 0 && Number.isInteger(row.pr_number) && row.pr_number > 0 && typeof row.merged_at === "string" && validAttribution(row.attribution) && validateCandidateFeaturesV1(row.features).ok && validLabelsByHorizon(row.labels_by_horizon);
+}
+function object(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+function exactKeys(value, keys) {
+  return Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key));
+}
+function validMethods(value) {
+  return Array.isArray(value) && value.every((method) => typeof method === "string" && REPORT_ATTRIBUTION_METHODS.includes(method));
+}
+function validDimension(value, status, ids, evidence = false) {
+  if (!object(value)) return false;
+  const keys = evidence ? ["id", "confidence", "methods", "evidence"] : ids ? ["id", "confidence", "methods"] : ["status", "confidence", "methods"];
+  return exactKeys(value, keys) && (ids ? typeof value.id === "string" || value.id === null : status.includes(value.status)) && (typeof value.confidence === "number" || value.confidence === null) && validMethods(value.methods) && (!evidence || value.evidence === "first_party_executed" || value.evidence === "heuristic" || value.evidence === null);
+}
+function validAttribution(value) {
+  if (!object(value) || !exactKeys(value, ["agent", "harness", "exact_model"])) return false;
+  return validDimension(value.agent, ["agent", "not_agent_signal", "unknown"], false) && validDimension(value.harness, [], true) && validDimension(value.exact_model, [], true, true);
+}
+function validLabel(value) {
+  if (!object(value) || !exactKeys(value, ["horizon_days", "label_provenance", "outcome", "label_hash"]) || !HORIZONS.includes(value.horizon_days) || value.label_provenance !== "harvested" && value.label_provenance !== "owner_corrected" || typeof value.label_hash !== "string" || !/^[0-9a-f]{64}$/.test(value.label_hash) || !object(value.outcome)) return false;
+  const outcome = value.outcome;
+  return exactKeys(outcome, ["survived", "survival_ratio", "reverted", "undone_by", "followup", "report_outcome", "reason_codes"]) && (typeof outcome.survived === "boolean" || outcome.survived === null) && (typeof outcome.survival_ratio === "number" || outcome.survival_ratio === null) && (typeof outcome.reverted === "boolean" || outcome.reverted === null) && (outcome.undone_by === "human" || outcome.undone_by === "agent" || outcome.undone_by === null) && (typeof outcome.followup === "boolean" || outcome.followup === null) && ["survived", "followup", "substantially_rewritten", "reverted", null].includes(outcome.report_outcome) && Array.isArray(outcome.reason_codes) && outcome.reason_codes.every((code) => typeof code === "string" && REASON_CODES.includes(code));
+}
+function validLabelsByHorizon(value) {
+  return object(value) && Object.entries(value).every(([horizon2, label2]) => /^(14|30|60)$/.test(horizon2) && validLabel(label2) && String(label2.horizon_days) === horizon2);
+}
+function readScanState(dir, versions, isAncestor2) {
+  const statePath = path2.join(dir, "state.json");
+  const rowsPath = path2.join(dir, "prs.jsonl");
+  if (!fs2.existsSync(statePath)) return { header: null, rows: [], invalidated: false };
+  try {
+    const header = JSON.parse(fs2.readFileSync(statePath, "utf8"));
+    if (!validHeader(header)) throw new Error("invalid state header");
+    const configHash = scanConfigHash(versions.config);
+    const same = header.scanner_version === versions.scannerVersion && header.labeller_version === versions.labellerVersion && header.normalization_version === versions.normalizationVersion && header.integration_branch === versions.integrationBranch && header.config_hash === configHash;
+    const ancestor = header.last_seen_merge_sha === null || isAncestor2(header.last_seen_merge_sha);
+    if (!same || !ancestor) return { header: null, rows: [], invalidated: true };
+    const rows = [];
+    if (fs2.existsSync(rowsPath)) for (const line of fs2.readFileSync(rowsPath, "utf8").split("\n").filter(Boolean)) {
+      const row = JSON.parse(line);
+      if (!validRow(row)) throw new Error("invalid cache row");
+      rows.push(row);
+    }
+    return { header, rows, invalidated: false };
+  } catch {
+    return { header: null, rows: [], invalidated: true };
+  }
+}
+function writeScanState(dir, versions, lastSeenMergeSha, rows) {
+  if (lastSeenMergeSha !== null && !/^[0-9a-f]{40}$/.test(lastSeenMergeSha)) throw new TypeError("Invalid merge cursor");
+  if (!rows.every(validRow)) throw new TypeError("Invalid derived scan cache row");
+  const header = { state_version: 1, scanner_version: versions.scannerVersion, labeller_version: versions.labellerVersion, normalization_version: versions.normalizationVersion, config_hash: scanConfigHash(versions.config), integration_branch: versions.integrationBranch, last_seen_merge_sha: lastSeenMergeSha };
+  atomicWrite(path2.join(dir, "prs.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length ? "\n" : ""));
+  atomicWrite(path2.join(dir, "state.json"), `${JSON.stringify(header, null, 2)}
+`);
+}
+
+// src/orchestrate/scan-report.ts
+var ScanStageFailureError = class extends Error {
+  constructor() {
+    super("STAGE_FAILURE_THRESHOLD");
+    this.name = "ScanStageFailureError";
+  }
+};
+async function runReportScan(target, deps, options) {
+  const now = deps.now();
+  const maxLookback = options.maxLookbackDays ?? 730;
+  const requested = options.lookbackDays ?? 180;
+  const lookbackDays = Math.max(1, Math.min(requested, maxLookback));
+  if (requested > maxLookback) deps.onDiagnostic?.(`warn: lookback clamped to ${maxLookback} days`);
+  const maxPrs = options.maxPrs ?? 500;
+  const from = new Date(now.getTime() - lookbackDays * 864e5);
+  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
+  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
+  if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
+  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
+  let merges = enumerated.merges;
+  if (merges.length > maxPrs) {
+    merges = merges.slice(-maxPrs);
+    deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`);
+  }
+  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges;
+  const reportMergeShas = new Set(allLocal.filter((merge) => merge.mergedAtEpoch >= Math.floor(from.getTime() / 1e3) && merge.mergedAtEpoch <= Math.floor(now.getTime() / 1e3)).slice(-maxPrs).map((merge) => merge.mergeSha));
+  merges = merges.filter((merge) => reportMergeShas.has(merge.mergeSha));
+  const config = resolveAttributionConfig(options.attributionConfig);
+  const reportRows = /* @__PURE__ */ new Map();
+  for (const row of cached?.rows ?? []) if (reportMergeShas.has(row.merge_sha)) {
+    reportRows.set(row.merge_sha, { pr_number: row.pr_number, merged_at: row.merged_at, attribution: row.attribution, features: row.features, labels: Object.values(row.labels_by_horizon), cost: null, prediction: null });
+  }
+  const cachedBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
+  const stateBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
+  const horizons = options.horizons ?? [14, 30, 60];
+  const label2 = deps.label ?? labelMergedPr;
+  const labellerTarget = { owner: target.owner, repo: target.repo, repoDir: target.repoDir, integrationBranch: target.integrationBranch };
+  const refs = allLocal.flatMap((merge) => merge.prNumber === null ? [] : [{
+    prNumber: merge.prNumber,
+    prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${merge.prNumber}`,
+    mergeSha: merge.mergeSha,
+    parentSha: merge.parentSha,
+    headSha: merge.headSha,
+    mergedAtEpoch: merge.mergedAtEpoch,
+    subject: `#${merge.prNumber}`
+  }]);
+  const refBySha = new Map(refs.map((ref2) => [ref2.mergeSha, ref2]));
+  let failedPrs = 0;
+  const attemptedPrs = merges.filter((merge) => merge.prNumber !== null).length;
+  for (const merge of merges) {
+    if (merge.prNumber === null) {
+      deps.onDiagnostic?.("info: skipped commit without a PR number");
+      continue;
+    }
+    try {
+      const previous = cachedBySha.get(merge.mergeSha);
+      let prNumber = merge.prNumber;
+      let mergedAt;
+      let attribution;
+      let features;
+      if (previous) {
+        prNumber = previous.pr_number;
+        mergedAt = previous.merged_at;
+        attribution = previous.attribution;
+        features = previous.features;
+      } else {
+        const apiPr = await deps.github.getPullRequest(merge.prNumber);
+        if (!apiPr && !deps.github.offline) {
+          deps.onDiagnostic?.(`warn: GitHub could not find PR #${merge.prNumber}; skipped`);
+          continue;
+        }
+        const pr = apiPr ?? { number: merge.prNumber, title: "", body: null, authorLogin: null, authorType: null, headRef: "", headSha: merge.headSha, labels: [], mergedAt: new Date(merge.mergedAtEpoch * 1e3).toISOString() };
+        const commits = deps.github.offline ? deps.runGit(["log", "--format=%B", `${merge.parentSha}..${merge.mergeSha}`]).stdout.split("\n\n").filter(Boolean) : await deps.github.listPullCommits(pr.number);
+        attribution = toReportAttribution(attributePullRequest({ ...pr, commitMessages: commits }, config));
+        mergedAt = pr.mergedAt;
+        if (deps.extract) {
+          features = deps.extract({ ...merge, prNumber: merge.prNumber }, { taskText: `${pr.title}
+
+${pr.body ?? ""}` });
+        } else {
+          const checkoutParent = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
+          const checkoutDir = path3.join(checkoutParent, "checkout");
+          try {
+            const add = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
+            if (add.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
+            for (const args of [["-C", checkoutDir, "update-ref", "HEAD", merge.mergeSha], ["-C", checkoutDir, "checkout", "-f"]]) {
+              if (deps.runGit(args).exitCode !== 0) throw new Error("Unable to check out PR merge");
+            }
+            features = extractCandidateFeatures({
+              checkoutDir,
+              prNumber: pr.number,
+              baseRef: merge.parentSha,
+              offline: true,
+              staticFeatures: options.staticAnalysis === "off" ? NULL_STATIC_FEATURES : void 0,
+              contract: { taskText: `${pr.title}
+
+${pr.body ?? ""}` }
+            });
+          } finally {
+            deps.runGit(["worktree", "remove", "--force", checkoutDir]);
+            fs3.rmSync(checkoutParent, { recursive: true, force: true });
+          }
+        }
+        await deps.github.getCheckConclusion(pr.headSha);
+      }
+      const ref2 = refBySha.get(merge.mergeSha);
+      const labelCache = previous?.labels_by_horizon ?? {};
+      const labelsByHorizon = /* @__PURE__ */ new Map();
+      for (const horizon2 of horizons) {
+        const old = labelCache[String(horizon2)];
+        const matured = merge.mergedAtEpoch + horizon2 * 86400 <= Math.floor(now.getTime() / 1e3);
+        if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
+      }
+      if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
+        const fresh = label2(labellerTarget, deps.labeller, ref2, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
+        for (const item of fresh) {
+          const old = labelCache[String(item.horizon_days)];
+          const matured = merge.mergedAtEpoch + item.horizon_days * 86400 <= Math.floor(now.getTime() / 1e3);
+          labelsByHorizon.set(item.horizon_days, old && matured && !old.outcome.reason_codes.includes("missing_horizon") ? old : item);
+        }
+      }
+      const labels = horizons.map((horizon2) => labelsByHorizon.get(horizon2)).filter((item) => !!item);
+      const reportRow = { pr_number: prNumber, merged_at: mergedAt, attribution, features, labels, cost: null, prediction: null };
+      reportRows.set(merge.mergeSha, reportRow);
+      stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, merged_at_epoch: merge.mergedAtEpoch, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
+    } catch (error) {
+      if (error instanceof ScanUpstreamError) throw error;
+      failedPrs++;
+      deps.onDiagnostic?.(`error: failed to process PR #${merge.prNumber}`);
+    }
+  }
+  const processedShas = new Set(merges.map((merge) => merge.mergeSha));
+  for (const previous of cached?.rows ?? []) {
+    if (processedShas.has(previous.merge_sha) || !reportMergeShas.has(previous.merge_sha)) continue;
+    const ref2 = refBySha.get(previous.merge_sha);
+    if (!ref2) continue;
+    const labelsByHorizon = /* @__PURE__ */ new Map();
+    for (const horizon2 of horizons) {
+      const old = previous.labels_by_horizon[String(horizon2)];
+      const matured = previous.merged_at_epoch + horizon2 * 86400 <= Math.floor(now.getTime() / 1e3);
+      if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
+    }
+    if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
+      const fresh = label2(labellerTarget, deps.labeller, ref2, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
+      for (const item of fresh) {
+        const old = previous.labels_by_horizon[String(item.horizon_days)];
+        const matured = previous.merged_at_epoch + item.horizon_days * 86400 <= Math.floor(now.getTime() / 1e3);
+        labelsByHorizon.set(item.horizon_days, old && matured && !old.outcome.reason_codes.includes("missing_horizon") ? old : item);
+      }
+    }
+    const labels = horizons.map((horizon2) => labelsByHorizon.get(horizon2)).filter((item) => !!item);
+    const reportRow = { pr_number: previous.pr_number, merged_at: previous.merged_at, attribution: previous.attribution, features: previous.features, labels, cost: null, prediction: null };
+    reportRows.set(previous.merge_sha, reportRow);
+    stateBySha.set(previous.merge_sha, { ...previous, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
+  }
+  if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
+  if (options.stateDir) {
+    const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
+    const save = () => writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
+    if (options.onStateSave) options.onStateSave(save);
+    else save();
+  }
+  const rows = [...reportRows.values()];
+  const dates = rows.map((pr) => pr.merged_at).sort();
+  return buildReportDraft({
+    owner: target.owner,
+    repo: target.repo,
+    integrationBranch: target.integrationBranch,
+    scannerVersion: options.scannerVersion,
+    scannedAt: now.toISOString(),
+    asOf: now.toISOString(),
+    lookbackDays,
+    mergedFrom: dates[0] ?? from.toISOString(),
+    mergedTo: now.toISOString(),
+    horizons,
+    prs: rows,
+    ...options.policy ? { policy: options.policy } : {}
+  });
+}
+
+// src/report/contribute.ts
+var ContributionPayloadError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ContributionPayloadError";
+  }
+};
+var forbidden = new Set(REPORT_FORBIDDEN_KEYS.map((key) => key.toLowerCase()));
+function findForbidden(value, prefix = "") {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const found = findForbidden(value[i], `${prefix}[${i}]`);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const lower = key.toLowerCase();
+    if (forbidden.has(lower) || lower.startsWith("raw") && lower.length > 3) return `${prefix}.${key}`;
+    const found = findForbidden(child, `${prefix}.${key}`);
+    if (found) return found;
+  }
+  return null;
+}
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    const object2 = value;
+    return `{${Object.keys(object2).sort().map((key) => `${JSON.stringify(key)}:${canonical(object2[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function buildContributionPayload(report) {
+  const checked = validateArbiterReportV1(report);
+  if (!checked.ok) throw new ContributionPayloadError(`Invalid report: ${checked.errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`);
+  if (checked.value.data_origin !== "scan") throw new ContributionPayloadError("Only scan reports can be contributed");
+  const path4 = findForbidden(checked.value);
+  if (path4) throw new ContributionPayloadError(`Forbidden report field at ${path4}`);
+  return { payload: checked.value, body: `${JSON.stringify(JSON.parse(canonical(checked.value)), null, 2)}
+` };
+}
+async function submitReport(transport, payload, options) {
+  if (!options.apiKey) throw new ContributionPayloadError("API key is required");
+  let response;
+  try {
+    response = await transport(`${options.baseUrl.replace(/\/$/, "")}/api/v1/arbiter/reports`, { method: "POST", headers: { Authorization: `Bearer ${options.apiKey}`, "Content-Type": "application/json", Accept: "application/json" }, body: payload.body });
+  } catch {
+    throw new ScanUpstreamError("Arbiter report submission failed");
+  }
+  const responseText = await response.text();
+  if (response.status < 200 || response.status >= 300) throw new ScanUpstreamError(`Arbiter report submission failed (HTTP ${response.status})`);
+  return { status: response.status, responseText };
+}
+
 // src/cli-core.ts
 var EXIT_OK = 0;
 var EXIT_INTERNAL = 1;
 var EXIT_INVALID_INPUT = 2;
 var EXIT_UPSTREAM = 3;
-var USAGE = `usage: hokusai-scan <label|extract|scan> [options]
+var USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
 label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
@@ -6820,6 +8004,9 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
+         [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
+         [--state-dir <path>] [--contribute [--dry-run]]
 
 shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--threshold 0.5]
@@ -6845,6 +8032,15 @@ var OPTION_SPEC = {
   "no-links": { type: "boolean" },
   "offline": { type: "boolean" },
   "debug": { type: "boolean" },
+  "lookback-days": { type: "string" },
+  "max-lookback-days": { type: "string" },
+  "static-analysis": { type: "string" },
+  "state-dir": { type: "string" },
+  "no-state": { type: "boolean" },
+  "attribution-config": { type: "string" },
+  "contribute": { type: "boolean" },
+  "dry-run": { type: "boolean" },
+  "api-key-env": { type: "string" },
   "help": { type: "boolean" }
 };
 function makeDiagnostics(context) {
@@ -6937,8 +8133,8 @@ function runScanCli(argv, io) {
       io.writeStdout(output);
     } else {
       outputPath = resolve4(outSpec);
-      mkdirSync2(dirname(outputPath), { recursive: true });
-      writeFileSync2(outputPath, output);
+      mkdirSync3(dirname2(outputPath), { recursive: true });
+      writeFileSync3(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -6960,9 +8156,176 @@ function runScanCli(argv, io) {
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   }
 }
+async function runScanCliAsync(argv, io) {
+  if (argv[0] !== "report") return runScanCli(argv, io);
+  return runReportCli(argv.slice(1), io);
+}
+async function runReportCli(argv, io) {
+  const context = { io, debug: false, token: void 0, summaryLines: [] };
+  const diag = makeDiagnostics(context);
+  let temporaryRepo = null;
+  try {
+    let parsed;
+    try {
+      parsed = parseArgs2({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
+    } catch (error) {
+      throw new ScanInputError(error.message);
+    }
+    const values = parsed.values;
+    if (values.help === true) {
+      io.writeStderr(USAGE);
+      return { exitCode: EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (parsed.positionals.length > 1) throw new ScanInputError("report accepts at most one repository URL or owner/name positional");
+    const tokenName = validateTokenEnvName(values["token-env"]);
+    context.token = io.env[tokenName];
+    const explicitRepo = validateGithubRepo(values["github-repo"]);
+    const targetFromPositional = parseGithubTarget(parsed.positionals[0]);
+    if (explicitRepo && targetFromPositional && (explicitRepo.owner !== targetFromPositional.owner || explicitRepo.repo !== targetFromPositional.repo)) {
+      throw new ScanInputError("positional repository and --github-repo must match");
+    }
+    const github = explicitRepo ?? targetFromPositional;
+    const offline = values.offline === true;
+    let repoDir;
+    if (values.repo) repoDir = resolveRepoDir(values.repo);
+    else if (!offline && targetFromPositional?.url) {
+      temporaryRepo = mkdtempSync3(join9(tmpdir3(), "hokusai-report-"));
+      const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
+      if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
+      repoDir = temporaryRepo;
+    } else {
+      throw new ScanInputError("report requires --repo <local checkout> or a public GitHub URL");
+    }
+    const resolvedGithub = requireGithubRepo(context, repoDir, github ?? void 0);
+    const asOf = validateAsOf(values["as-of"]) ?? /* @__PURE__ */ new Date();
+    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...context.token ? { token: context.token } : {} });
+    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: "develop", githubRepo: resolvedGithub });
+    if (offline) reportDeps.deps.github = createOfflineGitHubClient();
+    const repoMetadata = offline ? { defaultBranch: values["integration-branch"] ?? "", private: false } : await scanGithub.getRepo();
+    const explicitBranch = values["integration-branch"];
+    let integrationBranch;
+    if (explicitBranch) integrationBranch = validateIntegrationBranch(explicitBranch);
+    else {
+      const log = reportDeps.deps.runGit(["log", "--first-parent", "-200", "--pretty=format:%s", repoMetadata.defaultBranch]);
+      if (log.exitCode !== 0) throw new ScanInputError("cannot read the repository default branch history");
+      integrationBranch = resolveIntegrationBranch({
+        defaultBranch: repoMetadata.defaultBranch,
+        recentFirstParentSubjects: log.stdout.split("\n"),
+        headRefLookup: (number) => {
+          const result = execArgvCommand("gh", ["pr", "view", String(number), "--json", "headRefName"], { cwd: repoDir, ...context.token ? { env: { ...process.env, GH_TOKEN: context.token } } : {} });
+          if (result.exitCode !== 0) return null;
+          try {
+            return JSON.parse(result.stdout).headRefName ?? null;
+          } catch {
+            return null;
+          }
+        },
+        remoteBranchExists: (ref2) => execArgvCommand("git", ["-C", repoDir, "ls-remote", "--exit-code", "--heads", "origin", ref2]).exitCode === 0
+      }).branch;
+    }
+    if (temporaryRepo) {
+      const fetched = execArgvCommand("git", ["-C", repoDir, "fetch", "--no-tags", "origin", integrationBranch], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
+      if (fetched.exitCode !== 0) throw new ScanUpstreamError("Unable to fetch the integration branch");
+      const checkout = execArgvCommand("git", ["-C", repoDir, "checkout", "-B", integrationBranch, "FETCH_HEAD"]);
+      if (checkout.exitCode !== 0) throw new ScanInputError("unable to check out the integration branch");
+    }
+    const lookback = parsePositiveInteger(values["lookback-days"], 180, "--lookback-days", 3650);
+    const maxLookback = parsePositiveInteger(values["max-lookback-days"], 730, "--max-lookback-days", 3650);
+    const maxPrs = parsePositiveInteger(values["max-prs"], 500, "--max-prs", 2e4);
+    const horizons = validateHorizons(values.horizons);
+    const staticAnalysis = values["static-analysis"] === void 0 ? "off" : values["static-analysis"];
+    if (staticAnalysis !== "off" && staticAnalysis !== "committed") throw new ScanInputError("--static-analysis must be off or committed");
+    let attributionConfig = {};
+    const configPath = values["attribution-config"];
+    if (configPath) {
+      try {
+        attributionConfig = JSON.parse(readFileSync4(resolve4(configPath), "utf8"));
+      } catch {
+        throw new ScanInputError("--attribution-config must point to valid JSON");
+      }
+    }
+    try {
+      resolveAttributionConfig(attributionConfig);
+    } catch (error) {
+      if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
+      throw error;
+    }
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    let saveState;
+    const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
+      runGit: reportDeps.deps.runGit,
+      labeller: reportDeps.deps,
+      github: scanGithub,
+      now: () => asOf,
+      onDiagnostic: (line) => io.writeStderr(`${line.startsWith("info:") || line.startsWith("warn:") || line.startsWith("error:") ? "" : "info: "}${line}
+`)
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: "0.4.0", onStateSave: (save) => {
+      saveState = save;
+    }, ...stateDir ? { stateDir } : {} });
+    const output = emitReport(draft);
+    const outSpec = values.out ?? "-";
+    const outputPath = outSpec === "-" ? null : resolve4(outSpec);
+    if (values.contribute === true) {
+      const built = buildContributionPayload(JSON.parse(output));
+      if (values["dry-run"] === true) {
+        if (outSpec === "-") io.writeStdout(built.body);
+        else {
+          mkdirSync3(dirname2(outputPath), { recursive: true });
+          writeFileSync3(outputPath, built.body);
+        }
+      } else {
+        const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
+        const apiKey = io.env[apiKeyName];
+        if (!apiKey) throw new ScanInputError(`missing API key in environment variable ${apiKeyName}`);
+        const transport = (input, init) => fetch(input, init);
+        await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
+        if (outSpec !== "-") {
+          mkdirSync3(dirname2(outputPath), { recursive: true });
+          writeFileSync3(outputPath, output);
+        }
+      }
+    } else if (outSpec === "-") io.writeStdout(output);
+    else {
+      mkdirSync3(dirname2(outputPath), { recursive: true });
+      writeFileSync3(outputPath, output);
+    }
+    try {
+      saveState?.();
+    } catch (error) {
+      diag.warn(`could not save incremental state: ${error.message}`);
+    }
+    context.summaryLines.push(`report ${resolvedGithub.owner}/${resolvedGithub.repo}`, `PRs ${draft.prs.length}`, `lookback ${draft.scan.lookback_days} days`);
+    return { exitCode: EXIT_OK, rowCount: draft.prs.length, outputPath, summaryLines: context.summaryLines };
+  } catch (error) {
+    if (error instanceof ScanInputError || error instanceof IntegrationBranchError) {
+      diag.error(error.message);
+      return { exitCode: EXIT_INVALID_INPUT, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (error instanceof ScanUpstreamError) {
+      diag.error(error.message);
+      return { exitCode: EXIT_UPSTREAM, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    diag.error(`unexpected: ${error.message}`);
+    return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
+  } finally {
+    if (temporaryRepo) rmSync3(temporaryRepo, { recursive: true, force: true });
+  }
+}
+function parsePositiveInteger(value, fallback, name, maximum) {
+  if (value === void 0 || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) throw new ScanInputError(`${name} must be an integer from 1 to ${maximum}`);
+  return parsed;
+}
+function parseGithubTarget(value) {
+  if (!value) return null;
+  const match = value.match(/^(?:https?:\/\/github\.com\/)?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})(?:\.git)?\/?$/i);
+  if (!match || match[2] === "." || match[2] === "..") throw new ScanInputError("repository must be a GitHub URL or owner/name");
+  return { owner: match[1], repo: match[2], url: `https://github.com/${match[1]}/${match[2]}.git` };
+}
 function resolveRepoDir(raw) {
   const repoDir = resolve4(validateRepoDir(raw));
-  if (!existsSync4(repoDir) || !statSync4(repoDir).isDirectory()) {
+  if (!existsSync5(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);
@@ -7104,7 +8467,7 @@ function writeGithubKeyValue(file, key, value) {
   appendFileSync(file, `${key}=${value}
 `);
 }
-function main() {
+async function main() {
   const actionEnv = {
     input: (name) => readActionInput(process.env, name),
     runnerTemp: process.env.RUNNER_TEMP,
@@ -7112,7 +8475,7 @@ function main() {
   };
   if (isShadowMode(actionEnv.input("mode"))) {
     const { argv: argv2 } = buildShadowActionArgv(actionEnv);
-    runScanCli(argv2, {
+    await runScanCliAsync(argv2, {
       writeStdout: (text) => process.stdout.write(text),
       writeStderr: (text) => process.stderr.write(text),
       env: { ...process.env }
@@ -7123,7 +8486,7 @@ function main() {
   const env = { ...process.env };
   const token = readActionInput(process.env, "token");
   if (token !== void 0) env.GITHUB_TOKEN = token;
-  const result = runScanCli(argv, {
+  const result = await runScanCliAsync(argv, {
     writeStdout: (text) => process.stdout.write(text),
     writeStderr: (text) => process.stderr.write(text),
     env
@@ -7145,4 +8508,4 @@ function main() {
   }
   return result.exitCode;
 }
-process.exitCode = main();
+process.exitCode = await main();

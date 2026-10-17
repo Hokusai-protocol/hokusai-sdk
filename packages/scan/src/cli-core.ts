@@ -12,8 +12,9 @@
  *   3 upstream (GitHub) failure.
  */
 
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { parseArgs } from 'node:util';
 import type { ArbiterSurvivalLabelV1, HorizonDays } from '@hokusai/core';
 import { extractCandidateFeatures } from './candidate-features.js';
@@ -22,6 +23,7 @@ import {
   ScanUpstreamError,
   createDefaultDeps,
   createOfflineGitHubClient,
+  createDefaultScanGitHubClient,
 } from './default-deps.js';
 import {
   ScanInputError,
@@ -53,6 +55,13 @@ import {
   type SurvivalLabellerTarget,
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
+import { createOfflineScanGitHubClient } from './orchestrate/github.js';
+import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
+import { runReportScan } from './orchestrate/scan-report.js';
+import { AttributionConfigError, resolveAttributionConfig } from './attribution/engine.js';
+import { emitReport } from './report/build.js';
+import { buildContributionPayload, submitReport } from './report/contribute.js';
+import type { FetchTransport } from '@hokusai/core';
 
 export const EXIT_OK = 0;
 export const EXIT_INTERNAL = 1;
@@ -76,7 +85,7 @@ export interface CliRunResult {
   summaryLines: string[];
 }
 
-const USAGE = `usage: hokusai-scan <label|extract|scan> [options]
+const USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
 label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
@@ -84,6 +93,9 @@ label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
+report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
+         [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
+         [--state-dir <path>] [--contribute [--dry-run]]
 
 shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--threshold 0.5]
@@ -110,6 +122,15 @@ const OPTION_SPEC = {
   'no-links': { type: 'boolean' },
   'offline': { type: 'boolean' },
   'debug': { type: 'boolean' },
+  'lookback-days': { type: 'string' },
+  'max-lookback-days': { type: 'string' },
+  'static-analysis': { type: 'string' },
+  'state-dir': { type: 'string' },
+  'no-state': { type: 'boolean' },
+  'attribution-config': { type: 'string' },
+  'contribute': { type: 'boolean' },
+  'dry-run': { type: 'boolean' },
+  'api-key-env': { type: 'string' },
   'help': { type: 'boolean' },
 } as const;
 
@@ -238,6 +259,126 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
     }
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   }
+}
+
+/** Async entry point for report scans; existing commands keep their synchronous API. */
+export async function runScanCliAsync(argv: readonly string[], io: CliIo): Promise<CliRunResult> {
+  if (argv[0] !== 'report') return runScanCli(argv, io);
+  return runReportCli(argv.slice(1), io);
+}
+
+async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunResult> {
+  const context: CommandContext = { io, debug: false, token: undefined, summaryLines: [] };
+  const diag = makeDiagnostics(context);
+  let temporaryRepo: string | null = null;
+  try {
+    let parsed;
+    try { parsed = parseArgs({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true }); }
+    catch (error) { throw new ScanInputError((error as Error).message); }
+    const values = parsed.values as Record<string, string | boolean | undefined>;
+    if (values.help === true) { io.writeStderr(USAGE); return { exitCode: EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] }; }
+    if (parsed.positionals.length > 1) throw new ScanInputError('report accepts at most one repository URL or owner/name positional');
+    const tokenName = validateTokenEnvName(values['token-env'] as string | undefined);
+    context.token = io.env[tokenName];
+    const explicitRepo = validateGithubRepo(values['github-repo'] as string | undefined);
+    const targetFromPositional = parseGithubTarget(parsed.positionals[0]);
+    if (explicitRepo && targetFromPositional && (explicitRepo.owner !== targetFromPositional.owner || explicitRepo.repo !== targetFromPositional.repo)) {
+      throw new ScanInputError('positional repository and --github-repo must match');
+    }
+    const github = explicitRepo ?? targetFromPositional;
+    const offline = values.offline === true;
+    let repoDir: string;
+    if (values.repo) repoDir = resolveRepoDir(values.repo as string);
+    else if (!offline && targetFromPositional?.url) {
+      temporaryRepo = mkdtempSync(join(tmpdir(), 'hokusai-report-'));
+      const result = execArgvCommand('git', ['clone', '--no-tags', targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
+      if (result.exitCode !== 0) throw new ScanUpstreamError('Unable to clone the public repository');
+      repoDir = temporaryRepo;
+    } else {
+      throw new ScanInputError('report requires --repo <local checkout> or a public GitHub URL');
+    }
+    const resolvedGithub = requireGithubRepo(context, repoDir, github ?? undefined);
+    const asOf = validateAsOf(values['as-of'] as string | undefined) ?? new Date();
+    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...(context.token ? { token: context.token } : {}) });
+    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: 'develop', githubRepo: resolvedGithub });
+    if (offline) reportDeps.deps.github = createOfflineGitHubClient();
+    const repoMetadata = offline ? { defaultBranch: (values['integration-branch'] as string | undefined) ?? '', private: false } : await scanGithub.getRepo();
+    const explicitBranch = values['integration-branch'] as string | undefined;
+    let integrationBranch: string;
+    if (explicitBranch) integrationBranch = validateIntegrationBranch(explicitBranch);
+    else {
+      const log = reportDeps.deps.runGit(['log', '--first-parent', '-200', '--pretty=format:%s', repoMetadata.defaultBranch]);
+      if (log.exitCode !== 0) throw new ScanInputError('cannot read the repository default branch history');
+      integrationBranch = resolveIntegrationBranch({
+        defaultBranch: repoMetadata.defaultBranch, recentFirstParentSubjects: log.stdout.split('\n'),
+        headRefLookup: (number) => { const result = execArgvCommand('gh', ['pr', 'view', String(number), '--json', 'headRefName'], { cwd: repoDir, ...(context.token ? { env: { ...process.env, GH_TOKEN: context.token } } : {}) }); if (result.exitCode !== 0) return null; try { return (JSON.parse(result.stdout) as { headRefName?: string }).headRefName ?? null; } catch { return null; } },
+        remoteBranchExists: (ref) => execArgvCommand('git', ['-C', repoDir, 'ls-remote', '--exit-code', '--heads', 'origin', ref]).exitCode === 0,
+      }).branch;
+    }
+    if (temporaryRepo) {
+      const fetched = execArgvCommand('git', ['-C', repoDir, 'fetch', '--no-tags', 'origin', integrationBranch], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
+      if (fetched.exitCode !== 0) throw new ScanUpstreamError('Unable to fetch the integration branch');
+      const checkout = execArgvCommand('git', ['-C', repoDir, 'checkout', '-B', integrationBranch, 'FETCH_HEAD']);
+      if (checkout.exitCode !== 0) throw new ScanInputError('unable to check out the integration branch');
+    }
+    const lookback = parsePositiveInteger(values['lookback-days'] as string | undefined, 180, '--lookback-days', 3650);
+    const maxLookback = parsePositiveInteger(values['max-lookback-days'] as string | undefined, 730, '--max-lookback-days', 3650);
+    const maxPrs = parsePositiveInteger(values['max-prs'] as string | undefined, 500, '--max-prs', 20000);
+    const horizons = validateHorizons(values.horizons as string | undefined);
+    const staticAnalysis = values['static-analysis'] === undefined ? 'off' : values['static-analysis'];
+    if (staticAnalysis !== 'off' && staticAnalysis !== 'committed') throw new ScanInputError('--static-analysis must be off or committed');
+    let attributionConfig = {};
+    const configPath = values['attribution-config'] as string | undefined;
+    if (configPath) { try { attributionConfig = JSON.parse(readFileSync(resolve(configPath), 'utf8')) as object; } catch { throw new ScanInputError('--attribution-config must point to valid JSON'); } }
+    try { resolveAttributionConfig(attributionConfig); }
+    catch (error) { if (error instanceof AttributionConfigError) throw new ScanInputError(error.message); throw error; }
+    const stateDir = (values['state-dir'] as string | undefined) ?? (values['no-state'] === true ? undefined : join(repoDir, '.git', 'hokusai-scan', `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    let saveState: (() => void) | undefined;
+    const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
+      runGit: reportDeps.deps.runGit, labeller: reportDeps.deps, github: scanGithub, now: () => asOf,
+      onDiagnostic: (line) => io.writeStderr(`${line.startsWith('info:') || line.startsWith('warn:') || line.startsWith('error:') ? '' : 'info: '}${line}\n`),
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: '0.4.0', onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
+    const output = emitReport(draft);
+    const outSpec = (values.out as string | undefined) ?? '-';
+    const outputPath = outSpec === '-' ? null : resolve(outSpec);
+    if (values.contribute === true) {
+      const built = buildContributionPayload(JSON.parse(output));
+      if (values['dry-run'] === true) { if (outSpec === '-') io.writeStdout(built.body); else { mkdirSync(dirname(outputPath!), { recursive: true }); writeFileSync(outputPath!, built.body); } }
+      else {
+        const apiKeyName = validateTokenEnvName(values['api-key-env'] as string | undefined ?? 'HOKUSAI_API_KEY');
+        const apiKey = io.env[apiKeyName];
+        if (!apiKey) throw new ScanInputError(`missing API key in environment variable ${apiKeyName}`);
+        const transport: FetchTransport = (input, init) => fetch(input, init);
+        await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? 'https://api.hokus.ai', apiKey });
+        if (outSpec !== '-') { mkdirSync(dirname(outputPath!), { recursive: true }); writeFileSync(outputPath!, output); }
+      }
+    } else if (outSpec === '-') io.writeStdout(output);
+    else { mkdirSync(dirname(outputPath!), { recursive: true }); writeFileSync(outputPath!, output); }
+    try { saveState?.(); }
+    catch (error) { diag.warn(`could not save incremental state: ${(error as Error).message}`); }
+    context.summaryLines.push(`report ${resolvedGithub.owner}/${resolvedGithub.repo}`, `PRs ${draft.prs.length}`, `lookback ${draft.scan.lookback_days} days`);
+    return { exitCode: EXIT_OK, rowCount: draft.prs.length, outputPath, summaryLines: context.summaryLines };
+  } catch (error) {
+    if (error instanceof ScanInputError || error instanceof IntegrationBranchError) { diag.error(error.message); return { exitCode: EXIT_INVALID_INPUT, rowCount: 0, outputPath: null, summaryLines: [] }; }
+    if (error instanceof ScanUpstreamError) { diag.error(error.message); return { exitCode: EXIT_UPSTREAM, rowCount: 0, outputPath: null, summaryLines: [] }; }
+    diag.error(`unexpected: ${(error as Error).message}`);
+    return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
+  } finally {
+    if (temporaryRepo) rmSync(temporaryRepo, { recursive: true, force: true });
+  }
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number, name: string, maximum: number): number {
+  if (value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) throw new ScanInputError(`${name} must be an integer from 1 to ${maximum}`);
+  return parsed;
+}
+function parseGithubTarget(value: string | undefined): ({ owner: string; repo: string; url?: string }) | null {
+  if (!value) return null;
+  const match = value.match(/^(?:https?:\/\/github\.com\/)?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})(?:\.git)?\/?$/i);
+  if (!match || match[2] === '.' || match[2] === '..') throw new ScanInputError('repository must be a GitHub URL or owner/name');
+  return { owner: match[1]!, repo: match[2]!, url: `https://github.com/${match[1]}/${match[2]}.git` };
 }
 
 // ── Preconditions on the ambient world (CLI shell, not core) ───────────────

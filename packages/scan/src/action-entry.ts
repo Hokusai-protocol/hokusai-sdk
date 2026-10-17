@@ -15,7 +15,7 @@ import {
   isShadowMode,
   readActionInput,
 } from './action-io.js';
-import { runScanCli } from './cli-core.js';
+import { runScanCliAsync } from './cli-core.js';
 import { scanContractVersion } from './contract.js';
 
 function writeGithubKeyValue(file: string | undefined, key: string, value: string): void {
@@ -23,7 +23,7 @@ function writeGithubKeyValue(file: string | undefined, key: string, value: strin
   appendFileSync(file, `${key}=${value}\n`);
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const actionEnv = {
     input: (name: string) => readActionInput(process.env, name),
     runnerTemp: process.env.RUNNER_TEMP,
@@ -34,7 +34,7 @@ function main(): number {
     // Shadow mode (HOK-2820): never visible, never gating. No GITHUB_OUTPUT,
     // no GITHUB_STEP_SUMMARY, and the step always succeeds (exit 0).
     const { argv } = buildShadowActionArgv(actionEnv);
-    runScanCli(argv, {
+    await runScanCliAsync(argv, {
       writeStdout: (text) => process.stdout.write(text),
       writeStderr: (text) => process.stderr.write(text),
       env: { ...process.env },
@@ -48,7 +48,7 @@ function main(): number {
   const token = readActionInput(process.env, 'token');
   if (token !== undefined) env.GITHUB_TOKEN = token;
 
-  const result = runScanCli(argv, {
+  const result = await runScanCliAsync(argv, {
     writeStdout: (text) => process.stdout.write(text),
     writeStderr: (text) => process.stderr.write(text),
     env,
@@ -71,4 +71,4 @@ function main(): number {
   return result.exitCode;
 }
 
-process.exitCode = main();
+process.exitCode = await main();

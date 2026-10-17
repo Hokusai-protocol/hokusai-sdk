@@ -6,14 +6,15 @@ re-invented. As of S4, **all scanner work lives in this repository.**
 
 ## The rule
 
-- **`@hokusai/core` owns wire formats.** `candidate_features/v1` and
-  `arbiter_survival_label/v1` — types, validators, JSON Schemas, canonical
-  hashing, fixtures. Contract-only: no git, no network, no filesystem beyond
+- **`@hokusai/core` owns wire formats.** `candidate_features/v1`,
+  `arbiter_survival_label/v1`, and `arbiter_report/v1` — types, validators,
+  JSON Schemas, canonical hashing, fixtures. Contract-only: no git, no network, no filesystem beyond
   what a schema needs. Four consumers read these (SDK, wavemill, the data
   pipeline, the website); none of them should drag in execution machinery to
   read a type.
 - **`@hokusai/scan` owns execution.** The survival labeller, the candidate
-  feature extractor, their git/gh shells, the CLI, and the GitHub Action.
+  feature extractor, attribution, report aggregation and suppression, local
+  incremental state, their git/gh shells, the CLI, and the GitHub Action.
   Scan depends on core; core never depends on scan. Adapters are invisible
   to scan and vice versa.
 - **Callers own their joins.** Wavemill's `evals.jsonl` row assembly — the
@@ -70,11 +71,22 @@ in `packages/core/src/arbiter-shadow-record.ts` and the runners in
 `packages/scan/src/shadow/`. See [shadow-mode.md](./shadow-mode.md) for the
 install steps, data layout, and the never-gate guarantees.
 
+## Report scan
+
+The `arbiter_report/v1` contract and fixtures live in core. `@hokusai/scan`
+exports report building, suppression, aggregate statistics, PR attribution,
+first-parent window enumeration, integration-branch resolution, and derived-only
+local state. Contribution payload validation is implemented; live endpoint use
+remains experimental until the pipeline endpoint is available. Attribution is
+ported into `packages/scan/src/attribution/`; wavemill can retire its copy in a
+follow-up.
+
 ## Where things are
 
-- Contract modules: `packages/core/src/{candidate-features,arbiter-survival-label}.ts`
+- Contract modules: `packages/core/src/{candidate-features,arbiter-survival-label,arbiter-report}.ts`
 - Canonical label JSON Schema: `packages/core/schemas/arbiter-survival-label.schema.json`
 - Scanner core: `packages/scan/src/{survival-labeller,candidate-features,static-features,diff-parsing}.ts`
+- Report pipeline: `packages/scan/src/{attribution,orchestrate,report}/`
 - Ambient shells: `packages/scan/src/{default-deps,cli,cli-core,action-entry}.ts`
 - Golden fixtures + capture: `fixtures/arbiter/scan/`, `scripts/capture-scan-golden.mjs`
 - Wavemill's migration checklist: `docs/arbiter/wavemill-migration-contract.md`
