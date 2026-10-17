@@ -442,8 +442,9 @@ describe('scrubbed-environment CLI parity', () => {
 
 describe('report CLI mode', () => {
   it('validates the frozen main branch guard before scanning', async () => {
+    const { repoDir } = restoreFixture('case-01-simple-merge');
     const stderr: string[] = [];
-    const result = await runScanCliAsync(['report', '--repo', process.cwd(), '--github-repo', 'org/repo', '--integration-branch', 'main', '--offline'], {
+    const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', 'org/repo', '--integration-branch', 'main', '--offline'], {
       writeStdout: () => {}, writeStderr: (text) => stderr.push(text), env: {},
     });
     expect(result.exitCode).toBe(2);
@@ -451,9 +452,10 @@ describe('report CLI mode', () => {
   });
 
   it('emits a valid empty report in offline mode from a local checkout', async () => {
+    const { repoDir, inputs } = restoreFixture('case-01-simple-merge');
     const stdout: string[] = [];
     const stderr: string[] = [];
-    const result = await runScanCliAsync(['report', '--repo', process.cwd(), '--github-repo', 'org/repo', '--integration-branch', 'auto/integration', '--lookback-days', '1', '--as-of', '2026-10-16T00:00:00Z', '--offline', '--no-state'], {
+    const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', inputs.github_repo, '--integration-branch', inputs.integration_branch, '--lookback-days', '1', '--as-of', '2026-10-16T00:00:00Z', '--offline', '--no-state'], {
       writeStdout: (text) => stdout.push(text), writeStderr: (text) => stderr.push(text), env: {},
     });
     expect(result.exitCode).toBe(0);
