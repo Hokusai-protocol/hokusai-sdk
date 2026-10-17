@@ -7380,7 +7380,7 @@ function makeCell(k, n) {
   return { basis: "descriptive", n, value: n ? Math.round(k / n * 1e4) / 1e4 : null, ci: ci ? { ...ci, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
 function ratioCell(ratio2, n, ci) {
-  return { basis: "descriptive", n, value: ratio2, ci: { low: ci.low, high: ci.high, level: 0.95 }, suppressed: false, suppression_reasons: [] };
+  return { basis: "descriptive", n, value: ratio2, ci: ci ? { low: ci.low, high: ci.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
 function labelAt(pr, horizon2) {
   return pr.labels.find((label2) => label2.horizon_days === horizon2);
@@ -7417,8 +7417,8 @@ function buildAggregates(prs, horizons) {
         const ko = outside.filter(({ l }) => reworked(l)).length;
         const ciRate = wilsonInterval(ki, group.length);
         const ciBase = wilsonInterval(ko, outside.length);
-        const rr = katzLogRatioInterval(ki, group.length, ko, outside.length);
-        risks.push({ horizon_days: h, feature, bucket, rework_rate: makeCell(ki, group.length), baseline_rate: makeCell(ko, outside.length), ratio: ratioCell(rr.ratio, Math.min(group.length, outside.length), rr) });
+        const rr = group.length && outside.length ? katzLogRatioInterval(ki, group.length, ko, outside.length) : null;
+        risks.push({ horizon_days: h, feature, bucket, rework_rate: makeCell(ki, group.length), baseline_rate: makeCell(ko, outside.length), ratio: ratioCell(rr?.ratio ?? null, Math.min(group.length, outside.length), rr) });
         if (!ciRate || !ciBase) {
         }
       }
@@ -7697,7 +7697,7 @@ function validHeader(value) {
 function validRow(value) {
   if (!value || typeof value !== "object") return false;
   const row = value;
-  return typeof row.merge_sha === "string" && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.pr_number) && row.pr_number > 0 && typeof row.merged_at === "string" && !!row.attribution && !!row.features && !!row.labels_by_horizon && typeof row.labels_by_horizon === "object";
+  return typeof row.merge_sha === "string" && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.merged_at_epoch) && row.merged_at_epoch >= 0 && Number.isInteger(row.pr_number) && row.pr_number > 0 && typeof row.merged_at === "string" && !!row.attribution && !!row.features && !!row.labels_by_horizon && typeof row.labels_by_horizon === "object";
 }
 function readScanState(dir, versions, isAncestor2) {
   const statePath = path2.join(dir, "state.json");
@@ -7731,6 +7731,12 @@ function writeScanState(dir, versions, lastSeenMergeSha, rows) {
 }
 
 // src/orchestrate/scan-report.ts
+var ScanStageFailureError = class extends Error {
+  constructor() {
+    super("STAGE_FAILURE_THRESHOLD");
+    this.name = "ScanStageFailureError";
+  }
+};
 async function runReportScan(target, deps, options) {
   const now = deps.now();
   const maxLookback = options.maxLookbackDays ?? 730;
@@ -7739,7 +7745,10 @@ async function runReportScan(target, deps, options) {
   if (requested > maxLookback) deps.onDiagnostic?.(`warn: lookback clamped to ${maxLookback} days`);
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 864e5);
-  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, maxPrs: maxPrs + 1 });
+  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
+  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
+  if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
+  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
   let merges = enumerated.merges;
   if (merges.length > maxPrs) {
     merges = merges.slice(-maxPrs);
@@ -7747,10 +7756,10 @@ async function runReportScan(target, deps, options) {
   }
   const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges;
   const config = resolveAttributionConfig(options.attributionConfig);
-  const reportRows = [];
-  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
-  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
-  if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
+  const reportRows = /* @__PURE__ */ new Map();
+  for (const row of cached?.rows ?? []) if (row.merged_at_epoch >= Math.floor(from.getTime() / 1e3) && row.merged_at_epoch <= Math.floor(now.getTime() / 1e3)) {
+    reportRows.set(row.merge_sha, { pr_number: row.pr_number, merged_at: row.merged_at, attribution: row.attribution, features: row.features, labels: Object.values(row.labels_by_horizon), cost: null, prediction: null });
+  }
   const cachedBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const stateBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const horizons = options.horizons ?? [14, 30, 60];
@@ -7766,6 +7775,8 @@ async function runReportScan(target, deps, options) {
     subject: `#${merge.prNumber}`
   }]);
   const refBySha = new Map(refs.map((ref2) => [ref2.mergeSha, ref2]));
+  let failedPrs = 0;
+  const attemptedPrs = merges.filter((merge) => merge.prNumber !== null).length;
   for (const merge of merges) {
     if (merge.prNumber === null) {
       deps.onDiagnostic?.("info: skipped commit without a PR number");
@@ -7797,7 +7808,8 @@ async function runReportScan(target, deps, options) {
 
 ${pr.body ?? ""}` });
         } else {
-          const checkoutDir = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
+          const checkoutParent = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
+          const checkoutDir = path3.join(checkoutParent, "checkout");
           try {
             const add = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
             if (add.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
@@ -7816,7 +7828,7 @@ ${pr.body ?? ""}` }
             });
           } finally {
             deps.runGit(["worktree", "remove", "--force", checkoutDir]);
-            fs3.rmSync(checkoutDir, { recursive: true, force: true });
+            fs3.rmSync(checkoutParent, { recursive: true, force: true });
           }
         }
         await deps.github.getCheckConclusion(pr.headSha);
@@ -7839,18 +7851,21 @@ ${pr.body ?? ""}` }
       }
       const labels = horizons.map((horizon2) => labelsByHorizon.get(horizon2)).filter((item) => !!item);
       const reportRow = { pr_number: prNumber, merged_at: mergedAt, attribution, features, labels, cost: null, prediction: null };
-      reportRows.push(reportRow);
-      stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
+      reportRows.set(merge.mergeSha, reportRow);
+      stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, merged_at_epoch: merge.mergedAtEpoch, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
     } catch (error) {
       if (error instanceof ScanUpstreamError) throw error;
+      failedPrs++;
       deps.onDiagnostic?.(`error: failed to process PR #${merge.prNumber}`);
     }
   }
+  if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
     writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
   }
-  const dates = reportRows.map((pr) => pr.merged_at).sort();
+  const rows = [...reportRows.values()];
+  const dates = rows.map((pr) => pr.merged_at).sort();
   return buildReportDraft({
     owner: target.owner,
     repo: target.repo,
@@ -7862,7 +7877,7 @@ ${pr.body ?? ""}` }
     mergedFrom: dates[0] ?? from.toISOString(),
     mergedTo: now.toISOString(),
     horizons,
-    prs: reportRows,
+    prs: rows,
     ...options.policy ? { policy: options.policy } : {}
   });
 }
@@ -8188,7 +8203,7 @@ async function runReportCli(argv, io) {
     const outSpec = values.out ?? "-";
     const outputPath = outSpec === "-" ? null : resolve4(outSpec);
     if (values.contribute === true) {
-      const built = buildContributionPayload(draft);
+      const built = buildContributionPayload(JSON.parse(output));
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
