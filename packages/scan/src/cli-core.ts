@@ -338,7 +338,7 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     const outSpec = (values.out as string | undefined) ?? '-';
     const outputPath = outSpec === '-' ? null : resolve(outSpec);
     if (values.contribute === true) {
-      const built = buildContributionPayload(draft);
+      const built = buildContributionPayload(JSON.parse(output));
       if (values['dry-run'] === true) { if (outSpec === '-') io.writeStdout(built.body); else { mkdirSync(dirname(outputPath!), { recursive: true }); writeFileSync(outputPath!, built.body); } }
       else {
         const apiKeyName = validateTokenEnvName(values['api-key-env'] as string | undefined ?? 'HOKUSAI_API_KEY');

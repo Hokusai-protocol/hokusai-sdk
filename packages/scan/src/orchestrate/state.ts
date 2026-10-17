@@ -8,7 +8,7 @@ export interface ScanStateHeader {
   config_hash: string; integration_branch: string; last_seen_merge_sha: string | null;
 }
 export interface ScanStateRow {
-  merge_sha: string; pr_number: number; merged_at: string;
+  merge_sha: string; merged_at_epoch: number; pr_number: number; merged_at: string;
   attribution: ArbiterReportV1['prs'][number]['attribution'];
   features: ArbiterReportV1['prs'][number]['features'];
   labels_by_horizon: Record<string, SurvivalLabelProjectionV1>;
@@ -38,7 +38,7 @@ function validHeader(value: unknown): value is ScanStateHeader {
 function validRow(value: unknown): value is ScanStateRow {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
-  return typeof row.merge_sha === 'string' && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.pr_number) && (row.pr_number as number) > 0 && typeof row.merged_at === 'string' && !!row.attribution && !!row.features && !!row.labels_by_horizon && typeof row.labels_by_horizon === 'object';
+  return typeof row.merge_sha === 'string' && /^[0-9a-f]{40}$/.test(row.merge_sha) && Number.isInteger(row.merged_at_epoch) && (row.merged_at_epoch as number) >= 0 && Number.isInteger(row.pr_number) && (row.pr_number as number) > 0 && typeof row.merged_at === 'string' && !!row.attribution && !!row.features && !!row.labels_by_horizon && typeof row.labels_by_horizon === 'object';
 }
 
 /** Read local derived-only state; any schema/config/ref mismatch clears the cache. */

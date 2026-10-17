@@ -51,8 +51,7 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: new Date(0), to: now }).merges;
   const config = resolveAttributionConfig(options.attributionConfig);
   const reportRows = new Map<number, ArbiterReportV1['prs'][number]>((cached?.rows ?? []).flatMap((row) => {
-    const mergedAt = new Date(row.merged_at).getTime();
-    return Number.isFinite(mergedAt) && mergedAt >= from.getTime() && mergedAt <= now.getTime()
+    return row.merged_at_epoch >= Math.floor(from.getTime() / 1000) && row.merged_at_epoch <= Math.floor(now.getTime() / 1000)
       ? [{ pr_number: row.pr_number, merged_at: row.merged_at, attribution: row.attribution, features: row.features, labels: Object.values(row.labels_by_horizon), cost: null, prediction: null }]
       : [];
   }).map((row) => [row.pr_number, row]));
@@ -130,7 +129,7 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
     const labels = horizons.map((horizon) => labelsByHorizon.get(horizon)).filter((item): item is ReturnType<typeof projectSurvivalLabel> => !!item);
     const reportRow: ArbiterReportV1['prs'][number] = { pr_number: prNumber, merged_at: mergedAt, attribution, features, labels, cost: null, prediction: null };
     reportRows.set(reportRow.pr_number, reportRow);
-    stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
+    stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, merged_at_epoch: merge.mergedAtEpoch, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
     } catch (error) {
       if (error instanceof ScanUpstreamError) throw error;
       failedPrs++;

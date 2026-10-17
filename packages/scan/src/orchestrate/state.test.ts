@@ -15,7 +15,7 @@ describe('local report state', () => {
     expect(readScanState(root, versions, () => true).invalidated).toBe(false);
     expect(readScanState(root, { ...versions, scannerVersion: '2.0.0' }, () => true).invalidated).toBe(true);
     const source = reportDraftFixtures.full().prs[0]!;
-    const row: ScanStateRow = { merge_sha: 'a'.repeat(40), pr_number: source.pr_number, merged_at: source.merged_at, attribution: source.attribution, features: source.features, labels_by_horizon: Object.fromEntries(source.labels.map((label) => [String(label.horizon_days), label])) };
+    const row: ScanStateRow = { merge_sha: 'a'.repeat(40), merged_at_epoch: 1_780_272_000, pr_number: source.pr_number, merged_at: source.merged_at, attribution: source.attribution, features: source.features, labels_by_horizon: Object.fromEntries(source.labels.map((label) => [String(label.horizon_days), label])) };
     writeScanState(root, versions, row.merge_sha, [row]);
     expect(readScanState(root, versions, () => false).invalidated).toBe(true);
   });
