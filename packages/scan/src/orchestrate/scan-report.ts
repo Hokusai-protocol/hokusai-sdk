@@ -51,9 +51,11 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   let merges = enumerated.merges;
   if (merges.length > maxPrs) { merges = merges.slice(-maxPrs); deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`); }
   const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: new Date(0), to: now }).merges;
+  const reportMergeShas = new Set(allLocal.filter((merge) => merge.mergedAtEpoch >= Math.floor(from.getTime() / 1000) && merge.mergedAtEpoch <= Math.floor(now.getTime() / 1000)).slice(-maxPrs).map((merge) => merge.mergeSha));
+  merges = merges.filter((merge) => reportMergeShas.has(merge.mergeSha));
   const config = resolveAttributionConfig(options.attributionConfig);
   const reportRows = new Map<string, ArbiterReportV1['prs'][number]>();
-  for (const row of cached?.rows ?? []) if (row.merged_at_epoch >= Math.floor(from.getTime() / 1000) && row.merged_at_epoch <= Math.floor(now.getTime() / 1000)) {
+  for (const row of cached?.rows ?? []) if (reportMergeShas.has(row.merge_sha)) {
     reportRows.set(row.merge_sha, { pr_number: row.pr_number, merged_at: row.merged_at, attribution: row.attribution, features: row.features, labels: Object.values(row.labels_by_horizon), cost: null, prediction: null });
   }
   const cachedBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
@@ -142,7 +144,7 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   // incremental report has the same horizon outcomes as a full scan.
   const processedShas = new Set(merges.map((merge) => merge.mergeSha));
   for (const previous of cached?.rows ?? []) {
-    if (processedShas.has(previous.merge_sha) || previous.merged_at_epoch < Math.floor(from.getTime() / 1000) || previous.merged_at_epoch > Math.floor(now.getTime() / 1000)) continue;
+    if (processedShas.has(previous.merge_sha) || !reportMergeShas.has(previous.merge_sha)) continue;
     const ref = refBySha.get(previous.merge_sha);
     if (!ref) continue;
     const labelsByHorizon = new Map<number, ReturnType<typeof projectSurvivalLabel>>();

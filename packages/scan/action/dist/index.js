@@ -7755,9 +7755,11 @@ async function runReportScan(target, deps, options) {
     deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`);
   }
   const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges;
+  const reportMergeShas = new Set(allLocal.filter((merge) => merge.mergedAtEpoch >= Math.floor(from.getTime() / 1e3) && merge.mergedAtEpoch <= Math.floor(now.getTime() / 1e3)).slice(-maxPrs).map((merge) => merge.mergeSha));
+  merges = merges.filter((merge) => reportMergeShas.has(merge.mergeSha));
   const config = resolveAttributionConfig(options.attributionConfig);
   const reportRows = /* @__PURE__ */ new Map();
-  for (const row of cached?.rows ?? []) if (row.merged_at_epoch >= Math.floor(from.getTime() / 1e3) && row.merged_at_epoch <= Math.floor(now.getTime() / 1e3)) {
+  for (const row of cached?.rows ?? []) if (reportMergeShas.has(row.merge_sha)) {
     reportRows.set(row.merge_sha, { pr_number: row.pr_number, merged_at: row.merged_at, attribution: row.attribution, features: row.features, labels: Object.values(row.labels_by_horizon), cost: null, prediction: null });
   }
   const cachedBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
@@ -7859,10 +7861,36 @@ ${pr.body ?? ""}` }
       deps.onDiagnostic?.(`error: failed to process PR #${merge.prNumber}`);
     }
   }
+  const processedShas = new Set(merges.map((merge) => merge.mergeSha));
+  for (const previous of cached?.rows ?? []) {
+    if (processedShas.has(previous.merge_sha) || !reportMergeShas.has(previous.merge_sha)) continue;
+    const ref2 = refBySha.get(previous.merge_sha);
+    if (!ref2) continue;
+    const labelsByHorizon = /* @__PURE__ */ new Map();
+    for (const horizon2 of horizons) {
+      const old = previous.labels_by_horizon[String(horizon2)];
+      const matured = previous.merged_at_epoch + horizon2 * 86400 <= Math.floor(now.getTime() / 1e3);
+      if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
+    }
+    if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
+      const fresh = label2(labellerTarget, deps.labeller, ref2, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
+      for (const item of fresh) {
+        const old = previous.labels_by_horizon[String(item.horizon_days)];
+        const matured = previous.merged_at_epoch + item.horizon_days * 86400 <= Math.floor(now.getTime() / 1e3);
+        labelsByHorizon.set(item.horizon_days, old && matured && !old.outcome.reason_codes.includes("missing_horizon") ? old : item);
+      }
+    }
+    const labels = horizons.map((horizon2) => labelsByHorizon.get(horizon2)).filter((item) => !!item);
+    const reportRow = { pr_number: previous.pr_number, merged_at: previous.merged_at, attribution: previous.attribution, features: previous.features, labels, cost: null, prediction: null };
+    reportRows.set(previous.merge_sha, reportRow);
+    stateBySha.set(previous.merge_sha, { ...previous, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
+  }
   if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
-    writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
+    const save = () => writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
+    if (options.onStateSave) options.onStateSave(save);
+    else save();
   }
   const rows = [...reportRows.values()];
   const dates = rows.map((pr) => pr.merged_at).sort();
@@ -8191,6 +8219,7 @@ async function runReportCli(argv, io) {
       }
     }
     const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
       runGit: reportDeps.deps.runGit,
       labeller: reportDeps.deps,
@@ -8198,7 +8227,9 @@ async function runReportCli(argv, io) {
       now: () => asOf,
       onDiagnostic: (line) => io.writeStderr(`${line.startsWith("info:") || line.startsWith("warn:") || line.startsWith("error:") ? "" : "info: "}${line}
 `)
-    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: "0.4.0", ...stateDir ? { stateDir } : {} });
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: "0.4.0", onStateSave: (save) => {
+      saveState = save;
+    }, ...stateDir ? { stateDir } : {} });
     const output = emitReport(draft);
     const outSpec = values.out ?? "-";
     const outputPath = outSpec === "-" ? null : resolve4(outSpec);
@@ -8226,10 +8257,15 @@ async function runReportCli(argv, io) {
       mkdirSync3(dirname2(outputPath), { recursive: true });
       writeFileSync3(outputPath, output);
     }
+    try {
+      saveState?.();
+    } catch (error) {
+      diag.warn(`could not save incremental state: ${error.message}`);
+    }
     context.summaryLines.push(`report ${resolvedGithub.owner}/${resolvedGithub.repo}`, `PRs ${draft.prs.length}`, `lookback ${draft.scan.lookback_days} days`);
     return { exitCode: EXIT_OK, rowCount: draft.prs.length, outputPath, summaryLines: context.summaryLines };
   } catch (error) {
-    if (error instanceof ScanInputError) {
+    if (error instanceof ScanInputError || error instanceof IntegrationBranchError) {
       diag.error(error.message);
       return { exitCode: EXIT_INVALID_INPUT, rowCount: 0, outputPath: null, summaryLines: [] };
     }
