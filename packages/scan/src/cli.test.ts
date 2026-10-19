@@ -30,6 +30,7 @@ import {
   EXIT_OK,
   EXIT_UPSTREAM,
   runScanCli,
+  runScanCliAsync,
   type CliIo,
 } from './cli-core.js';
 import { classifyUpstreamFailure } from './default-deps.js';
@@ -436,4 +437,40 @@ describe('scrubbed-environment CLI parity', () => {
     },
     60_000,
   );
+});
+
+
+describe('report CLI mode', () => {
+  it('validates the frozen main branch guard before scanning', async () => {
+    const { repoDir } = restoreFixture('case-01-simple-merge');
+    const stderr: string[] = [];
+    const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', 'org/repo', '--integration-branch', 'main', '--offline'], {
+      writeStdout: () => {}, writeStderr: (text) => stderr.push(text), env: {},
+    });
+    expect(result.exitCode).toBe(2);
+    expect(stderr.join('')).toContain('main is rejected');
+  });
+
+  it('emits a valid empty report in offline mode from a local checkout', async () => {
+    const { repoDir, inputs } = restoreFixture('case-01-simple-merge');
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', inputs.github_repo, '--integration-branch', inputs.integration_branch, '--lookback-days', '1', '--as-of', '2026-10-16T00:00:00Z', '--offline', '--no-state'], {
+      writeStdout: (text) => stdout.push(text), writeStderr: (text) => stderr.push(text), env: {},
+    });
+    expect(result.exitCode).toBe(0);
+    const report = JSON.parse(stdout.join('')) as { data_origin: string; prs: unknown[] };
+    expect(report.data_origin).toBe('scan');
+    expect(Array.isArray(report.prs)).toBe(true);
+    expect(stderr.every((line) => /^(info|warn|error):/.test(line))).toBe(true);
+  });
+  it('reports invalid attribution configuration as input error', async () => {
+    const { repoDir, inputs } = restoreFixture('case-01-simple-merge');
+    const config = join(tempDir('scan-cli-config-'), 'attribution.json');
+    writeFileSync(config, '{"unknown":true}');
+    const stderr: string[] = [];
+    const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', inputs.github_repo, '--integration-branch', inputs.integration_branch, '--offline', '--attribution-config', config], { writeStdout: () => {}, writeStderr: (text) => stderr.push(text), env: {} });
+    expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
+    expect(stderr.join('')).toContain('Unknown attribution config key: unknown');
+  });
 });

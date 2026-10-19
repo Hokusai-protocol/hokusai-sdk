@@ -85,11 +85,19 @@ export function buildActionArgv(env: ActionEnv): { argv: string[]; outputPath: s
   const baseRef = env.input('base-ref');
   if (baseRef !== undefined) argv.push('--base-ref', baseRef);
 
+  if (mode === 'report') {
+    for (const [input, flag] of [['lookback-days', '--lookback-days'], ['report-max-prs', '--max-prs'], ['state-dir', '--state-dir'], ['attribution-config', '--attribution-config']] as const) {
+      const value = env.input(input);
+      if (value !== undefined) argv.push(flag, value);
+    }
+    if (env.input('state-dir') === undefined) argv.push('--no-state');
+  }
+
   if (actionFlagIsTrue(env.input('no-links'))) argv.push('--no-links');
   if (actionFlagIsTrue(env.input('offline'))) argv.push('--offline');
   if (actionFlagIsTrue(env.input('debug'))) argv.push('--debug');
 
-  const requestedOut = env.input('output-path') ?? 'hokusai-scan-output.jsonl';
+  const requestedOut = env.input('output-path') ?? (mode === 'report' ? 'arbiter-report.json' : 'hokusai-scan-output.jsonl');
   const outputPath = isAbsolute(requestedOut)
     ? requestedOut
     : join(env.runnerTemp ?? '.', requestedOut);
