@@ -339,14 +339,17 @@
       "unmapped_audited_with_pr": 0,
       "pr_recall_est": 1,
       "direct_push_share_est": 0,
-      "prs": 4149,
+      "prs": 15184,
       "batched_commits": 0,
       "relanded_commits": 0,
       "unmapped_reverts": 0,
       "rebase_prs": 0,
       "number_ref_prs": 2,
-      "api_prs_not_on_branch": 12864,
-      "api_prs_not_on_branch_default_base": 12686
+      "rollup_prs": 1654,
+      "rollup_member_prs": 12689,
+      "rollup_members_unresolved": 16,
+      "api_prs_not_on_branch": 186,
+      "api_prs_not_on_branch_default_base": 8
     },
     {
       "repo": "python/cpython",

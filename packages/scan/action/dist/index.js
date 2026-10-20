@@ -7232,6 +7232,7 @@ var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 var isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 function enumerateCorpusRepo(target, deps) {
   const commits = readFirstParent(target, deps.runGit);
+  const rollups = readRollupMembers(target, deps.runGit, commits);
   const apiPrs = fetchMergedPrs(target, deps);
   const byNumber = new Map(apiPrs.map((pr) => [pr.number, pr]));
   const byMergeSha = /* @__PURE__ */ new Map();
@@ -7241,19 +7242,57 @@ function enumerateCorpusRepo(target, deps) {
     list.push(pr);
     byMergeSha.set(pr.mergeCommit.oid, list);
   }
-  const missing = [...new Set(commits.flatMap((c) => c.prNumbers))].filter((n) => !byNumber.has(n));
+  const named = [...commits.flatMap((c) => c.prNumbers), ...[...rollups.values()].flat().map((m) => m.prNumber)];
+  const missing = [...new Set(named)].filter((n) => !byNumber.has(n));
   for (const pr of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr.number, pr);
   const records = [];
   const mapped = /* @__PURE__ */ new Set();
   const used = /* @__PURE__ */ new Set();
   let batchedCommits = 0;
   let relandedCommits = 0;
+  let rollupPrs = 0;
+  let rollupUnresolved = 0;
   const recordByNumber = /* @__PURE__ */ new Map();
+  const toRecord = (pr, landing, fields) => ({
+    repo: target.repo,
+    pr_number: pr.number,
+    pr_url: pr.url,
+    merged_at: pr.mergedAt ?? new Date(landing.epoch * 1e3).toISOString(),
+    base_ref: pr.baseRefName,
+    head_sha: pr.headRefOid,
+    ...fields,
+    landed_sha: landing.sha,
+    relanded_merge_shas: [],
+    author_login: pr.author?.login ?? null,
+    author_type: pr.author?.__typename ?? null,
+    labels: pr.labels.nodes.map((label2) => label2.name),
+    closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
+    title: pr.title,
+    body: pr.body ?? ""
+  });
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i];
     const viaSha = byMergeSha.get(commit.sha) ?? [];
     const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr) => !!pr);
     const candidates = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()];
+    const rollupMembers = rollups.get(commit.sha);
+    if (rollupMembers) {
+      mapped.add(commit.sha);
+      for (const pr of candidates) used.add(pr.number);
+      rollupPrs++;
+      for (const member of rollupMembers) {
+        const pr = byNumber.get(member.prNumber);
+        if (!pr || used.has(pr.number)) {
+          rollupUnresolved++;
+          continue;
+        }
+        used.add(pr.number);
+        const record = toRecord(pr, commit, { merge_sha: member.sha, base_sha: member.parentSha, member_commits: 1, landed_by: "rollup", batched: false });
+        records.push(record);
+        recordByNumber.set(pr.number, record);
+      }
+      continue;
+    }
     const prs = candidates.filter((pr) => !used.has(pr.number));
     if (prs.length === 0) {
       const relanded = candidates.filter((pr) => recordByNumber.has(pr.number));
@@ -7278,26 +7317,13 @@ function enumerateCorpusRepo(target, deps) {
         }
       }
       const members = i - first + 1;
-      const record = {
-        repo: target.repo,
-        pr_number: pr.number,
-        pr_url: pr.url,
-        merged_at: pr.mergedAt ?? new Date(commit.epoch * 1e3).toISOString(),
-        base_ref: pr.baseRefName,
-        head_sha: pr.headRefOid,
+      const record = toRecord(pr, commit, {
         merge_sha: commit.sha,
         base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA2,
         member_commits: members,
         landed_by: !viaSha.includes(pr) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
-        batched,
-        relanded_merge_shas: [],
-        author_login: pr.author?.login ?? null,
-        author_type: pr.author?.__typename ?? null,
-        labels: pr.labels.nodes.map((label2) => label2.name),
-        closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
-        title: pr.title,
-        body: pr.body ?? ""
-      };
+        batched
+      });
       records.push(record);
       recordByNumber.set(pr.number, record);
     }
@@ -7322,6 +7348,9 @@ function enumerateCorpusRepo(target, deps) {
     unmapped_reverts: unmapped.filter((c) => c.isRevert).length,
     rebase_prs: records.filter((r) => r.landed_by === "rebase").length,
     number_ref_prs: records.filter((r) => r.landed_by === "number_ref").length,
+    rollup_prs: rollupPrs,
+    rollup_member_prs: records.filter((r) => r.landed_by === "rollup").length,
+    rollup_members_unresolved: rollupUnresolved,
     api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
     api_prs_not_on_branch_default_base: apiPrs.filter((pr) => !used.has(pr.number) && pr.baseRefName !== null && defaultNames.has(pr.baseRefName)).length,
     unmapped_sample: unmapped.slice(0, 20).map((c) => c.sha)
@@ -7373,6 +7402,33 @@ function readFirstParent(target, runGit3) {
     }
   }
   return commits;
+}
+var ROLLUP_MERGE = /^Rollup merge of #(\d+)\b/;
+function readRollupMembers(target, runGit3, commits) {
+  const out = /* @__PURE__ */ new Map();
+  if (!commits.some((c) => c.parents.length > 1)) return out;
+  const result = runGit3([
+    "log",
+    "--grep=^Rollup merge of #",
+    `--since=${new Date(target.from.getTime() - 30 * DAY_MS).toISOString()}`,
+    `--until=${target.until.toISOString()}`,
+    "--pretty=format:%H%x1f%P%x1f%s%x1e",
+    target.branch
+  ]);
+  if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
+  const bySha = /* @__PURE__ */ new Map();
+  for (const entry of result.stdout.split("")) {
+    const [sha = "", parents = "", subject = ""] = entry.replace(/^\n/, "").split("");
+    const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
+    const parentSha = parents.trim().split(/\s+/)[0];
+    if (/^[0-9a-f]{40}$/.test(sha) && parentSha && Number.isInteger(prNumber)) bySha.set(sha, { sha, parentSha, prNumber });
+  }
+  for (const commit of commits) {
+    const chain = [];
+    for (let member = bySha.get(commit.parents[1] ?? ""); member; member = bySha.get(member.parentSha)) chain.push(member);
+    if (chain.length) out.set(commit.sha, chain.reverse());
+  }
+  return out;
 }
 function fetchMergedPrs(target, deps) {
   const out = /* @__PURE__ */ new Map();

@@ -8,9 +8,13 @@ const epoch = (day: number) => Date.parse(`2025-01-${String(day).padStart(2, '0'
 
 interface FakeCommit { n: number; parents: number[]; day: number; subject: string; body?: string }
 
-/** First-parent history, oldest first, as `git log --first-parent --reverse` would print it per window. */
-function fakeGit(commits: FakeCommit[]): GitRunner {
+/** First-parent history, oldest first, as `git log --first-parent --reverse` would print it per window; `rollupMerges` answers the `--grep` query. */
+function fakeGit(commits: FakeCommit[], rollupMerges: FakeCommit[] = []): GitRunner {
   return (args) => {
+    if (args.some((a) => a.startsWith('--grep='))) {
+      const stdout = rollupMerges.map((c) => [sha(c.n), c.parents.map(sha).join(' '), c.subject].join('\x1f') + '\x1e').join('\n');
+      return { stdout, stderr: '', exitCode: 0 };
+    }
     const since = Date.parse(args.find((a) => a.startsWith('--since='))!.slice(8)) / 1000;
     const until = Date.parse(args.find((a) => a.startsWith('--until='))!.slice(8)) / 1000;
     const stdout = commits
@@ -97,6 +101,28 @@ describe('enumerateCorpusRepo', () => {
       [31, true, 'merge_commit'],
     ]);
     expect(stats.batched_commits).toBe(1);
+  });
+
+  it('expands bors rollups into member records anchored on their rollup merge commits', () => {
+    // main: 0 -> 1 (rollup #60 of #61, #62; branch 0 -> 21 -> 22) -> 2 (single PR #63)
+    const git = fakeGit(
+      [
+        { n: 1, parents: [0, 22], day: 4, subject: 'Auto merge of #60 - dev:rollup-abc, r=dev' },
+        { n: 2, parents: [1, 30], day: 5, subject: 'Auto merge of #63 - dev:fix, r=dev' },
+      ],
+      [
+        { n: 22, parents: [21, 42], day: 3, subject: 'Rollup merge of #62 - dev:b, r=dev' },
+        { n: 21, parents: [0, 41], day: 3, subject: 'Rollup merge of #61 - dev:a, r=dev' },
+      ],
+    );
+    const { graphql } = fakeGraphql([{ number: 60, mergeCommit: 1 }, { number: 63, mergeCommit: 2 }, { number: 61 }], [{ number: 62 }]);
+    const { records, stats } = enumerateCorpusRepo(target, { runGit: git, graphql });
+    expect(records.map((r) => [r.pr_number, r.landed_by, r.merge_sha, r.base_sha, r.landed_sha])).toEqual([
+      [61, 'rollup', sha(21), sha(0), sha(1)],
+      [62, 'rollup', sha(22), sha(21), sha(1)],
+      [63, 'merge_commit', sha(2), sha(1), sha(2)],
+    ]);
+    expect(stats).toMatchObject({ mapped_commits: 2, rollup_prs: 1, rollup_member_prs: 2, rollup_members_unresolved: 0, api_prs_not_on_branch: 0 });
   });
 
   it('fetches merge-bot PRs by number when the merged search misses them', () => {

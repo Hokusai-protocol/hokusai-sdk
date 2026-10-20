@@ -14,6 +14,11 @@
  * earlier commit of a rebase-merged PR. `mapped_share` is the acceptance
  * metric: ≥95% per kept repo.
  *
+ * bors rollups (rust-lang) land many PRs through one first-parent merge. Each
+ * member is a `Rollup merge of #N` commit on the rollup branch (the merge's
+ * second-parent first-parent chain), so members are expanded into their own
+ * records anchored on that commit, and the rollup PR itself is dropped.
+ *
  * Pure: git and GraphQL are injected, so the boundary test applies. Titles
  * and bodies are returned for the local cache only and must never be
  * written to corpus outputs (decision-record contract §4.3).
@@ -52,7 +57,7 @@ export interface CorpusEnumerateTarget {
   until: Date;
 }
 
-export type LandedBy = 'merge_commit' | 'squash' | 'rebase' | 'number_ref';
+export type LandedBy = 'merge_commit' | 'squash' | 'rebase' | 'number_ref' | 'rollup';
 
 export interface CorpusPrRecord {
   repo: string;
@@ -61,10 +66,12 @@ export interface CorpusPrRecord {
   merged_at: string;
   base_ref: string | null;
   head_sha: string | null;
-  /** First-parent commit that landed the PR. */
+  /** The PR's own merge commit: the first-parent commit that landed it, or its `Rollup merge` commit for a rollup member. */
   merge_sha: string;
-  /** First parent of the PR's earliest first-parent commit: the pre-change state. */
+  /** First parent of the PR's earliest commit on that lineage: the pre-change state. */
   base_sha: string;
+  /** First-parent commit that brought merge_sha onto the branch. Equals merge_sha except for rollup members. */
+  landed_sha: string;
   /** First-parent commits the PR contributed (>1 only for rebase merges). */
   member_commits: number;
   landed_by: LandedBy;
@@ -108,6 +115,10 @@ export interface CorpusEnumerationStats {
   unmapped_reverts: number;
   rebase_prs: number;
   number_ref_prs: number;
+  /** Rollup PRs replaced by their members, the member records, and members whose PR GitHub could not return. */
+  rollup_prs: number;
+  rollup_member_prs: number;
+  rollup_members_unresolved: number;
   /** Merged PRs the API reports that never landed on the first-parent walk (other base branches, mostly). */
   api_prs_not_on_branch: number;
   /** The subset that targeted the default branch: a mapping gap worth inspecting, not a backport. */
@@ -135,6 +146,12 @@ interface SearchPage {
   pageInfo: { endCursor: string | null; hasNextPage: boolean };
   /** Non-PR search hits come back as empty objects. */
   nodes: (ApiPr | Record<string, never>)[];
+}
+
+interface RollupMember {
+  sha: string;
+  parentSha: string;
+  prNumber: number;
 }
 
 interface FirstParentCommit {
@@ -172,6 +189,7 @@ export function enumerateCorpusRepo(
   deps: CorpusEnumerateDeps,
 ): { records: CorpusPrRecord[]; stats: CorpusEnumerationStats } {
   const commits = readFirstParent(target, deps.runGit);
+  const rollups = readRollupMembers(target, deps.runGit, commits);
   const apiPrs = fetchMergedPrs(target, deps);
   const byNumber = new Map(apiPrs.map((pr) => [pr.number, pr]));
   const byMergeSha = new Map<string, ApiPr[]>();
@@ -184,7 +202,8 @@ export function enumerateCorpusRepo(
 
   // PRs a commit names but the merged search did not return: merge bots that
   // close rather than merge (pytorch), or merges dated outside the window.
-  const missing = [...new Set(commits.flatMap((c) => c.prNumbers))].filter((n) => !byNumber.has(n));
+  const named = [...commits.flatMap((c) => c.prNumbers), ...[...rollups.values()].flat().map((m) => m.prNumber)];
+  const missing = [...new Set(named)].filter((n) => !byNumber.has(n));
   for (const pr of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr.number, pr);
 
   const records: CorpusPrRecord[] = [];
@@ -192,12 +211,50 @@ export function enumerateCorpusRepo(
   const used = new Set<number>();
   let batchedCommits = 0;
   let relandedCommits = 0;
+  let rollupPrs = 0;
+  let rollupUnresolved = 0;
   const recordByNumber = new Map<number, CorpusPrRecord>();
+  const toRecord = (pr: ApiPr, landing: FirstParentCommit, fields: Pick<CorpusPrRecord, 'merge_sha' | 'base_sha' | 'member_commits' | 'landed_by' | 'batched'>): CorpusPrRecord => ({
+    repo: target.repo,
+    pr_number: pr.number,
+    pr_url: pr.url,
+    merged_at: pr.mergedAt ?? new Date(landing.epoch * 1000).toISOString(),
+    base_ref: pr.baseRefName,
+    head_sha: pr.headRefOid,
+    ...fields,
+    landed_sha: landing.sha,
+    relanded_merge_shas: [],
+    author_login: pr.author?.login ?? null,
+    author_type: pr.author?.__typename ?? null,
+    labels: pr.labels.nodes.map((label) => label.name),
+    closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
+    title: pr.title,
+    body: pr.body ?? '',
+  });
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i]!;
     const viaSha = byMergeSha.get(commit.sha) ?? [];
     const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr): pr is ApiPr => !!pr);
     const candidates = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()];
+    const rollupMembers = rollups.get(commit.sha);
+    if (rollupMembers) {
+      // The rollup PR is an aggregate; its members are the units of work.
+      mapped.add(commit.sha);
+      for (const pr of candidates) used.add(pr.number);
+      rollupPrs++;
+      for (const member of rollupMembers) {
+        const pr = byNumber.get(member.prNumber);
+        if (!pr || used.has(pr.number)) {
+          rollupUnresolved++;
+          continue;
+        }
+        used.add(pr.number);
+        const record = toRecord(pr, commit, { merge_sha: member.sha, base_sha: member.parentSha, member_commits: 1, landed_by: 'rollup', batched: false });
+        records.push(record);
+        recordByNumber.set(pr.number, record);
+      }
+      continue;
+    }
     const prs = candidates.filter((pr) => !used.has(pr.number));
     if (prs.length === 0) {
       const relanded = candidates.filter((pr) => recordByNumber.has(pr.number));
@@ -224,26 +281,13 @@ export function enumerateCorpusRepo(
         }
       }
       const members = i - first + 1;
-      const record: CorpusPrRecord = {
-        repo: target.repo,
-        pr_number: pr.number,
-        pr_url: pr.url,
-        merged_at: pr.mergedAt ?? new Date(commit.epoch * 1000).toISOString(),
-        base_ref: pr.baseRefName,
-        head_sha: pr.headRefOid,
+      const record = toRecord(pr, commit, {
         merge_sha: commit.sha,
         base_sha: commits[first]!.parents[0] ?? EMPTY_TREE_SHA,
         member_commits: members,
         landed_by: !viaSha.includes(pr) ? 'number_ref' : isMergeCommit ? 'merge_commit' : members > 1 ? 'rebase' : 'squash',
         batched,
-        relanded_merge_shas: [],
-        author_login: pr.author?.login ?? null,
-        author_type: pr.author?.__typename ?? null,
-        labels: pr.labels.nodes.map((label) => label.name),
-        closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
-        title: pr.title,
-        body: pr.body ?? '',
-      };
+      });
       records.push(record);
       recordByNumber.set(pr.number, record);
     }
@@ -270,6 +314,9 @@ export function enumerateCorpusRepo(
     unmapped_reverts: unmapped.filter((c) => c.isRevert).length,
     rebase_prs: records.filter((r) => r.landed_by === 'rebase').length,
     number_ref_prs: records.filter((r) => r.landed_by === 'number_ref').length,
+    rollup_prs: rollupPrs,
+    rollup_member_prs: records.filter((r) => r.landed_by === 'rollup').length,
+    rollup_members_unresolved: rollupUnresolved,
     api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
     api_prs_not_on_branch_default_base: apiPrs.filter((pr) => !used.has(pr.number) && pr.baseRefName !== null && defaultNames.has(pr.baseRefName)).length,
     unmapped_sample: unmapped.slice(0, 20).map((c) => c.sha),
@@ -322,6 +369,39 @@ function readFirstParent(target: CorpusEnumerateTarget, runGit: GitRunner): Firs
     }
   }
   return commits;
+}
+
+const ROLLUP_MERGE = /^Rollup merge of #(\d+)\b/;
+
+/**
+ * Rollup members per first-parent landing commit, oldest first. Members are
+ * the `Rollup merge of #N` commits on the landing merge's second-parent
+ * first-parent chain, read with one non-first-parent `git log --grep`.
+ */
+function readRollupMembers(target: CorpusEnumerateTarget, runGit: GitRunner, commits: readonly FirstParentCommit[]): Map<string, RollupMember[]> {
+  const out = new Map<string, RollupMember[]>();
+  if (!commits.some((c) => c.parents.length > 1)) return out;
+  // Rollup branches are cut shortly before they land; start a month early.
+  const result = runGit([
+    'log', '--grep=^Rollup merge of #',
+    `--since=${new Date(target.from.getTime() - 30 * DAY_MS).toISOString()}`, `--until=${target.until.toISOString()}`,
+    '--pretty=format:%H%x1f%P%x1f%s%x1e',
+    target.branch,
+  ]);
+  if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
+  const bySha = new Map<string, RollupMember>();
+  for (const entry of result.stdout.split('\x1e')) {
+    const [sha = '', parents = '', subject = ''] = entry.replace(/^\n/, '').split('\x1f');
+    const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
+    const parentSha = parents.trim().split(/\s+/)[0];
+    if (/^[0-9a-f]{40}$/.test(sha) && parentSha && Number.isInteger(prNumber)) bySha.set(sha, { sha, parentSha, prNumber });
+  }
+  for (const commit of commits) {
+    const chain: RollupMember[] = [];
+    for (let member = bySha.get(commit.parents[1] ?? ''); member; member = bySha.get(member.parentSha)) chain.push(member);
+    if (chain.length) out.set(commit.sha, chain.reverse());
+  }
+  return out;
 }
 
 /** Merged PRs in the window, splitting date ranges until each fits under the search cap. */
