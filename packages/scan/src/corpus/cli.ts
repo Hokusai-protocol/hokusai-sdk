@@ -11,7 +11,8 @@
  * `hokusai-scan corpus-label` (HOK-3266) then labels an enumerated repo:
  *   git backfill      fetches every blob once, so diffs never lazy-fetch
  *   graphql/          cross-reference batches cached alongside enumeration
- *   s2.jsonl          S2 v1.1.0 rows, one per PR × horizon (derived; no raw content)
+ *   s2.jsonl.gz       S2 v1.1.0 rows, one per PR × horizon (derived; no raw content).
+ *                     Gzip, ~20× smaller: each PR's line_ranges repeat across its horizons
  *   s2.summary.json   row counts, report_outcome base rates, failures, timing
  *
  * stdout: one stats JSON line per repo. Exit 0 when every repo enumerated,
@@ -24,6 +25,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { gzipSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
 import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
 import { HORIZONS } from '@hokusai/core';
@@ -131,23 +133,48 @@ function createGhPullsForCommit(repo: string, sleep: (ms: number) => void, log: 
   };
 }
 
-/** JSONL one row at a time: a corpus repo's rows can exceed V8's maximum string length (next.js). */
-function writeJsonl(path: string, rows: readonly unknown[]): { bytes: number; largestRowBytes: number } {
+/** Uncompressed bytes per gzip member; standard readers (zcat, Node, Python) read concatenated members as one stream. */
+const GZIP_MEMBER_BYTES = 32 * 1024 * 1024;
+
+/**
+ * JSONL one row at a time: a corpus repo's rows can exceed V8's maximum
+ * string length (next.js). With `gzip`, rows are compressed in fixed-size
+ * members so the writer stays synchronous and memory-bounded.
+ */
+export function writeJsonl(path: string, rows: readonly unknown[], options: { gzip?: boolean; memberBytes?: number } = {}): { bytes: number; writtenBytes: number; largestRowBytes: number } {
   const fd = openSync(path, 'w');
   let bytes = 0;
+  let writtenBytes = 0;
   let largestRowBytes = 0;
+  let pending: Buffer[] = [];
+  let pendingBytes = 0;
+  const flush = () => {
+    if (pendingBytes === 0) return;
+    const chunk = gzipSync(Buffer.concat(pending));
+    writeSync(fd, chunk);
+    writtenBytes += chunk.length;
+    pending = [];
+    pendingBytes = 0;
+  };
   try {
     for (const row of rows) {
-      const line = `${JSON.stringify(row)}\n`;
-      const size = Buffer.byteLength(line);
-      bytes += size;
-      largestRowBytes = Math.max(largestRowBytes, size);
-      writeSync(fd, line);
+      const line = Buffer.from(`${JSON.stringify(row)}\n`);
+      bytes += line.length;
+      largestRowBytes = Math.max(largestRowBytes, line.length);
+      if (!options.gzip) {
+        writeSync(fd, line);
+        writtenBytes += line.length;
+        continue;
+      }
+      pending.push(line);
+      pendingBytes += line.length;
+      if (pendingBytes >= (options.memberBytes ?? GZIP_MEMBER_BYTES)) flush();
     }
+    flush();
   } finally {
     closeSync(fd);
   }
-  return { bytes, largestRowBytes };
+  return { bytes, writtenBytes, largestRowBytes };
 }
 
 function fileCache(dir: string) {
@@ -268,7 +295,7 @@ function runLabel(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log },
       );
-      const written = writeJsonl(join(repoDir, 's2.jsonl'), rows);
+      const written = writeJsonl(join(repoDir, 's2.jsonl.gz'), rows, { gzip: true });
       const summary = {
         repo: entry.repo,
         as_of: asOf.toISOString(),
@@ -277,6 +304,7 @@ function runLabel(
         failed_prs: failed.length,
         failed_sample: failed.slice(0, 20),
         s2_bytes: written.bytes,
+        s2_gzip_bytes: written.writtenBytes,
         largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1000),
         base_rates: summarizeLabels(entry.repo, rows),

@@ -7276,6 +7276,7 @@ import { createHash as createHash2 } from "node:crypto";
 import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
 import { join as join7, resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
+import { gzipSync } from "node:zlib";
 
 // src/corpus/pr-refs.ts
 var SQUASH = /\(#(\d+)\)\s*$/;
@@ -7741,23 +7742,42 @@ function createGhPullsForCommit(repo, sleep, log) {
     }
   };
 }
-function writeJsonl(path4, rows) {
+var GZIP_MEMBER_BYTES = 32 * 1024 * 1024;
+function writeJsonl(path4, rows, options = {}) {
   const fd = openSync2(path4, "w");
   let bytes = 0;
+  let writtenBytes = 0;
   let largestRowBytes = 0;
+  let pending = [];
+  let pendingBytes = 0;
+  const flush = () => {
+    if (pendingBytes === 0) return;
+    const chunk = gzipSync(Buffer.concat(pending));
+    writeSync2(fd, chunk);
+    writtenBytes += chunk.length;
+    pending = [];
+    pendingBytes = 0;
+  };
   try {
     for (const row of rows) {
-      const line = `${JSON.stringify(row)}
-`;
-      const size = Buffer.byteLength(line);
-      bytes += size;
-      largestRowBytes = Math.max(largestRowBytes, size);
-      writeSync2(fd, line);
+      const line = Buffer.from(`${JSON.stringify(row)}
+`);
+      bytes += line.length;
+      largestRowBytes = Math.max(largestRowBytes, line.length);
+      if (!options.gzip) {
+        writeSync2(fd, line);
+        writtenBytes += line.length;
+        continue;
+      }
+      pending.push(line);
+      pendingBytes += line.length;
+      if (pendingBytes >= (options.memberBytes ?? GZIP_MEMBER_BYTES)) flush();
     }
+    flush();
   } finally {
     closeSync2(fd);
   }
-  return { bytes, largestRowBytes };
+  return { bytes, writtenBytes, largestRowBytes };
 }
 function fileCache(dir) {
   mkdirSync2(dir, { recursive: true });
@@ -7865,7 +7885,7 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
-      const written = writeJsonl(join7(repoDir, "s2.jsonl"), rows);
+      const written = writeJsonl(join7(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
       const summary = {
         repo: entry.repo,
         as_of: asOf.toISOString(),
@@ -7874,6 +7894,7 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         failed_prs: failed.length,
         failed_sample: failed.slice(0, 20),
         s2_bytes: written.bytes,
+        s2_gzip_bytes: written.writtenBytes,
         largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
         base_rates: summarizeLabels(entry.repo, rows)
