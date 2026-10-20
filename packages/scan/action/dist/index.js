@@ -66,10 +66,10 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync5, mkdirSync as mkdirSync3, mkdtempSync as mkdtempSync3, readFileSync as readFileSync4, rmSync as rmSync3, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname as dirname2, join as join9, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync3, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname2, join as join10, resolve as resolve5 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-import { parseArgs as parseArgs2 } from "node:util";
+import { parseArgs as parseArgs3 } from "node:util";
 
 // src/candidate-features.ts
 import { statSync as statSync2 } from "node:fs";
@@ -7180,6 +7180,402 @@ function runShadowCli(command, args, io) {
   }
 }
 
+// src/corpus/cli.ts
+import { createHash as createHash2 } from "node:crypto";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join7, resolve as resolve4 } from "node:path";
+import { parseArgs as parseArgs2 } from "node:util";
+
+// src/corpus/pr-refs.ts
+var SQUASH = /\(#(\d+)\)\s*$/;
+var MERGE_PR = /^merge pull request #(\d+)\b/i;
+var BORS_AUTO = /^(?:auto merge|rollup merge) of #(\d+)\b/i;
+var BORS_BATCH = /^merge((?:\s+#\d+)+)\s*$/i;
+function extractCorpusPrNumbers(subject, body, repo) {
+  const found = [];
+  const add = (value) => {
+    const n = Number(value);
+    if (Number.isInteger(n) && n > 0 && !found.includes(n)) found.push(n);
+  };
+  const trimmed = subject.trim();
+  const batch = trimmed.match(BORS_BATCH);
+  if (batch) {
+    for (const match of batch[1].matchAll(/#(\d+)/g)) add(match[1]);
+  } else {
+    add((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
+  }
+  const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp(repo)}/pull/(\\d+)\\s*$`, "im");
+  add(body.match(trailer)?.[1]);
+  return found;
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// src/corpus/enumerate.ts
+var UNMAPPED_AUDIT_SAMPLE = 50;
+var PR_FIELDS = `number url mergedAt baseRefName headRefOid title body
+  mergeCommit{ oid } author{ login __typename }
+  labels(first:30){ nodes{ name } }
+  closingIssuesReferences(first:10){ nodes{ number } }
+  commits{ totalCount }`;
+var SEARCH_QUERY = `query($q:String!,$after:String){
+  search(type:ISSUE, query:$q, first:50, after:$after){
+    issueCount pageInfo{ endCursor hasNextPage }
+    nodes{ ... on PullRequest { ${PR_FIELDS} } }
+  }
+}`;
+var COUNT_QUERY = `query($q:String!){ search(type:ISSUE, query:$q, first:1){ issueCount } }`;
+var SEARCH_CAP = 1e3;
+var DAY_MS = 864e5;
+var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+function enumerateCorpusRepo(target, deps) {
+  const commits = readFirstParent(target, deps.runGit);
+  const apiPrs = fetchMergedPrs(target, deps);
+  const byNumber = new Map(apiPrs.map((pr) => [pr.number, pr]));
+  const byMergeSha = /* @__PURE__ */ new Map();
+  for (const pr of apiPrs) {
+    if (!pr.mergeCommit) continue;
+    const list = byMergeSha.get(pr.mergeCommit.oid) ?? [];
+    list.push(pr);
+    byMergeSha.set(pr.mergeCommit.oid, list);
+  }
+  const missing = [...new Set(commits.flatMap((c) => c.prNumbers))].filter((n) => !byNumber.has(n));
+  for (const pr of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr.number, pr);
+  const records = [];
+  const mapped = /* @__PURE__ */ new Set();
+  const used = /* @__PURE__ */ new Set();
+  let batchedCommits = 0;
+  for (let i = 0; i < commits.length; i++) {
+    const commit = commits[i];
+    const viaSha = byMergeSha.get(commit.sha) ?? [];
+    const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr) => !!pr);
+    const prs = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()].filter((pr) => !used.has(pr.number));
+    if (prs.length === 0) continue;
+    mapped.add(commit.sha);
+    const batched = prs.length > 1;
+    if (batched) batchedCommits++;
+    for (const pr of prs) {
+      used.add(pr.number);
+      let first = i;
+      const isMergeCommit = commit.parents.length > 1;
+      if (!batched && !isMergeCommit && viaSha.includes(pr) && pr.commits.totalCount > 1) {
+        for (let k = 1; k < pr.commits.totalCount && first - 1 >= 0 && !mapped.has(commits[first - 1].sha) && commits[first - 1].prNumbers.length === 0; k++) {
+          first--;
+          mapped.add(commits[first].sha);
+        }
+      }
+      const members = i - first + 1;
+      records.push({
+        repo: target.repo,
+        pr_number: pr.number,
+        pr_url: pr.url,
+        merged_at: pr.mergedAt ?? new Date(commit.epoch * 1e3).toISOString(),
+        base_ref: pr.baseRefName,
+        head_sha: pr.headRefOid,
+        merge_sha: commit.sha,
+        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA2,
+        member_commits: members,
+        landed_by: !viaSha.includes(pr) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
+        batched,
+        author_login: pr.author?.login ?? null,
+        author_type: pr.author?.__typename ?? null,
+        labels: pr.labels.nodes.map((label2) => label2.name),
+        closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
+        title: pr.title,
+        body: pr.body ?? ""
+      });
+    }
+  }
+  const defaultNames = new Set(target.defaultBranchNames);
+  const unmapped = commits.filter((c) => !mapped.has(c.sha));
+  const audit = auditUnmapped(unmapped, deps.pullsForCommit);
+  const stats = {
+    repo: target.repo,
+    branch: target.branch,
+    window: { from: target.from.toISOString(), until: target.until.toISOString() },
+    first_parent_commits: commits.length,
+    mapped_commits: mapped.size,
+    mapped_share: commits.length ? Number((mapped.size / commits.length).toFixed(4)) : null,
+    unmapped_audited: audit.checked,
+    unmapped_audited_with_pr: audit.withPr,
+    pr_recall_est: audit.estimate(mapped.size, commits.length).recall,
+    direct_push_share_est: audit.estimate(mapped.size, commits.length).directPush,
+    prs: records.length,
+    batched_commits: batchedCommits,
+    rebase_prs: records.filter((r) => r.landed_by === "rebase").length,
+    number_ref_prs: records.filter((r) => r.landed_by === "number_ref").length,
+    api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
+    api_prs_not_on_branch_default_base: apiPrs.filter((pr) => !used.has(pr.number) && pr.baseRefName !== null && defaultNames.has(pr.baseRefName)).length,
+    unmapped_sample: unmapped.slice(0, 20).map((c) => c.sha)
+  };
+  records.sort((a, b) => a.merged_at.localeCompare(b.merged_at) || a.pr_number - b.pr_number);
+  return { records, stats };
+}
+function auditUnmapped(unmapped, pullsForCommit) {
+  const step = Math.max(1, unmapped.length / UNMAPPED_AUDIT_SAMPLE);
+  const sample = pullsForCommit ? Array.from({ length: Math.min(UNMAPPED_AUDIT_SAMPLE, unmapped.length) }, (_, i) => unmapped[Math.floor(i * step)]) : [];
+  const withPr = sample.filter((c) => pullsForCommit(c.sha).length > 0).length;
+  const round = (value) => Number(value.toFixed(4));
+  return {
+    checked: sample.length,
+    withPr,
+    estimate(mappedCount, total) {
+      if (total === 0) return { recall: null, directPush: null };
+      if (unmapped.length === 0) return { recall: 1, directPush: 0 };
+      if (sample.length === 0) return { recall: null, directPush: null };
+      const missed = unmapped.length * withPr / sample.length;
+      return { recall: round(mappedCount / (mappedCount + missed)), directPush: round((unmapped.length - missed) / total) };
+    }
+  };
+}
+function readFirstParent(target, runGit3) {
+  const commits = [];
+  const seen = /* @__PURE__ */ new Set();
+  const start = target.from.getTime();
+  const end = target.until.getTime();
+  for (let lo = start; lo < end; lo += 30 * DAY_MS) {
+    const hi = Math.min(lo + 30 * DAY_MS, end);
+    const result = runGit3([
+      "log",
+      "--first-parent",
+      "--reverse",
+      `--since=${new Date(lo).toISOString()}`,
+      `--until=${new Date(hi).toISOString()}`,
+      "--pretty=format:%H%x1f%P%x1f%ct%x1f%s%x1f%b%x1e",
+      target.branch
+    ]);
+    if (result.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target.branch}: ${result.stderr.trim()}`);
+    for (const entry of result.stdout.split("")) {
+      const [sha = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+      if (!/^[0-9a-f]{40}$/.test(sha) || seen.has(sha)) continue;
+      const epoch = Number.parseInt(epochText, 10);
+      if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
+      seen.add(sha);
+      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo) });
+    }
+  }
+  return commits;
+}
+function fetchMergedPrs(target, deps) {
+  const out = /* @__PURE__ */ new Map();
+  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS]];
+  while (pending.length) {
+    const [lo, hi] = pending.shift();
+    const range = `${isoDay(lo)}..${isoDay(hi)}`;
+    const q = `repo:${target.repo} is:pr is:merged merged:${range}`;
+    const cacheKey = `merged:${range}`;
+    const cached = deps.cache?.get(cacheKey);
+    if (cached) {
+      for (const pr of cached) out.set(pr.number, pr);
+      continue;
+    }
+    const count = deps.graphql(COUNT_QUERY, { q }).search.issueCount;
+    if (count > SEARCH_CAP) {
+      if (hi <= lo) throw new Error(`corpus: more than ${SEARCH_CAP} PRs merged on ${isoDay(lo)}; cannot slice further`);
+      const mid = lo + Math.floor((hi - lo) / DAY_MS / 2) * DAY_MS;
+      pending.unshift([lo, mid], [mid + DAY_MS, hi]);
+      continue;
+    }
+    const slice = [];
+    for (let after = null; ; ) {
+      const page = deps.graphql(SEARCH_QUERY, { q, after }).search;
+      slice.push(...page.nodes.filter((node) => typeof node.number === "number"));
+      if (!page.pageInfo.hasNextPage) break;
+      after = page.pageInfo.endCursor;
+    }
+    deps.cache?.set(cacheKey, slice);
+    deps.onDiagnostic?.(`info: ${target.repo} ${range}: ${slice.length} merged PRs`);
+    for (const pr of slice) out.set(pr.number, pr);
+  }
+  return [...out.values()];
+}
+function fetchPrsByNumber(repo, numbers, deps) {
+  const [owner, name] = repo.split("/");
+  const out = [];
+  for (let i = 0; i < numbers.length; i += 50) {
+    const batch = numbers.slice(i, i + 50);
+    const cacheKey = `by-number:${batch.join(",")}`;
+    let prs = deps.cache?.get(cacheKey);
+    if (!prs) {
+      const fields = batch.map((n) => `pr${n}: pullRequest(number:${n}){ ${PR_FIELDS} }`).join("\n");
+      const data = deps.graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
+      prs = Object.values(data.repository).filter((pr) => pr !== null);
+      deps.cache?.set(cacheKey, prs);
+    }
+    out.push(...prs);
+  }
+  return out;
+}
+
+// src/corpus/manifest.ts
+var RUNNABLE_STATUSES = ["kept", "pending_exception", "unmeasured"];
+var REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+var DAY = /^\d{4}-\d{2}-\d{2}$/;
+function parseCohortManifest(input) {
+  const fail2 = (message) => {
+    throw new Error(`cohort manifest: ${message}`);
+  };
+  if (!input || typeof input !== "object") fail2("must be an object");
+  const m = input;
+  if (typeof m.manifest_version !== "string") fail2("manifest_version is required");
+  if (!m.window || !DAY.test(m.window.merged_from ?? "") || !DAY.test(m.window.merged_until ?? "")) fail2("window.merged_from/merged_until must be YYYY-MM-DD");
+  if (Date.parse(m.window.merged_from) >= Date.parse(m.window.merged_until)) fail2("window must be non-empty");
+  for (const key of ["repos", "alternates"]) {
+    if (!Array.isArray(m[key])) fail2(`${key} must be an array`);
+    for (const entry of m[key]) {
+      if (!REPO.test(entry?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry?.repo)}`);
+      if (typeof entry.status !== "string") fail2(`${entry.repo}: status is required`);
+    }
+  }
+  return m;
+}
+function runnableRepos(manifest, only) {
+  const all = [...manifest.repos, ...manifest.alternates];
+  if (only) {
+    const entry = all.find((r) => r.repo === only);
+    if (!entry) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
+    return [entry];
+  }
+  return all.filter((r) => RUNNABLE_STATUSES.includes(r.status));
+}
+
+// src/corpus/cli.ts
+var OPTIONS = {
+  manifest: { type: "string" },
+  "cache-dir": { type: "string" },
+  repo: { type: "string" }
+};
+var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly/i;
+var RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
+var blockingSleep = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+function createGhGraphql(sleep, log) {
+  return (query, variables) => {
+    const args = ["api", "graphql", "-f", `query=${query}`];
+    for (const [key, value] of Object.entries(variables)) {
+      if (value === null) continue;
+      args.push(typeof value === "number" ? "-F" : "-f", `${key}=${value}`);
+    }
+    for (let attempt = 0; ; attempt++) {
+      const result = execArgvCommand("gh", args, { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+      const parsed = parseGraphqlResponse(result.stdout);
+      if (parsed?.data && (parsed.errors ?? []).every((error) => error.type === "NOT_FOUND")) return parsed.data;
+      if (result.exitCode === 0 && parsed?.errors?.length) throw new Error(`GitHub GraphQL error: ${parsed.errors[0].message}`);
+      const stderr = result.stderr || result.stdout;
+      if (RATE_LIMITED.test(stderr) && attempt < 90) {
+        log("warn: GitHub rate limit reached; waiting 60s");
+        sleep(6e4);
+        continue;
+      }
+      if (RETRYABLE.test(stderr) && attempt < 6) {
+        const wait = 2e3 * 2 ** attempt;
+        log(`warn: GitHub ${stderr.split("\n")[0]?.slice(0, 80)}; retrying in ${wait / 1e3}s`);
+        sleep(wait);
+        continue;
+      }
+      throw new Error(`GitHub request failed: ${stderr.split("\n")[0]?.slice(0, 200)}`);
+    }
+  };
+}
+function parseGraphqlResponse(stdout) {
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+}
+function createGhPullsForCommit(repo, sleep, log) {
+  return (sha) => {
+    for (let attempt = 0; ; attempt++) {
+      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha}/pulls`, "--jq", "[.[] | select(.merged_at != null) | .number]"], { encoding: "utf8" });
+      if (result.exitCode === 0) return JSON.parse(result.stdout || "[]");
+      if ((RETRYABLE.test(result.stderr) || RATE_LIMITED.test(result.stderr)) && attempt < 6) {
+        log(`warn: GitHub ${result.stderr.split("\n")[0]?.slice(0, 80)}; retrying`);
+        sleep(2e3 * 2 ** attempt);
+        continue;
+      }
+      throw new Error(`GitHub request failed: ${result.stderr.split("\n")[0]?.slice(0, 200)}`);
+    }
+  };
+}
+function fileCache(dir) {
+  mkdirSync2(dir, { recursive: true });
+  const path4 = (key) => join7(dir, `${createHash2("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  return {
+    get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync3(path4(key), "utf8")) : void 0,
+    set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
+  };
+}
+function syncClone(repo, dir, defaultBranch) {
+  const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+  const url = `https://github.com/${repo}.git`;
+  if (!existsSync4(join7(dir, "HEAD"))) {
+    const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
+    if (cloned.exitCode !== 0) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
+  }
+  const fetched = runGit3(["fetch", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
+  if (fetched.exitCode !== 0) throw new Error(`git fetch failed: ${fetched.stderr.trim().split("\n").pop()}`);
+  return runGit3;
+}
+function runCorpusCli(command, argv, io) {
+  if (command !== "corpus-enumerate") {
+    io.writeStderr(`error: unknown corpus command ${command}; expected corpus-enumerate
+`);
+    return { exitCode: 2 };
+  }
+  let values;
+  let entries;
+  let window;
+  try {
+    ({ values } = parseArgs2({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
+    if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
+    const manifest = parseCohortManifest(JSON.parse(readFileSync3(resolve4(io.cwd, values.manifest), "utf8")));
+    entries = runnableRepos(manifest, values.repo);
+    window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const log = (line) => io.writeStderr(`${line}
+`);
+  const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
+  const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split("/");
+    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    try {
+      mkdirSync2(repoDir, { recursive: true });
+      const meta = graphql("query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }", { owner, name });
+      const branch = meta.repository.defaultBranchRef?.name;
+      if (!branch) throw new Error("repository has no default branch");
+      log(`info: ${entry.repo}: syncing clone of ${branch}`);
+      const runGit3 = syncClone(entry.repo, join7(repoDir, "repo.git"), branch);
+      const { records, stats } = enumerateCorpusRepo(
+        { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], ...window },
+        { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry.repo, io.sleep ?? blockingSleep, log) }
+      );
+      writeFileSync2(join7(repoDir, "prs.jsonl"), records.map((r) => `${JSON.stringify(r)}
+`).join(""));
+      writeFileSync2(join7(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
+`);
+      io.writeStdout(`${JSON.stringify(stats)}
+`);
+      log(`info: ${entry.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+`);
+      log(`error: ${entry.repo}: ${error.message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+
 // src/orchestrate/github.ts
 function createOfflineScanGitHubClient() {
   return {
@@ -7213,7 +7609,7 @@ var IntegrationBranchError = class extends Error {
 };
 var MAIN_GUIDANCE = "integration branch resolves to main and no promotion branch was detected. Pass --integration-branch <ref>, or --integration-mode direct if PRs merge straight into main (S2 v1.1.0).";
 var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
-var SQUASH = /\(#(\d+)\)\s*$/;
+var SQUASH2 = /\(#(\d+)\)\s*$/;
 function resolveIntegrationBranch(evidence) {
   const explicit = evidence.explicitBranch?.trim();
   const explicitMode = evidence.explicitMode ?? null;
@@ -7230,7 +7626,7 @@ function resolveIntegrationBranch(evidence) {
     let number = null;
     let ref2 = null;
     const merge = subject.match(PR_MERGE);
-    const squash = subject.match(SQUASH);
+    const squash = subject.match(SQUASH2);
     if (merge) {
       number = Number(merge[1]);
       ref2 = merge[2];
@@ -7711,7 +8107,7 @@ function toReportAttribution(value) {
 }
 
 // src/orchestrate/enumerate.ts
-var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 function enumerateWindow(options) {
   const { runGit: runGit3, branch, from, to, cursor = null, maxPrs = Number.MAX_SAFE_INTEGER } = options;
   const cutoff = Math.floor(from.getTime() / 1e3);
@@ -7735,7 +8131,7 @@ function enumerateWindow(options) {
     const epoch = Number.parseInt(epochText, 10);
     if (!Number.isFinite(epoch) || epoch < cutoff || epoch > end) continue;
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
-    const parentSha = parents[0] ?? EMPTY_TREE_SHA2;
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA3;
     const subject = subjectParts.join("	");
     merges.push({ mergeSha: sha, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha });
   }
@@ -7746,9 +8142,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash2("sha256").update(stableJson(config)).digest("hex");
+  return createHash3("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -8100,6 +8496,9 @@ shadow-backfill  --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--horizon-days 30]
 shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
                  (shadow commands always exit 0 and print SHADOW_* lines)
+
+corpus-enumerate --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>]
+                 (HOK-3022 corpus; prs.jsonl in the cache holds raw titles/bodies and stays local)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -8157,12 +8556,16 @@ function runScanCli(argv, io) {
       });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
+    if (command.startsWith("corpus-")) {
+      const result = runCorpusCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd() });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
     if (command !== "label" && command !== "extract" && command !== "scan") {
       throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);
     }
     let values;
     try {
-      ({ values } = parseArgs2({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
+      ({ values } = parseArgs3({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -8220,9 +8623,9 @@ function runScanCli(argv, io) {
     if (outSpec === "-") {
       io.writeStdout(output);
     } else {
-      outputPath = resolve4(outSpec);
-      mkdirSync3(dirname2(outputPath), { recursive: true });
-      writeFileSync3(outputPath, output);
+      outputPath = resolve5(outSpec);
+      mkdirSync4(dirname2(outputPath), { recursive: true });
+      writeFileSync4(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -8255,7 +8658,7 @@ async function runReportCli(argv, io) {
   try {
     let parsed;
     try {
-      parsed = parseArgs2({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
+      parsed = parseArgs3({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -8277,7 +8680,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join9(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync3(join10(tmpdir3(), "hokusai-report-"));
       const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -8334,7 +8737,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync4(resolve4(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync5(resolve5(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -8345,7 +8748,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join10(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -8359,14 +8762,14 @@ async function runReportCli(argv, io) {
     }, ...stateDir ? { stateDir } : {} });
     const output = emitReport(draft);
     const outSpec = values.out ?? "-";
-    const outputPath = outSpec === "-" ? null : resolve4(outSpec);
+    const outputPath = outSpec === "-" ? null : resolve5(outSpec);
     if (values.contribute === true) {
       const built = buildContributionPayload(JSON.parse(output));
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync3(dirname2(outputPath), { recursive: true });
-          writeFileSync3(outputPath, built.body);
+          mkdirSync4(dirname2(outputPath), { recursive: true });
+          writeFileSync4(outputPath, built.body);
         }
       } else {
         const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
@@ -8375,14 +8778,14 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync3(dirname2(outputPath), { recursive: true });
-          writeFileSync3(outputPath, output);
+          mkdirSync4(dirname2(outputPath), { recursive: true });
+          writeFileSync4(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync3(dirname2(outputPath), { recursive: true });
-      writeFileSync3(outputPath, output);
+      mkdirSync4(dirname2(outputPath), { recursive: true });
+      writeFileSync4(outputPath, output);
     }
     try {
       saveState?.();
@@ -8419,8 +8822,8 @@ function parseGithubTarget(value) {
   return { owner: match[1], repo: match[2], url: `https://github.com/${match[1]}/${match[2]}.git` };
 }
 function resolveRepoDir(raw) {
-  const repoDir = resolve4(validateRepoDir(raw));
-  if (!existsSync5(repoDir) || !statSync4(repoDir).isDirectory()) {
+  const repoDir = resolve5(validateRepoDir(raw));
+  if (!existsSync6(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);

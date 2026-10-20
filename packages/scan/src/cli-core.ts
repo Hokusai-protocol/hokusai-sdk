@@ -56,6 +56,7 @@ import {
   type SurvivalLabellerTarget,
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
+import { runCorpusCli } from './corpus/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
 import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
@@ -107,6 +108,9 @@ shadow-backfill  --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--horizon-days 30]
 shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
                  (shadow commands always exit 0 and print SHADOW_* lines)
+
+corpus-enumerate --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>]
+                 (HOK-3022 corpus; prs.jsonl in the cache holds raw titles/bodies and stays local)
 `;
 
 const OPTION_SPEC = {
@@ -171,6 +175,10 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         log: (line) => io.writeStdout(`${line}\n`),
         cwd: process.cwd(),
       });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (command.startsWith('corpus-')) {
+      const result = runCorpusCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd() });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command !== 'label' && command !== 'extract' && command !== 'scan') {
