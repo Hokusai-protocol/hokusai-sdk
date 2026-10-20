@@ -66,7 +66,7 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync3, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
 import { dirname as dirname2, join as join10, resolve as resolve5 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
 import { parseArgs as parseArgs3 } from "node:util";
@@ -7182,7 +7182,7 @@ function runShadowCli(command, args, io) {
 
 // src/corpus/cli.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join7, resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
 
@@ -7247,12 +7247,23 @@ function enumerateCorpusRepo(target, deps) {
   const mapped = /* @__PURE__ */ new Set();
   const used = /* @__PURE__ */ new Set();
   let batchedCommits = 0;
+  let relandedCommits = 0;
+  const recordByNumber = /* @__PURE__ */ new Map();
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i];
     const viaSha = byMergeSha.get(commit.sha) ?? [];
     const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr) => !!pr);
-    const prs = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()].filter((pr) => !used.has(pr.number));
-    if (prs.length === 0) continue;
+    const candidates = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()];
+    const prs = candidates.filter((pr) => !used.has(pr.number));
+    if (prs.length === 0) {
+      const relanded = candidates.filter((pr) => recordByNumber.has(pr.number));
+      if (relanded.length) {
+        mapped.add(commit.sha);
+        relandedCommits++;
+        for (const pr of relanded) recordByNumber.get(pr.number).relanded_merge_shas.push(commit.sha);
+      }
+      continue;
+    }
     mapped.add(commit.sha);
     const batched = prs.length > 1;
     if (batched) batchedCommits++;
@@ -7267,7 +7278,7 @@ function enumerateCorpusRepo(target, deps) {
         }
       }
       const members = i - first + 1;
-      records.push({
+      const record = {
         repo: target.repo,
         pr_number: pr.number,
         pr_url: pr.url,
@@ -7279,18 +7290,21 @@ function enumerateCorpusRepo(target, deps) {
         member_commits: members,
         landed_by: !viaSha.includes(pr) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
         batched,
+        relanded_merge_shas: [],
         author_login: pr.author?.login ?? null,
         author_type: pr.author?.__typename ?? null,
         labels: pr.labels.nodes.map((label2) => label2.name),
         closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
         title: pr.title,
         body: pr.body ?? ""
-      });
+      };
+      records.push(record);
+      recordByNumber.set(pr.number, record);
     }
   }
   const defaultNames = new Set(target.defaultBranchNames);
   const unmapped = commits.filter((c) => !mapped.has(c.sha));
-  const audit = auditUnmapped(unmapped, deps.pullsForCommit);
+  const audit = auditUnmapped(unmapped.filter((c) => !c.isRevert), deps.pullsForCommit, unmapped.length);
   const stats = {
     repo: target.repo,
     branch: target.branch,
@@ -7304,6 +7318,8 @@ function enumerateCorpusRepo(target, deps) {
     direct_push_share_est: audit.estimate(mapped.size, commits.length).directPush,
     prs: records.length,
     batched_commits: batchedCommits,
+    relanded_commits: relandedCommits,
+    unmapped_reverts: unmapped.filter((c) => c.isRevert).length,
     rebase_prs: records.filter((r) => r.landed_by === "rebase").length,
     number_ref_prs: records.filter((r) => r.landed_by === "number_ref").length,
     api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
@@ -7313,7 +7329,7 @@ function enumerateCorpusRepo(target, deps) {
   records.sort((a, b) => a.merged_at.localeCompare(b.merged_at) || a.pr_number - b.pr_number);
   return { records, stats };
 }
-function auditUnmapped(unmapped, pullsForCommit) {
+function auditUnmapped(unmapped, pullsForCommit, unmappedTotal) {
   const step = Math.max(1, unmapped.length / UNMAPPED_AUDIT_SAMPLE);
   const sample = pullsForCommit ? Array.from({ length: Math.min(UNMAPPED_AUDIT_SAMPLE, unmapped.length) }, (_, i) => unmapped[Math.floor(i * step)]) : [];
   const withPr = sample.filter((c) => pullsForCommit(c.sha).length > 0).length;
@@ -7323,10 +7339,10 @@ function auditUnmapped(unmapped, pullsForCommit) {
     withPr,
     estimate(mappedCount, total) {
       if (total === 0) return { recall: null, directPush: null };
-      if (unmapped.length === 0) return { recall: 1, directPush: 0 };
+      if (unmapped.length === 0) return { recall: 1, directPush: round(unmappedTotal / total) };
       if (sample.length === 0) return { recall: null, directPush: null };
       const missed = unmapped.length * withPr / sample.length;
-      return { recall: round(mappedCount / (mappedCount + missed)), directPush: round((unmapped.length - missed) / total) };
+      return { recall: round(mappedCount / (mappedCount + missed)), directPush: round((unmappedTotal - missed) / total) };
     }
   };
 }
@@ -7353,7 +7369,7 @@ function readFirstParent(target, runGit3) {
       const epoch = Number.parseInt(epochText, 10);
       if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
       seen.add(sha);
-      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo) });
+      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
     }
   }
   return commits;
@@ -7447,7 +7463,7 @@ var OPTIONS = {
   "cache-dir": { type: "string" },
   repo: { type: "string" }
 };
-var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly/i;
+var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF/i;
 var RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
 var blockingSleep = (ms) => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -7490,7 +7506,7 @@ function parseGraphqlResponse(stdout) {
 function createGhPullsForCommit(repo, sleep, log) {
   return (sha) => {
     for (let attempt = 0; ; attempt++) {
-      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha}/pulls`, "--jq", "[.[] | select(.merged_at != null) | .number]"], { encoding: "utf8" });
+      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
       if (result.exitCode === 0) return JSON.parse(result.stdout || "[]");
       if ((RETRYABLE.test(result.stderr) || RATE_LIMITED.test(result.stderr)) && attempt < 6) {
         log(`warn: GitHub ${result.stderr.split("\n")[0]?.slice(0, 80)}; retrying`);
@@ -7512,9 +7528,11 @@ function fileCache(dir) {
 function syncClone(repo, dir, defaultBranch) {
   const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  if (!existsSync4(join7(dir, "HEAD"))) {
+  for (let attempt = 1; !existsSync4(join7(dir, "HEAD")); attempt++) {
     const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
-    if (cloned.exitCode !== 0) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
+    if (cloned.exitCode === 0) break;
+    rmSync2(dir, { recursive: true, force: true });
+    if (attempt >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
   }
   const fetched = runGit3(["fetch", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
   if (fetched.exitCode !== 0) throw new Error(`git fetch failed: ${fetched.stderr.trim().split("\n").pop()}`);
@@ -8806,7 +8824,7 @@ async function runReportCli(argv, io) {
     diag.error(`unexpected: ${error.message}`);
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   } finally {
-    if (temporaryRepo) rmSync3(temporaryRepo, { recursive: true, force: true });
+    if (temporaryRepo) rmSync4(temporaryRepo, { recursive: true, force: true });
   }
 }
 function parsePositiveInteger(value, fallback, name, maximum) {

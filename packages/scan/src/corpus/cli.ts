@@ -15,7 +15,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { execArgvCommand } from '../shell-utils.js';
@@ -37,7 +37,7 @@ const OPTIONS = {
   repo: { type: 'string' },
 } as const;
 
-const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query/i;
+const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF/i;
 const RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
 
 const blockingSleep = (ms: number) => {
@@ -117,9 +117,12 @@ function fileCache(dir: string) {
 function syncClone(repo: string, dir: string, defaultBranch: string): GitRunner {
   const runGit: GitRunner = (args) => execArgvCommand('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  if (!existsSync(join(dir, 'HEAD'))) {
+  // Large clones fail transiently (index-pack, resets); retry from scratch a few times.
+  for (let attempt = 1; !existsSync(join(dir, 'HEAD')); attempt++) {
     const cloned = execArgvCommand('git', ['clone', '--bare', '--filter=blob:none', '--no-tags', url, dir], { encoding: 'utf8' });
-    if (cloned.exitCode !== 0) throw new Error(`git clone failed: ${cloned.stderr.trim().split('\n').pop()}`);
+    if (cloned.exitCode === 0) break;
+    rmSync(dir, { recursive: true, force: true });
+    if (attempt >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split('\n').pop()}`);
   }
   const fetched = runGit(['fetch', '--no-tags', '--filter=blob:none', 'origin', `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
   if (fetched.exitCode !== 0) throw new Error(`git fetch failed: ${fetched.stderr.trim().split('\n').pop()}`);
