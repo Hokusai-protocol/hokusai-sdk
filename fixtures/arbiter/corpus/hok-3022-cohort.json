@@ -52,7 +52,8 @@
         "This reverts commit <sha>"
       ],
       "backport_patterns": ["^\\[release/", "cherry-pick"],
-      "status": "unmeasured"
+      "status": "kept",
+      "observed_merge_convention": "merge_bot_trailer"
     },
     {
       "repo": "cockroachdb/cockroach",
@@ -128,7 +129,8 @@
       "enumerator": "subject",
       "fix_conventions": ["fix(<scope>):", "Revert \"<title>\""],
       "backport_patterns": [],
-      "status": "unmeasured"
+      "status": "kept",
+      "observed_merge_convention": "squash"
     },
     {
       "repo": "home-assistant/core",
@@ -199,7 +201,10 @@
       "fix_conventions": ["label:regression-from-stable-*", "Fixes #<n>"],
       "backport_patterns": ["^\\[beta\\]", "^\\[stable\\]"],
       "status": "kept",
-      "observed_merge_convention": "merge_commit"
+      "observed_merge_convention": "merge_commit",
+      "known_gaps": [
+        "bors rollup members (~12.7k PRs) land via \"Rollup merge of #N\" commits off first-parent; only the rollup PR is enumerated"
+      ]
     },
     {
       "repo": "python/cpython",
@@ -290,6 +295,24 @@
       "repo": "django/django",
       "change": "kept (exception approved)",
       "reason": "868 PRs/yr is under the 1,000 floor; kept as the cohort's highest-precision P2 anchor ('Regression in <sha>'). Enumeration: 1,632 PRs in window, pr_recall_est 1.0, direct_push_share_est 0.08 (release-manager security fixes and release notes)."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "pytorch/pytorch",
+      "change": "unmeasured -> kept",
+      "reason": "Enumerated from git: 27,523 PRs, pr_recall_est 1.0. Lands via merge bot (Pull Request resolved: trailer); 3,377 direct-pushed bot reverts and 2,487 relands recorded, not mapped."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "PostHog/posthog",
+      "change": "unmeasured -> kept",
+      "reason": "Enumerated from git: 35,981 PRs, pr_recall_est 0.9999, squash merges."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "rust-lang/rust",
+      "change": "kept with known gap",
+      "reason": "4,149 first-parent PRs (1,654 are \"Rollup of N pull requests\"); 12,686 PRs GitHub reports merged into main are rollup members off first-parent. pr_recall_est (first-parent audit) cannot see them; true PR coverage ~25%. Rollup-member expansion is a follow-up."
     }
   ]
 }
