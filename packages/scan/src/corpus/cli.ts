@@ -38,7 +38,15 @@ const OPTIONS = {
 } as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
-const RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
+const RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
+
+/** Seconds until the GraphQL and REST core windows both reset (GitHub's own clock); 60 when unknown. */
+function secondsUntilReset(): number {
+  const result = execArgvCommand('gh', ['api', 'rate_limit', '--jq', '[.resources.graphql, .resources.core] | map(select(.remaining < 50) | .reset) | max // 0'], { encoding: 'utf8' });
+  const reset = Number(result.stdout.trim());
+  if (result.exitCode !== 0 || !Number.isFinite(reset) || reset === 0) return 60;
+  return Math.max(30, reset - Math.floor(Date.now() / 1000) + 5);
+}
 
 const blockingSleep = (ms: number) => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -60,9 +68,10 @@ export function createGhGraphql(sleep: (ms: number) => void, log: (line: string)
       if (parsed?.data && (parsed.errors ?? []).every((error) => error.type === 'NOT_FOUND')) return parsed.data;
       if (result.exitCode === 0 && parsed?.errors?.length) throw new Error(`GitHub GraphQL error: ${parsed.errors[0]!.message}`);
       const stderr = result.stderr || result.stdout;
-      if (RATE_LIMITED.test(stderr) && attempt < 90) {
-        log('warn: GitHub rate limit reached; waiting 60s');
-        sleep(60_000);
+      if (RATE_LIMITED.test(stderr) && attempt < 48) {
+        const wait = secondsUntilReset();
+        log(`warn: GitHub rate limit reached; waiting ${wait}s for the window to reset`);
+        sleep(wait * 1000);
         continue;
       }
       if (RETRYABLE.test(stderr) && attempt < 6) {
@@ -94,7 +103,13 @@ function createGhPullsForCommit(repo: string, sleep: (ms: number) => void, log: 
     for (let attempt = 0; ; attempt++) {
       const result = execArgvCommand('gh', ['api', `repos/${repo}/commits/${sha}/pulls`, '--jq', '[.[] | .number]'], { encoding: 'utf8' });
       if (result.exitCode === 0) return JSON.parse(result.stdout || '[]') as number[];
-      if ((RETRYABLE.test(result.stderr) || RATE_LIMITED.test(result.stderr)) && attempt < 6) {
+      if (RATE_LIMITED.test(result.stderr) && attempt < 48) {
+        const wait = secondsUntilReset();
+        log(`warn: GitHub rate limit reached; waiting ${wait}s for the window to reset`);
+        sleep(wait * 1000);
+        continue;
+      }
+      if (RETRYABLE.test(result.stderr) && attempt < 6) {
         log(`warn: GitHub ${result.stderr.split('\n')[0]?.slice(0, 80)}; retrying`);
         sleep(2000 * 2 ** attempt);
         continue;
