@@ -37,7 +37,7 @@ const OPTIONS = {
   repo: { type: 'string' },
 } as const;
 
-const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly/i;
+const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query/i;
 const RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
 
 const blockingSleep = (ms: number) => {
@@ -84,11 +84,15 @@ function parseGraphqlResponse(stdout: string): { data?: unknown; errors?: { type
   }
 }
 
-/** REST `commits/{sha}/pulls`: merged PRs GitHub ties to a commit. Same backoff as GraphQL. */
+/**
+ * REST `commits/{sha}/pulls`: PRs GitHub ties to a commit, merged or not.
+ * Merge bots close PRs instead of merging them (pytorch), so a merged-only
+ * filter would undercount misses. Same backoff as GraphQL.
+ */
 function createGhPullsForCommit(repo: string, sleep: (ms: number) => void, log: (line: string) => void) {
   return (sha: string): number[] => {
     for (let attempt = 0; ; attempt++) {
-      const result = execArgvCommand('gh', ['api', `repos/${repo}/commits/${sha}/pulls`, '--jq', '[.[] | select(.merged_at != null) | .number]'], { encoding: 'utf8' });
+      const result = execArgvCommand('gh', ['api', `repos/${repo}/commits/${sha}/pulls`, '--jq', '[.[] | .number]'], { encoding: 'utf8' });
       if (result.exitCode === 0) return JSON.parse(result.stdout || '[]') as number[];
       if ((RETRYABLE.test(result.stderr) || RATE_LIMITED.test(result.stderr)) && attempt < 6) {
         log(`warn: GitHub ${result.stderr.split('\n')[0]?.slice(0, 80)}; retrying`);

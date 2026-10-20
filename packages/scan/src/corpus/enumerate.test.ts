@@ -119,6 +119,22 @@ describe('enumerateCorpusRepo', () => {
     expect(stats).toMatchObject({ mapped_commits: 1, mapped_share: 0.5, unmapped_sample: [sha(1)], api_prs_not_on_branch: 1, api_prs_not_on_branch_default_base: 0 });
   });
 
+  it('attaches relands to the first landing and counts direct-pushed reverts apart from misses', () => {
+    const trailer = (n: number) => `Pull Request resolved: https://github.com/org/repo/pull/${n}`;
+    const git = fakeGit([
+      { n: 1, parents: [0], day: 2, subject: '[x] feature', body: trailer(50) },
+      { n: 2, parents: [1], day: 3, subject: 'Revert "[x] feature (#50)"' },
+      { n: 3, parents: [2], day: 4, subject: '[x] feature', body: trailer(50) },
+    ]);
+    const { graphql } = fakeGraphql([], [{ number: 50 }]);
+    const audited: string[] = [];
+    const { records, stats } = enumerateCorpusRepo(target, { runGit: git, graphql, pullsForCommit: (s) => (audited.push(s), []) });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ pr_number: 50, merge_sha: sha(1), relanded_merge_shas: [sha(3)] });
+    expect(stats).toMatchObject({ mapped_commits: 2, relanded_commits: 1, unmapped_reverts: 1, pr_recall_est: 1, direct_push_share_est: 0.3333 });
+    expect(audited).toEqual([]);
+  });
+
   it('audits unmapped commits to separate enumerator misses from direct pushes', () => {
     const git = fakeGit([
       { n: 1, parents: [0], day: 6, subject: 'Release notes' },

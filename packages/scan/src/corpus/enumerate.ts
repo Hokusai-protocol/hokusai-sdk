@@ -31,7 +31,7 @@ export interface CorpusEnumerateDeps {
   cache?: { get(key: string): unknown; set(key: string, value: unknown): void };
   onDiagnostic?: (line: string) => void;
   /**
-   * Merged PR numbers GitHub associates with a commit (REST `commits/{sha}/pulls`).
+   * PR numbers GitHub associates with a commit, merged or not (REST `commits/{sha}/pulls`).
    * Used on a sample of unmapped commits to split enumerator misses from
    * direct pushes that never had a PR. Omit to skip the audit.
    */
@@ -70,6 +70,12 @@ export interface CorpusPrRecord {
   landed_by: LandedBy;
   /** The merge SHA landed more than one PR (bors batches); labels share it. */
   batched: boolean;
+  /**
+   * Later first-parent commits that landed the same PR again: a reland after a
+   * revert (pytorch's merge bot). The record keeps the first landing; HOK-3267
+   * pairs these with the revert between them.
+   */
+  relanded_merge_shas: string[];
   author_login: string | null;
   author_type: string | null;
   labels: string[];
@@ -96,6 +102,10 @@ export interface CorpusEnumerationStats {
   direct_push_share_est: number | null;
   prs: number;
   batched_commits: number;
+  /** First-parent commits that re-landed an already-recorded PR (counted as mapped). */
+  relanded_commits: number;
+  /** Unmapped commits whose subject starts with "Revert": direct-pushed reverts, fix events rather than misses. */
+  unmapped_reverts: number;
   rebase_prs: number;
   number_ref_prs: number;
   /** Merged PRs the API reports that never landed on the first-parent walk (other base branches, mostly). */
@@ -132,6 +142,7 @@ interface FirstParentCommit {
   parents: string[];
   epoch: number;
   prNumbers: number[];
+  isRevert: boolean;
 }
 
 const PR_FIELDS = `number url mergedAt baseRefName headRefOid title body
@@ -180,12 +191,23 @@ export function enumerateCorpusRepo(
   const mapped = new Set<string>();
   const used = new Set<number>();
   let batchedCommits = 0;
+  let relandedCommits = 0;
+  const recordByNumber = new Map<number, CorpusPrRecord>();
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i]!;
     const viaSha = byMergeSha.get(commit.sha) ?? [];
     const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr): pr is ApiPr => !!pr);
-    const prs = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()].filter((pr) => !used.has(pr.number));
-    if (prs.length === 0) continue;
+    const candidates = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()];
+    const prs = candidates.filter((pr) => !used.has(pr.number));
+    if (prs.length === 0) {
+      const relanded = candidates.filter((pr) => recordByNumber.has(pr.number));
+      if (relanded.length) {
+        mapped.add(commit.sha);
+        relandedCommits++;
+        for (const pr of relanded) recordByNumber.get(pr.number)!.relanded_merge_shas.push(commit.sha);
+      }
+      continue;
+    }
     mapped.add(commit.sha);
     const batched = prs.length > 1;
     if (batched) batchedCommits++;
@@ -202,7 +224,7 @@ export function enumerateCorpusRepo(
         }
       }
       const members = i - first + 1;
-      records.push({
+      const record: CorpusPrRecord = {
         repo: target.repo,
         pr_number: pr.number,
         pr_url: pr.url,
@@ -214,19 +236,23 @@ export function enumerateCorpusRepo(
         member_commits: members,
         landed_by: !viaSha.includes(pr) ? 'number_ref' : isMergeCommit ? 'merge_commit' : members > 1 ? 'rebase' : 'squash',
         batched,
+        relanded_merge_shas: [],
         author_login: pr.author?.login ?? null,
         author_type: pr.author?.__typename ?? null,
         labels: pr.labels.nodes.map((label) => label.name),
         closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
         title: pr.title,
         body: pr.body ?? '',
-      });
+      };
+      records.push(record);
+      recordByNumber.set(pr.number, record);
     }
   }
 
   const defaultNames = new Set(target.defaultBranchNames);
   const unmapped = commits.filter((c) => !mapped.has(c.sha));
-  const audit = auditUnmapped(unmapped, deps.pullsForCommit);
+  // Direct-pushed reverts are fix events, not enumeration targets: audit the rest.
+  const audit = auditUnmapped(unmapped.filter((c) => !c.isRevert), deps.pullsForCommit, unmapped.length);
   const stats: CorpusEnumerationStats = {
     repo: target.repo,
     branch: target.branch,
@@ -240,6 +266,8 @@ export function enumerateCorpusRepo(
     direct_push_share_est: audit.estimate(mapped.size, commits.length).directPush,
     prs: records.length,
     batched_commits: batchedCommits,
+    relanded_commits: relandedCommits,
+    unmapped_reverts: unmapped.filter((c) => c.isRevert).length,
     rebase_prs: records.filter((r) => r.landed_by === 'rebase').length,
     number_ref_prs: records.filter((r) => r.landed_by === 'number_ref').length,
     api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
@@ -250,7 +278,7 @@ export function enumerateCorpusRepo(
   return { records, stats };
 }
 
-function auditUnmapped(unmapped: FirstParentCommit[], pullsForCommit: ((sha: string) => number[]) | undefined) {
+function auditUnmapped(unmapped: FirstParentCommit[], pullsForCommit: ((sha: string) => number[]) | undefined, unmappedTotal: number) {
   const step = Math.max(1, unmapped.length / UNMAPPED_AUDIT_SAMPLE);
   const sample = pullsForCommit ? Array.from({ length: Math.min(UNMAPPED_AUDIT_SAMPLE, unmapped.length) }, (_, i) => unmapped[Math.floor(i * step)]!) : [];
   const withPr = sample.filter((c) => pullsForCommit!(c.sha).length > 0).length;
@@ -260,10 +288,10 @@ function auditUnmapped(unmapped: FirstParentCommit[], pullsForCommit: ((sha: str
     withPr,
     estimate(mappedCount: number, total: number): { recall: number | null; directPush: number | null } {
       if (total === 0) return { recall: null, directPush: null };
-      if (unmapped.length === 0) return { recall: 1, directPush: 0 };
+      if (unmapped.length === 0) return { recall: 1, directPush: round(unmappedTotal / total) };
       if (sample.length === 0) return { recall: null, directPush: null };
       const missed = (unmapped.length * withPr) / sample.length;
-      return { recall: round(mappedCount / (mappedCount + missed)), directPush: round((unmapped.length - missed) / total) };
+      return { recall: round(mappedCount / (mappedCount + missed)), directPush: round((unmappedTotal - missed) / total) };
     },
   };
 }
@@ -290,7 +318,7 @@ function readFirstParent(target: CorpusEnumerateTarget, runGit: GitRunner): Firs
       // --since/--until filter on committer date too, but bound explicitly: slices must not overlap.
       if (!Number.isFinite(epoch) || epoch * 1000 < lo || epoch * 1000 >= hi) continue;
       seen.add(sha);
-      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo) });
+      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
     }
   }
   return commits;
