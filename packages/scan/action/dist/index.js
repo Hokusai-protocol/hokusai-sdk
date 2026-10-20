@@ -7463,7 +7463,7 @@ var OPTIONS = {
   "cache-dir": { type: "string" },
   repo: { type: "string" }
 };
-var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host/i;
+var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
 var blockingSleep = (ms) => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
