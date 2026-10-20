@@ -115,10 +115,17 @@ export const GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
 export interface MergedPrRef {
   prNumber: number;
   prUrl: string;
-  /** First-parent commit that landed the PR (merge commit or squash commit). */
+  /** First-parent commit that landed the PR (merge commit or squash commit); a bors rollup member's own `Rollup merge` commit. */
   mergeSha: string;
   /** First parent of mergeSha: the pre-change integration state. */
   parentSha: string;
+  /**
+   * First-parent commit that brought mergeSha onto the integration branch.
+   * Omitted when that is mergeSha itself; set for rollup members, whose
+   * mergeSha sits on the rollup branch. Later-commit walks start here so the
+   * landing merge, which carries the PR's own lines, is not read as an undoer.
+   */
+  landedSha?: string;
   /** PR branch head (second parent), or the squash commit itself. */
   headSha: string;
   /** Committer time of mergeSha, epoch seconds. */
@@ -527,7 +534,7 @@ function attributeUndoers(
   if (touchedPaths.length > 0) {
     const result = deps.runGit([
       'log', '--first-parent', '--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e',
-      `${pr.mergeSha}..${terminalSha}`, '--', ...touchedPaths,
+      `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`, '--', ...touchedPaths,
     ]);
     if (result.exitCode === 0) {
       for (const record of result.stdout.split('\x1e')) {

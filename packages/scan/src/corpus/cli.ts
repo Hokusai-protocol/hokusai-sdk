@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { execArgvCommand } from '../shell-utils.js';
@@ -131,6 +131,25 @@ function createGhPullsForCommit(repo: string, sleep: (ms: number) => void, log: 
   };
 }
 
+/** JSONL one row at a time: a corpus repo's rows can exceed V8's maximum string length (next.js). */
+function writeJsonl(path: string, rows: readonly unknown[]): { bytes: number; largestRowBytes: number } {
+  const fd = openSync(path, 'w');
+  let bytes = 0;
+  let largestRowBytes = 0;
+  try {
+    for (const row of rows) {
+      const line = `${JSON.stringify(row)}\n`;
+      const size = Buffer.byteLength(line);
+      bytes += size;
+      largestRowBytes = Math.max(largestRowBytes, size);
+      writeSync(fd, line);
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return { bytes, largestRowBytes };
+}
+
 function fileCache(dir: string) {
   mkdirSync(dir, { recursive: true });
   const path = (key: string) => join(dir, `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.json`);
@@ -203,7 +222,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
         { repo: entry.repo, branch, defaultBranchNames: [branch, ...(entry.default_branch_aliases ?? [])], ...window },
         { runGit, graphql, cache: fileCache(join(repoDir, 'graphql')), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry.repo, io.sleep ?? blockingSleep, log) },
       );
-      writeFileSync(join(repoDir, 'prs.jsonl'), records.map((r) => `${JSON.stringify(r)}\n`).join(''));
+      writeJsonl(join(repoDir, 'prs.jsonl'), records);
       writeFileSync(join(repoDir, 'enumeration.json'), `${JSON.stringify(stats, null, 2)}\n`);
       io.writeStdout(`${JSON.stringify(stats)}\n`);
       log(`info: ${entry.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
@@ -249,7 +268,7 @@ function runLabel(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log },
       );
-      writeFileSync(join(repoDir, 's2.jsonl'), rows.map((row) => `${JSON.stringify(row)}\n`).join(''));
+      const written = writeJsonl(join(repoDir, 's2.jsonl'), rows);
       const summary = {
         repo: entry.repo,
         as_of: asOf.toISOString(),
@@ -257,6 +276,8 @@ function runLabel(
         rows: rows.length,
         failed_prs: failed.length,
         failed_sample: failed.slice(0, 20),
+        s2_bytes: written.bytes,
+        largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1000),
         base_rates: summarizeLabels(entry.repo, rows),
       };

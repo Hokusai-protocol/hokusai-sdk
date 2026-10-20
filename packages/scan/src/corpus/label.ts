@@ -10,7 +10,9 @@
  * `parentSha` is the enumerator's `base_sha`. For squash and merge commits
  * that is `merge^1`, as before. For rebase merges it sits before the PR's
  * first commit, so the substrate covers the whole PR rather than its last
- * commit.
+ * commit. For bors rollup members `merge_sha` is the member's `Rollup merge`
+ * commit (reachable from the branch, not on its first-parent walk) and
+ * `parentSha` its first parent; `landed_sha` bounds the undoer walk.
  *
  * Pure: git, GraphQL and the clock are injected.
  */
@@ -35,6 +37,8 @@ export function toMergedPrRef(record: CorpusPrRecord): MergedPrRef {
     prUrl: record.pr_url,
     mergeSha: record.merge_sha,
     parentSha: record.base_sha,
+    // Absent in records enumerated before rollup expansion; those all landed on first-parent.
+    ...(record.landed_sha && record.landed_sha !== record.merge_sha ? { landedSha: record.landed_sha } : {}),
     headSha: record.head_sha ?? record.merge_sha,
     mergedAtEpoch: Math.floor(Date.parse(record.merged_at) / 1000),
     // Redispatch detection reads tracker keys from the subject; the PR title is the subject's source.

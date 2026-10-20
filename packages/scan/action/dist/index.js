@@ -5914,7 +5914,7 @@ function attributeUndoers(deps, pr, terminalSha, touchedPaths, extraVotes) {
       "log",
       "--first-parent",
       "--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e",
-      `${pr.mergeSha}..${terminalSha}`,
+      `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`,
       "--",
       ...touchedPaths
     ]);
@@ -7273,7 +7273,7 @@ function runShadowCli(command, args, io) {
 
 // src/corpus/cli.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
 import { join as join7, resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
 
@@ -7580,6 +7580,8 @@ function toMergedPrRef(record) {
     prUrl: record.pr_url,
     mergeSha: record.merge_sha,
     parentSha: record.base_sha,
+    // Absent in records enumerated before rollup expansion; those all landed on first-parent.
+    ...record.landed_sha && record.landed_sha !== record.merge_sha ? { landedSha: record.landed_sha } : {},
     headSha: record.head_sha ?? record.merge_sha,
     mergedAtEpoch: Math.floor(Date.parse(record.merged_at) / 1e3),
     // Redispatch detection reads tracker keys from the subject; the PR title is the subject's source.
@@ -7739,6 +7741,24 @@ function createGhPullsForCommit(repo, sleep, log) {
     }
   };
 }
+function writeJsonl(path4, rows) {
+  const fd = openSync2(path4, "w");
+  let bytes = 0;
+  let largestRowBytes = 0;
+  try {
+    for (const row of rows) {
+      const line = `${JSON.stringify(row)}
+`;
+      const size = Buffer.byteLength(line);
+      bytes += size;
+      largestRowBytes = Math.max(largestRowBytes, size);
+      writeSync2(fd, line);
+    }
+  } finally {
+    closeSync2(fd);
+  }
+  return { bytes, largestRowBytes };
+}
 function fileCache(dir) {
   mkdirSync2(dir, { recursive: true });
   const path4 = (key) => join7(dir, `${createHash2("sha256").update(key).digest("hex").slice(0, 32)}.json`);
@@ -7807,8 +7827,7 @@ function runCorpusCli(command, argv, io) {
         { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], ...window },
         { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry.repo, io.sleep ?? blockingSleep, log) }
       );
-      writeFileSync2(join7(repoDir, "prs.jsonl"), records.map((r) => `${JSON.stringify(r)}
-`).join(""));
+      writeJsonl(join7(repoDir, "prs.jsonl"), records);
       writeFileSync2(join7(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(stats)}
@@ -7846,8 +7865,7 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
-      writeFileSync2(join7(repoDir, "s2.jsonl"), rows.map((row) => `${JSON.stringify(row)}
-`).join(""));
+      const written = writeJsonl(join7(repoDir, "s2.jsonl"), rows);
       const summary = {
         repo: entry.repo,
         as_of: asOf.toISOString(),
@@ -7855,6 +7873,8 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         rows: rows.length,
         failed_prs: failed.length,
         failed_sample: failed.slice(0, 20),
+        s2_bytes: written.bytes,
+        largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
         base_rates: summarizeLabels(entry.repo, rows)
       };
