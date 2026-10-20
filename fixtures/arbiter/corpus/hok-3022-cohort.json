@@ -27,7 +27,7 @@
         "Refs #<trac>"
       ],
       "backport_patterns": ["^\\[\\d+\\.\\d+\\.x\\]"],
-      "status": "pending_exception",
+      "status": "kept",
       "observed_merge_convention": "rebase_or_mixed"
     },
     {
@@ -284,6 +284,12 @@
       "repo": "PostHog/posthog",
       "change": "unmeasured",
       "reason": "GitHub GraphQL 502s on the commit-history sample after retries; decided by the clone-based enumerator in HOK-3265"
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "django/django",
+      "change": "kept (exception approved)",
+      "reason": "868 PRs/yr is under the 1,000 floor; kept as the cohort's highest-precision P2 anchor ('Regression in <sha>'). Enumeration: 1,632 PRs in window, pr_recall_est 1.0, direct_push_share_est 0.08 (release-manager security fixes and release notes)."
     }
   ]
 }
