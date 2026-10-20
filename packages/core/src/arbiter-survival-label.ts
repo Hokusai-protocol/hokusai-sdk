@@ -5,6 +5,8 @@
  * Hokusai data pipeline trains on. One label per merged PR per elapsed
  * horizon (14/30/60 days), aggregated over normalized PR line ranges walked
  * on the integration branch — never `main` blame in squash-promotion repos.
+ * v1.1.0 (HOK-3265) admits `main` for direct-merge repos via
+ * `envelope.integration_mode = 'direct'`; v1.0.0 rows remain valid.
  *
  * Sources of truth:
  * - Validation: `packages/core/schemas/arbiter-survival-label.schema.json`
@@ -25,7 +27,20 @@
 import { createHash } from 'node:crypto';
 
 /** Contract version. Bump for ANY field/semantics change, however small. */
-export const ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = '1.0.0';
+export const ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = '1.1.0';
+
+/** Every contract version the schema still accepts; the builder emits only the current one. */
+export const ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS = ['1.0.0', '1.1.0'] as const;
+export type ArbiterSurvivalLabelSchemaVersion = (typeof ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS)[number];
+
+/**
+ * How the labelled branch relates to final history (v1.1.0+).
+ * `promotion` — `integration_branch` is later squash-promoted elsewhere
+ * (wavemill `auto/integration` → `main`), so `main` must never be walked.
+ * `direct` — PRs merge straight into `integration_branch` (most OSS repos),
+ * so walking it, `main` included, sees the final lineage.
+ */
+export type IntegrationMode = 'promotion' | 'direct';
 
 /**
  * Versioned threshold for `report_outcome = 'substantially_rewritten'`:
@@ -151,8 +166,10 @@ export interface ReproducibilityEnvelope {
   merge_sha: string;
   /** Tip of integration_branch at (merge_sha committer time + horizon_days). */
   horizon_terminal_sha: string;
-  /** Branch walked by the labeller, e.g. `auto/integration`. `main` rejected in v1.0.0. */
+  /** Branch walked by the labeller, e.g. `auto/integration`. `main` only with `integration_mode: 'direct'` (v1.1.0+). */
   integration_branch: string;
+  /** Required from v1.1.0; absent on v1.0.0 rows. */
+  integration_mode?: IntegrationMode;
   /** ISO-8601 UTC. Latest computed_at per (prUrl, horizon_days) wins in queries. */
   computed_at: string;
 }
@@ -179,9 +196,9 @@ export interface OwnerCorrection {
   };
 }
 
-/** The full v1.0.0 label object. One per (prUrl, horizon_days) per provenance event. */
+/** The full v1.x label object. One per (prUrl, horizon_days) per provenance event. */
 export interface ArbiterSurvivalLabelV1 {
-  schema_version: '1.0.0';
+  schema_version: ArbiterSurvivalLabelSchemaVersion;
   prUrl: string;
   horizon_days: HorizonDays;
   label_provenance: LabelProvenance;
@@ -274,14 +291,14 @@ export interface BuildSurvivalLabelInput {
   label_provenance: LabelProvenance;
   line_ranges: LineRange[];
   outcome: Omit<SurvivalOutcome, 'report_outcome'>;
-  envelope: Omit<ReproducibilityEnvelope, 'schema_version'>;
+  envelope: Omit<ReproducibilityEnvelope, 'schema_version' | 'integration_mode'> & { integration_mode: IntegrationMode };
   owner_correction?: OwnerCorrection;
   /** Override only when replaying with a historical normalization threshold. */
   substantialRewriteThreshold?: number;
 }
 
 /**
- * Assemble a v1.0.0 label: stamps `schema_version` (top-level and envelope)
+ * Assemble a current-version label: stamps `schema_version` (top-level and envelope)
  * and derives `report_outcome` via {@link deriveReportOutcome}. Pure and
  * deterministic; performs no git or network work. Schema validation stays the
  * caller's job (compile `packages/core/schemas/arbiter-survival-label.schema.json`
@@ -298,7 +315,7 @@ export function buildArbiterSurvivalLabel(input: BuildSurvivalLabelInput): Arbit
     input.substantialRewriteThreshold,
   );
   const label: ArbiterSurvivalLabelV1 = {
-    schema_version: '1.0.0',
+    schema_version: ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
     prUrl: input.prUrl,
     horizon_days: input.horizon_days,
     label_provenance: input.label_provenance,

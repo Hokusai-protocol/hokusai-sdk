@@ -67,7 +67,9 @@ hokusai-scan scan    --repo <path> --integration-branch <name> --pr <n>
   merges, enriches and labels them, then emits a validated `arbiter_report/v1`
   envelope. If the default branch is `main`, a durable promotion branch is
   detected from recent pull requests; otherwise pass `--integration-branch`.
-  The frozen S2 contract continues to reject `main`.
+  S2 v1.1.0 walks `main` only with `--integration-mode direct`, for repos whose
+  PRs merge straight into it (most OSS repos). Rows record the mode in
+  `envelope.integration_mode`; without the flag `main` is still rejected.
 - Report `--state-dir` opts into local incremental caching. The CLI default is
   under the checkout's `.git/hokusai-scan/`; the Action defaults to no state.
   The cache stores only merge keys and derived report fields.

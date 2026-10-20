@@ -1092,7 +1092,8 @@ function candidateFeatureValueJsonSchema(name, nullable2 = true) {
 
 // ../core/src/arbiter-survival-label.ts
 import { createHash } from "node:crypto";
-var ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = "1.0.0";
+var ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION = "1.1.0";
+var ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS = ["1.0.0", "1.1.0"];
 var SUBSTANTIAL_REWRITE_THRESHOLD = 0.5;
 var HORIZONS = [14, 30, 60];
 var REASON_CODES = [
@@ -1161,7 +1162,7 @@ function buildArbiterSurvivalLabel(input) {
     input.substantialRewriteThreshold
   );
   const label2 = {
-    schema_version: "1.0.0",
+    schema_version: ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
     prUrl: input.prUrl,
     horizon_days: input.horizon_days,
     label_provenance: input.label_provenance,
@@ -1184,7 +1185,7 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "arbiter-survival-label.schema.json",
     "title": "ArbiterSurvivalLabelV1",
-    "description": "Arbiter S2 survival label: one label per merged PR per elapsed horizon (14/30/60 days), aggregated over normalized PR line ranges walked on the integration branch (never main blame). Producer: the wavemill survival labeller. Consumer: Hokusai/hokusai-data-pipeline training ingest. Contract doc: docs/arbiter/survival-label-contract.md. Any change requires a schema_version bump coordinated with the pipeline.",
+    "description": "Arbiter S2 survival label: one label per merged PR per elapsed horizon (14/30/60 days), aggregated over normalized PR line ranges walked on the integration branch (never main blame in squash-promotion repos; v1.1.0 admits main for direct-merge repos). Producer: the wavemill survival labeller. Consumer: Hokusai/hokusai-data-pipeline training ingest. Contract doc: docs/arbiter/survival-label-contract.md. Any change requires a schema_version bump coordinated with the pipeline.",
     "type": "object",
     "required": [
       "schema_version",
@@ -1198,8 +1199,11 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
     "additionalProperties": false,
     "properties": {
       "schema_version": {
-        "const": "1.0.0",
-        "description": "Contract version of this label object. Must equal envelope.schema_version (asserted by the contract test)."
+        "enum": [
+          "1.0.0",
+          "1.1.0"
+        ],
+        "description": "Contract version of this label object. Must equal envelope.schema_version (asserted by the contract test). 1.0.0 rows stay valid; 1.1.0 adds envelope.integration_mode."
       },
       "prUrl": {
         "type": "string",
@@ -1260,6 +1264,70 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
             "required": [
               "owner_correction"
             ]
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "schema_version": {
+              "const": "1.0.0"
+            }
+          },
+          "required": [
+            "schema_version"
+          ]
+        },
+        "then": {
+          "properties": {
+            "envelope": {
+              "properties": {
+                "integration_mode": false,
+                "integration_branch": {
+                  "not": {
+                    "const": "main"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            }
+          },
+          "required": [
+            "schema_version"
+          ]
+        },
+        "then": {
+          "properties": {
+            "envelope": {
+              "required": [
+                "integration_mode"
+              ],
+              "if": {
+                "properties": {
+                  "integration_branch": {
+                    "const": "main"
+                  }
+                },
+                "required": [
+                  "integration_branch"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "integration_mode": {
+                    "const": "direct"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1658,10 +1726,14 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
           "integration_branch": {
             "type": "string",
             "minLength": 1,
-            "not": {
-              "const": "main"
-            },
-            "description": "Branch the labeller walked, e.g. auto/integration. 'main' is rejected in v1.0.0: squash-promotion rewrites the SHA lineage the labeller needs."
+            "description": "Branch the labeller walked, e.g. auto/integration or an OSS default branch. 'main' is rejected in v1.0.0 and admitted in v1.1.0 only with integration_mode 'direct': squash promotion rewrites the SHA lineage the labeller needs, direct merge does not."
+          },
+          "integration_mode": {
+            "enum": [
+              "promotion",
+              "direct"
+            ],
+            "description": "v1.1.0+. 'promotion': integration_branch is later squash-promoted to another branch (wavemill auto/integration -> main). 'direct': PRs merge straight into integration_branch, so its lineage is the final history (most OSS repos)."
           },
           "computed_at": {
             "$ref": "#/$defs/isoUtcTimestamp",
@@ -2647,11 +2719,11 @@ function validateShadowOutcomeRow(input) {
   if (!("label" in input)) {
     errors.push(fieldError2("label", "Field is required.", "required"));
   } else if (isPlainObject2(input.label)) {
-    if (input.label.schema_version !== ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION) {
+    if (!ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS.includes(input.label.schema_version)) {
       errors.push(
         fieldError2(
           "label.schema_version",
-          `Expected "${ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION}".`,
+          `Expected one of ${ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS.map((v) => `"${v}"`).join(", ")}.`,
           "invalid_value"
         )
       );
@@ -2983,6 +3055,7 @@ var harvestedSurvivalLabelFixture = buildArbiterSurvivalLabel({
     merge_sha: SHA_MERGE,
     horizon_terminal_sha: SHA_TERMINAL,
     integration_branch: "auto/integration",
+    integration_mode: "promotion",
     computed_at: "2026-09-08T00:00:00Z"
   }
 });
@@ -3006,11 +3079,12 @@ var ownerCorrectedSurvivalLabelFixture = buildArbiterSurvivalLabel({
     merge_sha: SHA_MERGE,
     horizon_terminal_sha: SHA_TERMINAL,
     integration_branch: "auto/integration",
+    integration_mode: "promotion",
     computed_at: "2026-09-09T12:00:00Z"
   },
   owner_correction: {
     supersedes: {
-      schema_version: "1.0.0",
+      schema_version: ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
       computed_at: "2026-09-08T00:00:00Z",
       label_hash: canonicalHash(harvestedSurvivalLabelFixture)
     },
@@ -5554,14 +5628,14 @@ function extractPrNumber(subject) {
 }
 
 // src/survival-labeller.ts
-var SURVIVAL_LABELLER_VERSION = "1.0.0";
+var SURVIVAL_LABELLER_VERSION = "1.1.0";
 var SURVIVAL_NORMALIZATION_VERSION = "1.0.0";
 var DAY_SECONDS = 86400;
 var GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
 function assertIntegrationBranch(target) {
-  if (target.integrationBranch === "main") {
+  if (target.integrationBranch === "main" && target.integrationMode !== "direct") {
     throw new Error(
-      'survival-labeller: integrationBranch "main" is rejected (v1.0.0 contract): squash promotion rewrites the SHA lineage the labeller needs'
+      'survival-labeller: integrationBranch "main" requires integrationMode "direct" (S2 v1.1.0): squash promotion rewrites the SHA lineage the labeller needs'
     );
   }
 }
@@ -5871,6 +5945,7 @@ function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
       merge_sha: pr.mergeSha,
       horizon_terminal_sha: options.terminalSha ?? pr.mergeSha,
       integration_branch: target.integrationBranch,
+      integration_mode: target.integrationMode ?? "promotion",
       computed_at: deps.now().toISOString()
     }
   });
@@ -5990,6 +6065,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
         merge_sha: pr.mergeSha,
         horizon_terminal_sha: terminalSha,
         integration_branch: target.integrationBranch,
+        integration_mode: target.integrationMode ?? "promotion",
         computed_at: deps.now().toISOString()
       }
     }));
@@ -6189,12 +6265,17 @@ function validateRepoDir(value) {
   }
   return value;
 }
-function validateIntegrationBranch(value) {
+function validateIntegrationMode(value) {
+  if (value === void 0 || value === "promotion") return "promotion";
+  if (value === "direct") return "direct";
+  throw new ScanInputError("--integration-mode must be promotion or direct");
+}
+function validateIntegrationBranch(value, mode = "promotion") {
   if (!value || !value.trim()) {
     throw new ScanInputError("--integration-branch is required");
   }
-  if (value === "main") {
-    throw new ScanInputError("integration branch main is rejected (v1.0.0 contract)");
+  if (value === "main" && mode !== "direct") {
+    throw new ScanInputError("integration branch main requires --integration-mode direct (S2 v1.1.0): main is only safe to walk when PRs merge into it directly");
   }
   return value;
 }
@@ -7130,17 +7211,19 @@ var IntegrationBranchError = class extends Error {
     this.name = "IntegrationBranchError";
   }
 };
-var MAIN_GUIDANCE = "integration branch resolves to main; S2 v1.0.0 rejects main. Pass --integration-branch <ref> or wait for S2 v1.1.0 (advisory main).";
+var MAIN_GUIDANCE = "integration branch resolves to main and no promotion branch was detected. Pass --integration-branch <ref>, or --integration-mode direct if PRs merge straight into main (S2 v1.1.0).";
 var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
 var SQUASH = /\(#(\d+)\)\s*$/;
 function resolveIntegrationBranch(evidence) {
   const explicit = evidence.explicitBranch?.trim();
+  const explicitMode = evidence.explicitMode ?? null;
   if (explicit) {
-    if (explicit.toLowerCase() === "main") throw new IntegrationBranchError(MAIN_GUIDANCE);
-    return { branch: explicit, detected: false, summary: "explicit integration branch" };
+    if (explicit.toLowerCase() === "main" && explicitMode !== "direct") throw new IntegrationBranchError(MAIN_GUIDANCE);
+    return { branch: explicit, mode: explicitMode ?? "promotion", detected: false, summary: "explicit integration branch" };
   }
   if (!evidence.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
-  if (evidence.defaultBranch.toLowerCase() !== "main") return { branch: evidence.defaultBranch, detected: false, summary: "repository default branch" };
+  if (evidence.defaultBranch.toLowerCase() !== "main") return { branch: evidence.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
+  if (explicitMode === "direct") return { branch: evidence.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
   const counts = /* @__PURE__ */ new Map();
   let promotions = 0;
   for (const subject of evidence.recentFirstParentSubjects.slice(0, 200)) {
@@ -7161,7 +7244,7 @@ function resolveIntegrationBranch(evidence) {
   }
   const winner = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
   if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence.remoteBranchExists(winner[0])) {
-    return { branch: winner[0], detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
+    return { branch: winner[0], mode: "promotion", detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
   }
   throw new IntegrationBranchError(MAIN_GUIDANCE);
 }
@@ -7792,7 +7875,7 @@ async function runReportScan(target, deps, options) {
   const stateBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const horizons = options.horizons ?? [14, 30, 60];
   const label2 = deps.label ?? labelMergedPr;
-  const labellerTarget = { owner: target.owner, repo: target.repo, repoDir: target.repoDir, integrationBranch: target.integrationBranch };
+  const labellerTarget = { owner: target.owner, repo: target.repo, repoDir: target.repoDir, integrationBranch: target.integrationBranch, integrationMode: target.integrationMode };
   const refs = allLocal.flatMap((merge) => merge.prNumber === null ? [] : [{
     prNumber: merge.prNumber,
     prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${merge.prNumber}`,
@@ -7998,13 +8081,15 @@ var EXIT_INVALID_INPUT = 2;
 var EXIT_UPSTREAM = 3;
 var USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
-label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
+label    --repo <path> --integration-branch <name> [--integration-mode promotion|direct]
+         [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
          [--no-links] [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
 report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
+         [--integration-mode promotion|direct]
          [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
          [--state-dir <path>] [--contribute [--dry-run]]
 
@@ -8019,6 +8104,7 @@ shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
 var OPTION_SPEC = {
   "repo": { type: "string" },
   "integration-branch": { type: "string" },
+  "integration-mode": { type: "string" },
   "github-repo": { type: "string" },
   "pr": { type: "string" },
   "pr-url": { type: "string" },
@@ -8098,7 +8184,8 @@ function runScanCli(argv, io) {
         repoDir,
         offline,
         asOf,
-        integrationBranch: validateIntegrationBranch(values["integration-branch"]),
+        integrationBranch: validateIntegrationBranch(values["integration-branch"], validateIntegrationMode(values["integration-mode"])),
+        integrationMode: validateIntegrationMode(values["integration-mode"]),
         githubRepo: validateGithubRepo(values["github-repo"]),
         prUrl: validatePrUrl(values["pr-url"]),
         horizons: validateHorizons(values.horizons),
@@ -8118,7 +8205,8 @@ function runScanCli(argv, io) {
         repoDir,
         offline,
         asOf,
-        integrationBranch: validateIntegrationBranch(values["integration-branch"]),
+        integrationBranch: validateIntegrationBranch(values["integration-branch"], validateIntegrationMode(values["integration-mode"])),
+        integrationMode: validateIntegrationMode(values["integration-mode"]),
         githubRepo: validateGithubRepo(values["github-repo"]),
         prNumber: validatePrNumber(values.pr),
         baseRef: values["base-ref"],
@@ -8203,14 +8291,19 @@ async function runReportCli(argv, io) {
     if (offline) reportDeps.deps.github = createOfflineGitHubClient();
     const repoMetadata = offline ? { defaultBranch: values["integration-branch"] ?? "", private: false } : await scanGithub.getRepo();
     const explicitBranch = values["integration-branch"];
+    const explicitMode = values["integration-mode"] === void 0 ? void 0 : validateIntegrationMode(values["integration-mode"]);
     let integrationBranch;
-    if (explicitBranch) integrationBranch = validateIntegrationBranch(explicitBranch);
-    else {
+    let integrationMode;
+    if (explicitBranch) {
+      integrationMode = explicitMode ?? "promotion";
+      integrationBranch = validateIntegrationBranch(explicitBranch, integrationMode);
+    } else {
       const log = reportDeps.deps.runGit(["log", "--first-parent", "-200", "--pretty=format:%s", repoMetadata.defaultBranch]);
       if (log.exitCode !== 0) throw new ScanInputError("cannot read the repository default branch history");
-      integrationBranch = resolveIntegrationBranch({
+      const resolved = resolveIntegrationBranch({
         defaultBranch: repoMetadata.defaultBranch,
         recentFirstParentSubjects: log.stdout.split("\n"),
+        explicitMode: explicitMode ?? null,
         headRefLookup: (number) => {
           const result = execArgvCommand("gh", ["pr", "view", String(number), "--json", "headRefName"], { cwd: repoDir, ...context.token ? { env: { ...process.env, GH_TOKEN: context.token } } : {} });
           if (result.exitCode !== 0) return null;
@@ -8221,7 +8314,9 @@ async function runReportCli(argv, io) {
           }
         },
         remoteBranchExists: (ref2) => execArgvCommand("git", ["-C", repoDir, "ls-remote", "--exit-code", "--heads", "origin", ref2]).exitCode === 0
-      }).branch;
+      });
+      integrationBranch = resolved.branch;
+      integrationMode = resolved.mode;
     }
     if (temporaryRepo) {
       const fetched = execArgvCommand("git", ["-C", repoDir, "fetch", "--no-tags", "origin", integrationBranch], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
@@ -8252,7 +8347,7 @@ async function runReportCli(argv, io) {
     }
     const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join9(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
-    const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
+    const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
       labeller: reportDeps.deps,
       github: scanGithub,
@@ -8363,6 +8458,7 @@ function buildLabellerWorld(context, params) {
     owner: githubRepo.owner,
     repo: githubRepo.repo,
     integrationBranch: params.integrationBranch,
+    integrationMode: params.integrationMode ?? "promotion",
     repoDir: params.repoDir,
     ...context.token !== void 0 ? { token: context.token } : {}
   };

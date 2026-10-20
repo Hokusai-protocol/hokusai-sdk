@@ -6,6 +6,7 @@ import {
   validateGithubRepo,
   validateHorizons,
   validateIntegrationBranch,
+  validateIntegrationMode,
   validateMaxPrs,
   validatePrNumber,
   validatePrUrl,
@@ -29,10 +30,18 @@ describe('validateIntegrationBranch', () => {
     expect(() => validateIntegrationBranch(undefined)).toThrow('--integration-branch is required');
   });
 
-  it('rejects main per the v1.0.0 contract', () => {
+  it('rejects main unless integration mode is direct (S2 v1.1.0)', () => {
     expect(() => validateIntegrationBranch('main')).toThrow(
-      'integration branch main is rejected (v1.0.0 contract)',
+      'integration branch main requires --integration-mode direct',
     );
+    expect(() => validateIntegrationBranch('main', 'promotion')).toThrow(/requires --integration-mode direct/);
+    expect(validateIntegrationBranch('main', 'direct')).toBe('main');
+  });
+
+  it('validates --integration-mode', () => {
+    expect(validateIntegrationMode(undefined)).toBe('promotion');
+    expect(validateIntegrationMode('direct')).toBe('direct');
+    expect(() => validateIntegrationMode('squash')).toThrow('--integration-mode must be promotion or direct');
   });
 
   it('accepts any other branch', () => {

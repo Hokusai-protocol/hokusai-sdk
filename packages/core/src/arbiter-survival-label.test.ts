@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
+  ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS,
   HORIZONS,
   MISSING_REASON_CODES,
   REASON_CODES,
@@ -59,6 +60,7 @@ function makeEnvelope(overrides: Partial<ReproducibilityEnvelope> = {}): Reprodu
     merge_sha: SHA_MERGE,
     horizon_terminal_sha: SHA_TERMINAL,
     integration_branch: 'auto/integration',
+    integration_mode: 'promotion',
     computed_at: '2026-09-08T00:00:00Z',
     ...overrides,
   };
@@ -85,7 +87,7 @@ function makeLabel(
   overrides: Partial<ArbiterSurvivalLabelV1> = {},
 ): ArbiterSurvivalLabelV1 {
   return {
-    schema_version: '1.0.0',
+    schema_version: ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
     prUrl: 'https://github.com/example-org/example-repo/pull/123',
     horizon_days: 30,
     label_provenance: 'harvested',
@@ -216,9 +218,10 @@ describe('survival-label — schema', () => {
     expect(typeof validate).toBe('function');
   });
 
-  it('schema const version matches the exported constant', () => {
-    const props = (schema as { properties: Record<string, { const?: string }> }).properties;
-    expect(props.schema_version?.const).toBe(ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION);
+  it('schema version enum matches the exported constants', () => {
+    const props = (schema as { properties: Record<string, { enum?: string[] }> }).properties;
+    expect(props.schema_version?.enum).toEqual([...ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS]);
+    expect(ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS.at(-1)).toBe(ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION);
   });
 
   it('schema reason-code enum matches REASON_CODES exactly', () => {
@@ -362,13 +365,63 @@ describe('survival-label — negative producer fixtures', () => {
     );
   });
 
-  it("rejects envelope.integration_branch='main' (squash-promotion guard)", () => {
+  it("rejects envelope.integration_branch='main' in promotion mode (squash-promotion guard)", () => {
     assertInvalid(
       mutate(survivedLabel, (d) => {
         d.envelope.integration_branch = 'main';
       }),
-      'integration_branch=main',
+      'integration_branch=main, integration_mode=promotion',
     );
+  });
+
+  it("accepts envelope.integration_branch='main' in direct mode (v1.1.0)", () => {
+    assertValid(
+      mutate(survivedLabel, (d) => {
+        d.envelope.integration_branch = 'main';
+        d.envelope.integration_mode = 'direct';
+      }),
+      'integration_branch=main, integration_mode=direct',
+    );
+  });
+
+  it('rejects a v1.1.0 label without envelope.integration_mode', () => {
+    assertInvalid(
+      mutate(survivedLabel, (d) => {
+        delete d.envelope.integration_mode;
+      }),
+      'v1.1.0 without integration_mode',
+    );
+  });
+
+  describe('v1.0.0 rows stay valid', () => {
+    const asV1_0 = (label: ArbiterSurvivalLabelV1) =>
+      mutate(label, (d) => {
+        d.schema_version = '1.0.0';
+        d.envelope.schema_version = '1.0.0';
+        delete d.envelope.integration_mode;
+      }) as ArbiterSurvivalLabelV1;
+
+    it('accepts a v1.0.0 label without integration_mode', () => {
+      assertValid(asV1_0(survivedLabel), 'v1.0.0 without integration_mode');
+    });
+
+    it("still rejects integration_branch='main' on v1.0.0", () => {
+      assertInvalid(
+        mutate(asV1_0(survivedLabel), (d) => {
+          d.envelope.integration_branch = 'main';
+        }),
+        'v1.0.0 integration_branch=main',
+      );
+    });
+
+    it('rejects integration_mode on a v1.0.0 label', () => {
+      assertInvalid(
+        mutate(asV1_0(survivedLabel), (d) => {
+          d.envelope.integration_mode = 'direct';
+        }),
+        'v1.0.0 with integration_mode',
+      );
+    });
   });
 
   it('rejects a free-form reason code (typed codes only)', () => {
@@ -560,6 +613,7 @@ describe('survival-label — buildArbiterSurvivalLabel', () => {
         merge_sha: SHA_MERGE,
         horizon_terminal_sha: SHA_TERMINAL,
         integration_branch: 'auto/integration',
+        integration_mode: 'promotion',
         computed_at: '2026-09-08T10:30:00Z',
       },
     });
@@ -590,6 +644,7 @@ describe('survival-label — buildArbiterSurvivalLabel', () => {
         merge_sha: SHA_MERGE,
         horizon_terminal_sha: SHA_TERMINAL,
         integration_branch: 'auto/integration',
+        integration_mode: 'promotion',
         computed_at: '2026-09-08T10:30:00Z',
       },
     });
@@ -741,12 +796,13 @@ describe('survival-label — checked-in round-trip fixture pair', () => {
     ).toBe(canonicalHash(fixtures.harvested));
   });
 
-  it('harvested fixture hash is byte-identical to the wavemill-era fixture', () => {
-    // Pinned from wavemill shared/lib/arbiter-survival-label.fixtures.json at
-    // the extraction commit. If this changes, the fixture bytes changed and
-    // every consumer that copied the pair must be re-synchronized.
+  it('harvested fixture hash is pinned', () => {
+    // Re-pinned for S2 v1.1.0 (HOK-3265: schema_version + integration_mode).
+    // The v1.0.0 pin, from wavemill shared/lib/arbiter-survival-label.fixtures.json
+    // at the extraction commit, was fbe06244…2f22. If this changes, the fixture
+    // bytes changed and every consumer that copied the pair must be re-synchronized.
     expect(canonicalHash(fixtures.harvested)).toBe(
-      'fbe06244fe171d2be74a2c3ad6e12c945526c8e3328c84d25effe35d4b1e2f22',
+      '9ba41f95118397e509c9ae5c0f9ea8cad094297a8854e828dcd7a7e3d2b25d98',
     );
   });
 

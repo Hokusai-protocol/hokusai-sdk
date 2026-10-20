@@ -293,6 +293,23 @@ describe('arbiter-shadow-record validators', () => {
       expect(result.ok).toBe(true);
     });
 
+    it('accepts labels of every supported S2 version and rejects unknown ones', () => {
+      const rowFor = (schemaVersion: string) => ({
+        schema_version: ARBITER_SHADOW_OUTCOME_SCHEMA_VERSION,
+        repo: 'owner/repo',
+        pr_number: 123,
+        merge_sha: 'b'.repeat(40),
+        horizon_days: 30 as const,
+        labelled_at: '2025-01-31T00:00:00Z',
+        survived: true,
+        label: { ...VALID_LABEL, schema_version: schemaVersion },
+      });
+      // Outcome logs written before the v1.1.0 bump must stay readable.
+      expect(validateShadowOutcomeRow(rowFor('1.0.0')).ok).toBe(true);
+      expect(validateShadowOutcomeRow(rowFor('1.1.0')).ok).toBe(true);
+      expect(validateShadowOutcomeRow(rowFor('2.0.0')).ok).toBe(false);
+    });
+
     it('rejects outcome with line_ranges', () => {
       const rowLabel = {
         ...VALID_LABEL,

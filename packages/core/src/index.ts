@@ -285,6 +285,7 @@ export {
 } from './candidate-features.js';
 export {
   ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
+  ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS,
   HORIZONS,
   MISSING_REASON_CODES,
   REASON_CODES,
@@ -293,9 +294,11 @@ export {
   canonicalHash,
   canonicalSerialize,
   deriveReportOutcome,
+  type ArbiterSurvivalLabelSchemaVersion,
   type ArbiterSurvivalLabelV1,
   type BuildSurvivalLabelInput,
   type HorizonDays,
+  type IntegrationMode,
   type LabelProvenance,
   type LineRange,
   type LineRangeAnchor,

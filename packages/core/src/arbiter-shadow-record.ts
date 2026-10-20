@@ -12,7 +12,7 @@
 
 import type { HokusaiFieldError } from './schemas.js';
 import type { ArbiterSurvivalLabelV1, HorizonDays } from './arbiter-survival-label.js';
-import { HORIZONS, ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION } from './arbiter-survival-label.js';
+import { HORIZONS, ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS } from './arbiter-survival-label.js';
 import { validateCandidateFeaturesV1 } from './candidate-features.js';
 import type { CandidateFeaturesV1 } from './candidate-features.js';
 
@@ -406,11 +406,12 @@ export function validateShadowOutcomeRow(
     errors.push(fieldError('label', 'Field is required.', 'required'));
   } else if (isPlainObject(input.label)) {
     // Check label schema_version
-    if (input.label.schema_version !== ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION) {
+    // Any S2 version the schema still accepts: outcome logs written before a bump must stay readable.
+    if (!(ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS as readonly unknown[]).includes(input.label.schema_version)) {
       errors.push(
         fieldError(
           'label.schema_version',
-          `Expected "${ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION}".`,
+          `Expected one of ${ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS.map((v) => `"${v}"`).join(', ')}.`,
           'invalid_value',
         ),
       );

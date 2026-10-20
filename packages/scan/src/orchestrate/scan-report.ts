@@ -62,7 +62,7 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   const stateBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const horizons = options.horizons ?? [14, 30, 60];
   const label = deps.label ?? labelMergedPr;
-  const labellerTarget = { owner: target.owner, repo: target.repo, repoDir: target.repoDir, integrationBranch: target.integrationBranch };
+  const labellerTarget = { owner: target.owner, repo: target.repo, repoDir: target.repoDir, integrationBranch: target.integrationBranch, integrationMode: target.integrationMode };
   const refs: MergedPrRef[] = allLocal.flatMap((merge) => merge.prNumber === null ? [] : [{
     prNumber: merge.prNumber, prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${merge.prNumber}`,
     mergeSha: merge.mergeSha, parentSha: merge.parentSha, headSha: merge.headSha,
