@@ -47,7 +47,7 @@ import {
 } from '@hokusai/core';
 
 /** Semver of this labeller implementation (envelope.labeller_version). */
-export const SURVIVAL_LABELLER_VERSION = '1.1.0';
+export const SURVIVAL_LABELLER_VERSION = '1.2.0';
 /**
  * Semver of the normalization rules: -U0 first-parent merge diff, `-w
  * --ignore-blank-lines` whitespace stripping, one-hop rename following,
@@ -531,8 +531,37 @@ export interface LabelMergedPrOptions {
 
 const ISSUE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/g;
 
-function extractIssueKeys(text: string): Set<string> {
-  return new Set(text.match(ISSUE_KEY_PATTERN) ?? []);
+/**
+ * Key prefixes that look like tracker keys but name standards, advisories or
+ * encodings (labeller 1.2.0). In public repos `CVE-2024-38875`, `PEP-8` or
+ * `UTF-8` in two subjects is not the same task being redispatched.
+ */
+const NON_TASK_KEY_PREFIXES = new Set([
+  'CVE', 'CWE', 'GHSA', 'PEP', 'RFC', 'ISO', 'UTF', 'SHA', 'MD', 'HTTP', 'TLS', 'SSL',
+  'ECMA', 'ES', 'IEEE', 'POSIX', 'UCS', 'WCAG', 'FIPS', 'NIST',
+]);
+
+export function extractIssueKeys(text: string): Set<string> {
+  return new Set((text.match(ISSUE_KEY_PATTERN) ?? []).filter((key) => !NON_TASK_KEY_PREFIXES.has(key.slice(0, key.lastIndexOf('-')))));
+}
+
+/** Merge epochs per issue key, built once per enumeration instead of scanned per PR. */
+const redispatchIndexes = new WeakMap<readonly MergedPrRef[], Map<string, { epoch: number; mergeSha: string }[]>>();
+
+function redispatchIndex(all: readonly MergedPrRef[]): Map<string, { epoch: number; mergeSha: string }[]> {
+  let index = redispatchIndexes.get(all);
+  if (!index) {
+    index = new Map();
+    for (const other of all) {
+      for (const key of extractIssueKeys(other.subject)) {
+        const list = index.get(key) ?? [];
+        list.push({ epoch: other.mergedAtEpoch, mergeSha: other.mergeSha });
+        index.set(key, list);
+      }
+    }
+    redispatchIndexes.set(all, index);
+  }
+  return index;
 }
 
 /** Deterministic reason-code emission order. */
@@ -629,12 +658,11 @@ export function labelMergedPr(
   const issueKeys = extractIssueKeys(pr.subject);
   const redispatchAt = (cutoffEpoch: number): boolean => {
     if (issueKeys.size === 0 || !options.allMergedPrs) return false;
-    return options.allMergedPrs.some(
-      (other) =>
-        other.mergeSha !== pr.mergeSha &&
-        other.mergedAtEpoch > pr.mergedAtEpoch &&
-        other.mergedAtEpoch <= cutoffEpoch &&
-        [...extractIssueKeys(other.subject)].some((key) => issueKeys.has(key)),
+    const index = redispatchIndex(options.allMergedPrs);
+    return [...issueKeys].some((key) =>
+      (index.get(key) ?? []).some(
+        (other) => other.mergeSha !== pr.mergeSha && other.epoch > pr.mergedAtEpoch && other.epoch <= cutoffEpoch,
+      ),
     );
   };
 

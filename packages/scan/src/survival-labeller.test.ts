@@ -23,6 +23,7 @@ import {
   GIT_OUTPUT_MAX_BUFFER,
   classifyCommitActor,
   enumerateMergedPrs,
+  extractIssueKeys,
   labelMergedPr,
   summarizeLabels,
   type MergedPrRef,
@@ -300,6 +301,12 @@ describe('survival-labeller', () => {
     expect(row.outcome.reason_codes).toEqual(['task_redispatch']);
     // The redispatching PR itself has no later same-task landing.
     expect(h14(label(prByNumber(8))).outcome.report_outcome).toBe('survived');
+  });
+
+  it('reads tracker keys but not standards or advisory identifiers (labeller 1.2.0)', () => {
+    expect([...extractIssueKeys('HOK-123: fix the parser (ABC-9)')]).toEqual(['HOK-123', 'ABC-9']);
+    expect([...extractIssueKeys('Fixed CVE-2024-38875 -- PEP-8 cleanup, UTF-8 and RFC-7231 handling')]).toEqual([]);
+    expect([...extractIssueKeys('Bump GHSA-abcd and SHA-256 helpers for HOK-7')]).toEqual(['HOK-7']);
   });
 
   it('flags a post-merge cross-reference as linked followup', () => {
