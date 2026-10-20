@@ -380,10 +380,30 @@ interface ForwardAnalysis {
   touchedPaths: string[];
 }
 
-function blobAt(deps: SurvivalLabellerDeps, sha: string, path: string): string | null {
-  const result = deps.runGit(['rev-parse', '-q', '--verify', `${sha}:${path}`]);
-  if (result.exitCode !== 0) return null;
-  return result.stdout.trim() || null;
+/** Paths per ls-tree call: keeps argv well under ARG_MAX for very wide PRs. */
+const LS_TREE_CHUNK = 400;
+
+/**
+ * Object ids of `paths` at `sha` — one `ls-tree` per chunk instead of one
+ * `rev-parse sha:path` per file (labeller hot path at corpus scale). A path
+ * absent at `sha` maps to null, as `rev-parse --verify` failing did.
+ */
+function blobsAt(deps: SurvivalLabellerDeps, sha: string, paths: readonly string[]): Map<string, string | null> {
+  const out = new Map<string, string | null>(paths.map((path) => [path, null]));
+  const unique = [...new Set(paths)];
+  for (let i = 0; i < unique.length; i += LS_TREE_CHUNK) {
+    const chunk = unique.slice(i, i + LS_TREE_CHUNK);
+    const result = deps.runGit(['--literal-pathspecs', 'ls-tree', '-z', '--full-tree', sha, '--', ...chunk]);
+    if (result.exitCode !== 0) continue;
+    for (const entry of result.stdout.split('\0')) {
+      const tab = entry.indexOf('\t');
+      if (tab < 0) continue;
+      const oid = entry.slice(0, tab).split(' ')[2];
+      const path = entry.slice(tab + 1);
+      if (oid && out.has(path)) out.set(path, oid);
+    }
+  }
+  return out;
 }
 
 function analyseForward(
@@ -391,6 +411,8 @@ function analyseForward(
   pr: MergedPrRef,
   substrate: Substrate,
   terminalSha: string,
+  /** Parent/merge blobs are the same at every horizon; computed once per PR. */
+  baseBlobs: () => { parent: Map<string, string | null>; merge: Map<string, string | null> },
 ): ForwardAnalysis | null {
   const nameStatus = deps.runGit(['diff', '--name-status', '--find-renames', pr.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
@@ -429,12 +451,18 @@ function analyseForward(
   let allFilesReverted = substrate.files.length > 0;
   const touchedPaths = new Set<string>();
 
-  for (const file of substrate.files) {
+  const mappedPaths = substrate.files.map((file) => {
     const fileFate = fate.get(file.path);
-    const mappedPath = fileFate?.status === 'D' ? null : (fileFate?.newPath ?? file.path);
-    const parentBlob = blobAt(deps, pr.parentSha, file.oldPath);
-    const mergeBlob = blobAt(deps, pr.mergeSha, file.path);
-    const terminalBlob = mappedPath ? blobAt(deps, terminalSha, mappedPath) : null;
+    return fileFate?.status === 'D' ? null : (fileFate?.newPath ?? file.path);
+  });
+  const { parent: parentBlobs, merge: mergeBlobs } = baseBlobs();
+  const terminalBlobs = blobsAt(deps, terminalSha, mappedPaths.filter((path): path is string => path !== null));
+
+  for (const [index, file] of substrate.files.entries()) {
+    const mappedPath = mappedPaths[index]!;
+    const parentBlob = parentBlobs.get(file.oldPath) ?? null;
+    const mergeBlob = mergeBlobs.get(file.path) ?? null;
+    const terminalBlob = mappedPath ? (terminalBlobs.get(mappedPath) ?? null) : null;
     const fileReverted = parentBlob !== mergeBlob && terminalBlob === parentBlob;
     if (!fileReverted) allFilesReverted = false;
 
@@ -527,6 +555,8 @@ export interface LabelMergedPrOptions {
   includeLinkedReferences?: boolean | undefined;
   /** Full enumeration, used for same-task redispatch detection. */
   allMergedPrs?: readonly MergedPrRef[] | undefined;
+  /** Precomputed first-parent walk (see {@link buildHorizonTerminalIndex}); valid only while the branch tip is fixed. */
+  horizonTerminalIndex?: HorizonTerminalIndex | undefined;
 }
 
 const ISSUE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/g;
@@ -609,11 +639,52 @@ function missingLabel(
   });
 }
 
+/**
+ * The integration branch's first-parent walk, tip first, with a running
+ * minimum of committer times. `git log --first-parent --until=T -1` returns
+ * the first commit in walk order with time <= T; that is the first index whose
+ * prefix minimum is <= T, which a binary search finds without a git call.
+ */
+export interface HorizonTerminalIndex {
+  shas: string[];
+  prefixMin: number[];
+}
+
+export function buildHorizonTerminalIndex(deps: SurvivalLabellerDeps, branch: string): HorizonTerminalIndex | null {
+  const result = deps.runGit(['log', '--first-parent', '--pretty=format:%H %ct', branch]);
+  if (result.exitCode !== 0) return null;
+  const shas: string[] = [];
+  const prefixMin: number[] = [];
+  let min = Number.POSITIVE_INFINITY;
+  for (const line of result.stdout.split('\n')) {
+    const [sha, ct] = line.split(' ');
+    const epoch = Number(ct);
+    if (!sha || !Number.isFinite(epoch)) continue;
+    min = Math.min(min, epoch);
+    shas.push(sha);
+    prefixMin.push(min);
+  }
+  return { shas, prefixMin };
+}
+
+function lookupHorizonTerminal(index: HorizonTerminalIndex, cutoffEpoch: number): string | null {
+  let lo = 0;
+  let hi = index.prefixMin.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (index.prefixMin[mid]! <= cutoffEpoch) hi = mid;
+    else lo = mid + 1;
+  }
+  return index.shas[lo] ?? null;
+}
+
 function resolveHorizonTerminal(
   deps: SurvivalLabellerDeps,
   target: SurvivalLabellerTarget,
   cutoffEpoch: number,
+  index?: HorizonTerminalIndex,
 ): string | null {
+  if (index) return lookupHorizonTerminal(index, cutoffEpoch);
   const cutoffIso = new Date(cutoffEpoch * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
   const result = deps.runGit([
     'log', '--first-parent', '--max-count=1', `--until=${cutoffIso}`,
@@ -638,6 +709,12 @@ export function labelMergedPr(
   const horizons = options.horizons ?? HORIZONS;
   const nowEpoch = Math.floor(deps.now().getTime() / 1000);
   const substrate = buildSubstrate(deps, pr);
+  let base: { parent: Map<string, string | null>; merge: Map<string, string | null> } | null = null;
+  const baseBlobs = () =>
+    (base ??= {
+      parent: blobsAt(deps, pr.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
+      merge: blobsAt(deps, pr.mergeSha, substrate?.files.map((file) => file.path) ?? []),
+    });
 
   let crossReferences: CrossReference[] | null = null;
   const linkedReferencesAt = (cutoffEpoch: number): boolean => {
@@ -683,14 +760,14 @@ export function labelMergedPr(
       labels.push(missingLabel(pr, target, deps, horizon, 'insufficient_line_range_substrate'));
       continue;
     }
-    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch);
+    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch, options.horizonTerminalIndex);
     if (!terminalSha) {
       labels.push(missingLabel(pr, target, deps, horizon, 'inaccessible_history', {
         lineRanges: substrate.lineRanges,
       }));
       continue;
     }
-    const analysis = analyseForward(deps, pr, substrate, terminalSha);
+    const analysis = analyseForward(deps, pr, substrate, terminalSha, baseBlobs);
     if (!analysis) {
       labels.push(missingLabel(pr, target, deps, horizon, 'inaccessible_history', {
         terminalSha,

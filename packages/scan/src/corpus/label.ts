@@ -17,6 +17,7 @@
 
 import type { ArbiterSurvivalLabelV1, HorizonDays } from '@hokusai/core';
 import {
+  buildHorizonTerminalIndex,
   labelMergedPr,
   type CrossReference,
   type GitRunner,
@@ -108,12 +109,14 @@ export function labelCorpusRepo(input: LabelCorpusRepoInput, deps: LabelCorpusRe
   const target = { owner: input.owner, repo: input.repo, integrationBranch: input.branch, integrationMode: 'direct' as const, repoDir: input.repoDir };
   const labellerDeps = { runGit: deps.runGit, github: deps.github, now: deps.now, onDiagnostic: deps.onDiagnostic };
   const all = input.records.map(toMergedPrRef);
+  // One first-parent walk per repo instead of one `git log --until` per PR × horizon.
+  const horizonTerminalIndex = buildHorizonTerminalIndex(labellerDeps, input.branch) ?? undefined;
   const rows: ArbiterSurvivalLabelV1[] = [];
   const failed: number[] = [];
   for (const [i, pr] of all.entries()) {
     if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.owner}/${input.repo}: labelled ${i}/${all.length} PRs`);
     try {
-      rows.push(...labelMergedPr(target, labellerDeps, pr, { horizons: input.horizons, allMergedPrs: all }));
+      rows.push(...labelMergedPr(target, labellerDeps, pr, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
     } catch (error) {
       failed.push(pr.prNumber);
       deps.onDiagnostic?.(`error: failed to label ${pr.prUrl}: ${String(error).slice(0, 200)}`);
