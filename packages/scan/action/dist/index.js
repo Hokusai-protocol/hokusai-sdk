@@ -5628,7 +5628,7 @@ function extractPrNumber(subject) {
 }
 
 // src/survival-labeller.ts
-var SURVIVAL_LABELLER_VERSION = "1.1.0";
+var SURVIVAL_LABELLER_VERSION = "1.2.0";
 var SURVIVAL_NORMALIZATION_VERSION = "1.0.0";
 var DAY_SECONDS = 86400;
 var GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
@@ -5805,12 +5805,25 @@ function buildSubstrate(deps, pr) {
   }
   return { files, lineRanges, totalLines };
 }
-function blobAt(deps, sha, path4) {
-  const result = deps.runGit(["rev-parse", "-q", "--verify", `${sha}:${path4}`]);
-  if (result.exitCode !== 0) return null;
-  return result.stdout.trim() || null;
+var LS_TREE_CHUNK = 400;
+function blobsAt(deps, sha, paths) {
+  const out = new Map(paths.map((path4) => [path4, null]));
+  const unique2 = [...new Set(paths)];
+  for (let i = 0; i < unique2.length; i += LS_TREE_CHUNK) {
+    const chunk = unique2.slice(i, i + LS_TREE_CHUNK);
+    const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha, "--", ...chunk]);
+    if (result.exitCode !== 0) continue;
+    for (const entry of result.stdout.split("\0")) {
+      const tab = entry.indexOf("	");
+      if (tab < 0) continue;
+      const oid = entry.slice(0, tab).split(" ")[2];
+      const path4 = entry.slice(tab + 1);
+      if (oid && out.has(path4)) out.set(path4, oid);
+    }
+  }
+  return out;
 }
-function analyseForward(deps, pr, substrate, terminalSha) {
+function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
   const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
   const fate = /* @__PURE__ */ new Map();
@@ -5846,12 +5859,17 @@ function analyseForward(deps, pr, substrate, terminalSha) {
   let rangeFollowup = false;
   let allFilesReverted = substrate.files.length > 0;
   const touchedPaths = /* @__PURE__ */ new Set();
-  for (const file of substrate.files) {
+  const mappedPaths = substrate.files.map((file) => {
     const fileFate = fate.get(file.path);
-    const mappedPath = fileFate?.status === "D" ? null : fileFate?.newPath ?? file.path;
-    const parentBlob = blobAt(deps, pr.parentSha, file.oldPath);
-    const mergeBlob = blobAt(deps, pr.mergeSha, file.path);
-    const terminalBlob = mappedPath ? blobAt(deps, terminalSha, mappedPath) : null;
+    return fileFate?.status === "D" ? null : fileFate?.newPath ?? file.path;
+  });
+  const { parent: parentBlobs, merge: mergeBlobs } = baseBlobs();
+  const terminalBlobs = blobsAt(deps, terminalSha, mappedPaths.filter((path4) => path4 !== null));
+  for (const [index, file] of substrate.files.entries()) {
+    const mappedPath = mappedPaths[index];
+    const parentBlob = parentBlobs.get(file.oldPath) ?? null;
+    const mergeBlob = mergeBlobs.get(file.path) ?? null;
+    const terminalBlob = mappedPath ? terminalBlobs.get(mappedPath) ?? null : null;
     const fileReverted = parentBlob !== mergeBlob && terminalBlob === parentBlob;
     if (!fileReverted) allFilesReverted = false;
     touchedPaths.add(file.path);
@@ -5912,8 +5930,46 @@ function attributeUndoers(deps, pr, terminalSha, touchedPaths, extraVotes) {
   return null;
 }
 var ISSUE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/g;
+var NON_TASK_KEY_PREFIXES = /* @__PURE__ */ new Set([
+  "CVE",
+  "CWE",
+  "GHSA",
+  "PEP",
+  "RFC",
+  "ISO",
+  "UTF",
+  "SHA",
+  "MD",
+  "HTTP",
+  "TLS",
+  "SSL",
+  "ECMA",
+  "ES",
+  "IEEE",
+  "POSIX",
+  "UCS",
+  "WCAG",
+  "FIPS",
+  "NIST"
+]);
 function extractIssueKeys(text) {
-  return new Set(text.match(ISSUE_KEY_PATTERN) ?? []);
+  return new Set((text.match(ISSUE_KEY_PATTERN) ?? []).filter((key) => !NON_TASK_KEY_PREFIXES.has(key.slice(0, key.lastIndexOf("-")))));
+}
+var redispatchIndexes = /* @__PURE__ */ new WeakMap();
+function redispatchIndex(all) {
+  let index = redispatchIndexes.get(all);
+  if (!index) {
+    index = /* @__PURE__ */ new Map();
+    for (const other of all) {
+      for (const key of extractIssueKeys(other.subject)) {
+        const list = index.get(key) ?? [];
+        list.push({ epoch: other.mergedAtEpoch, mergeSha: other.mergeSha });
+        index.set(key, list);
+      }
+    }
+    redispatchIndexes.set(all, index);
+  }
+  return index;
 }
 var REASON_CODE_ORDER = [
   "exact_revert",
@@ -5950,7 +6006,34 @@ function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
     }
   });
 }
-function resolveHorizonTerminal(deps, target, cutoffEpoch) {
+function buildHorizonTerminalIndex(deps, branch) {
+  const result = deps.runGit(["log", "--first-parent", "--pretty=format:%H %ct", branch]);
+  if (result.exitCode !== 0) return null;
+  const shas = [];
+  const prefixMin = [];
+  let min = Number.POSITIVE_INFINITY;
+  for (const line of result.stdout.split("\n")) {
+    const [sha, ct] = line.split(" ");
+    const epoch = Number(ct);
+    if (!sha || !Number.isFinite(epoch)) continue;
+    min = Math.min(min, epoch);
+    shas.push(sha);
+    prefixMin.push(min);
+  }
+  return { shas, prefixMin };
+}
+function lookupHorizonTerminal(index, cutoffEpoch) {
+  let lo = 0;
+  let hi = index.prefixMin.length;
+  while (lo < hi) {
+    const mid = lo + hi >> 1;
+    if (index.prefixMin[mid] <= cutoffEpoch) hi = mid;
+    else lo = mid + 1;
+  }
+  return index.shas[lo] ?? null;
+}
+function resolveHorizonTerminal(deps, target, cutoffEpoch, index) {
+  if (index) return lookupHorizonTerminal(index, cutoffEpoch);
   const cutoffIso = new Date(cutoffEpoch * 1e3).toISOString().replace(/\.\d{3}Z$/, "Z");
   const result = deps.runGit([
     "log",
@@ -5968,6 +6051,11 @@ function labelMergedPr(target, deps, pr, options = {}) {
   const horizons = options.horizons ?? HORIZONS;
   const nowEpoch = Math.floor(deps.now().getTime() / 1e3);
   const substrate = buildSubstrate(deps, pr);
+  let base = null;
+  const baseBlobs = () => base ??= {
+    parent: blobsAt(deps, pr.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
+    merge: blobsAt(deps, pr.mergeSha, substrate?.files.map((file) => file.path) ?? [])
+  };
   let crossReferences = null;
   const linkedReferencesAt = (cutoffEpoch) => {
     if (options.includeLinkedReferences === false) return false;
@@ -5986,8 +6074,11 @@ function labelMergedPr(target, deps, pr, options = {}) {
   const issueKeys = extractIssueKeys(pr.subject);
   const redispatchAt = (cutoffEpoch) => {
     if (issueKeys.size === 0 || !options.allMergedPrs) return false;
-    return options.allMergedPrs.some(
-      (other) => other.mergeSha !== pr.mergeSha && other.mergedAtEpoch > pr.mergedAtEpoch && other.mergedAtEpoch <= cutoffEpoch && [...extractIssueKeys(other.subject)].some((key) => issueKeys.has(key))
+    const index = redispatchIndex(options.allMergedPrs);
+    return [...issueKeys].some(
+      (key) => (index.get(key) ?? []).some(
+        (other) => other.mergeSha !== pr.mergeSha && other.epoch > pr.mergedAtEpoch && other.epoch <= cutoffEpoch
+      )
     );
   };
   const labels = [];
@@ -6007,14 +6098,14 @@ function labelMergedPr(target, deps, pr, options = {}) {
       labels.push(missingLabel(pr, target, deps, horizon2, "insufficient_line_range_substrate"));
       continue;
     }
-    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch);
+    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch, options.horizonTerminalIndex);
     if (!terminalSha) {
       labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
         lineRanges: substrate.lineRanges
       }));
       continue;
     }
-    const analysis = analyseForward(deps, pr, substrate, terminalSha);
+    const analysis = analyseForward(deps, pr, substrate, terminalSha, baseBlobs);
     if (!analysis) {
       labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
         terminalSha,
@@ -7481,6 +7572,66 @@ function fetchPrsByNumber(repo, numbers, deps) {
   return out;
 }
 
+// src/corpus/label.ts
+var CROSS_REFERENCE_BATCH = 50;
+function toMergedPrRef(record) {
+  return {
+    prNumber: record.pr_number,
+    prUrl: record.pr_url,
+    mergeSha: record.merge_sha,
+    parentSha: record.base_sha,
+    headSha: record.head_sha ?? record.merge_sha,
+    mergedAtEpoch: Math.floor(Date.parse(record.merged_at) / 1e3),
+    // Redispatch detection reads tracker keys from the subject; the PR title is the subject's source.
+    subject: record.title
+  };
+}
+function prefetchCrossReferences(repo, prNumbers, graphql, cache) {
+  const [owner, name] = repo.split("/");
+  const out = /* @__PURE__ */ new Map();
+  for (let i = 0; i < prNumbers.length; i += CROSS_REFERENCE_BATCH) {
+    const batch = prNumbers.slice(i, i + CROSS_REFERENCE_BATCH);
+    const key = `xref:${batch.join(",")}`;
+    let rows = cache?.get(key);
+    if (!rows) {
+      const fields = batch.map((n) => `pr${n}: pullRequest(number:${n}){ timelineItems(itemTypes:[CROSS_REFERENCED_EVENT], first:100){ nodes{ ... on CrossReferencedEvent { createdAt source{ ... on Issue { url } ... on PullRequest { url } } } } } }`).join("\n");
+      const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
+      rows = batch.map((n) => {
+        const nodes = data.repository[`pr${n}`]?.timelineItems.nodes ?? [];
+        const refs = nodes.filter((node) => node.createdAt).map((node) => ({ createdAtEpoch: Math.floor(Date.parse(node.createdAt) / 1e3), url: node.source?.url ?? "" })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
+        return [n, refs];
+      });
+      cache?.set(key, rows);
+    }
+    for (const [n, refs] of rows) out.set(n, refs);
+  }
+  return out;
+}
+function prefetchedGithubClient(crossReferences) {
+  return {
+    getPrMetadata: () => null,
+    listCrossReferences: (prNumber) => crossReferences.get(prNumber) ?? []
+  };
+}
+function labelCorpusRepo(input, deps) {
+  const target = { owner: input.owner, repo: input.repo, integrationBranch: input.branch, integrationMode: "direct", repoDir: input.repoDir };
+  const labellerDeps = { runGit: deps.runGit, github: deps.github, now: deps.now, onDiagnostic: deps.onDiagnostic };
+  const all = input.records.map(toMergedPrRef);
+  const horizonTerminalIndex = buildHorizonTerminalIndex(labellerDeps, input.branch) ?? void 0;
+  const rows = [];
+  const failed = [];
+  for (const [i, pr] of all.entries()) {
+    if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.owner}/${input.repo}: labelled ${i}/${all.length} PRs`);
+    try {
+      rows.push(...labelMergedPr(target, labellerDeps, pr, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
+    } catch (error) {
+      failed.push(pr.prNumber);
+      deps.onDiagnostic?.(`error: failed to label ${pr.prUrl}: ${String(error).slice(0, 200)}`);
+    }
+  }
+  return { rows, failed };
+}
+
 // src/corpus/manifest.ts
 var RUNNABLE_STATUSES = ["kept", "pending_exception", "unmeasured"];
 var REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -7517,8 +7668,10 @@ function runnableRepos(manifest, only) {
 var OPTIONS = {
   manifest: { type: "string" },
   "cache-dir": { type: "string" },
-  repo: { type: "string" }
+  repo: { type: "string" },
+  "as-of": { type: "string" }
 };
+var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label"];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
 function secondsUntilReset() {
@@ -7608,8 +7761,8 @@ function syncClone(repo, dir, defaultBranch) {
   return runGit3;
 }
 function runCorpusCli(command, argv, io) {
-  if (command !== "corpus-enumerate") {
-    io.writeStderr(`error: unknown corpus command ${command}; expected corpus-enumerate
+  if (!CORPUS_COMMANDS.includes(command)) {
+    io.writeStderr(`error: unknown corpus command ${command}; expected ${CORPUS_COMMANDS.join(" or ")}
 `);
     return { exitCode: 2 };
   }
@@ -7631,6 +7784,14 @@ function runCorpusCli(command, argv, io) {
 `);
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
+  if (command === "corpus-label") {
+    const asOf = values["as-of"] ? new Date(values["as-of"]) : /* @__PURE__ */ new Date();
+    if (!Number.isFinite(asOf.getTime())) {
+      io.writeStderr("error: --as-of must be an ISO-8601 timestamp\n");
+      return { exitCode: 2 };
+    }
+    return runLabel(entries, cacheRoot, asOf, graphql, io, log);
+  }
   let failures = 0;
   for (const entry of entries) {
     const [owner, name] = entry.repo.split("/");
@@ -7653,6 +7814,55 @@ function runCorpusCli(command, argv, io) {
       io.writeStdout(`${JSON.stringify(stats)}
 `);
       log(`info: ${entry.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+`);
+      log(`error: ${entry.repo}: ${error.message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split("/");
+    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const started = Date.now();
+    try {
+      const statsPath = join7(repoDir, "enumeration.json");
+      if (!existsSync4(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+      const { branch } = JSON.parse(readFileSync3(statsPath, "utf8"));
+      const records = readFileSync3(join7(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const gitDir = join7(repoDir, "repo.git");
+      const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+      log(`info: ${entry.repo}: backfilling blobs`);
+      const backfill = runGit3(["backfill"]);
+      if (backfill.exitCode !== 0) throw new Error(`git backfill failed: ${backfill.stderr.trim().split("\n").pop()}`);
+      log(`info: ${entry.repo}: prefetching cross-references for ${records.length} PRs`);
+      const crossReferences = prefetchCrossReferences(entry.repo, records.map((r) => r.pr_number), graphql, fileCache(join7(repoDir, "graphql")));
+      log(`info: ${entry.repo}: labelling`);
+      const { rows, failed } = labelCorpusRepo(
+        { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
+        { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
+      );
+      writeFileSync2(join7(repoDir, "s2.jsonl"), rows.map((row) => `${JSON.stringify(row)}
+`).join(""));
+      const summary = {
+        repo: entry.repo,
+        as_of: asOf.toISOString(),
+        prs: records.length,
+        rows: rows.length,
+        failed_prs: failed.length,
+        failed_sample: failed.slice(0, 20),
+        wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
+        base_rates: summarizeLabels(entry.repo, rows)
+      };
+      writeFileSync2(join7(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+      io.writeStdout(`${JSON.stringify(summary)}
+`);
+      if (failed.length) failures++;
     } catch (error) {
       failures++;
       io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
@@ -8586,6 +8796,8 @@ shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
 
 corpus-enumerate --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>]
                  (HOK-3022 corpus; prs.jsonl in the cache holds raw titles/bodies and stays local)
+corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
+                 (S2 v1.1.0 rows per enumerated PR \xD7 14/30/60 into <cache>/<repo>/s2.jsonl)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -8670,7 +8882,7 @@ function runScanCli(argv, io) {
     let output;
     let rowCount;
     if (command === "label") {
-      ({ output, rowCount } = runLabel(context, {
+      ({ output, rowCount } = runLabel2(context, {
         repoDir,
         offline,
         asOf,
@@ -9003,7 +9215,7 @@ function collectLabels(context, params, prFilter) {
   }
   return labels;
 }
-function runLabel(context, params) {
+function runLabel2(context, params) {
   const labels = collectLabels(context, params);
   return { output: serializeSurvivalLabels(labels), rowCount: labels.length };
 }
