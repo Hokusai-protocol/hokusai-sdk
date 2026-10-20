@@ -37,7 +37,7 @@ const OPTIONS = {
   repo: { type: 'string' },
 } as const;
 
-const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF/i;
+const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host/i;
 const RATE_LIMITED = /API rate limit exceeded|RATE_LIMITED/i;
 
 const blockingSleep = (ms: number) => {
