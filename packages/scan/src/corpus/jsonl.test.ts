@@ -18,14 +18,14 @@ describe('writeJsonl', () => {
     // Several members: each starts with the gzip magic bytes.
     expect(raw.toString('latin1').split('\x1f\x8b').length - 1).toBeGreaterThan(1);
     const text = gunzipSync(raw).toString('utf8');
-    expect(text.trimEnd().split('\n').map((line) => JSON.parse(line))).toEqual(rows);
+    expect(text.trimEnd().split('\n').map((line) => JSON.parse(line) as unknown)).toEqual(rows);
     expect(written).toMatchObject({ bytes: Buffer.byteLength(text), writtenBytes: raw.length });
   });
 
   it('writes plain JSONL without gzip', () => {
     const path = join(dir, 'rows.jsonl');
     const written = writeJsonl(path, rows);
-    expect(readFileSync(path, 'utf8').trimEnd().split('\n').map((line) => JSON.parse(line))).toEqual(rows);
+    expect(readFileSync(path, 'utf8').trimEnd().split('\n').map((line) => JSON.parse(line) as unknown)).toEqual(rows);
     expect(written.bytes).toBe(written.writtenBytes);
   });
 });
