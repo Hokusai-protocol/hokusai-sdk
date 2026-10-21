@@ -47,7 +47,7 @@ import {
 } from '@hokusai/core';
 
 /** Semver of this labeller implementation (envelope.labeller_version). */
-export const SURVIVAL_LABELLER_VERSION = '1.1.0';
+export const SURVIVAL_LABELLER_VERSION = '1.3.0';
 /**
  * Semver of the normalization rules: -U0 first-parent merge diff, `-w
  * --ignore-blank-lines` whitespace stripping, one-hop rename following,
@@ -80,6 +80,12 @@ export interface CrossReference {
   /** Epoch seconds the referencing PR/issue event was created. */
   createdAtEpoch: number;
   url: string;
+  /** Author of the referencing issue/PR; undefined when the client cannot see it. */
+  sourceAuthorLogin?: string | null;
+  /** GitHub actor type of that author (`Bot` for GitHub Apps). */
+  sourceAuthorType?: string | null;
+  /** Base branch of a referencing PR; null for issues; undefined when the client cannot see it. */
+  sourceBaseRef?: string | null;
 }
 
 export interface SurvivalGitHubClient {
@@ -115,10 +121,17 @@ export const GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
 export interface MergedPrRef {
   prNumber: number;
   prUrl: string;
-  /** First-parent commit that landed the PR (merge commit or squash commit). */
+  /** First-parent commit that landed the PR (merge commit or squash commit); a bors rollup member's own `Rollup merge` commit. */
   mergeSha: string;
   /** First parent of mergeSha: the pre-change integration state. */
   parentSha: string;
+  /**
+   * First-parent commit that brought mergeSha onto the integration branch.
+   * Omitted when that is mergeSha itself; set for rollup members, whose
+   * mergeSha sits on the rollup branch. Later-commit walks start here so the
+   * landing merge, which carries the PR's own lines, is not read as an undoer.
+   */
+  landedSha?: string;
   /** PR branch head (second parent), or the squash commit itself. */
   headSha: string;
   /** Committer time of mergeSha, epoch seconds. */
@@ -380,10 +393,30 @@ interface ForwardAnalysis {
   touchedPaths: string[];
 }
 
-function blobAt(deps: SurvivalLabellerDeps, sha: string, path: string): string | null {
-  const result = deps.runGit(['rev-parse', '-q', '--verify', `${sha}:${path}`]);
-  if (result.exitCode !== 0) return null;
-  return result.stdout.trim() || null;
+/** Paths per ls-tree call: keeps argv well under ARG_MAX for very wide PRs. */
+const LS_TREE_CHUNK = 400;
+
+/**
+ * Object ids of `paths` at `sha` — one `ls-tree` per chunk instead of one
+ * `rev-parse sha:path` per file (labeller hot path at corpus scale). A path
+ * absent at `sha` maps to null, as `rev-parse --verify` failing did.
+ */
+function blobsAt(deps: SurvivalLabellerDeps, sha: string, paths: readonly string[]): Map<string, string | null> {
+  const out = new Map<string, string | null>(paths.map((path) => [path, null]));
+  const unique = [...new Set(paths)];
+  for (let i = 0; i < unique.length; i += LS_TREE_CHUNK) {
+    const chunk = unique.slice(i, i + LS_TREE_CHUNK);
+    const result = deps.runGit(['--literal-pathspecs', 'ls-tree', '-z', '--full-tree', sha, '--', ...chunk]);
+    if (result.exitCode !== 0) continue;
+    for (const entry of result.stdout.split('\0')) {
+      const tab = entry.indexOf('\t');
+      if (tab < 0) continue;
+      const oid = entry.slice(0, tab).split(' ')[2];
+      const path = entry.slice(tab + 1);
+      if (oid && out.has(path)) out.set(path, oid);
+    }
+  }
+  return out;
 }
 
 function analyseForward(
@@ -391,6 +424,8 @@ function analyseForward(
   pr: MergedPrRef,
   substrate: Substrate,
   terminalSha: string,
+  /** Parent/merge blobs are the same at every horizon; computed once per PR. */
+  baseBlobs: () => { parent: Map<string, string | null>; merge: Map<string, string | null> },
 ): ForwardAnalysis | null {
   const nameStatus = deps.runGit(['diff', '--name-status', '--find-renames', pr.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
@@ -429,12 +464,18 @@ function analyseForward(
   let allFilesReverted = substrate.files.length > 0;
   const touchedPaths = new Set<string>();
 
-  for (const file of substrate.files) {
+  const mappedPaths = substrate.files.map((file) => {
     const fileFate = fate.get(file.path);
-    const mappedPath = fileFate?.status === 'D' ? null : (fileFate?.newPath ?? file.path);
-    const parentBlob = blobAt(deps, pr.parentSha, file.oldPath);
-    const mergeBlob = blobAt(deps, pr.mergeSha, file.path);
-    const terminalBlob = mappedPath ? blobAt(deps, terminalSha, mappedPath) : null;
+    return fileFate?.status === 'D' ? null : (fileFate?.newPath ?? file.path);
+  });
+  const { parent: parentBlobs, merge: mergeBlobs } = baseBlobs();
+  const terminalBlobs = blobsAt(deps, terminalSha, mappedPaths.filter((path): path is string => path !== null));
+
+  for (const [index, file] of substrate.files.entries()) {
+    const mappedPath = mappedPaths[index]!;
+    const parentBlob = parentBlobs.get(file.oldPath) ?? null;
+    const mergeBlob = mergeBlobs.get(file.path) ?? null;
+    const terminalBlob = mappedPath ? (terminalBlobs.get(mappedPath) ?? null) : null;
     const fileReverted = parentBlob !== mergeBlob && terminalBlob === parentBlob;
     if (!fileReverted) allFilesReverted = false;
 
@@ -472,6 +513,29 @@ function analyseForward(
   };
 }
 
+// ── Linked follow-up references ────────────────────────────────────────────
+
+const BOT_LOGIN_PATTERN = /(?:\[bot\]|bot|robot)$/i;
+
+/**
+ * Whether a cross-reference is evidence of follow-up work (labeller 1.3.0).
+ * In public repos most references are automation: mirror/sync repos
+ * (dotnet/dotnet), perf and CI bots, backport PRs. Only an issue or PR in the
+ * same repo, by a non-bot author, and not a PR into another branch counts.
+ * Fields the client cannot see do not exclude a reference.
+ */
+export function isFollowupReference(ref: CrossReference, target: Pick<SurvivalLabellerTarget, 'owner' | 'repo' | 'integrationBranch'>): boolean {
+  const sameRepo = new RegExp(`^https://github\\.com/${escapeRegExp(target.owner)}/${escapeRegExp(target.repo)}/(?:issues|pull)/\\d+`, 'i');
+  if (!sameRepo.test(ref.url)) return false;
+  if (ref.sourceAuthorType === 'Bot' || (ref.sourceAuthorLogin && BOT_LOGIN_PATTERN.test(ref.sourceAuthorLogin))) return false;
+  if (typeof ref.sourceBaseRef === 'string' && ref.sourceBaseRef !== target.integrationBranch) return false;
+  return true;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ── Undoer attribution ─────────────────────────────────────────────────────
 
 const AGENT_ACTOR_PATTERN = /\[bot\]|claude|codex|copilot|devin|aider|anthropic|openai/i;
@@ -499,7 +563,7 @@ function attributeUndoers(
   if (touchedPaths.length > 0) {
     const result = deps.runGit([
       'log', '--first-parent', '--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e',
-      `${pr.mergeSha}..${terminalSha}`, '--', ...touchedPaths,
+      `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`, '--', ...touchedPaths,
     ]);
     if (result.exitCode === 0) {
       for (const record of result.stdout.split('\x1e')) {
@@ -527,12 +591,43 @@ export interface LabelMergedPrOptions {
   includeLinkedReferences?: boolean | undefined;
   /** Full enumeration, used for same-task redispatch detection. */
   allMergedPrs?: readonly MergedPrRef[] | undefined;
+  /** Precomputed first-parent walk (see {@link buildHorizonTerminalIndex}); valid only while the branch tip is fixed. */
+  horizonTerminalIndex?: HorizonTerminalIndex | undefined;
 }
 
 const ISSUE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/g;
 
-function extractIssueKeys(text: string): Set<string> {
-  return new Set(text.match(ISSUE_KEY_PATTERN) ?? []);
+/**
+ * Key prefixes that look like tracker keys but name standards, advisories or
+ * encodings (labeller 1.2.0). In public repos `CVE-2024-38875`, `PEP-8` or
+ * `UTF-8` in two subjects is not the same task being redispatched.
+ */
+const NON_TASK_KEY_PREFIXES = new Set([
+  'CVE', 'CWE', 'GHSA', 'PEP', 'RFC', 'ISO', 'UTF', 'SHA', 'MD', 'HTTP', 'TLS', 'SSL',
+  'ECMA', 'ES', 'IEEE', 'POSIX', 'UCS', 'WCAG', 'FIPS', 'NIST',
+]);
+
+export function extractIssueKeys(text: string): Set<string> {
+  return new Set((text.match(ISSUE_KEY_PATTERN) ?? []).filter((key) => !NON_TASK_KEY_PREFIXES.has(key.slice(0, key.lastIndexOf('-')))));
+}
+
+/** Merge epochs per issue key, built once per enumeration instead of scanned per PR. */
+const redispatchIndexes = new WeakMap<readonly MergedPrRef[], Map<string, { epoch: number; mergeSha: string }[]>>();
+
+function redispatchIndex(all: readonly MergedPrRef[]): Map<string, { epoch: number; mergeSha: string }[]> {
+  let index = redispatchIndexes.get(all);
+  if (!index) {
+    index = new Map();
+    for (const other of all) {
+      for (const key of extractIssueKeys(other.subject)) {
+        const list = index.get(key) ?? [];
+        list.push({ epoch: other.mergedAtEpoch, mergeSha: other.mergeSha });
+        index.set(key, list);
+      }
+    }
+    redispatchIndexes.set(all, index);
+  }
+  return index;
 }
 
 /** Deterministic reason-code emission order. */
@@ -580,11 +675,52 @@ function missingLabel(
   });
 }
 
+/**
+ * The integration branch's first-parent walk, tip first, with a running
+ * minimum of committer times. `git log --first-parent --until=T -1` returns
+ * the first commit in walk order with time <= T; that is the first index whose
+ * prefix minimum is <= T, which a binary search finds without a git call.
+ */
+export interface HorizonTerminalIndex {
+  shas: string[];
+  prefixMin: number[];
+}
+
+export function buildHorizonTerminalIndex(deps: SurvivalLabellerDeps, branch: string): HorizonTerminalIndex | null {
+  const result = deps.runGit(['log', '--first-parent', '--pretty=format:%H %ct', branch]);
+  if (result.exitCode !== 0) return null;
+  const shas: string[] = [];
+  const prefixMin: number[] = [];
+  let min = Number.POSITIVE_INFINITY;
+  for (const line of result.stdout.split('\n')) {
+    const [sha, ct] = line.split(' ');
+    const epoch = Number(ct);
+    if (!sha || !Number.isFinite(epoch)) continue;
+    min = Math.min(min, epoch);
+    shas.push(sha);
+    prefixMin.push(min);
+  }
+  return { shas, prefixMin };
+}
+
+function lookupHorizonTerminal(index: HorizonTerminalIndex, cutoffEpoch: number): string | null {
+  let lo = 0;
+  let hi = index.prefixMin.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (index.prefixMin[mid]! <= cutoffEpoch) hi = mid;
+    else lo = mid + 1;
+  }
+  return index.shas[lo] ?? null;
+}
+
 function resolveHorizonTerminal(
   deps: SurvivalLabellerDeps,
   target: SurvivalLabellerTarget,
   cutoffEpoch: number,
+  index?: HorizonTerminalIndex,
 ): string | null {
+  if (index) return lookupHorizonTerminal(index, cutoffEpoch);
   const cutoffIso = new Date(cutoffEpoch * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
   const result = deps.runGit([
     'log', '--first-parent', '--max-count=1', `--until=${cutoffIso}`,
@@ -609,6 +745,12 @@ export function labelMergedPr(
   const horizons = options.horizons ?? HORIZONS;
   const nowEpoch = Math.floor(deps.now().getTime() / 1000);
   const substrate = buildSubstrate(deps, pr);
+  let base: { parent: Map<string, string | null>; merge: Map<string, string | null> } | null = null;
+  const baseBlobs = () =>
+    (base ??= {
+      parent: blobsAt(deps, pr.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
+      merge: blobsAt(deps, pr.mergeSha, substrate?.files.map((file) => file.path) ?? []),
+    });
 
   let crossReferences: CrossReference[] | null = null;
   const linkedReferencesAt = (cutoffEpoch: number): boolean => {
@@ -622,19 +764,18 @@ export function labelMergedPr(
       }
     }
     return crossReferences.some(
-      (ref) => ref.createdAtEpoch > pr.mergedAtEpoch && ref.createdAtEpoch <= cutoffEpoch,
+      (ref) => ref.createdAtEpoch > pr.mergedAtEpoch && ref.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref, target),
     );
   };
 
   const issueKeys = extractIssueKeys(pr.subject);
   const redispatchAt = (cutoffEpoch: number): boolean => {
     if (issueKeys.size === 0 || !options.allMergedPrs) return false;
-    return options.allMergedPrs.some(
-      (other) =>
-        other.mergeSha !== pr.mergeSha &&
-        other.mergedAtEpoch > pr.mergedAtEpoch &&
-        other.mergedAtEpoch <= cutoffEpoch &&
-        [...extractIssueKeys(other.subject)].some((key) => issueKeys.has(key)),
+    const index = redispatchIndex(options.allMergedPrs);
+    return [...issueKeys].some((key) =>
+      (index.get(key) ?? []).some(
+        (other) => other.mergeSha !== pr.mergeSha && other.epoch > pr.mergedAtEpoch && other.epoch <= cutoffEpoch,
+      ),
     );
   };
 
@@ -655,14 +796,14 @@ export function labelMergedPr(
       labels.push(missingLabel(pr, target, deps, horizon, 'insufficient_line_range_substrate'));
       continue;
     }
-    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch);
+    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch, options.horizonTerminalIndex);
     if (!terminalSha) {
       labels.push(missingLabel(pr, target, deps, horizon, 'inaccessible_history', {
         lineRanges: substrate.lineRanges,
       }));
       continue;
     }
-    const analysis = analyseForward(deps, pr, substrate, terminalSha);
+    const analysis = analyseForward(deps, pr, substrate, terminalSha, baseBlobs);
     if (!analysis) {
       labels.push(missingLabel(pr, target, deps, horizon, 'inaccessible_history', {
         terminalSha,
