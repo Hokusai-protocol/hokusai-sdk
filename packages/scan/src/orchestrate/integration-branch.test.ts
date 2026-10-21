@@ -10,8 +10,13 @@ describe('resolveIntegrationBranch', () => {
     const subjects = Array.from({ length: 10 }, (_, i) => `Merge pull request #${i + 1} from org/auto/integration`);
     expect(resolveIntegrationBranch({ ...base, defaultBranch: 'main', recentFirstParentSubjects: subjects }).branch).toBe('auto/integration');
   });
-  it('rejects explicit main and ambiguous main histories', () => {
+  it('rejects explicit main and ambiguous main histories without direct mode', () => {
     expect(() => resolveIntegrationBranch({ ...base, defaultBranch: 'main', explicitBranch: 'main' })).toThrow(IntegrationBranchError);
-    expect(() => resolveIntegrationBranch({ ...base, defaultBranch: 'main' })).toThrow(/S2 v1.0.0 rejects main/);
+    expect(() => resolveIntegrationBranch({ ...base, defaultBranch: 'main' })).toThrow(/--integration-mode direct/);
+  });
+
+  it('walks main in direct mode (S2 v1.1.0)', () => {
+    expect(resolveIntegrationBranch({ ...base, defaultBranch: 'main', explicitBranch: 'main', explicitMode: 'direct' })).toMatchObject({ branch: 'main', mode: 'direct' });
+    expect(resolveIntegrationBranch({ ...base, defaultBranch: 'main', explicitMode: 'direct' })).toMatchObject({ branch: 'main', mode: 'direct' });
   });
 });

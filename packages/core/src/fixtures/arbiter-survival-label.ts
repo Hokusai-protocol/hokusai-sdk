@@ -7,6 +7,7 @@
  */
 
 import {
+  ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
   buildArbiterSurvivalLabel,
   canonicalHash,
   type ArbiterSurvivalLabelV1,
@@ -56,6 +57,7 @@ export const harvestedSurvivalLabelFixture: ArbiterSurvivalLabelV1 =
       merge_sha: SHA_MERGE,
       horizon_terminal_sha: SHA_TERMINAL,
       integration_branch: 'auto/integration',
+      integration_mode: 'promotion',
       computed_at: '2026-09-08T00:00:00Z',
     },
   });
@@ -85,11 +87,12 @@ export const ownerCorrectedSurvivalLabelFixture: ArbiterSurvivalLabelV1 =
       merge_sha: SHA_MERGE,
       horizon_terminal_sha: SHA_TERMINAL,
       integration_branch: 'auto/integration',
+      integration_mode: 'promotion',
       computed_at: '2026-09-09T12:00:00Z',
     },
     owner_correction: {
       supersedes: {
-        schema_version: '1.0.0',
+        schema_version: ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
         computed_at: '2026-09-08T00:00:00Z',
         label_hash: canonicalHash(harvestedSurvivalLabelFixture),
       },

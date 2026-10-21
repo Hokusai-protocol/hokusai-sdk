@@ -1,0 +1,321 @@
+{
+  "manifest_version": "0.1.0",
+  "issue": "HOK-3022",
+  "declared_at": "2026-10-20",
+  "purpose": "Predeclared public OSS cohort for the S2 + corrective_rework label pipeline. Repos are kept, swapped for an alternate, or dropped only by the probe thresholds below; every change is recorded in `changes`.",
+  "window": {
+    "merged_from": "2024-07-01",
+    "merged_until": "2026-08-01"
+  },
+  "horizons_days": [14, 30, 60],
+  "selection_thresholds": {
+    "min_merged_prs_per_year": 1000,
+    "min_base_is_default_share": 0.5,
+    "min_pr_mapped_commit_share": 0.8,
+    "min_fix_signal_share": 0.05
+  },
+  "repos": [
+    {
+      "repo": "django/django",
+      "tier": "A",
+      "language": "Python",
+      "expected_merge_convention": "rebase",
+      "enumerator": "graphql",
+      "fix_conventions": [
+        "Regression in <sha>",
+        "Fixed #<trac>",
+        "Refs #<trac>"
+      ],
+      "backport_patterns": ["^\\[\\d+\\.\\d+\\.x\\]"],
+      "status": "kept",
+      "observed_merge_convention": "rebase_or_mixed"
+    },
+    {
+      "repo": "llvm/llvm-project",
+      "tier": "A",
+      "language": "C++",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["This reverts commit <sha>", "Revert \"<title>\""],
+      "backport_patterns": ["^\\[release/"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "pytorch/pytorch",
+      "tier": "A",
+      "language": "Python/C++",
+      "expected_merge_convention": "merge_bot",
+      "enumerator": "trailer:Pull Request resolved",
+      "fix_conventions": [
+        "pytorchbot revert -c <category>",
+        "This reverts commit <sha>"
+      ],
+      "backport_patterns": ["^\\[release/", "cherry-pick"],
+      "status": "kept",
+      "observed_merge_convention": "merge_bot_trailer"
+    },
+    {
+      "repo": "cockroachdb/cockroach",
+      "tier": "A",
+      "language": "Go",
+      "expected_merge_convention": "batched",
+      "enumerator": "subject:bors",
+      "fix_conventions": ["Release note (bug fix):", "Fixes: #<n>"],
+      "backport_patterns": ["^release-\\d", "backport"],
+      "status": "kept",
+      "observed_merge_convention": "merge_commit"
+    },
+    {
+      "repo": "ClickHouse/ClickHouse",
+      "tier": "A",
+      "language": "C++",
+      "expected_merge_convention": "merge_commit",
+      "enumerator": "subject",
+      "fix_conventions": ["Changelog category: Bug Fix", "Revert \"<title>\""],
+      "backport_patterns": ["^Backport #", "cherry-pick"],
+      "status": "kept",
+      "observed_merge_convention": "merge_commit"
+    },
+    {
+      "repo": "discourse/discourse",
+      "tier": "A",
+      "language": "Ruby/JS",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["FIX: <title>", "Revert \"<title>\""],
+      "backport_patterns": ["^SECURITY:", "backport"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "getsentry/sentry",
+      "tier": "B",
+      "language": "Python/TS",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["fix(<scope>):", "Revert \"<title>\""],
+      "backport_patterns": [],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "elastic/kibana",
+      "tier": "B",
+      "language": "TS",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["label:release_note:fix", "Fixes #<n>"],
+      "backport_patterns": ["^\\[\\d+\\.\\d+\\]", "backport"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "grafana/grafana",
+      "tier": "B",
+      "language": "Go/TS",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["Fixes #<n>", "label:type/bug", "Revert \"<title>\""],
+      "backport_patterns": ["^\\[v\\d+\\.\\d+\\.x\\]", "backport"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "PostHog/posthog",
+      "tier": "B",
+      "language": "Python/TS",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["fix(<scope>):", "Revert \"<title>\""],
+      "backport_patterns": [],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "home-assistant/core",
+      "tier": "B",
+      "language": "Python",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["Fixes #<n>", "label:bugfix"],
+      "backport_patterns": [],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "vercel/next.js",
+      "tier": "B",
+      "language": "TS",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["fix(<scope>):", "Revert \"<title>\"", "Fixes #<n>"],
+      "backport_patterns": ["^\\[backport\\]"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "microsoft/vscode",
+      "tier": "B",
+      "language": "TS",
+      "expected_merge_convention": "merge_commit",
+      "enumerator": "subject",
+      "fix_conventions": ["Fixes #<n>", "Revert \"<title>\""],
+      "backport_patterns": ["^\\[release/", "cherry-pick"],
+      "status": "swapped_out",
+      "observed_merge_convention": "rebase_or_mixed"
+    },
+    {
+      "repo": "kubernetes/kubernetes",
+      "tier": "C",
+      "language": "Go",
+      "expected_merge_convention": "merge_commit",
+      "enumerator": "subject",
+      "fix_conventions": [
+        "label:kind/bug",
+        "label:kind/regression",
+        "Fixes #<n>"
+      ],
+      "backport_patterns": ["^Automated cherry pick", "cherry-pick"],
+      "status": "kept",
+      "observed_merge_convention": "rebase_or_mixed"
+    },
+    {
+      "repo": "dotnet/runtime",
+      "tier": "C",
+      "language": "C#",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["Fixes #<n>", "Revert \"<title>\""],
+      "backport_patterns": ["^\\[release/", "backport"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "rust-lang/rust",
+      "default_branch_aliases": ["master"],
+      "tier": "C",
+      "language": "Rust",
+      "expected_merge_convention": "batched",
+      "enumerator": "subject:bors",
+      "fix_conventions": ["label:regression-from-stable-*", "Fixes #<n>"],
+      "backport_patterns": ["^\\[beta\\]", "^\\[stable\\]"],
+      "status": "kept",
+      "observed_merge_convention": "rollup"
+    },
+    {
+      "repo": "python/cpython",
+      "tier": "C",
+      "language": "C/Python",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["gh-<n>:", "Revert \"<title>\""],
+      "backport_patterns": ["^\\[3\\.\\d+\\]"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    },
+    {
+      "repo": "apache/airflow",
+      "tier": "C",
+      "language": "Python",
+      "expected_merge_convention": "squash",
+      "enumerator": "subject",
+      "fix_conventions": ["label:type:bug-fix", "Fix <title>"],
+      "backport_patterns": ["^\\[v\\d+-\\d+-test\\]", "backport"],
+      "status": "kept",
+      "observed_merge_convention": "squash"
+    }
+  ],
+  "alternates": [
+    {
+      "repo": "rails/rails",
+      "language": "Ruby",
+      "expected_merge_convention": "merge_commit",
+      "status": "failed_probe",
+      "observed_merge_convention": "merge_commit"
+    },
+    {
+      "repo": "angular/angular",
+      "language": "TS",
+      "expected_merge_convention": "rebase",
+      "status": "failed_probe",
+      "observed_merge_convention": "off_github_or_bot_landed"
+    },
+    {
+      "repo": "mattermost/mattermost",
+      "language": "Go/TS",
+      "expected_merge_convention": "squash",
+      "status": "kept",
+      "observed_merge_convention": "rebase_or_mixed"
+    },
+    {
+      "repo": "supabase/supabase",
+      "language": "TS",
+      "expected_merge_convention": "squash",
+      "status": "passed_probe",
+      "observed_merge_convention": "squash"
+    }
+  ],
+  "changes": [
+    {
+      "date": "2026-10-20",
+      "repo": "rust-lang/rust",
+      "change": "declared default_branch_aliases [master]",
+      "reason": "default branch renamed master -> main inside the window; PRs before the rename targeted master, so base_is_default read 29% instead of 100%"
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "microsoft/vscode",
+      "change": "swapped_out -> mattermost/mattermost",
+      "reason": "pr_mapped_commit_share 0.78 < 0.8 (direct pushes to main); mattermost is the first alternate that passes (rails 0.65 and angular 0.09 fail the same check)"
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "django/django",
+      "change": "pending_exception",
+      "reason": "merged_prs_per_year 868 < 1000; passes every other check and its 'Regression in <sha>' convention is the highest-precision P2 anchor in the cohort. Keep-as-anchor exception needs sign-off"
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "pytorch/pytorch",
+      "change": "unmeasured",
+      "reason": "GitHub GraphQL 502s on every attempt; default-branch commits have no associatedPullRequests because pytorchmergebot lands them, so the API probe cannot measure PR mapping. Decided by the clone-based enumerator (Pull Request resolved trailer) in HOK-3265"
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "PostHog/posthog",
+      "change": "unmeasured",
+      "reason": "GitHub GraphQL 502s on the commit-history sample after retries; decided by the clone-based enumerator in HOK-3265"
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "django/django",
+      "change": "kept (exception approved)",
+      "reason": "868 PRs/yr is under the 1,000 floor; kept as the cohort's highest-precision P2 anchor ('Regression in <sha>'). Enumeration: 1,632 PRs in window, pr_recall_est 1.0, direct_push_share_est 0.08 (release-manager security fixes and release notes)."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "pytorch/pytorch",
+      "change": "unmeasured -> kept",
+      "reason": "Enumerated from git: 27,523 PRs, pr_recall_est 1.0. Lands via merge bot (Pull Request resolved: trailer); 3,377 direct-pushed bot reverts and 2,487 relands recorded, not mapped."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "PostHog/posthog",
+      "change": "unmeasured -> kept",
+      "reason": "Enumerated from git: 35,981 PRs, pr_recall_est 0.9999, squash merges."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "rust-lang/rust",
+      "change": "kept with known gap",
+      "reason": "4,149 first-parent PRs (1,654 are \"Rollup of N pull requests\"); 12,686 PRs GitHub reports merged into main are rollup members off first-parent. pr_recall_est (first-parent audit) cannot see them; true PR coverage ~25%. Rollup-member expansion is a follow-up."
+    },
+    {
+      "date": "2026-10-20",
+      "repo": "rust-lang/rust",
+      "change": "known gap closed: rollups expanded",
+      "reason": "Enumerator expands each \"Rollup of N pull requests\" into its members (Rollup merge of #N commits on the rollup branch). 15,184 PRs (12,689 rollup members, 1,654 rollup PRs dropped as aggregates, 16 members GitHub cannot return); merged-to-main PRs not enumerated fell from 12,686 to 8."
+    }
+  ]
+}

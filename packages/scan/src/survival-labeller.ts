@@ -39,6 +39,7 @@ import {
   buildArbiterSurvivalLabel,
   type ArbiterSurvivalLabelV1,
   type HorizonDays,
+  type IntegrationMode,
   type LineRange,
   type MissingReasonCode,
   type ReasonCode,
@@ -46,7 +47,7 @@ import {
 } from '@hokusai/core';
 
 /** Semver of this labeller implementation (envelope.labeller_version). */
-export const SURVIVAL_LABELLER_VERSION = '1.0.0';
+export const SURVIVAL_LABELLER_VERSION = '1.1.0';
 /**
  * Semver of the normalization rules: -U0 first-parent merge diff, `-w
  * --ignore-blank-lines` whitespace stripping, one-hop rename following,
@@ -96,8 +97,10 @@ export interface SurvivalLabellerDeps {
 export interface SurvivalLabellerTarget {
   owner: string;
   repo: string;
-  /** Branch whose first-parent history is walked. `main` is rejected. */
+  /** Branch whose first-parent history is walked. `main` only with `integrationMode: 'direct'`. */
   integrationBranch: string;
+  /** How integrationBranch relates to final history; defaults to `promotion` (S2 v1.1.0). */
+  integrationMode?: IntegrationMode | undefined;
   /** Local checkout of the repository. */
   repoDir: string;
   token?: string | undefined;
@@ -124,9 +127,9 @@ export interface MergedPrRef {
 }
 
 function assertIntegrationBranch(target: SurvivalLabellerTarget): void {
-  if (target.integrationBranch === 'main') {
+  if (target.integrationBranch === 'main' && target.integrationMode !== 'direct') {
     throw new Error(
-      'survival-labeller: integrationBranch "main" is rejected (v1.0.0 contract): squash promotion rewrites the SHA lineage the labeller needs',
+      'survival-labeller: integrationBranch "main" requires integrationMode "direct" (S2 v1.1.0): squash promotion rewrites the SHA lineage the labeller needs',
     );
   }
 }
@@ -571,6 +574,7 @@ function missingLabel(
       merge_sha: pr.mergeSha,
       horizon_terminal_sha: options.terminalSha ?? pr.mergeSha,
       integration_branch: target.integrationBranch,
+      integration_mode: target.integrationMode ?? 'promotion',
       computed_at: deps.now().toISOString(),
     },
   });
@@ -716,6 +720,7 @@ export function labelMergedPr(
         merge_sha: pr.mergeSha,
         horizon_terminal_sha: terminalSha,
         integration_branch: target.integrationBranch,
+        integration_mode: target.integrationMode ?? 'promotion',
         computed_at: deps.now().toISOString(),
       },
     }));

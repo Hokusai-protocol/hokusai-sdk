@@ -344,9 +344,12 @@ describe('survival-labeller', () => {
     expect(row.outcome.reason_codes).toEqual(['inaccessible_history']);
   });
 
-  it('rejects main as an integration branch and never traverses it', () => {
+  it('rejects main in promotion mode and never traverses it', () => {
     expect(() => enumerateMergedPrs({ ...target, integrationBranch: 'main' }, deps)).toThrow(
-      /rejected/,
+      /requires integrationMode "direct"/,
+    );
+    expect(() => enumerateMergedPrs({ ...target, integrationBranch: 'main', integrationMode: 'promotion' }, deps)).toThrow(
+      /requires integrationMode "direct"/,
     );
     gitCalls = [];
     label(prByNumber(2));
