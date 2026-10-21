@@ -5628,7 +5628,7 @@ function extractPrNumber(subject) {
 }
 
 // src/survival-labeller.ts
-var SURVIVAL_LABELLER_VERSION = "1.2.0";
+var SURVIVAL_LABELLER_VERSION = "1.3.0";
 var SURVIVAL_NORMALIZATION_VERSION = "1.0.0";
 var DAY_SECONDS = 86400;
 var GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
@@ -5900,6 +5900,17 @@ function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
     touchedPaths: [...touchedPaths].sort()
   };
 }
+var BOT_LOGIN_PATTERN = /(?:\[bot\]|bot|robot)$/i;
+function isFollowupReference(ref2, target) {
+  const sameRepo = new RegExp(`^https://github\\.com/${escapeRegExp(target.owner)}/${escapeRegExp(target.repo)}/(?:issues|pull)/\\d+`, "i");
+  if (!sameRepo.test(ref2.url)) return false;
+  if (ref2.sourceAuthorType === "Bot" || ref2.sourceAuthorLogin && BOT_LOGIN_PATTERN.test(ref2.sourceAuthorLogin)) return false;
+  if (typeof ref2.sourceBaseRef === "string" && ref2.sourceBaseRef !== target.integrationBranch) return false;
+  return true;
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 var AGENT_ACTOR_PATTERN = /\[bot\]|claude|codex|copilot|devin|aider|anthropic|openai/i;
 var AGENT_TRAILER_PATTERN = /co-authored-by:.*(claude|codex|copilot|devin|\[bot\])/i;
 function classifyCommitActor(commit) {
@@ -6068,7 +6079,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
       }
     }
     return crossReferences.some(
-      (ref2) => ref2.createdAtEpoch > pr.mergedAtEpoch && ref2.createdAtEpoch <= cutoffEpoch
+      (ref2) => ref2.createdAtEpoch > pr.mergedAtEpoch && ref2.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref2, target)
     );
   };
   const issueKeys = extractIssueKeys(pr.subject);
@@ -6278,7 +6289,10 @@ function createDefaultDeps(target, options = {}) {
         const events17 = JSON.parse(result.stdout);
         return events17.filter((event17) => event17.event === "cross-referenced" && event17.created_at).map((event17) => ({
           createdAtEpoch: Math.floor(Date.parse(event17.created_at) / 1e3),
-          url: event17.source?.issue?.html_url ?? ""
+          url: event17.source?.issue?.html_url ?? "",
+          // The timeline does not carry a referencing PR's base branch; sourceBaseRef stays unknown.
+          sourceAuthorLogin: event17.source?.issue?.user?.login ?? null,
+          sourceAuthorType: event17.source?.issue?.user?.type ?? null
         })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
       } catch {
         return [];
@@ -7296,11 +7310,11 @@ function extractCorpusPrNumbers(subject, body, repo) {
   } else {
     add((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
   }
-  const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp(repo)}/pull/(\\d+)\\s*$`, "im");
+  const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp2(repo)}/pull/(\\d+)\\s*$`, "im");
   add(body.match(trailer)?.[1]);
   return found;
 }
-function escapeRegExp(value) {
+function escapeRegExp2(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -7594,14 +7608,20 @@ function prefetchCrossReferences(repo, prNumbers, graphql, cache) {
   const out = /* @__PURE__ */ new Map();
   for (let i = 0; i < prNumbers.length; i += CROSS_REFERENCE_BATCH) {
     const batch = prNumbers.slice(i, i + CROSS_REFERENCE_BATCH);
-    const key = `xref:${batch.join(",")}`;
+    const key = `xref2:${batch.join(",")}`;
     let rows = cache?.get(key);
     if (!rows) {
-      const fields = batch.map((n) => `pr${n}: pullRequest(number:${n}){ timelineItems(itemTypes:[CROSS_REFERENCED_EVENT], first:100){ nodes{ ... on CrossReferencedEvent { createdAt source{ ... on Issue { url } ... on PullRequest { url } } } } } }`).join("\n");
+      const fields = batch.map((n) => `pr${n}: pullRequest(number:${n}){ timelineItems(itemTypes:[CROSS_REFERENCED_EVENT], first:100){ nodes{ ... on CrossReferencedEvent { createdAt source{ ... on Issue { url author{ login __typename } } ... on PullRequest { url baseRefName author{ login __typename } } } } } } }`).join("\n");
       const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
       rows = batch.map((n) => {
         const nodes = data.repository[`pr${n}`]?.timelineItems.nodes ?? [];
-        const refs = nodes.filter((node) => node.createdAt).map((node) => ({ createdAtEpoch: Math.floor(Date.parse(node.createdAt) / 1e3), url: node.source?.url ?? "" })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
+        const refs = nodes.filter((node) => node.createdAt).map((node) => ({
+          createdAtEpoch: Math.floor(Date.parse(node.createdAt) / 1e3),
+          url: node.source?.url ?? "",
+          sourceAuthorLogin: node.source?.author?.login ?? null,
+          sourceAuthorType: node.source?.author?.__typename ?? null,
+          sourceBaseRef: node.source?.baseRefName ?? null
+        })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
         return [n, refs];
       });
       cache?.set(key, rows);

@@ -15,7 +15,7 @@ describe('SCAN_CONTRACT', () => {
     expect(SCAN_CONTRACT).toEqual({
       candidateFeatures: 'candidate_features/v1',
       labels: 'arbiter_survival_label/v1',
-      labellerVersion: '1.2.0',
+      labellerVersion: '1.3.0',
       normalizationVersion: '1.0.0',
     });
   });

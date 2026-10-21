@@ -60,20 +60,27 @@ export function prefetchCrossReferences(
   const out = new Map<number, CrossReference[]>();
   for (let i = 0; i < prNumbers.length; i += CROSS_REFERENCE_BATCH) {
     const batch = prNumbers.slice(i, i + CROSS_REFERENCE_BATCH);
-    const key = `xref:${batch.join(',')}`;
+    // v2: sources carry author and base branch for the labeller's follow-up filter.
+    const key = `xref2:${batch.join(',')}`;
     let rows = cache?.get(key) as [number, CrossReference[]][] | undefined;
     if (!rows) {
       const fields = batch
-        .map((n) => `pr${n}: pullRequest(number:${n}){ timelineItems(itemTypes:[CROSS_REFERENCED_EVENT], first:100){ nodes{ ... on CrossReferencedEvent { createdAt source{ ... on Issue { url } ... on PullRequest { url } } } } } }`)
+        .map((n) => `pr${n}: pullRequest(number:${n}){ timelineItems(itemTypes:[CROSS_REFERENCED_EVENT], first:100){ nodes{ ... on CrossReferencedEvent { createdAt source{ ... on Issue { url author{ login __typename } } ... on PullRequest { url baseRefName author{ login __typename } } } } } } }`)
         .join('\n');
       const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name }) as {
-        repository: Record<string, { timelineItems: { nodes: { createdAt?: string; source?: { url?: string } }[] } } | null>;
+        repository: Record<string, { timelineItems: { nodes: { createdAt?: string; source?: { url?: string; baseRefName?: string; author?: { login: string; __typename: string } | null } }[] } } | null>;
       };
       rows = batch.map((n) => {
         const nodes = data.repository[`pr${n}`]?.timelineItems.nodes ?? [];
         const refs = nodes
           .filter((node) => node.createdAt)
-          .map((node) => ({ createdAtEpoch: Math.floor(Date.parse(node.createdAt!) / 1000), url: node.source?.url ?? '' }))
+          .map((node) => ({
+            createdAtEpoch: Math.floor(Date.parse(node.createdAt!) / 1000),
+            url: node.source?.url ?? '',
+            sourceAuthorLogin: node.source?.author?.login ?? null,
+            sourceAuthorType: node.source?.author?.__typename ?? null,
+            sourceBaseRef: node.source?.baseRefName ?? null,
+          }))
           .filter((ref) => Number.isFinite(ref.createdAtEpoch));
         return [n, refs];
       });

@@ -47,7 +47,7 @@ import {
 } from '@hokusai/core';
 
 /** Semver of this labeller implementation (envelope.labeller_version). */
-export const SURVIVAL_LABELLER_VERSION = '1.2.0';
+export const SURVIVAL_LABELLER_VERSION = '1.3.0';
 /**
  * Semver of the normalization rules: -U0 first-parent merge diff, `-w
  * --ignore-blank-lines` whitespace stripping, one-hop rename following,
@@ -80,6 +80,12 @@ export interface CrossReference {
   /** Epoch seconds the referencing PR/issue event was created. */
   createdAtEpoch: number;
   url: string;
+  /** Author of the referencing issue/PR; undefined when the client cannot see it. */
+  sourceAuthorLogin?: string | null;
+  /** GitHub actor type of that author (`Bot` for GitHub Apps). */
+  sourceAuthorType?: string | null;
+  /** Base branch of a referencing PR; null for issues; undefined when the client cannot see it. */
+  sourceBaseRef?: string | null;
 }
 
 export interface SurvivalGitHubClient {
@@ -507,6 +513,29 @@ function analyseForward(
   };
 }
 
+// ── Linked follow-up references ────────────────────────────────────────────
+
+const BOT_LOGIN_PATTERN = /(?:\[bot\]|bot|robot)$/i;
+
+/**
+ * Whether a cross-reference is evidence of follow-up work (labeller 1.3.0).
+ * In public repos most references are automation: mirror/sync repos
+ * (dotnet/dotnet), perf and CI bots, backport PRs. Only an issue or PR in the
+ * same repo, by a non-bot author, and not a PR into another branch counts.
+ * Fields the client cannot see do not exclude a reference.
+ */
+export function isFollowupReference(ref: CrossReference, target: Pick<SurvivalLabellerTarget, 'owner' | 'repo' | 'integrationBranch'>): boolean {
+  const sameRepo = new RegExp(`^https://github\\.com/${escapeRegExp(target.owner)}/${escapeRegExp(target.repo)}/(?:issues|pull)/\\d+`, 'i');
+  if (!sameRepo.test(ref.url)) return false;
+  if (ref.sourceAuthorType === 'Bot' || (ref.sourceAuthorLogin && BOT_LOGIN_PATTERN.test(ref.sourceAuthorLogin))) return false;
+  if (typeof ref.sourceBaseRef === 'string' && ref.sourceBaseRef !== target.integrationBranch) return false;
+  return true;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ── Undoer attribution ─────────────────────────────────────────────────────
 
 const AGENT_ACTOR_PATTERN = /\[bot\]|claude|codex|copilot|devin|aider|anthropic|openai/i;
@@ -735,7 +764,7 @@ export function labelMergedPr(
       }
     }
     return crossReferences.some(
-      (ref) => ref.createdAtEpoch > pr.mergedAtEpoch && ref.createdAtEpoch <= cutoffEpoch,
+      (ref) => ref.createdAtEpoch > pr.mergedAtEpoch && ref.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref, target),
     );
   };
 

@@ -120,7 +120,7 @@ describe('corpus labelling', () => {
       const repository: Record<string, unknown> = {};
       for (const match of query.matchAll(/pr(\d+): pullRequest/g)) {
         repository[`pr${match[1]}`] = match[1] === '2'
-          ? { timelineItems: { nodes: [{ createdAt: '2025-01-05T00:00:00Z', source: { url: 'https://github.com/org/repo/issues/9' } }, {}] } }
+          ? { timelineItems: { nodes: [{ createdAt: '2025-01-05T00:00:00Z', source: { url: 'https://github.com/org/repo/issues/9', author: { login: 'dev', __typename: 'User' } } }, {}] } }
           : null;
       }
       return { repository };
@@ -129,7 +129,9 @@ describe('corpus labelling', () => {
     const refs = prefetchCrossReferences('org/repo', numbers, graphql);
     expect(queries).toHaveLength(2);
     const client = prefetchedGithubClient(refs);
-    expect(client.listCrossReferences(2)).toEqual([{ createdAtEpoch: Date.parse('2025-01-05T00:00:00Z') / 1000, url: 'https://github.com/org/repo/issues/9' }]);
+    expect(client.listCrossReferences(2)).toEqual([
+      { createdAtEpoch: Date.parse('2025-01-05T00:00:00Z') / 1000, url: 'https://github.com/org/repo/issues/9', sourceAuthorLogin: 'dev', sourceAuthorType: 'User', sourceBaseRef: null },
+    ]);
     expect(client.listCrossReferences(3)).toEqual([]);
     expect(client.getPrMetadata('https://github.com/org/repo/pull/2')).toBe(null);
   });

@@ -24,6 +24,7 @@ import {
   classifyCommitActor,
   enumerateMergedPrs,
   extractIssueKeys,
+  isFollowupReference,
   labelMergedPr,
   summarizeLabels,
   type MergedPrRef,
@@ -314,6 +315,22 @@ describe('survival-labeller', () => {
     expect(row.outcome.report_outcome).toBe('followup');
     expect(row.outcome.reason_codes).toEqual(['linked_issue_or_pr']);
     expect(row.outcome.survival_ratio).toBe(1);
+  });
+
+  it('counts only same-repo, human, same-branch references as follow-up work (labeller 1.3.0)', () => {
+    const target = { owner: 'org', repo: 'repo', integrationBranch: 'main' };
+    const ref = (overrides: Partial<Parameters<typeof isFollowupReference>[0]>) => ({ createdAtEpoch: 1, url: 'https://github.com/org/repo/issues/9', ...overrides });
+    expect(isFollowupReference(ref({}), target)).toBe(true);
+    expect(isFollowupReference(ref({ url: 'https://github.com/org/repo/pull/10', sourceAuthorLogin: 'dev', sourceAuthorType: 'User', sourceBaseRef: 'main' }), target)).toBe(true);
+    // Mirror/sync repos, perf bots and other repos' issues are not follow-up work on this PR.
+    expect(isFollowupReference(ref({ url: 'https://github.com/org/mirror/pull/3' }), target)).toBe(false);
+    expect(isFollowupReference(ref({ url: '' }), target)).toBe(false);
+    // Bots: GitHub Apps and bot-named accounts.
+    expect(isFollowupReference(ref({ sourceAuthorType: 'Bot', sourceAuthorLogin: 'dependabot' }), target)).toBe(false);
+    expect(isFollowupReference(ref({ sourceAuthorLogin: 'k8s-ci-robot' }), target)).toBe(false);
+    expect(isFollowupReference(ref({ sourceAuthorLogin: 'pytorchbot' }), target)).toBe(false);
+    // Backports: a PR into another branch.
+    expect(isFollowupReference(ref({ url: 'https://github.com/org/repo/pull/11', sourceBaseRef: 'release/9.0' }), target)).toBe(false);
   });
 
   it('treats pre-merge human correction as followup provenance, not survival evidence', () => {
