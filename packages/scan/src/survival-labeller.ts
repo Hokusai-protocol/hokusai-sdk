@@ -419,6 +419,43 @@ function blobsAt(deps: SurvivalLabellerDeps, sha: string, paths: readonly string
   return out;
 }
 
+type FileFate = Map<string, { status: string; newPath: string }>;
+
+/**
+ * Where each substrate file ended up at `terminalSha`, keyed by its path at
+ * the merge. A path that still exists at the terminal cannot be a rename
+ * source under `--find-renames`, so a cheap diff scoped to the substrate's
+ * paths settles every file unless one was deleted. Only then is the
+ * whole-tree rename scan run, which on large repos dominates labelling time.
+ * Both routes yield the same fate for every substrate path.
+ */
+function forwardFate(
+  deps: SurvivalLabellerDeps,
+  pr: MergedPrRef,
+  substrate: Substrate,
+  terminalSha: string,
+): FileFate | null {
+  const toFate = (stdout: string): FileFate => {
+    const fate: FileFate = new Map();
+    for (const entry of parseNameStatusOutput(stdout)) {
+      fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
+    }
+    return fate;
+  };
+  const paths = [...new Set(substrate.files.map((file) => file.path))].sort();
+  if (paths.length > 0) {
+    const scoped = deps.runGit([
+      '--literal-pathspecs', 'diff', '--name-status', '--no-renames', pr.mergeSha, terminalSha, '--', ...paths,
+    ]);
+    if (scoped.exitCode !== 0) return null;
+    const fate = toFate(scoped.stdout);
+    if (![...fate.values()].some((entry) => entry.status === 'D')) return fate;
+  }
+  const nameStatus = deps.runGit(['diff', '--name-status', '--find-renames', pr.mergeSha, terminalSha]);
+  if (nameStatus.exitCode !== 0) return null;
+  return toFate(nameStatus.stdout);
+}
+
 function analyseForward(
   deps: SurvivalLabellerDeps,
   pr: MergedPrRef,
@@ -427,13 +464,8 @@ function analyseForward(
   /** Parent/merge blobs are the same at every horizon; computed once per PR. */
   baseBlobs: () => { parent: Map<string, string | null>; merge: Map<string, string | null> },
 ): ForwardAnalysis | null {
-  const nameStatus = deps.runGit(['diff', '--name-status', '--find-renames', pr.mergeSha, terminalSha]);
-  if (nameStatus.exitCode !== 0) return null;
-
-  const fate = new Map<string, { status: string; newPath: string }>();
-  for (const entry of parseNameStatusOutput(nameStatus.stdout)) {
-    fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
-  }
+  const fate = forwardFate(deps, pr, substrate, terminalSha);
+  if (!fate) return null;
 
   // Scope the (potentially huge) forward line diff to the substrate's paths
   // and their rename targets; the fate map keeps rename pairing intact.

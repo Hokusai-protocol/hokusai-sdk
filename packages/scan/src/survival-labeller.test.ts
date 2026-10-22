@@ -286,6 +286,17 @@ describe('survival-labeller', () => {
     expect(row.outcome.survival_ratio).toBe(1);
   });
 
+  it('runs the whole-tree rename scan only when a substrate file was deleted', () => {
+    const wholeTreeScans = (): number =>
+      gitCalls.filter((call) => call.includes('--name-status') && call.includes('--find-renames')).length;
+    gitCalls = [];
+    label(prByNumber(1));
+    expect(wholeTreeScans()).toBe(0);
+    gitCalls = [];
+    label(prByNumber(5));
+    expect(wholeTreeScans()).toBeGreaterThan(0);
+  });
+
   it('emits insufficient_line_range_substrate for a whitespace-only PR', () => {
     const row = h14(label(prByNumber(6)));
     expect(row.outcome.report_outcome).toBe(null);
