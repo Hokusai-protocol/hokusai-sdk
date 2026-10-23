@@ -2,13 +2,14 @@
 /**
  * Validate corpus S2 label files against the S2 schema before they leave the
  * machine (HOK-3266). Streams plain or gzipped JSONL, so multi-GB files never
- * load whole. Also checks the row count against the neighbouring
- * s2.summary.json when there is one.
+ * load whole. Also checks the row count, and for a .gz the byte size, against
+ * the neighbouring s2.summary.json when there is one: the size catches a label
+ * file left over from an earlier run whose row count happens to match.
  *
  * Usage: node scripts/corpus/validate-s2.mjs <s2.jsonl[.gz]> [...]
  * Prints one JSON line per file; exits 1 if any row is invalid or counts disagree.
  */
-import { createReadStream, existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -41,9 +42,13 @@ for (const file of process.argv.slice(2)) {
     }
   }
   const summaryPath = join(dirname(file), 's2.summary.json');
-  const expected = existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')).rows : null;
+  const summary = existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')) : null;
+  const expected = summary?.rows ?? null;
   const countMatches = expected === null || expected === ok + bad;
-  if (bad || !countMatches) failed = true;
-  console.log(JSON.stringify({ file, ok, bad, expected_rows: expected, versions: Object.fromEntries(versions), errors: Object.fromEntries(errors) }));
+  const expectedBytes = file.endsWith('.gz') ? (summary?.s2_gzip_bytes ?? null) : null;
+  const bytes = statSync(file).size;
+  const sizeMatches = expectedBytes === null || expectedBytes === bytes;
+  if (bad || !countMatches || !sizeMatches) failed = true;
+  console.log(JSON.stringify({ file, ok, bad, expected_rows: expected, bytes, expected_bytes: expectedBytes, versions: Object.fromEntries(versions), errors: Object.fromEntries(errors) }));
 }
 process.exit(failed ? 1 : 0);
