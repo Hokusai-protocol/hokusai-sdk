@@ -47,7 +47,7 @@ import {
 } from '@hokusai/core';
 
 /** Semver of this labeller implementation (envelope.labeller_version). */
-export const SURVIVAL_LABELLER_VERSION = '1.3.0';
+export const SURVIVAL_LABELLER_VERSION = '1.4.0';
 /**
  * Semver of the normalization rules: -U0 first-parent merge diff, `-w
  * --ignore-blank-lines` whitespace stripping, one-hop rename following,
@@ -570,18 +570,37 @@ function escapeRegExp(value: string): string {
 
 // ── Undoer attribution ─────────────────────────────────────────────────────
 
-const AGENT_ACTOR_PATTERN = /\[bot\]|claude|codex|copilot|devin|aider|anthropic|openai/i;
-const AGENT_TRAILER_PATTERN = /co-authored-by:.*(claude|codex|copilot|devin|\[bot\])/i;
+// Whole identities, not substrings: "Devin Binnie" and "Claude Martin" are people.
+const AGENT_NAME_PATTERN =
+  /^(?:claude(?: code)?|codex|(?:github )?copilot|devin(?:-ai-integration)?|aider|cursor(?:-agent)?|openhands(?:-agent)?)(?:\[bot\])?$/i;
+const AGENT_EMAIL_PATTERN = /@(?:anthropic|openai)\.com$|\bcopilot@users\.noreply\.github\.com$|devin-ai-integration/i;
+// Dependency bots, CI and merge bots: neither a human undo nor an agent self-undo.
+const AUTOMATION_NAME_PATTERN = /\[bot\]$|(?:^|[\s_-])(?:bot|robot)$|mergebot$|^bors$/i;
+const CO_AUTHOR_TRAILER = /^co-authored-by:\s*(.*?)\s*<([^>]*)>/gim;
 
-/** Classify one commit's actor. Exported for reuse/tests. */
+export type CommitActor = 'human' | 'agent' | 'automation';
+
+function classifyIdentity(name: string, email: string): CommitActor {
+  if (AGENT_NAME_PATTERN.test(name.trim()) || AGENT_EMAIL_PATTERN.test(email.trim())) return 'agent';
+  if (AUTOMATION_NAME_PATTERN.test(name.trim())) return 'automation';
+  return 'human';
+}
+
+/**
+ * Classify one commit's actor. An agent author or co-author makes the commit
+ * an agent's; otherwise the author decides. Exported for reuse/tests.
+ */
 export function classifyCommitActor(commit: {
   authorName: string;
   authorEmail: string;
   body: string;
-}): 'human' | 'agent' {
-  if (AGENT_ACTOR_PATTERN.test(`${commit.authorName} ${commit.authorEmail}`)) return 'agent';
-  if (AGENT_TRAILER_PATTERN.test(commit.body)) return 'agent';
-  return 'human';
+}): CommitActor {
+  const author = classifyIdentity(commit.authorName, commit.authorEmail);
+  if (author === 'agent') return 'agent';
+  for (const [, name = '', email = ''] of commit.body.matchAll(CO_AUTHOR_TRAILER)) {
+    if (classifyIdentity(name, email) === 'agent') return 'agent';
+  }
+  return author;
 }
 
 function attributeUndoers(
@@ -593,15 +612,18 @@ function attributeUndoers(
 ): UndoneBy {
   const votes = new Set<'human' | 'agent'>(extraVotes);
   if (touchedPaths.length > 0) {
+    // The commits that changed the code, not the merges that landed them: a
+    // merge commit's author is whoever (or whichever bot) pressed merge.
     const result = deps.runGit([
-      'log', '--first-parent', '--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e',
+      'log', '--no-merges', '--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e',
       `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`, '--', ...touchedPaths,
     ]);
     if (result.exitCode === 0) {
       for (const record of result.stdout.split('\x1e')) {
         if (!record.trim()) continue;
         const [, authorName = '', authorEmail = '', body = ''] = record.split('\x1f');
-        votes.add(classifyCommitActor({ authorName, authorEmail, body }));
+        const actor = classifyCommitActor({ authorName, authorEmail, body });
+        if (actor !== 'automation') votes.add(actor);
       }
     }
   }

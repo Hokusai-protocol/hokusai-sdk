@@ -395,7 +395,7 @@ describe('survival-labeller', () => {
   });
 
   it('classifies commit actors from author identity and trailers', () => {
-    expect(classifyCommitActor({ authorName: 'dependabot[bot]', authorEmail: 'x@y', body: '' })).toBe('agent');
+    expect(classifyCommitActor({ authorName: 'dependabot[bot]', authorEmail: 'x@y', body: '' })).toBe('automation');
     expect(
       classifyCommitActor({ authorName: 'Tim', authorEmail: 't@x.com', body: 'fix\n\nCo-Authored-By: Claude <n@a.com>' }),
     ).toBe('agent');

@@ -5628,7 +5628,7 @@ function extractPrNumber(subject) {
 }
 
 // src/survival-labeller.ts
-var SURVIVAL_LABELLER_VERSION = "1.3.0";
+var SURVIVAL_LABELLER_VERSION = "1.4.0";
 var SURVIVAL_NORMALIZATION_VERSION = "1.0.0";
 var DAY_SECONDS = 86400;
 var GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
@@ -5823,13 +5823,37 @@ function blobsAt(deps, sha, paths) {
   }
   return out;
 }
-function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
+function forwardFate(deps, pr, substrate, terminalSha) {
+  const toFate = (stdout) => {
+    const fate = /* @__PURE__ */ new Map();
+    for (const entry of parseNameStatusOutput(stdout)) {
+      fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
+    }
+    return fate;
+  };
+  const paths = [...new Set(substrate.files.map((file) => file.path))].sort();
+  if (paths.length > 0) {
+    const scoped = deps.runGit([
+      "--literal-pathspecs",
+      "diff",
+      "--name-status",
+      "--no-renames",
+      pr.mergeSha,
+      terminalSha,
+      "--",
+      ...paths
+    ]);
+    if (scoped.exitCode !== 0) return null;
+    const fate = toFate(scoped.stdout);
+    if (![...fate.values()].some((entry) => entry.status === "D")) return fate;
+  }
   const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
-  const fate = /* @__PURE__ */ new Map();
-  for (const entry of parseNameStatusOutput(nameStatus.stdout)) {
-    fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
-  }
+  return toFate(nameStatus.stdout);
+}
+function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
+  const fate = forwardFate(deps, pr, substrate, terminalSha);
+  if (!fate) return null;
   const substratePathspec = /* @__PURE__ */ new Set();
   for (const file of substrate.files) {
     substratePathspec.add(file.path);
@@ -5911,19 +5935,29 @@ function isFollowupReference(ref2, target) {
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-var AGENT_ACTOR_PATTERN = /\[bot\]|claude|codex|copilot|devin|aider|anthropic|openai/i;
-var AGENT_TRAILER_PATTERN = /co-authored-by:.*(claude|codex|copilot|devin|\[bot\])/i;
-function classifyCommitActor(commit) {
-  if (AGENT_ACTOR_PATTERN.test(`${commit.authorName} ${commit.authorEmail}`)) return "agent";
-  if (AGENT_TRAILER_PATTERN.test(commit.body)) return "agent";
+var AGENT_NAME_PATTERN = /^(?:claude(?: code)?|codex|(?:github )?copilot|devin(?:-ai-integration)?|aider|cursor(?:-agent)?|openhands(?:-agent)?)(?:\[bot\])?$/i;
+var AGENT_EMAIL_PATTERN = /@(?:anthropic|openai)\.com$|\bcopilot@users\.noreply\.github\.com$|devin-ai-integration/i;
+var AUTOMATION_NAME_PATTERN = /\[bot\]$|(?:^|[\s_-])(?:bot|robot)$|mergebot$|^bors$/i;
+var CO_AUTHOR_TRAILER = /^co-authored-by:\s*(.*?)\s*<([^>]*)>/gim;
+function classifyIdentity(name, email) {
+  if (AGENT_NAME_PATTERN.test(name.trim()) || AGENT_EMAIL_PATTERN.test(email.trim())) return "agent";
+  if (AUTOMATION_NAME_PATTERN.test(name.trim())) return "automation";
   return "human";
+}
+function classifyCommitActor(commit) {
+  const author = classifyIdentity(commit.authorName, commit.authorEmail);
+  if (author === "agent") return "agent";
+  for (const [, name = "", email = ""] of commit.body.matchAll(CO_AUTHOR_TRAILER)) {
+    if (classifyIdentity(name, email) === "agent") return "agent";
+  }
+  return author;
 }
 function attributeUndoers(deps, pr, terminalSha, touchedPaths, extraVotes) {
   const votes = new Set(extraVotes);
   if (touchedPaths.length > 0) {
     const result = deps.runGit([
       "log",
-      "--first-parent",
+      "--no-merges",
       "--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e",
       `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`,
       "--",
@@ -5933,7 +5967,8 @@ function attributeUndoers(deps, pr, terminalSha, touchedPaths, extraVotes) {
       for (const record of result.stdout.split("")) {
         if (!record.trim()) continue;
         const [, authorName = "", authorEmail = "", body = ""] = record.split("");
-        votes.add(classifyCommitActor({ authorName, authorEmail, body }));
+        const actor = classifyCommitActor({ authorName, authorEmail, body });
+        if (actor !== "automation") votes.add(actor);
       }
     }
   }

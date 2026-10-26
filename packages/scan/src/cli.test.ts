@@ -309,7 +309,7 @@ describe('hokusai-scan output routing', () => {
     expect(combined.scan_contract).toEqual({
       candidateFeatures: 'candidate_features/v1',
       labels: 'arbiter_survival_label/v1',
-      labellerVersion: '1.3.0',
+      labellerVersion: '1.4.0',
       normalizationVersion: '1.0.0',
     });
     expect(combined.candidate_features.schema_version).toBe('candidate_features/v1');

@@ -178,7 +178,7 @@
       ],
       "backport_patterns": ["^Automated cherry pick", "cherry-pick"],
       "status": "kept",
-      "observed_merge_convention": "rebase_or_mixed"
+      "observed_merge_convention": "merge_commit"
     },
     {
       "repo": "dotnet/runtime",
@@ -246,7 +246,7 @@
       "language": "Go/TS",
       "expected_merge_convention": "squash",
       "status": "kept",
-      "observed_merge_convention": "rebase_or_mixed"
+      "observed_merge_convention": "squash"
     },
     {
       "repo": "supabase/supabase",
@@ -316,6 +316,18 @@
       "repo": "rust-lang/rust",
       "change": "known gap closed: rollups expanded",
       "reason": "Enumerator expands each \"Rollup of N pull requests\" into its members (Rollup merge of #N commits on the rollup branch). 15,184 PRs (12,689 rollup members, 1,654 rollup PRs dropped as aggregates, 16 members GitHub cannot return); merged-to-main PRs not enumerated fell from 12,686 to 8."
+    },
+    {
+      "date": "2026-10-26",
+      "repo": "kubernetes/kubernetes",
+      "change": "observed_merge_convention rebase_or_mixed -> merge_commit",
+      "reason": "Corpus enumeration: 97.4% of 6,187 PRs land as merge commits (2.5% squash). The merges are authored by the Prow bots (\"Kubernetes Prow Robot\", kubernetes-prow[bot]); labeller 1.4.0 credits the undo to the commits being merged, not the merge (HOK-3268)."
+    },
+    {
+      "date": "2026-10-26",
+      "repo": "mattermost/mattermost",
+      "change": "observed_merge_convention rebase_or_mixed -> squash",
+      "reason": "Corpus enumeration: 99.2% of 3,663 PRs land as squash commits (0.7% rebase) (HOK-3268)."
     }
   ]
 }
