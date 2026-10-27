@@ -23,6 +23,8 @@ import {
   GIT_OUTPUT_MAX_BUFFER,
   classifyCommitActor,
   enumerateMergedPrs,
+  extractIssueKeys,
+  isFollowupReference,
   labelMergedPr,
   summarizeLabels,
   type MergedPrRef,
@@ -284,6 +286,17 @@ describe('survival-labeller', () => {
     expect(row.outcome.survival_ratio).toBe(1);
   });
 
+  it('runs the whole-tree rename scan only when a substrate file was deleted', () => {
+    const wholeTreeScans = (): number =>
+      gitCalls.filter((call) => call.includes('--name-status') && call.includes('--find-renames')).length;
+    gitCalls = [];
+    label(prByNumber(1));
+    expect(wholeTreeScans()).toBe(0);
+    gitCalls = [];
+    label(prByNumber(5));
+    expect(wholeTreeScans()).toBeGreaterThan(0);
+  });
+
   it('emits insufficient_line_range_substrate for a whitespace-only PR', () => {
     const row = h14(label(prByNumber(6)));
     expect(row.outcome.report_outcome).toBe(null);
@@ -302,11 +315,33 @@ describe('survival-labeller', () => {
     expect(h14(label(prByNumber(8))).outcome.report_outcome).toBe('survived');
   });
 
+  it('reads tracker keys but not standards or advisory identifiers (labeller 1.2.0)', () => {
+    expect([...extractIssueKeys('HOK-123: fix the parser (ABC-9)')]).toEqual(['HOK-123', 'ABC-9']);
+    expect([...extractIssueKeys('Fixed CVE-2024-38875 -- PEP-8 cleanup, UTF-8 and RFC-7231 handling')]).toEqual([]);
+    expect([...extractIssueKeys('Bump GHSA-abcd and SHA-256 helpers for HOK-7')]).toEqual(['HOK-7']);
+  });
+
   it('flags a post-merge cross-reference as linked followup', () => {
     const row = h14(label(prByNumber(9)));
     expect(row.outcome.report_outcome).toBe('followup');
     expect(row.outcome.reason_codes).toEqual(['linked_issue_or_pr']);
     expect(row.outcome.survival_ratio).toBe(1);
+  });
+
+  it('counts only same-repo, human, same-branch references as follow-up work (labeller 1.3.0)', () => {
+    const target = { owner: 'org', repo: 'repo', integrationBranch: 'main' };
+    const ref = (overrides: Partial<Parameters<typeof isFollowupReference>[0]>) => ({ createdAtEpoch: 1, url: 'https://github.com/org/repo/issues/9', ...overrides });
+    expect(isFollowupReference(ref({}), target)).toBe(true);
+    expect(isFollowupReference(ref({ url: 'https://github.com/org/repo/pull/10', sourceAuthorLogin: 'dev', sourceAuthorType: 'User', sourceBaseRef: 'main' }), target)).toBe(true);
+    // Mirror/sync repos, perf bots and other repos' issues are not follow-up work on this PR.
+    expect(isFollowupReference(ref({ url: 'https://github.com/org/mirror/pull/3' }), target)).toBe(false);
+    expect(isFollowupReference(ref({ url: '' }), target)).toBe(false);
+    // Bots: GitHub Apps and bot-named accounts.
+    expect(isFollowupReference(ref({ sourceAuthorType: 'Bot', sourceAuthorLogin: 'dependabot' }), target)).toBe(false);
+    expect(isFollowupReference(ref({ sourceAuthorLogin: 'k8s-ci-robot' }), target)).toBe(false);
+    expect(isFollowupReference(ref({ sourceAuthorLogin: 'pytorchbot' }), target)).toBe(false);
+    // Backports: a PR into another branch.
+    expect(isFollowupReference(ref({ url: 'https://github.com/org/repo/pull/11', sourceBaseRef: 'release/9.0' }), target)).toBe(false);
   });
 
   it('treats pre-merge human correction as followup provenance, not survival evidence', () => {
@@ -360,7 +395,7 @@ describe('survival-labeller', () => {
   });
 
   it('classifies commit actors from author identity and trailers', () => {
-    expect(classifyCommitActor({ authorName: 'dependabot[bot]', authorEmail: 'x@y', body: '' })).toBe('agent');
+    expect(classifyCommitActor({ authorName: 'dependabot[bot]', authorEmail: 'x@y', body: '' })).toBe('automation');
     expect(
       classifyCommitActor({ authorName: 'Tim', authorEmail: 't@x.com', body: 'fix\n\nCo-Authored-By: Claude <n@a.com>' }),
     ).toBe('agent');
