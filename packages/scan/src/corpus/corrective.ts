@@ -14,6 +14,11 @@
  * an issue which cited the original after the original merged (an earlier
  * citation is a tracking issue, not a bug report).
  *
+ * P3 (SZZ) blames the lines a bug-fix PR deletes or modifies back to the
+ * originals that landed them; a bug fix is one closing an issue of type Bug
+ * or with a bug or regression label. P4 links a fix to an original through a
+ * closed regression issue that cited the original after it merged.
+ *
  * Every link is kept as a candidate; automatic exclusions reject some with a
  * typed code. Accepted candidates become repair pairs, measured with git.
  *
@@ -38,8 +43,10 @@ import {
   type FixChangeRef,
   type OriginalChangeRef,
   type RepairPairV1,
+  type RevertReasonClass,
 } from '@hokusai/core';
 import type { CrossReference, GitRunner } from '../survival-labeller.js';
+import { blameFix, buildLandingIndex, isBugIssue, regressionLabels, TEST_PATH, type IssueMeta, type SzzResult } from './corrective-szz.js';
 import type { CorpusPrRecord } from './enumerate.js';
 
 export const CORRECTIVE_LABELLER_VERSION = '1.0.0';
@@ -225,6 +232,10 @@ export interface DetectCandidatesInput {
   events: readonly FixEvent[];
   /** Cross-referenced events per original PR number (issues and PRs that mentioned it, and when). */
   crossReferences: ReadonlyMap<number, readonly CrossReference[]>;
+  /** Labels and type of the issues fixes close (P3, P4); absent issues are treated as unlabelled. */
+  issues: ReadonlyMap<number, IssueMeta>;
+  /** P3 blame for one bug-fix event; omit to skip SZZ. */
+  blame?: (event: FixEvent) => SzzResult;
   envelope: CorrectiveEnvelope;
 }
 
@@ -236,12 +247,13 @@ interface Draft {
   exclusion: ExclusionCode | null;
 }
 
-/** Every P1/P2 candidate link, accepted or rejected; one per (original, fix, proxy). */
-export function detectCandidates(input: DetectCandidatesInput): { candidates: CorrectiveCandidateV1[]; events: Map<string, FixEvent> } {
+/** Every P1–P4 candidate link, accepted or rejected; one per (original, fix, proxy). */
+export function detectCandidates(input: DetectCandidatesInput): { candidates: CorrectiveCandidateV1[]; events: Map<string, FixEvent>; szz: { fixes: number; skipped: number; too_large: number } } {
   const index = new OriginalIndex(input.originals);
   const drafts = new Map<string, Draft>();
   const eventsById = new Map<string, FixEvent>();
   const issueCiters = issueCitations(input.repo, input.originals, input.crossReferences);
+  const szzStats = { fixes: 0, skipped: 0, too_large: 0 };
 
   const add = (original: CorpusPrRecord, event: FixEvent, proxy: CorrectiveProxy, items: CandidateEvidence[], exclusion: ExclusionCode | null) => {
     if (original.pr_url === event.pr?.pr_url) return;
@@ -263,9 +275,10 @@ export function detectCandidates(input: DetectCandidatesInput): { candidates: Co
     const common = commonExclusion(event);
     if (isRevert(event)) {
       const exclusion = common ?? revertExclusion(event);
+      const reason = evidence('revert_reason', revertReasonClass(event));
       for (const target of revertTargets(event, text, input.repo, index)) {
         const ofRevert = REVERT_TITLE.test(target.original.title) ? 'revert_of_revert' : null;
-        add(target.original, event, 'revert', [target.evidence], ofRevert ?? exclusion);
+        add(target.original, event, 'revert', [target.evidence, reason], ofRevert ?? exclusion);
       }
       continue;
     }
@@ -302,6 +315,34 @@ export function detectCandidates(input: DetectCandidatesInput): { candidates: Co
       }
     }
     for (const [original, items] of cited) add(original, event, 'repair_reference', dedupeEvidence([...items, ...signals]), common);
+
+    const closed = event.closingIssues.flatMap((n) => {
+      const issue = input.issues.get(n);
+      return issue ? [{ n, issue }] : [];
+    });
+    // P4: a closed regression issue that reported the original after it merged.
+    for (const { n, issue } of closed) {
+      const labels = regressionLabels(issue);
+      const citers = issueCiters.get(n) ?? [];
+      if (!labels.length || citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
+      for (const { original, url } of citers) {
+        add(original, event, 'regression_issue', [...labels.map((l) => evidence('regression_issue_label', l)), evidence('closes_issue_citing_original', url)], common);
+      }
+    }
+    // P3: blame what a bug fix deletes or modifies.
+    const bugs = closed.filter(({ issue }) => isBugIssue(issue));
+    if (!bugs.length || !input.blame || !event.pr) continue;
+    const szz = input.blame(event);
+    szzStats.fixes++;
+    if (szz.status === 'skipped') {
+      szzStats.skipped++;
+      continue;
+    }
+    if (szz.tooLarge) szzStats.too_large++;
+    const bugEvidence = bugs.map(({ issue }) => evidence('closes_bug_issue', issue.url));
+    for (const [original, lines] of szz.blamed) {
+      add(original, event, 'szz', [...bugEvidence, evidence('blamed_lines', original.merge_sha, lines)], common ?? (szz.tooLarge ? 'fix_too_large' : null));
+    }
   }
 
   const candidates = [...drafts.entries()].map(([id, d]): CorrectiveCandidateV1 => ({
@@ -319,7 +360,7 @@ export function detectCandidates(input: DetectCandidatesInput): { candidates: Co
     envelope: input.envelope,
   }));
   candidates.sort((a, b) => a.original.merged_at.localeCompare(b.original.merged_at) || a.candidate_id.localeCompare(b.candidate_id));
-  return { candidates, events: eventsById };
+  return { candidates, events: eventsById, szz: szzStats };
 }
 
 function isRevert(event: FixEvent): boolean {
@@ -331,6 +372,21 @@ function commonExclusion(event: FixEvent): ExclusionCode | null {
   // Title and cherry-pick trailer only: on default-branch PRs, `backport:*` labels (kibana, grafana) request a backport rather than mark one.
   if (BACKPORT.test(`${event.title}\n${event.body}`)) return 'backport';
   return null;
+}
+
+const AUTOREVERT = /autorevert/i;
+const INTERNAL_BUILD = /internal(?:ly)?\b|internalfb|fbcode|\bD\d{7,}\b|\bdiff\b.{0,30}\b(?:reverted|backed out)/i;
+const PUBLIC_CI = /\b(?:ci|trunk|tests?|builds?|jobs?|lint|failures?|fail(?:s|ed|ing)?|break(?:s|ing)?|broke(?:n)?|red|flak\w*|timeouts?|timed out|segfaults?|crash\w*)\b|actions\/runs|hud\.pytorch/i;
+
+/** The class of reason a merge bot recorded for a revert ("… due to <reason>"); the text itself is never stored. */
+export function revertReasonClass(event: FixEvent): RevertReasonClass {
+  const reason = event.body.match(REVERT_REASON)?.[1];
+  if (!reason) return AUTOREVERT.test(event.body) ? 'autorevert' : 'unstated';
+  if (NON_DEFECT_REASON.test(reason)) return 'collateral';
+  if (AUTOREVERT.test(reason)) return 'autorevert';
+  if (INTERNAL_BUILD.test(reason)) return 'internal_build';
+  if (PUBLIC_CI.test(reason)) return 'public_ci';
+  return 'other';
 }
 
 function revertExclusion(event: FixEvent): ExclusionCode | null {
@@ -423,7 +479,6 @@ function utc(ms: number): string {
 
 // ── Repair pairs ───────────────────────────────────────────────────────────
 
-const TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
 
 /** The pair an accepted candidate materializes, measured from git. */
 export function buildRepairPair(candidate: CorrectiveCandidateV1, original: CorpusPrRecord, fix: FixEvent, runGit: GitRunner): RepairPairV1 {
@@ -590,6 +645,10 @@ export interface CorrectiveCorpusRepoInput {
   from: Date;
   asOf: Date;
   crossReferences: ReadonlyMap<number, readonly CrossReference[]>;
+  /** Labels and type of issues fix PRs close. */
+  issues: ReadonlyMap<number, IssueMeta>;
+  /** Run P3 blame. */
+  szz: boolean;
   /** Read once, in order; may be a stream. */
   s2Rows: Iterable<ArbiterSurvivalLabelV1>;
 }
@@ -606,6 +665,8 @@ export interface CorrectiveCorpusRepoResult {
   corrective: CorrectiveReworkLabelV1[];
   /** Accepted candidates git could not measure; they get no pair, so their originals read as not corrective. */
   failedPairs: string[];
+  /** Bug fixes blamed, skipped as too large to blame, over the `fix_too_large` cap, and whose blame failed. */
+  szz: { fixes: number; skipped: number; too_large: number; failed: number };
 }
 
 export function correctiveCorpusRepo(input: CorrectiveCorpusRepoInput, deps: CorrectiveCorpusRepoDeps): CorrectiveCorpusRepoResult {
@@ -613,11 +674,28 @@ export function correctiveCorpusRepo(input: CorrectiveCorpusRepoInput, deps: Cor
   const reverts = readRevertCommits(deps.runGit, input.branch, input.from, input.asOf);
   const events = collectFixEvents([...input.originals, ...input.laterPrs], reverts);
   deps.onDiagnostic?.(`info: ${input.repo}: ${events.length} fix events (${reverts.length} revert commits)`);
-  const { candidates, events: eventsById } = detectCandidates({
+  const landing = input.szz ? buildLandingIndex(deps.runGit, input.branch, input.originals) : null;
+  let blameFailures = 0;
+  let blamed = 0;
+  const blame = landing
+    ? (event: FixEvent): SzzResult => {
+        if (++blamed % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: blamed ${blamed} bug fixes`);
+        try {
+          return blameFix(deps.runGit, { parentSha: event.parentSha, tipSha: event.pr?.merge_sha ?? event.sha }, landing, event.epoch - MAX_FIX_LAG_SECONDS - 86_400);
+        } catch (error) {
+          blameFailures++;
+          deps.onDiagnostic?.(`error: ${input.repo}: cannot blame ${event.pr?.pr_url ?? event.sha}: ${String(error).slice(0, 200)}`);
+          return { status: 'skipped', files: 0, changedLines: 0 };
+        }
+      }
+    : undefined;
+  const { candidates, events: eventsById, szz } = detectCandidates({
     repo: input.repo,
     originals: input.originals,
     events,
     crossReferences: input.crossReferences,
+    issues: input.issues,
+    ...(blame ? { blame } : {}),
     envelope,
   });
   const byUrl = new Map(input.originals.map((pr) => [pr.pr_url, pr]));
@@ -633,7 +711,13 @@ export function correctiveCorpusRepo(input: CorrectiveCorpusRepoInput, deps: Cor
       deps.onDiagnostic?.(`error: ${input.repo}: cannot measure pair ${candidate.candidate_id}: ${String(error).slice(0, 200)}`);
     }
   }
-  return { candidates, repairPairs, corrective: deriveCorrectiveRows(input.s2Rows, repairPairs, envelope), failedPairs };
+  return {
+    candidates,
+    repairPairs,
+    corrective: deriveCorrectiveRows(input.s2Rows, repairPairs, envelope),
+    failedPairs,
+    szz: { ...szz, skipped: szz.skipped - blameFailures, failed: blameFailures },
+  };
 }
 
 /** Aggregate counts for the summary file and the sanity report. No raw content. */
@@ -652,6 +736,11 @@ export function summarizeCorrective(result: CorrectiveCorpusRepoResult, original
     candidates: result.candidates.length,
     candidates_by_proxy_status: count(result.candidates, (c) => `${c.proxy}:${c.status}`),
     exclusions: count(result.candidates.filter((c) => c.exclusion_code), (c) => c.exclusion_code!),
+    revert_reasons: count(
+      result.candidates.filter((c) => c.proxy === 'revert' && c.status === 'accepted'),
+      (c) => c.evidence.find((e) => e.kind === 'revert_reason')?.ref ?? 'unstated',
+    ),
+    szz: result.szz,
     repair_pairs: result.repairPairs.length,
     direct_push_fixes: result.repairPairs.filter((p) => p.fix.pr_url === null).length,
     failed_pairs: result.failedPairs.length,

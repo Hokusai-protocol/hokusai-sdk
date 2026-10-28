@@ -38,6 +38,7 @@ import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
 import { HORIZONS, type ArbiterSurvivalLabelV1 } from '@hokusai/core';
 import { summarizeLabels } from '../survival-labeller.js';
 import { correctiveCorpusRepo, summarizeCorrective } from './corrective.js';
+import { prefetchIssueMeta } from './corrective-szz.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
 import { labelCorpusRepo, prefetchCrossReferences, prefetchedGithubClient } from './label.js';
 import { parseCohortManifest, runnableRepos, type CohortRepo } from './manifest.js';
@@ -390,9 +391,12 @@ function runCorrective(
       }
       log(`info: ${entry.repo}: loading cross-references and S2 rows`);
       const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
+      const closing = [...originals, ...laterPrs].flatMap((pr) => pr.closing_issues);
+      log(`info: ${entry.repo}: fetching labels for ${new Set(closing).size} closed issues`);
+      const issues = prefetchIssueMeta(entry.repo, closing, graphql, cache);
       const s2Rows = readGzipJsonlMembers<ArbiterSurvivalLabelV1>(s2Path);
       const result = correctiveCorpusRepo(
-        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, s2Rows },
+        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit, now: () => new Date(), onDiagnostic: log },
       );
       writeJsonl(join(repoDir, 'candidates.jsonl.gz'), result.candidates, { gzip: true });
@@ -407,7 +411,7 @@ function runCorrective(
       };
       writeFileSync(join(repoDir, 'corrective.summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
       io.writeStdout(`${JSON.stringify(summary)}\n`);
-      if (result.failedPairs.length) failures++;
+      if (result.failedPairs.length || result.szz.failed) failures++;
     } catch (error) {
       failures++;
       io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: (error as Error).message })}\n`);

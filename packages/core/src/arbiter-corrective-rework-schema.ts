@@ -44,7 +44,7 @@ export const ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
       },
       "schemaVersion": {
         "enum": [
-          "1.0.0"
+          "1.1.0"
         ],
         "description": "Contract version. Must equal envelope.schema_version."
       },
@@ -102,7 +102,8 @@ export const ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
               "closes_issue_citing_original",
               "closes_bug_issue",
               "blamed_lines",
-              "regression_issue_label"
+              "regression_issue_label",
+              "revert_reason"
             ]
           },
           "ref": {
@@ -111,7 +112,7 @@ export const ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
               "null"
             ],
             "maxLength": 512,
-            "description": "URL, SHA or label name. Never free text."
+            "description": "URL, SHA, label name or revert-reason class. Never free text."
           },
           "count": {
             "type": [

@@ -66,8 +66,8 @@ The label is monotone across horizons: if a row is true at 14 days, it is also t
 |---|---|---|---|---|
 | P1 | `revert` | The fix reverts the original, in whole or in part: a `This reverts commit <sha>` message, `Reverts owner/repo#N`, or revert metadata from a bot. Revert commits pushed without a PR count too; they are read from the branch's first-parent history. | high | yes |
 | P2 | `repair_reference` | The fix cites the original by PR, URL or SHA in regression wording just before the citation: a regression word followed by a preposition (`Regression in <sha>`, `broken by #N`, `failing since #N`), `caused by` or `introduced in/by`. "Regression tests for #N" does not count. The other route is a fix-shaped change (fix title or label) that closes an issue which cited the original after it merged and which cites at most 3 originals; issues citing more are trackers. A fix label or `fix:` title on its own is only supporting evidence. | high | yes |
-| P3 | `szz` | The fix closes a bug or regression issue, and blame on the lines it deletes or modifies lands in the original. | medium | yes |
-| P4 | `regression_issue` | A regression or incident issue links the fix and the original. | medium | yes |
+| P3 | `szz` | The fix closes a bug issue (issue type `Bug`, or a bug or regression label such as `bug`, `kind/bug`, `C-bug`, `type/bug`), and `git blame --first-parent -w -M -C` on the lines it deletes or modifies, at the fix's parent, lands in the original. Test files are not blamed. Blame is bounded to the 61 days before the fix. | medium | yes |
+| P4 | `regression_issue` | The fix closes an issue with a regression or incident label that cited the original after the original merged, and the issue cites at most 3 originals. | medium | yes |
 | P5 | `abnormal_churn` | Churn is abnormally high. | low | no: such candidates are recorded with the `proxy_disabled` exclusion code |
 
 ## Exclusion codes
@@ -89,7 +89,22 @@ The labeller applies these codes automatically, before acceptance:
 - `fix_too_large`: the fix exceeds the SZZ size cap.
 - `proxy_disabled`
 
-The labeller also applies `revert_non_defect` itself when a merge bot records a collateral or process reason for the revert, for example a merge conflict, reverting a dependent PR, or a land race. Reverts for broken CI or internal builds stay accepted, and calibration decides whether they belong in the target.
+The labeller also applies `revert_non_defect` itself when a merge bot records a collateral or process reason for the revert, for example a merge conflict, reverting a dependent PR, or a land race.
+
+Every revert candidate also carries a `revert_reason` evidence item whose `ref` is a class from `REVERT_REASON_CLASSES`, never the reason text:
+
+| Class | Reason the merge bot recorded |
+|---|---|
+| `public_ci` | Broke public CI or trunk after merge: failing tests, builds, jobs, crashes |
+| `internal_build` | Broke an internal build that only the maintainer can see, such as Meta's for pytorch |
+| `autorevert` | A bot reverted it automatically after trunk signals |
+| `collateral` | A collateral or process reason; such candidates are rejected as `revert_non_defect` |
+| `other` | Some other stated reason |
+| `unstated` | No recorded reason (most non-bot reverts) |
+
+In cr-0.1.0 every class except `collateral` is accepted. The calibration pass (HOK-3269) decides which classes the pinned definition keeps; a definition can exclude a class without re-running detection.
+
+SZZ candidates for a fix over 20 non-test files or 500 changed lines are rejected as `fix_too_large`. A fix over 100 files or 5,000 lines is not blamed at all; the summary counts these.
 
 The `linkage_error` rate is reported separately, because it measures how good the linkage is.
 

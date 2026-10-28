@@ -321,6 +321,7 @@ export {
   EVIDENCE_KINDS,
   EXCLUSION_CODES,
   PROXY_CONFIDENCE,
+  REVERT_REASON_CLASSES,
   correctiveCandidateId,
   deriveCorrectiveLabel,
   type ArbiterCorrectiveReworkRecordV1,
@@ -341,6 +342,7 @@ export {
   type RepairPairFiles,
   type RepairPairTestDelta,
   type RepairPairV1,
+  type RevertReasonClass,
 } from './arbiter-corrective-rework.js';
 export { ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA } from './arbiter-corrective-rework-schema.js';
 export {

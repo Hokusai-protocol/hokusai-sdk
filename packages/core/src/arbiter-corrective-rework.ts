@@ -37,7 +37,7 @@ import { createHash } from 'node:crypto';
 import type { HorizonDays, LabelProvenance } from './arbiter-survival-label.js';
 
 /** Wire-contract version. Bump for ANY field/semantics change, however small. */
-export const ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = '1.0.0';
+export const ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = '1.1.0';
 
 /**
  * Version of the corrective-rework *definition*: which proxies are admitted
@@ -114,7 +114,17 @@ export const EVIDENCE_KINDS = [
   'closes_bug_issue',
   'blamed_lines',
   'regression_issue_label',
+  /** On a revert: the class of reason a merge bot recorded ({@link REVERT_REASON_CLASSES}); the reason text itself is never stored. */
+  'revert_reason',
 ] as const;
+
+/**
+ * Why a revert happened, from the reason a merge bot records. Kept so the
+ * definition can include or exclude classes without re-running detection
+ * (HOK-3269 decides, e.g., whether internal-build breakage is a defect).
+ */
+export const REVERT_REASON_CLASSES = ['public_ci', 'internal_build', 'autorevert', 'collateral', 'other', 'unstated'] as const;
+export type RevertReasonClass = (typeof REVERT_REASON_CLASSES)[number];
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 export interface CandidateEvidence {
