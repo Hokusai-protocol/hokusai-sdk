@@ -159,6 +159,12 @@ contract: `ArbiterSurvivalLabelV1`, `buildArbiterSurvivalLabel()`,
 `ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA` mirror of
 `packages/core/schemas/arbiter-survival-label.schema.json`, and the
 harvested/owner-corrected fixture pair.
+It also owns the corrective-rework contract (HOK-3267): candidate,
+repair-pair and corrective records in one versioned schema
+(`packages/core/schemas/arbiter-corrective-rework.schema.json`, mirrored as
+`ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA`), `deriveCorrectiveLabel()`, which
+derives the corrective boolean from accepted repair pairs, and
+`correctiveCandidateId()`. See `docs/arbiter/corrective-rework-contract.md`.
 
 ### Model Registry
 

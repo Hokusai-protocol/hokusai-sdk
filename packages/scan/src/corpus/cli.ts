@@ -15,6 +15,13 @@
  *                     Gzip, ~20× smaller: each PR's line_ranges repeat across its horizons
  *   s2.summary.json   row counts, report_outcome base rates, failures, timing
  *
+ * `hokusai-scan corpus-corrective` (HOK-3267) then finds fixes for a labelled repo:
+ *   fix-prs.jsonl            PRs merged after the window up to as-of, as fix sources — LOCAL ONLY
+ *   candidates.jsonl.gz      every proposed original→fix link, accepted or rejected
+ *   repair_pairs.jsonl.gz    one per accepted candidate
+ *   corrective.jsonl.gz      one per S2 row (derived; no raw content)
+ *   corrective.summary.json  counts by proxy, exclusion and horizon
+ *
  * stdout: one stats JSON line per repo. Exit 0 when every repo enumerated,
  * 2 on invalid input, 3 when any repo failed upstream (others still finish).
  * No ambient process state is read here; the caller supplies `cwd`, and `gh`
@@ -25,11 +32,12 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, inflateRawSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
 import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
-import { HORIZONS } from '@hokusai/core';
+import { HORIZONS, type ArbiterSurvivalLabelV1 } from '@hokusai/core';
 import { summarizeLabels } from '../survival-labeller.js';
+import { correctiveCorpusRepo, summarizeCorrective } from './corrective.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
 import { labelCorpusRepo, prefetchCrossReferences, prefetchedGithubClient } from './label.js';
 import { parseCohortManifest, runnableRepos, type CohortRepo } from './manifest.js';
@@ -49,7 +57,7 @@ const OPTIONS = {
   'as-of': { type: 'string' },
 } as const;
 
-export const CORPUS_COMMANDS = ['corpus-enumerate', 'corpus-label'] as const;
+export const CORPUS_COMMANDS = ['corpus-enumerate', 'corpus-label', 'corpus-corrective'] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 const RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -204,7 +212,7 @@ function syncClone(repo: string, dir: string, defaultBranch: string): GitRunner 
 
 export function runCorpusCli(command: string, argv: readonly string[], io: CorpusCliIO): { exitCode: number } {
   if (!(CORPUS_COMMANDS as readonly string[]).includes(command)) {
-    io.writeStderr(`error: unknown corpus command ${command}; expected ${CORPUS_COMMANDS.join(' or ')}\n`);
+    io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(', ')}\n`);
     return { exitCode: 2 };
   }
   let values: { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string };
@@ -224,12 +232,13 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
   const log = (line: string) => io.writeStderr(`${line}\n`);
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve(io.cwd, values['cache-dir']);
-  if (command === 'corpus-label') {
+  if (command === 'corpus-label' || command === 'corpus-corrective') {
     const asOf = values['as-of'] ? new Date(values['as-of']) : new Date();
     if (!Number.isFinite(asOf.getTime())) {
       io.writeStderr('error: --as-of must be an ISO-8601 timestamp\n');
       return { exitCode: 2 };
     }
+    if (command === 'corpus-corrective') return runCorrective(entries, cacheRoot, window, asOf, graphql, io, log);
     return runLabel(entries, cacheRoot, asOf, graphql, io, log);
   }
   let failures = 0;
@@ -312,6 +321,93 @@ function runLabel(
       writeFileSync(join(repoDir, 's2.summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
       io.writeStdout(`${JSON.stringify(summary)}\n`);
       if (failed.length) failures++;
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: (error as Error).message })}\n`);
+      log(`error: ${entry.repo}: ${(error as Error).message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+
+function readJsonl<T>(path: string): T[] {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as T);
+}
+
+/**
+ * Rows of a gzip JSONL file written by {@link writeJsonl}, one gzip member at
+ * a time. Large repos' S2 files decompress past V8's string and buffer
+ * limits, so the file is never inflated whole. Members carry no optional
+ * header fields (gzipSync), so each is a 10-byte header, a raw deflate
+ * stream and an 8-byte trailer.
+ */
+export function* readGzipJsonlMembers<T>(path: string): Generator<T> {
+  const raw = readFileSync(path);
+  for (let offset = 0; offset < raw.length; ) {
+    if (raw[offset] !== 0x1f || raw[offset + 1] !== 0x8b || raw[offset + 3] !== 0) throw new Error(`${path}: unexpected gzip member header at byte ${offset}`);
+    const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+    offset += 10 + engine.bytesWritten + 8;
+    for (const line of buffer.toString('utf8').split('\n')) if (line) yield JSON.parse(line) as T;
+  }
+}
+
+function runCorrective(
+  entries: CohortRepo[],
+  cacheRoot: string,
+  window: { from: Date; until: Date },
+  asOf: Date,
+  graphql: GraphqlRunner,
+  io: CorpusCliIO,
+  log: (line: string) => void,
+): { exitCode: number } {
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split('/') as [string, string];
+    const repoDir = join(cacheRoot, `${owner}__${name}`);
+    const started = Date.now();
+    try {
+      const s2Path = join(repoDir, 's2.jsonl.gz');
+      if (!existsSync(s2Path)) throw new Error('not labelled yet; run corpus-label first');
+      const { branch } = JSON.parse(readFileSync(join(repoDir, 'enumeration.json'), 'utf8')) as { branch: string };
+      const originals = readJsonl<CorpusPrRecord>(join(repoDir, 'prs.jsonl'));
+      const gitDir = join(repoDir, 'repo.git');
+      const runGit: GitRunner = (args) => execArgvCommand('git', ['-C', gitDir, ...args], { encoding: 'utf8', maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+      const cache = fileCache(join(repoDir, 'graphql'));
+      // Fixes for late originals land after the window closes; enumerate them up to as-of.
+      const laterPath = join(repoDir, 'fix-prs.jsonl');
+      let laterPrs: CorpusPrRecord[] = [];
+      if (existsSync(laterPath)) laterPrs = readJsonl<CorpusPrRecord>(laterPath);
+      else if (window.until < asOf) {
+        log(`info: ${entry.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
+        ({ records: laterPrs } = enumerateCorpusRepo(
+          { repo: entry.repo, branch, defaultBranchNames: [branch, ...(entry.default_branch_aliases ?? [])], from: window.until, until: asOf },
+          { runGit, graphql, cache, onDiagnostic: log },
+        ));
+        writeJsonl(laterPath, laterPrs);
+      }
+      log(`info: ${entry.repo}: loading cross-references and S2 rows`);
+      const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
+      const s2Rows = readGzipJsonlMembers<ArbiterSurvivalLabelV1>(s2Path);
+      const result = correctiveCorpusRepo(
+        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, s2Rows },
+        { runGit, now: () => new Date(), onDiagnostic: log },
+      );
+      writeJsonl(join(repoDir, 'candidates.jsonl.gz'), result.candidates, { gzip: true });
+      writeJsonl(join(repoDir, 'repair_pairs.jsonl.gz'), result.repairPairs, { gzip: true });
+      writeJsonl(join(repoDir, 'corrective.jsonl.gz'), result.corrective, { gzip: true });
+      const summary = {
+        repo: entry.repo,
+        as_of: asOf.toISOString(),
+        later_prs: laterPrs.length,
+        ...summarizeCorrective(result, originals.length),
+        wall_clock_seconds: Math.round((Date.now() - started) / 1000),
+      };
+      writeFileSync(join(repoDir, 'corrective.summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+      io.writeStdout(`${JSON.stringify(summary)}\n`);
+      if (result.failedPairs.length) failures++;
     } catch (error) {
       failures++;
       io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: (error as Error).message })}\n`);

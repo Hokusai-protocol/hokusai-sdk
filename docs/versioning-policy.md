@@ -46,6 +46,12 @@ Rules:
   requires bumping `ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION`, coordinated with
   the `Hokusai/hokusai-data-pipeline` consumer. The TS schema mirror and the
   JSON file must change together (a core test enforces deep equality).
+- The corrective-rework contract follows the same rule: any field or
+  semantics change to the records in
+  `packages/core/schemas/arbiter-corrective-rework.schema.json` bumps
+  `ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION`. Changing which proxies are
+  admitted, or their confidence tiers, bumps
+  `CORRECTIVE_REWORK_DEFINITION_VERSION` (`cr-x.y.z`) instead.
 - The report payload is frozen as `arbiter_report/vN`. Any field or semantic
   change requires a new major wire version. Consumers must accept that version
   before the scanner emits it; unknown versions are rejected.

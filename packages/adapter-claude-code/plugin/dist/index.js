@@ -6650,6 +6650,688 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/arbiter-corrective-rework.ts
+import { createHash as createHash2 } from "node:crypto";
+var ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = "1.0.0";
+var CORRECTIVE_REWORK_DEFINITION_VERSION = "cr-0.1.0";
+var PROXY_CONFIDENCE = Object.freeze({
+  revert: "high",
+  repair_reference: "high",
+  szz: "medium",
+  regression_issue: "medium",
+  abnormal_churn: "low"
+});
+var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
+var CORRECTIVE_REASON_CODES = [...ADMITTED_PROXIES, "no_accepted_fix", "base_label_missing"];
+function correctiveCandidateId(original, fix, proxy) {
+  return createHash2("sha256").update([original.pr_url, fix.pr_url ?? fix.sha, proxy].join("\0"), "utf-8").digest("hex");
+}
+var CONFIDENCE_RANK = { high: 3, medium: 2, low: 1 };
+function deriveCorrectiveLabel(input) {
+  const envelope = { ...input.envelope, schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION };
+  const base = {
+    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+    record_type: "corrective",
+    prUrl: input.prUrl,
+    horizon_days: input.horizon_days,
+    label_provenance: "harvested",
+    base_label_hash: input.base_label_hash
+  };
+  if (!input.base_label_present) {
+    return { ...base, corrective: null, confidence: null, reason_codes: ["base_label_missing"], repair_pair_ids: [], envelope };
+  }
+  const horizonSeconds = input.horizon_days * 86400;
+  const admitted = new Set(ADMITTED_PROXIES);
+  const within = input.repair_pairs.filter(
+    (p) => p.original.pr_url === input.prUrl && admitted.has(p.proxy) && p.lag_seconds > 0 && p.lag_seconds <= horizonSeconds
+  );
+  if (within.length === 0) {
+    return { ...base, corrective: false, confidence: null, reason_codes: ["no_accepted_fix"], repair_pair_ids: [], envelope };
+  }
+  const confidence = within.reduce(
+    (best, p) => CONFIDENCE_RANK[p.confidence] > CONFIDENCE_RANK[best] ? p.confidence : best,
+    "low"
+  );
+  const proxies = new Set(within.map((p) => p.proxy));
+  return {
+    ...base,
+    corrective: true,
+    confidence,
+    reason_codes: ADMITTED_PROXIES.filter((p) => proxies.has(p)),
+    repair_pair_ids: [...new Set(within.map((p) => p.candidate_id))].sort(),
+    envelope
+  };
+}
+
+// ../core/src/arbiter-corrective-rework-schema.ts
+var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "arbiter-corrective-rework.schema.json",
+    "title": "ArbiterCorrectiveReworkRecordV1",
+    "description": "Arbiter corrective-rework records (HOK-3267). One schema, three record types discriminated by record_type: candidate (every proposed fix->original link, accepted or rejected with an exclusion code), repair_pair (one per accepted candidate: the pair and its delta), corrective (one per prUrl x horizon_days, derived from accepted repair pairs and linked to its S2 survival label by base_label_hash). Carries no raw content: typed codes, URLs, SHAs, repo paths and counts only. Producer: the @hokusai/scan corrective labeller. Contract doc: docs/arbiter/corrective-rework-contract.md. Any change requires a schema_version bump.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/candidate"
+      },
+      {
+        "$ref": "#/$defs/repairPair"
+      },
+      {
+        "$ref": "#/$defs/corrective"
+      }
+    ],
+    "$defs": {
+      "gitSha": {
+        "type": "string",
+        "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+        "description": "Full git object id (40 hex for SHA-1 repos, 64 for SHA-256 repos)."
+      },
+      "sha256Hex": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+      },
+      "url": {
+        "type": "string",
+        "pattern": "^https?://\\S+$"
+      },
+      "schemaVersion": {
+        "enum": [
+          "1.0.0"
+        ],
+        "description": "Contract version. Must equal envelope.schema_version."
+      },
+      "proxy": {
+        "enum": [
+          "revert",
+          "repair_reference",
+          "szz",
+          "regression_issue",
+          "abnormal_churn"
+        ],
+        "description": "Fix-event proxy, in precision order (P1-P5)."
+      },
+      "confidence": {
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ]
+      },
+      "exclusionCode": {
+        "enum": [
+          "planned_iteration",
+          "requirement_change",
+          "unrelated_edit",
+          "refactor",
+          "revert_non_defect",
+          "linkage_error",
+          "backport",
+          "revert_of_revert",
+          "dependency_bot",
+          "fix_too_large",
+          "proxy_disabled"
+        ],
+        "description": "Why a candidate was rejected. The first six are the shared human taxonomy (HOK-3048); the rest are applied automatically."
+      },
+      "evidence": {
+        "type": "object",
+        "required": [
+          "kind",
+          "ref",
+          "count"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "revert_message",
+              "reverts_pr_reference",
+              "cites_original_pr",
+              "cites_original_sha",
+              "fix_label",
+              "fix_title_prefix",
+              "regression_in_marker",
+              "closes_issue_citing_original",
+              "closes_bug_issue",
+              "blamed_lines",
+              "regression_issue_label"
+            ]
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512,
+            "description": "URL, SHA or label name. Never free text."
+          },
+          "count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "original": {
+        "type": "object",
+        "required": [
+          "pr_url",
+          "merge_sha",
+          "merged_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pr_url": {
+            "$ref": "#/$defs/url"
+          },
+          "merge_sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "merged_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          }
+        }
+      },
+      "fix": {
+        "type": "object",
+        "required": [
+          "pr_url",
+          "sha",
+          "merged_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pr_url": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/url"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "merged_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          }
+        }
+      },
+      "envelope": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "definition_version",
+          "labeller_version",
+          "integration_branch",
+          "as_of",
+          "computed_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "definition_version": {
+            "type": "string",
+            "pattern": "^cr-\\d+\\.\\d+\\.\\d+$"
+          },
+          "labeller_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "integration_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "as_of": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "computed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          }
+        }
+      },
+      "pathList": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uniqueItems": true
+      },
+      "candidate": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "candidate_id",
+          "original",
+          "fix",
+          "lag_seconds",
+          "proxy",
+          "confidence",
+          "evidence",
+          "status",
+          "exclusion_code",
+          "envelope"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "candidate"
+          },
+          "candidate_id": {
+            "$ref": "#/$defs/sha256Hex"
+          },
+          "original": {
+            "$ref": "#/$defs/original"
+          },
+          "fix": {
+            "$ref": "#/$defs/fix"
+          },
+          "lag_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "proxy": {
+            "$ref": "#/$defs/proxy"
+          },
+          "confidence": {
+            "$ref": "#/$defs/confidence"
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/evidence"
+            }
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ]
+          },
+          "exclusion_code": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/exclusionCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "envelope": {
+            "$ref": "#/$defs/envelope"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "accepted"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "exclusion_code": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "exclusion_code": {
+                  "$ref": "#/$defs/exclusionCode"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "repairPair": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "candidate_id",
+          "original",
+          "fix",
+          "lag_seconds",
+          "proxy",
+          "confidence",
+          "files",
+          "line_survival",
+          "fix_tests",
+          "original_review",
+          "graph_distance",
+          "envelope"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "repair_pair"
+          },
+          "candidate_id": {
+            "$ref": "#/$defs/sha256Hex"
+          },
+          "original": {
+            "$ref": "#/$defs/original"
+          },
+          "fix": {
+            "$ref": "#/$defs/fix"
+          },
+          "lag_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "proxy": {
+            "$ref": "#/$defs/proxy"
+          },
+          "confidence": {
+            "$ref": "#/$defs/confidence"
+          },
+          "files": {
+            "type": "object",
+            "required": [
+              "original",
+              "fix",
+              "fix_only",
+              "original_only",
+              "fix_preexisting"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "original": {
+                "$ref": "#/$defs/pathList"
+              },
+              "fix": {
+                "$ref": "#/$defs/pathList"
+              },
+              "fix_only": {
+                "$ref": "#/$defs/pathList"
+              },
+              "original_only": {
+                "$ref": "#/$defs/pathList"
+              },
+              "fix_preexisting": {
+                "$ref": "#/$defs/pathList"
+              }
+            }
+          },
+          "line_survival": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Fraction of the original's added lines still present in the fix's parent tree; null when unmeasurable."
+          },
+          "fix_tests": {
+            "type": "object",
+            "required": [
+              "added",
+              "modified",
+              "deleted"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "added": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "modified": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "deleted": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "original_review": {
+            "type": "object",
+            "required": [
+              "reviewed",
+              "review_count",
+              "reviewer_count",
+              "first_review_latency_seconds"
+            ],
+            "additionalProperties": false,
+            "description": "Review metadata on the original. Null fields mean not collected, never none.",
+            "properties": {
+              "reviewed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "review_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "reviewer_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "first_review_latency_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          },
+          "graph_distance": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Null until backfilled from a structural index."
+          },
+          "envelope": {
+            "$ref": "#/$defs/envelope"
+          }
+        }
+      },
+      "corrective": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "prUrl",
+          "horizon_days",
+          "label_provenance",
+          "base_label_hash",
+          "corrective",
+          "confidence",
+          "reason_codes",
+          "repair_pair_ids",
+          "envelope"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "corrective"
+          },
+          "prUrl": {
+            "$ref": "#/$defs/url"
+          },
+          "horizon_days": {
+            "enum": [
+              14,
+              30,
+              60
+            ]
+          },
+          "label_provenance": {
+            "enum": [
+              "harvested",
+              "owner_corrected"
+            ]
+          },
+          "base_label_hash": {
+            "$ref": "#/$defs/sha256Hex",
+            "description": "S2 canonicalHash of the survival label this row derives from."
+          },
+          "corrective": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "confidence": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/confidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_codes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "revert",
+                "repair_reference",
+                "szz",
+                "regression_issue",
+                "no_accepted_fix",
+                "base_label_missing"
+              ]
+            }
+          },
+          "repair_pair_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/sha256Hex"
+            }
+          },
+          "envelope": {
+            "$ref": "#/$defs/envelope"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "corrective": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "confidence": {
+                  "$ref": "#/$defs/confidence"
+                },
+                "repair_pair_ids": {
+                  "minItems": 1
+                },
+                "reason_codes": {
+                  "items": {
+                    "enum": [
+                      "revert",
+                      "repair_reference",
+                      "szz",
+                      "regression_issue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "corrective": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "confidence": {
+                  "type": "null"
+                },
+                "repair_pair_ids": {
+                  "maxItems": 0
+                },
+                "reason_codes": {
+                  "const": [
+                    "no_accepted_fix"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "corrective": {
+                  "type": "null"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "confidence": {
+                  "type": "null"
+                },
+                "repair_pair_ids": {
+                  "maxItems": 0
+                },
+                "reason_codes": {
+                  "const": [
+                    "base_label_missing"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+);
+
 // ../core/src/task-cost/enums.ts
 var TASK_COST_FIELD_AVAILABILITIES = [
   "available",
@@ -7670,6 +8352,112 @@ var ownerCorrectedSurvivalLabelFixture = buildArbiterSurvivalLabel({
       note: "Follow-up PR #130 rewrote the labelled ranges; the harvested label missed it."
     }
   }
+});
+
+// ../core/src/fixtures/arbiter-corrective-rework.ts
+var ENVELOPE = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  definition_version: CORRECTIVE_REWORK_DEFINITION_VERSION,
+  labeller_version: "1.0.0",
+  integration_branch: "auto/integration",
+  as_of: "2026-10-20T00:00:00Z",
+  computed_at: "2026-10-28T00:00:00Z"
+};
+var ORIGINAL = {
+  pr_url: harvestedSurvivalLabelFixture.prUrl,
+  merge_sha: harvestedSurvivalLabelFixture.envelope.merge_sha,
+  merged_at: "2026-09-01T00:00:00Z"
+};
+var FIX = {
+  pr_url: "https://github.com/example-org/example-repo/pull/131",
+  sha: "e".repeat(40),
+  merged_at: "2026-09-04T00:00:00Z"
+};
+var BACKPORT = {
+  pr_url: "https://github.com/example-org/example-repo/pull/140",
+  sha: "f".repeat(40),
+  merged_at: "2026-09-06T00:00:00Z"
+};
+var acceptedCorrectiveCandidateFixture = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  record_type: "candidate",
+  candidate_id: correctiveCandidateId(ORIGINAL, FIX, "repair_reference"),
+  original: ORIGINAL,
+  fix: FIX,
+  lag_seconds: 3 * 86400,
+  proxy: "repair_reference",
+  confidence: "high",
+  evidence: [
+    { kind: "cites_original_pr", ref: ORIGINAL.pr_url, count: null },
+    { kind: "regression_in_marker", ref: null, count: null }
+  ],
+  status: "accepted",
+  exclusion_code: null,
+  envelope: ENVELOPE
+};
+var rejectedCorrectiveCandidateFixture = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  record_type: "candidate",
+  candidate_id: correctiveCandidateId(ORIGINAL, BACKPORT, "revert"),
+  original: ORIGINAL,
+  fix: BACKPORT,
+  lag_seconds: 5 * 86400,
+  proxy: "revert",
+  confidence: "high",
+  evidence: [{ kind: "revert_message", ref: ORIGINAL.merge_sha, count: null }],
+  status: "rejected",
+  exclusion_code: "backport",
+  envelope: ENVELOPE
+};
+var repairPairFixture = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  record_type: "repair_pair",
+  candidate_id: acceptedCorrectiveCandidateFixture.candidate_id,
+  original: ORIGINAL,
+  fix: FIX,
+  lag_seconds: 3 * 86400,
+  proxy: "repair_reference",
+  confidence: "high",
+  files: {
+    original: ["src/module.ts", "src/new-module.ts"],
+    fix: ["src/caller.ts", "src/module.ts", "test/module.test.ts"],
+    fix_only: ["src/caller.ts", "test/module.test.ts"],
+    original_only: ["src/new-module.ts"],
+    fix_preexisting: ["src/caller.ts", "src/module.ts"]
+  },
+  line_survival: 0.8,
+  fix_tests: { added: 1, modified: 0, deleted: 0 },
+  original_review: { reviewed: true, review_count: 2, reviewer_count: 1, first_review_latency_seconds: 3600 },
+  graph_distance: null,
+  envelope: ENVELOPE
+};
+var DERIVE_BASE = {
+  prUrl: ORIGINAL.pr_url,
+  base_label_hash: canonicalHash(harvestedSurvivalLabelFixture),
+  repair_pairs: [repairPairFixture],
+  envelope: {
+    definition_version: ENVELOPE.definition_version,
+    labeller_version: ENVELOPE.labeller_version,
+    integration_branch: ENVELOPE.integration_branch,
+    as_of: ENVELOPE.as_of,
+    computed_at: ENVELOPE.computed_at
+  }
+};
+var correctiveTrueFixture = deriveCorrectiveLabel({
+  ...DERIVE_BASE,
+  horizon_days: 14,
+  base_label_present: true
+});
+var correctiveFalseFixture = deriveCorrectiveLabel({
+  ...DERIVE_BASE,
+  horizon_days: 30,
+  base_label_present: true,
+  repair_pairs: []
+});
+var correctiveMissingFixture = deriveCorrectiveLabel({
+  ...DERIVE_BASE,
+  horizon_days: 60,
+  base_label_present: false
 });
 
 // ../core/src/fixtures/candidate-features.ts
