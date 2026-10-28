@@ -1825,6 +1825,688 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/arbiter-corrective-rework.ts
+import { createHash as createHash2 } from "node:crypto";
+var ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = "1.0.0";
+var CORRECTIVE_REWORK_DEFINITION_VERSION = "cr-0.1.0";
+var PROXY_CONFIDENCE = Object.freeze({
+  revert: "high",
+  repair_reference: "high",
+  szz: "medium",
+  regression_issue: "medium",
+  abnormal_churn: "low"
+});
+var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
+var CORRECTIVE_REASON_CODES = [...ADMITTED_PROXIES, "no_accepted_fix", "base_label_missing"];
+function correctiveCandidateId(original, fix, proxy) {
+  return createHash2("sha256").update([original.pr_url, fix.pr_url ?? fix.sha, proxy].join("\0"), "utf-8").digest("hex");
+}
+var CONFIDENCE_RANK = { high: 3, medium: 2, low: 1 };
+function deriveCorrectiveLabel(input) {
+  const envelope = { ...input.envelope, schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION };
+  const base = {
+    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+    record_type: "corrective",
+    prUrl: input.prUrl,
+    horizon_days: input.horizon_days,
+    label_provenance: "harvested",
+    base_label_hash: input.base_label_hash
+  };
+  if (!input.base_label_present) {
+    return { ...base, corrective: null, confidence: null, reason_codes: ["base_label_missing"], repair_pair_ids: [], envelope };
+  }
+  const horizonSeconds = input.horizon_days * 86400;
+  const admitted = new Set(ADMITTED_PROXIES);
+  const within = input.repair_pairs.filter(
+    (p) => p.original.pr_url === input.prUrl && admitted.has(p.proxy) && p.lag_seconds > 0 && p.lag_seconds <= horizonSeconds
+  );
+  if (within.length === 0) {
+    return { ...base, corrective: false, confidence: null, reason_codes: ["no_accepted_fix"], repair_pair_ids: [], envelope };
+  }
+  const confidence = within.reduce(
+    (best, p) => CONFIDENCE_RANK[p.confidence] > CONFIDENCE_RANK[best] ? p.confidence : best,
+    "low"
+  );
+  const proxies = new Set(within.map((p) => p.proxy));
+  return {
+    ...base,
+    corrective: true,
+    confidence,
+    reason_codes: ADMITTED_PROXIES.filter((p) => proxies.has(p)),
+    repair_pair_ids: [...new Set(within.map((p) => p.candidate_id))].sort(),
+    envelope
+  };
+}
+
+// ../core/src/arbiter-corrective-rework-schema.ts
+var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "arbiter-corrective-rework.schema.json",
+    "title": "ArbiterCorrectiveReworkRecordV1",
+    "description": "Arbiter corrective-rework records (HOK-3267). One schema, three record types discriminated by record_type: candidate (every proposed fix->original link, accepted or rejected with an exclusion code), repair_pair (one per accepted candidate: the pair and its delta), corrective (one per prUrl x horizon_days, derived from accepted repair pairs and linked to its S2 survival label by base_label_hash). Carries no raw content: typed codes, URLs, SHAs, repo paths and counts only. Producer: the @hokusai/scan corrective labeller. Contract doc: docs/arbiter/corrective-rework-contract.md. Any change requires a schema_version bump.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/candidate"
+      },
+      {
+        "$ref": "#/$defs/repairPair"
+      },
+      {
+        "$ref": "#/$defs/corrective"
+      }
+    ],
+    "$defs": {
+      "gitSha": {
+        "type": "string",
+        "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+        "description": "Full git object id (40 hex for SHA-1 repos, 64 for SHA-256 repos)."
+      },
+      "sha256Hex": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+      },
+      "url": {
+        "type": "string",
+        "pattern": "^https?://\\S+$"
+      },
+      "schemaVersion": {
+        "enum": [
+          "1.0.0"
+        ],
+        "description": "Contract version. Must equal envelope.schema_version."
+      },
+      "proxy": {
+        "enum": [
+          "revert",
+          "repair_reference",
+          "szz",
+          "regression_issue",
+          "abnormal_churn"
+        ],
+        "description": "Fix-event proxy, in precision order (P1-P5)."
+      },
+      "confidence": {
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ]
+      },
+      "exclusionCode": {
+        "enum": [
+          "planned_iteration",
+          "requirement_change",
+          "unrelated_edit",
+          "refactor",
+          "revert_non_defect",
+          "linkage_error",
+          "backport",
+          "revert_of_revert",
+          "dependency_bot",
+          "fix_too_large",
+          "proxy_disabled"
+        ],
+        "description": "Why a candidate was rejected. The first six are the shared human taxonomy (HOK-3048); the rest are applied automatically."
+      },
+      "evidence": {
+        "type": "object",
+        "required": [
+          "kind",
+          "ref",
+          "count"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "revert_message",
+              "reverts_pr_reference",
+              "cites_original_pr",
+              "cites_original_sha",
+              "fix_label",
+              "fix_title_prefix",
+              "regression_in_marker",
+              "closes_issue_citing_original",
+              "closes_bug_issue",
+              "blamed_lines",
+              "regression_issue_label"
+            ]
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512,
+            "description": "URL, SHA or label name. Never free text."
+          },
+          "count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "original": {
+        "type": "object",
+        "required": [
+          "pr_url",
+          "merge_sha",
+          "merged_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pr_url": {
+            "$ref": "#/$defs/url"
+          },
+          "merge_sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "merged_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          }
+        }
+      },
+      "fix": {
+        "type": "object",
+        "required": [
+          "pr_url",
+          "sha",
+          "merged_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pr_url": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/url"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "merged_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          }
+        }
+      },
+      "envelope": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "definition_version",
+          "labeller_version",
+          "integration_branch",
+          "as_of",
+          "computed_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "definition_version": {
+            "type": "string",
+            "pattern": "^cr-\\d+\\.\\d+\\.\\d+$"
+          },
+          "labeller_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "integration_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "as_of": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "computed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          }
+        }
+      },
+      "pathList": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uniqueItems": true
+      },
+      "candidate": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "candidate_id",
+          "original",
+          "fix",
+          "lag_seconds",
+          "proxy",
+          "confidence",
+          "evidence",
+          "status",
+          "exclusion_code",
+          "envelope"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "candidate"
+          },
+          "candidate_id": {
+            "$ref": "#/$defs/sha256Hex"
+          },
+          "original": {
+            "$ref": "#/$defs/original"
+          },
+          "fix": {
+            "$ref": "#/$defs/fix"
+          },
+          "lag_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "proxy": {
+            "$ref": "#/$defs/proxy"
+          },
+          "confidence": {
+            "$ref": "#/$defs/confidence"
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/evidence"
+            }
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ]
+          },
+          "exclusion_code": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/exclusionCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "envelope": {
+            "$ref": "#/$defs/envelope"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "accepted"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "exclusion_code": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "exclusion_code": {
+                  "$ref": "#/$defs/exclusionCode"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "repairPair": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "candidate_id",
+          "original",
+          "fix",
+          "lag_seconds",
+          "proxy",
+          "confidence",
+          "files",
+          "line_survival",
+          "fix_tests",
+          "original_review",
+          "graph_distance",
+          "envelope"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "repair_pair"
+          },
+          "candidate_id": {
+            "$ref": "#/$defs/sha256Hex"
+          },
+          "original": {
+            "$ref": "#/$defs/original"
+          },
+          "fix": {
+            "$ref": "#/$defs/fix"
+          },
+          "lag_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "proxy": {
+            "$ref": "#/$defs/proxy"
+          },
+          "confidence": {
+            "$ref": "#/$defs/confidence"
+          },
+          "files": {
+            "type": "object",
+            "required": [
+              "original",
+              "fix",
+              "fix_only",
+              "original_only",
+              "fix_preexisting"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "original": {
+                "$ref": "#/$defs/pathList"
+              },
+              "fix": {
+                "$ref": "#/$defs/pathList"
+              },
+              "fix_only": {
+                "$ref": "#/$defs/pathList"
+              },
+              "original_only": {
+                "$ref": "#/$defs/pathList"
+              },
+              "fix_preexisting": {
+                "$ref": "#/$defs/pathList"
+              }
+            }
+          },
+          "line_survival": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Fraction of the original's added lines still present in the fix's parent tree; null when unmeasurable."
+          },
+          "fix_tests": {
+            "type": "object",
+            "required": [
+              "added",
+              "modified",
+              "deleted"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "added": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "modified": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "deleted": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "original_review": {
+            "type": "object",
+            "required": [
+              "reviewed",
+              "review_count",
+              "reviewer_count",
+              "first_review_latency_seconds"
+            ],
+            "additionalProperties": false,
+            "description": "Review metadata on the original. Null fields mean not collected, never none.",
+            "properties": {
+              "reviewed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "review_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "reviewer_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "first_review_latency_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          },
+          "graph_distance": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Null until backfilled from a structural index."
+          },
+          "envelope": {
+            "$ref": "#/$defs/envelope"
+          }
+        }
+      },
+      "corrective": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "prUrl",
+          "horizon_days",
+          "label_provenance",
+          "base_label_hash",
+          "corrective",
+          "confidence",
+          "reason_codes",
+          "repair_pair_ids",
+          "envelope"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "corrective"
+          },
+          "prUrl": {
+            "$ref": "#/$defs/url"
+          },
+          "horizon_days": {
+            "enum": [
+              14,
+              30,
+              60
+            ]
+          },
+          "label_provenance": {
+            "enum": [
+              "harvested",
+              "owner_corrected"
+            ]
+          },
+          "base_label_hash": {
+            "$ref": "#/$defs/sha256Hex",
+            "description": "S2 canonicalHash of the survival label this row derives from."
+          },
+          "corrective": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "confidence": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/confidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_codes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "revert",
+                "repair_reference",
+                "szz",
+                "regression_issue",
+                "no_accepted_fix",
+                "base_label_missing"
+              ]
+            }
+          },
+          "repair_pair_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/sha256Hex"
+            }
+          },
+          "envelope": {
+            "$ref": "#/$defs/envelope"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "corrective": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "confidence": {
+                  "$ref": "#/$defs/confidence"
+                },
+                "repair_pair_ids": {
+                  "minItems": 1
+                },
+                "reason_codes": {
+                  "items": {
+                    "enum": [
+                      "revert",
+                      "repair_reference",
+                      "szz",
+                      "regression_issue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "corrective": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "confidence": {
+                  "type": "null"
+                },
+                "repair_pair_ids": {
+                  "maxItems": 0
+                },
+                "reason_codes": {
+                  "const": [
+                    "no_accepted_fix"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "corrective": {
+                  "type": "null"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "confidence": {
+                  "type": "null"
+                },
+                "repair_pair_ids": {
+                  "maxItems": 0
+                },
+                "reason_codes": {
+                  "const": [
+                    "base_label_missing"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+);
+
 // ../core/src/task-cost/enums.ts
 var TASK_COST_FIELD_AVAILABILITIES = [
   "available",
@@ -3096,6 +3778,112 @@ var ownerCorrectedSurvivalLabelFixture = buildArbiterSurvivalLabel({
       note: "Follow-up PR #130 rewrote the labelled ranges; the harvested label missed it."
     }
   }
+});
+
+// ../core/src/fixtures/arbiter-corrective-rework.ts
+var ENVELOPE = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  definition_version: CORRECTIVE_REWORK_DEFINITION_VERSION,
+  labeller_version: "1.0.0",
+  integration_branch: "auto/integration",
+  as_of: "2026-10-20T00:00:00Z",
+  computed_at: "2026-10-28T00:00:00Z"
+};
+var ORIGINAL = {
+  pr_url: harvestedSurvivalLabelFixture.prUrl,
+  merge_sha: harvestedSurvivalLabelFixture.envelope.merge_sha,
+  merged_at: "2026-09-01T00:00:00Z"
+};
+var FIX = {
+  pr_url: "https://github.com/example-org/example-repo/pull/131",
+  sha: "e".repeat(40),
+  merged_at: "2026-09-04T00:00:00Z"
+};
+var BACKPORT = {
+  pr_url: "https://github.com/example-org/example-repo/pull/140",
+  sha: "f".repeat(40),
+  merged_at: "2026-09-06T00:00:00Z"
+};
+var acceptedCorrectiveCandidateFixture = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  record_type: "candidate",
+  candidate_id: correctiveCandidateId(ORIGINAL, FIX, "repair_reference"),
+  original: ORIGINAL,
+  fix: FIX,
+  lag_seconds: 3 * 86400,
+  proxy: "repair_reference",
+  confidence: "high",
+  evidence: [
+    { kind: "cites_original_pr", ref: ORIGINAL.pr_url, count: null },
+    { kind: "regression_in_marker", ref: null, count: null }
+  ],
+  status: "accepted",
+  exclusion_code: null,
+  envelope: ENVELOPE
+};
+var rejectedCorrectiveCandidateFixture = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  record_type: "candidate",
+  candidate_id: correctiveCandidateId(ORIGINAL, BACKPORT, "revert"),
+  original: ORIGINAL,
+  fix: BACKPORT,
+  lag_seconds: 5 * 86400,
+  proxy: "revert",
+  confidence: "high",
+  evidence: [{ kind: "revert_message", ref: ORIGINAL.merge_sha, count: null }],
+  status: "rejected",
+  exclusion_code: "backport",
+  envelope: ENVELOPE
+};
+var repairPairFixture = {
+  schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  record_type: "repair_pair",
+  candidate_id: acceptedCorrectiveCandidateFixture.candidate_id,
+  original: ORIGINAL,
+  fix: FIX,
+  lag_seconds: 3 * 86400,
+  proxy: "repair_reference",
+  confidence: "high",
+  files: {
+    original: ["src/module.ts", "src/new-module.ts"],
+    fix: ["src/caller.ts", "src/module.ts", "test/module.test.ts"],
+    fix_only: ["src/caller.ts", "test/module.test.ts"],
+    original_only: ["src/new-module.ts"],
+    fix_preexisting: ["src/caller.ts", "src/module.ts"]
+  },
+  line_survival: 0.8,
+  fix_tests: { added: 1, modified: 0, deleted: 0 },
+  original_review: { reviewed: true, review_count: 2, reviewer_count: 1, first_review_latency_seconds: 3600 },
+  graph_distance: null,
+  envelope: ENVELOPE
+};
+var DERIVE_BASE = {
+  prUrl: ORIGINAL.pr_url,
+  base_label_hash: canonicalHash(harvestedSurvivalLabelFixture),
+  repair_pairs: [repairPairFixture],
+  envelope: {
+    definition_version: ENVELOPE.definition_version,
+    labeller_version: ENVELOPE.labeller_version,
+    integration_branch: ENVELOPE.integration_branch,
+    as_of: ENVELOPE.as_of,
+    computed_at: ENVELOPE.computed_at
+  }
+};
+var correctiveTrueFixture = deriveCorrectiveLabel({
+  ...DERIVE_BASE,
+  horizon_days: 14,
+  base_label_present: true
+});
+var correctiveFalseFixture = deriveCorrectiveLabel({
+  ...DERIVE_BASE,
+  horizon_days: 30,
+  base_label_present: true,
+  repair_pairs: []
+});
+var correctiveMissingFixture = deriveCorrectiveLabel({
+  ...DERIVE_BASE,
+  horizon_days: 60,
+  base_label_present: false
 });
 
 // ../core/src/fixtures/candidate-features.ts
@@ -5055,8 +5843,8 @@ function collectBuildOk(checkoutDir, config, timeoutMs, ciEvidence) {
     }
   }
   if (ciEvidence) {
-    const evidence = ciEvidence();
-    if (evidence) return { value: evidence.value, evidence: evidence.provenance };
+    const evidence2 = ciEvidence();
+    if (evidence2) return { value: evidence2.value, evidence: evidence2.provenance };
   }
   return { value: null, evidence: null };
 }
@@ -5340,7 +6128,7 @@ function collectDiffStats(checkoutDir, baseRef) {
   const numstat = runGit2(checkoutDir, ["diff", "--numstat", "--find-renames", `${mergeBase}...HEAD`]);
   const names = runGit2(checkoutDir, ["diff", "--name-only", "--find-renames", `${mergeBase}...HEAD`]);
   if (numstat === null || names === null) return null;
-  const changedFiles = names.split("\n").map((line) => line.trim()).filter(Boolean).sort();
+  const changedFiles2 = names.split("\n").map((line) => line.trim()).filter(Boolean).sort();
   let linesAdded = 0;
   let linesDeleted = 0;
   for (const line of numstat.split("\n").filter(Boolean)) {
@@ -5349,12 +6137,12 @@ function collectDiffStats(checkoutDir, baseRef) {
     linesDeleted += parseNumstatCount(deleted);
   }
   return {
-    changedFiles,
-    filesTouched: changedFiles.length,
+    changedFiles: changedFiles2,
+    filesTouched: changedFiles2.length,
     linesAdded,
     linesDeleted,
     locTouched: linesAdded + linesDeleted,
-    diffUncertain: changedFiles.length > 0 && numstat.trim().length === 0
+    diffUncertain: changedFiles2.length > 0 && numstat.trim().length === 0
   };
 }
 function parseNumstatCount(value) {
@@ -7321,11 +8109,474 @@ function runShadowCli(command, args, io) {
 }
 
 // src/corpus/cli.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
 import { join as join7, resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
-import { gzipSync } from "node:zlib";
+import { gzipSync, inflateRawSync } from "node:zlib";
+
+// src/corpus/corrective.ts
+var CORRECTIVE_LABELLER_VERSION = "1.0.0";
+var MAX_FIX_LAG_SECONDS = 60 * 86400;
+var LINE_SURVIVAL_MAX_LINES = 2e4;
+function readRevertCommits(runGit3, branch, from, until) {
+  const result = runGit3([
+    "log",
+    "--first-parent",
+    "--reverse",
+    "-i",
+    "-E",
+    "--grep=^revert\\b",
+    "--grep=^this reverts commit",
+    "--grep=^reverted https://",
+    `--since=${from.toISOString()}`,
+    `--until=${until.toISOString()}`,
+    "--pretty=format:%H%x1f%P%x1f%ct%x1f%s%x1f%b%x1e",
+    branch
+  ]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
+  const out = [];
+  for (const entry of result.stdout.split("")) {
+    const [sha = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+    const epoch = Number.parseInt(epochText, 10);
+    if (!/^[0-9a-f]{40}$/.test(sha) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
+    out.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
+  }
+  return out;
+}
+function collectFixEvents(fixPrs, revertCommits) {
+  const events17 = [];
+  const bySha = /* @__PURE__ */ new Map();
+  for (const pr of fixPrs) {
+    const event17 = {
+      pr,
+      sha: pr.landed_sha ?? pr.merge_sha,
+      parentSha: pr.base_sha,
+      epoch: Math.floor(Date.parse(pr.merged_at) / 1e3),
+      title: pr.title,
+      body: pr.body ?? "",
+      labels: pr.labels,
+      closingIssues: pr.closing_issues,
+      authorLogin: pr.author_login
+    };
+    events17.push(event17);
+    bySha.set(pr.merge_sha, event17);
+    if (pr.landed_sha) bySha.set(pr.landed_sha, event17);
+  }
+  for (const commit of revertCommits) {
+    const landed = bySha.get(commit.sha);
+    if (landed) {
+      landed.body = `${landed.body}
+${commit.subject}
+${commit.body}`;
+      continue;
+    }
+    events17.push({
+      pr: null,
+      sha: commit.sha,
+      parentSha: commit.parents[0] ?? commit.sha,
+      epoch: commit.epoch,
+      title: commit.subject,
+      body: commit.body,
+      labels: [],
+      closingIssues: [],
+      authorLogin: null
+    });
+  }
+  return events17;
+}
+var REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
+var REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
+var REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
+var FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
+var FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
+var REGRESSION_CONTEXT = /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
+var MAX_ORIGINALS_PER_ISSUE = 3;
+var BACKPORT2 = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
+var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
+var REVERT_REASON = /\bdue to\b([^\n]*)/i;
+var NON_DEFECT_REASON = /merge conflict|conflicts? with|(?:to|in order to)(?: be able to)? (?:cleanly )?revert|dependen(?:cy|t) (?:of|on)|depends on|land ?race|stack (?:is )?in a (?:weird|bad|broken) state|wait(?:ing)? for .{0,40}(?:confirm|approv|review)|before merging|needs? to (?:be )?land(?:ed)? internally|ghfirst|diff train/i;
+function evidence(kind, ref2 = null, count = null) {
+  return { kind, ref: ref2, count };
+}
+function escapeRegExp2(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+var OriginalIndex = class {
+  byNumber = /* @__PURE__ */ new Map();
+  byPrefix = /* @__PURE__ */ new Map();
+  constructor(originals) {
+    for (const pr of originals) {
+      this.byNumber.set(pr.pr_number, pr);
+      for (const sha of /* @__PURE__ */ new Set([pr.merge_sha, pr.landed_sha, pr.head_sha, ...pr.relanded_merge_shas ?? []])) {
+        if (!sha) continue;
+        const bucket = this.byPrefix.get(sha.slice(0, 7)) ?? [];
+        bucket.push({ sha, pr });
+        this.byPrefix.set(sha.slice(0, 7), bucket);
+      }
+    }
+  }
+  /** The one original a SHA or SHA prefix names; null when unknown or ambiguous. */
+  bySha(token) {
+    const hits = (this.byPrefix.get(token.slice(0, 7)) ?? []).filter((h) => h.sha.startsWith(token));
+    const prs = new Set(hits.map((h) => h.pr));
+    return prs.size === 1 ? hits[0] : null;
+  }
+};
+function citedNumbers(text, repo) {
+  const out = [];
+  const pattern = new RegExp(
+    `https://github\\.com/${escapeRegExp2(repo)}/(?:pull|issues)/(\\d+)|\\b${escapeRegExp2(repo)}#(\\d+)\\b|(?:^|[^\\w/.#-])#(\\d+)\\b`,
+    "gi"
+  );
+  for (const m of text.matchAll(pattern)) out.push({ n: Number(m[1] ?? m[2] ?? m[3]), index: m.index ?? 0 });
+  return out;
+}
+function shaTokens(text) {
+  const out = [];
+  for (const m of text.matchAll(/\b([0-9a-f]{7,40})\b/g)) if (/[a-f]/.test(m[1])) out.push({ token: m[1], index: m.index ?? 0 });
+  return out;
+}
+function detectCandidates(input) {
+  const index = new OriginalIndex(input.originals);
+  const drafts = /* @__PURE__ */ new Map();
+  const eventsById = /* @__PURE__ */ new Map();
+  const issueCiters = issueCitations(input.repo, input.originals, input.crossReferences);
+  const add = (original, event17, proxy, items, exclusion) => {
+    if (original.pr_url === event17.pr?.pr_url) return;
+    const lag = event17.epoch - Math.floor(Date.parse(original.merged_at) / 1e3);
+    if (lag < 1 || lag > MAX_FIX_LAG_SECONDS) return;
+    const id2 = correctiveCandidateId(original, { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha }, proxy);
+    eventsById.set(id2, event17);
+    const draft = drafts.get(id2);
+    if (!draft) {
+      drafts.set(id2, { original, event: event17, proxy, evidence: [...items], exclusion });
+      return;
+    }
+    for (const item of items) if (!draft.evidence.some((e) => e.kind === item.kind && e.ref === item.ref)) draft.evidence.push(item);
+    draft.exclusion ??= exclusion;
+  };
+  for (const event17 of input.events) {
+    const text = `${event17.title}
+${event17.body}`;
+    const common = commonExclusion(event17);
+    if (isRevert(event17)) {
+      const exclusion = common ?? revertExclusion(event17);
+      for (const target of revertTargets(event17, text, input.repo, index)) {
+        const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
+        add(target.original, event17, "revert", [target.evidence], ofRevert ?? exclusion);
+      }
+      continue;
+    }
+    const signals = [];
+    if (FIX_TITLE.test(event17.title)) signals.push(evidence("fix_title_prefix"));
+    for (const label2 of event17.labels) if (FIX_LABEL.test(label2)) signals.push(evidence("fix_label", label2));
+    const cited = /* @__PURE__ */ new Map();
+    const cite = (original, item, at) => {
+      if (!REGRESSION_CONTEXT.test(text.slice(Math.max(0, at - 60), at))) return;
+      const items = cited.get(original) ?? [];
+      items.push(item, evidence("regression_in_marker"));
+      cited.set(original, items);
+    };
+    for (const { n, index: at } of citedNumbers(text, input.repo)) {
+      const original = index.byNumber.get(n);
+      if (original) cite(original, evidence("cites_original_pr", original.pr_url), at);
+    }
+    for (const { token, index: at } of shaTokens(text)) {
+      const hit = index.bySha(token);
+      if (hit) cite(hit.pr, evidence("cites_original_sha", hit.sha), at);
+    }
+    const fixShaped = signals.length > 0;
+    for (const issue of fixShaped ? event17.closingIssues : []) {
+      const citers = issueCiters.get(issue) ?? [];
+      if (citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
+      for (const { original, url } of citers) {
+        if (original.pr_url === event17.pr?.pr_url) continue;
+        const items = cited.get(original) ?? [];
+        items.push(evidence("closes_issue_citing_original", url));
+        cited.set(original, items);
+      }
+    }
+    for (const [original, items] of cited) add(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
+  }
+  const candidates = [...drafts.entries()].map(([id2, d]) => ({
+    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+    record_type: "candidate",
+    candidate_id: id2,
+    original: originalRef(d.original),
+    fix: fixRef(d.event),
+    lag_seconds: d.event.epoch - Math.floor(Date.parse(d.original.merged_at) / 1e3),
+    proxy: d.proxy,
+    confidence: PROXY_CONFIDENCE[d.proxy],
+    evidence: d.evidence,
+    status: d.exclusion ? "rejected" : "accepted",
+    exclusion_code: d.exclusion,
+    envelope: input.envelope
+  }));
+  candidates.sort((a, b) => a.original.merged_at.localeCompare(b.original.merged_at) || a.candidate_id.localeCompare(b.candidate_id));
+  return { candidates, events: eventsById };
+}
+function isRevert(event17) {
+  return REVERT_TITLE.test(event17.title) || /^\s*this reverts commit [0-9a-f]{7,40}/im.test(event17.body) || /^\s*reverts [\w.-]+\/[\w.-]+#\d+/im.test(event17.body);
+}
+function commonExclusion(event17) {
+  if (event17.authorLogin && DEPENDENCY_BOT.test(event17.authorLogin)) return "dependency_bot";
+  if (BACKPORT2.test(`${event17.title}
+${event17.body}`)) return "backport";
+  return null;
+}
+function revertExclusion(event17) {
+  if (REVERT_OF_REVERT.test(event17.title)) return "revert_of_revert";
+  const reason = event17.body.match(REVERT_REASON)?.[1];
+  if (reason && NON_DEFECT_REASON.test(reason)) return "revert_non_defect";
+  return null;
+}
+function revertTargets(event17, text, repo, index) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (original, item) => {
+    if (original && !seen.has(original)) {
+      seen.add(original);
+      out.push({ original, evidence: item });
+    }
+  };
+  for (const m of text.matchAll(REVERTS_COMMIT)) {
+    const hit = index.bySha(m[1]);
+    if (hit) push(hit.pr, evidence("revert_message", hit.sha));
+  }
+  const prRef = new RegExp(`^\\s*reverts? ${escapeRegExp2(repo)}#(\\d+)|^\\s*reverted https://github\\.com/${escapeRegExp2(repo)}/pull/(\\d+)`, "gim");
+  for (const m of text.matchAll(prRef)) {
+    const original = index.byNumber.get(Number(m[1] ?? m[2]));
+    push(original, evidence("reverts_pr_reference", original?.pr_url ?? null));
+  }
+  if (!out.length) {
+    for (const { token } of shaTokens(text)) {
+      const hit = index.bySha(token);
+      if (hit) push(hit.pr, evidence("revert_message", hit.sha));
+    }
+  }
+  if (!out.length) {
+    const quoted = event17.title.match(/^\s*(?:\[[^\]]*\]\s*)?revert\s+"(.*)"/i)?.[1];
+    for (const { n } of quoted ? citedNumbers(quoted, repo) : []) {
+      const original = index.byNumber.get(n);
+      push(original, evidence("reverts_pr_reference", original?.pr_url ?? null));
+    }
+  }
+  return out;
+}
+function issueCitations(repo, originals, crossReferences) {
+  const out = /* @__PURE__ */ new Map();
+  const issuePrefix = `https://github.com/${repo}/issues/`;
+  for (const original of originals) {
+    const merged = Math.floor(Date.parse(original.merged_at) / 1e3);
+    for (const ref2 of crossReferences.get(original.pr_number) ?? []) {
+      if (!ref2.url.startsWith(issuePrefix) || ref2.createdAtEpoch <= merged) continue;
+      const issue = Number(ref2.url.slice(issuePrefix.length));
+      if (!Number.isInteger(issue)) continue;
+      const list = out.get(issue) ?? [];
+      if (!list.some((e) => e.original === original)) list.push({ original, url: ref2.url });
+      out.set(issue, list);
+    }
+  }
+  return out;
+}
+function dedupeEvidence(items) {
+  const seen = /* @__PURE__ */ new Set();
+  return items.filter((e) => {
+    const key = `${e.kind}\0${e.ref}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function originalRef(pr) {
+  return { pr_url: pr.pr_url, merge_sha: pr.merge_sha, merged_at: utc(Date.parse(pr.merged_at)) };
+}
+function fixRef(event17) {
+  return { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha, merged_at: utc(event17.epoch * 1e3) };
+}
+function utc(ms) {
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
+function buildRepairPair(candidate, original, fix, runGit3) {
+  const originalFiles = changedFiles(runGit3, original.base_sha, original.merge_sha);
+  const fixChanges = changedFiles(runGit3, fix.parentSha, fix.pr?.merge_sha ?? fix.sha);
+  const originalPaths = new Set(originalFiles.map((f) => f.path));
+  const fixPaths = new Set(fixChanges.map((f) => f.path));
+  const tests = { added: 0, modified: 0, deleted: 0 };
+  for (const f of fixChanges) {
+    if (!TEST_PATH.test(f.path)) continue;
+    if (f.status === "A") tests.added++;
+    else if (f.status === "D") tests.deleted++;
+    else tests.modified++;
+  }
+  return {
+    schema_version: candidate.schema_version,
+    record_type: "repair_pair",
+    candidate_id: candidate.candidate_id,
+    original: candidate.original,
+    fix: candidate.fix,
+    lag_seconds: candidate.lag_seconds,
+    proxy: candidate.proxy,
+    confidence: candidate.confidence,
+    files: {
+      original: [...originalPaths].sort(),
+      fix: [...fixPaths].sort(),
+      fix_only: [...fixPaths].filter((p) => !originalPaths.has(p)).sort(),
+      original_only: [...originalPaths].filter((p) => !fixPaths.has(p)).sort(),
+      fix_preexisting: existingPaths(runGit3, original.merge_sha, [...fixPaths]).sort()
+    },
+    line_survival: lineSurvival(runGit3, original, fix.parentSha),
+    fix_tests: tests,
+    // Review metadata is not in the corpus cache; null means not collected.
+    original_review: { reviewed: null, review_count: null, reviewer_count: null, first_review_latency_seconds: null },
+    graph_distance: null,
+    envelope: candidate.envelope
+  };
+}
+function changedFiles(runGit3, from, to) {
+  const result = runGit3(["diff", "--name-status", "--no-renames", "-z", from, to]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  const parts = result.stdout.split("\0").filter(Boolean);
+  const out = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) out.push({ status: parts[i].charAt(0), path: parts[i + 1] });
+  return out;
+}
+function existingPaths(runGit3, sha, paths) {
+  const out = [];
+  for (let i = 0; i < paths.length; i += 200) {
+    const result = runGit3(["ls-tree", "-r", "--name-only", "-z", sha, "--", ...paths.slice(i, i + 200)]);
+    if (result.exitCode !== 0) throw new Error(`corrective: cannot list ${sha}: ${result.stderr.trim()}`);
+    out.push(...result.stdout.split("\0").filter(Boolean));
+  }
+  return out;
+}
+function lineSurvival(runGit3, original, fixParent) {
+  const added = diffLines(runGit3, original.base_sha, original.merge_sha, "+");
+  let total = 0;
+  for (const lines of added.values()) for (const count of lines.values()) total += count;
+  if (total === 0 || total > LINE_SURVIVAL_MAX_LINES) return null;
+  const removed = diffLines(runGit3, original.merge_sha, fixParent, "-", [...added.keys()]);
+  let lost = 0;
+  for (const [path4, lines] of removed) {
+    const mine = added.get(path4);
+    if (!mine) continue;
+    for (const [line, count] of lines) lost += Math.min(count, mine.get(line) ?? 0);
+  }
+  return Math.round((1 - lost / total) * 1e4) / 1e4;
+}
+function diffLines(runGit3, from, to, side, paths) {
+  const out = /* @__PURE__ */ new Map();
+  if (paths && paths.length === 0) return out;
+  const result = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", from, to, ...paths ? ["--", ...paths] : []]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  let file = null;
+  for (const line of result.stdout.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      file = null;
+      continue;
+    }
+    if (line.startsWith("--- ") || line.startsWith("+++ ")) {
+      if (line.startsWith(side === "+" ? "+++ " : "--- ")) {
+        const name = line.slice(4);
+        if (name === "/dev/null") file = null;
+        else {
+          const path4 = name.replace(/^[ab]\//, "");
+          file = out.get(path4) ?? /* @__PURE__ */ new Map();
+          out.set(path4, file);
+        }
+      }
+      continue;
+    }
+    if (!file || !line.startsWith(side)) continue;
+    const content = line.slice(1).trim();
+    if (content) file.set(content, (file.get(content) ?? 0) + 1);
+  }
+  return out;
+}
+function deriveCorrectiveRows(s2Rows, pairs, envelope) {
+  const byOriginal = /* @__PURE__ */ new Map();
+  for (const pair of pairs) {
+    const list = byOriginal.get(pair.original.pr_url) ?? [];
+    list.push(pair);
+    byOriginal.set(pair.original.pr_url, list);
+  }
+  const out = [];
+  for (const row of s2Rows) {
+    out.push(
+      deriveCorrectiveLabel({
+        prUrl: row.prUrl,
+        horizon_days: row.horizon_days,
+        base_label_hash: canonicalHash(row),
+        base_label_present: row.outcome.report_outcome !== null,
+        repair_pairs: byOriginal.get(row.prUrl) ?? [],
+        envelope
+      })
+    );
+  }
+  return out;
+}
+function correctiveEnvelope(branch, asOf, now) {
+  return {
+    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+    definition_version: CORRECTIVE_REWORK_DEFINITION_VERSION,
+    labeller_version: CORRECTIVE_LABELLER_VERSION,
+    integration_branch: branch,
+    as_of: utc(asOf.getTime()),
+    computed_at: utc(now.getTime())
+  };
+}
+function correctiveCorpusRepo(input, deps) {
+  const envelope = correctiveEnvelope(input.branch, input.asOf, deps.now());
+  const reverts = readRevertCommits(deps.runGit, input.branch, input.from, input.asOf);
+  const events17 = collectFixEvents([...input.originals, ...input.laterPrs], reverts);
+  deps.onDiagnostic?.(`info: ${input.repo}: ${events17.length} fix events (${reverts.length} revert commits)`);
+  const { candidates, events: eventsById } = detectCandidates({
+    repo: input.repo,
+    originals: input.originals,
+    events: events17,
+    crossReferences: input.crossReferences,
+    envelope
+  });
+  const byUrl = new Map(input.originals.map((pr) => [pr.pr_url, pr]));
+  const repairPairs = [];
+  const failedPairs = [];
+  const accepted = candidates.filter((c) => c.status === "accepted");
+  for (const [i, candidate] of accepted.entries()) {
+    if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: measured ${i}/${accepted.length} repair pairs`);
+    try {
+      repairPairs.push(buildRepairPair(candidate, byUrl.get(candidate.original.pr_url), eventsById.get(candidate.candidate_id), deps.runGit));
+    } catch (error) {
+      failedPairs.push(candidate.candidate_id);
+      deps.onDiagnostic?.(`error: ${input.repo}: cannot measure pair ${candidate.candidate_id}: ${String(error).slice(0, 200)}`);
+    }
+  }
+  return { candidates, repairPairs, corrective: deriveCorrectiveRows(input.s2Rows, repairPairs, envelope), failedPairs };
+}
+function summarizeCorrective(result, originals) {
+  const count = (items, key) => items.reduce((acc, item) => (acc[key(item)] = (acc[key(item)] ?? 0) + 1, acc), {});
+  const byHorizon = {};
+  for (const row of result.corrective) {
+    const h = byHorizon[row.horizon_days] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
+    h.rows++;
+    h[String(row.corrective)]++;
+  }
+  for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
+  const flagged = new Set(result.repairPairs.map((p) => p.original.pr_url));
+  return {
+    candidates: result.candidates.length,
+    candidates_by_proxy_status: count(result.candidates, (c) => `${c.proxy}:${c.status}`),
+    exclusions: count(result.candidates.filter((c) => c.exclusion_code), (c) => c.exclusion_code),
+    repair_pairs: result.repairPairs.length,
+    direct_push_fixes: result.repairPairs.filter((p) => p.fix.pr_url === null).length,
+    failed_pairs: result.failedPairs.length,
+    originals,
+    originals_with_fix_60d: flagged.size,
+    originals_with_fix_60d_share: originals ? Math.round(flagged.size / originals * 1e4) / 1e4 : null,
+    corrective_by_horizon: byHorizon
+  };
+}
 
 // src/corpus/pr-refs.ts
 var SQUASH = /\(#(\d+)\)\s*$/;
@@ -7345,11 +8596,11 @@ function extractCorpusPrNumbers(subject, body, repo) {
   } else {
     add((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
   }
-  const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp2(repo)}/pull/(\\d+)\\s*$`, "im");
+  const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp3(repo)}/pull/(\\d+)\\s*$`, "im");
   add(body.match(trailer)?.[1]);
   return found;
 }
-function escapeRegExp2(value) {
+function escapeRegExp3(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -7729,7 +8980,7 @@ var OPTIONS = {
   repo: { type: "string" },
   "as-of": { type: "string" }
 };
-var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label"];
+var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label", "corpus-corrective"];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
 function secondsUntilReset() {
@@ -7836,7 +9087,7 @@ function writeJsonl(path4, rows, options = {}) {
 }
 function fileCache(dir) {
   mkdirSync2(dir, { recursive: true });
-  const path4 = (key) => join7(dir, `${createHash2("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  const path4 = (key) => join7(dir, `${createHash3("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
     get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync3(path4(key), "utf8")) : void 0,
     set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
@@ -7857,7 +9108,7 @@ function syncClone(repo, dir, defaultBranch) {
 }
 function runCorpusCli(command, argv, io) {
   if (!CORPUS_COMMANDS.includes(command)) {
-    io.writeStderr(`error: unknown corpus command ${command}; expected ${CORPUS_COMMANDS.join(" or ")}
+    io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(", ")}
 `);
     return { exitCode: 2 };
   }
@@ -7879,12 +9130,13 @@ function runCorpusCli(command, argv, io) {
 `);
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
-  if (command === "corpus-label") {
+  if (command === "corpus-label" || command === "corpus-corrective") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : /* @__PURE__ */ new Date();
     if (!Number.isFinite(asOf.getTime())) {
       io.writeStderr("error: --as-of must be an ISO-8601 timestamp\n");
       return { exitCode: 2 };
     }
+    if (command === "corpus-corrective") return runCorrective(entries, cacheRoot, window, asOf, graphql, io, log);
     return runLabel(entries, cacheRoot, asOf, graphql, io, log);
   }
   let failures = 0;
@@ -7968,6 +9220,74 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   }
   return { exitCode: failures ? 3 : 0 };
 }
+function readJsonl2(path4) {
+  return readFileSync3(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+function* readGzipJsonlMembers(path4) {
+  const raw = readFileSync3(path4);
+  for (let offset = 0; offset < raw.length; ) {
+    if (raw[offset] !== 31 || raw[offset + 1] !== 139 || raw[offset + 3] !== 0) throw new Error(`${path4}: unexpected gzip member header at byte ${offset}`);
+    const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true });
+    offset += 10 + engine.bytesWritten + 8;
+    for (const line of buffer.toString("utf8").split("\n")) if (line) yield JSON.parse(line);
+  }
+}
+function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split("/");
+    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const started = Date.now();
+    try {
+      const s2Path = join7(repoDir, "s2.jsonl.gz");
+      if (!existsSync4(s2Path)) throw new Error("not labelled yet; run corpus-label first");
+      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
+      const originals = readJsonl2(join7(repoDir, "prs.jsonl"));
+      const gitDir = join7(repoDir, "repo.git");
+      const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+      const cache = fileCache(join7(repoDir, "graphql"));
+      const laterPath = join7(repoDir, "fix-prs.jsonl");
+      let laterPrs = [];
+      if (existsSync4(laterPath)) laterPrs = readJsonl2(laterPath);
+      else if (window.until < asOf) {
+        log(`info: ${entry.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
+        ({ records: laterPrs } = enumerateCorpusRepo(
+          { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], from: window.until, until: asOf },
+          { runGit: runGit3, graphql, cache, onDiagnostic: log }
+        ));
+        writeJsonl(laterPath, laterPrs);
+      }
+      log(`info: ${entry.repo}: loading cross-references and S2 rows`);
+      const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
+      const s2Rows = readGzipJsonlMembers(s2Path);
+      const result = correctiveCorpusRepo(
+        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, s2Rows },
+        { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
+      );
+      writeJsonl(join7(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
+      writeJsonl(join7(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
+      writeJsonl(join7(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
+      const summary = {
+        repo: entry.repo,
+        as_of: asOf.toISOString(),
+        later_prs: laterPrs.length,
+        ...summarizeCorrective(result, originals.length),
+        wall_clock_seconds: Math.round((Date.now() - started) / 1e3)
+      };
+      writeFileSync2(join7(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+      io.writeStdout(`${JSON.stringify(summary)}
+`);
+      if (result.failedPairs.length) failures++;
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+`);
+      log(`error: ${entry.repo}: ${error.message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
 
 // src/orchestrate/github.ts
 function createOfflineScanGitHubClient() {
@@ -8003,19 +9323,19 @@ var IntegrationBranchError = class extends Error {
 var MAIN_GUIDANCE = "integration branch resolves to main and no promotion branch was detected. Pass --integration-branch <ref>, or --integration-mode direct if PRs merge straight into main (S2 v1.1.0).";
 var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
 var SQUASH2 = /\(#(\d+)\)\s*$/;
-function resolveIntegrationBranch(evidence) {
-  const explicit = evidence.explicitBranch?.trim();
-  const explicitMode = evidence.explicitMode ?? null;
+function resolveIntegrationBranch(evidence2) {
+  const explicit = evidence2.explicitBranch?.trim();
+  const explicitMode = evidence2.explicitMode ?? null;
   if (explicit) {
     if (explicit.toLowerCase() === "main" && explicitMode !== "direct") throw new IntegrationBranchError(MAIN_GUIDANCE);
     return { branch: explicit, mode: explicitMode ?? "promotion", detected: false, summary: "explicit integration branch" };
   }
-  if (!evidence.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
-  if (evidence.defaultBranch.toLowerCase() !== "main") return { branch: evidence.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
-  if (explicitMode === "direct") return { branch: evidence.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
+  if (!evidence2.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
+  if (evidence2.defaultBranch.toLowerCase() !== "main") return { branch: evidence2.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
+  if (explicitMode === "direct") return { branch: evidence2.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
   const counts = /* @__PURE__ */ new Map();
   let promotions = 0;
-  for (const subject of evidence.recentFirstParentSubjects.slice(0, 200)) {
+  for (const subject of evidence2.recentFirstParentSubjects.slice(0, 200)) {
     let number = null;
     let ref2 = null;
     const merge = subject.match(PR_MERGE);
@@ -8025,14 +9345,14 @@ function resolveIntegrationBranch(evidence) {
       ref2 = merge[2];
     } else if (squash) {
       number = Number(squash[1]);
-      ref2 = evidence.headRefLookup(number);
+      ref2 = evidence2.headRefLookup(number);
     }
     if (!number || !ref2 || !ref2.includes("/")) continue;
     promotions++;
     counts.set(ref2, (counts.get(ref2) ?? 0) + 1);
   }
   const winner = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence.remoteBranchExists(winner[0])) {
+  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence2.remoteBranchExists(winner[0])) {
     return { branch: winner[0], mode: "promotion", detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
   }
   throw new IntegrationBranchError(MAIN_GUIDANCE);
@@ -8535,9 +9855,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash3("sha256").update(stableJson(config)).digest("hex");
+  return createHash4("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -8580,10 +9900,10 @@ function exactKeys(value, keys) {
 function validMethods(value) {
   return Array.isArray(value) && value.every((method) => typeof method === "string" && REPORT_ATTRIBUTION_METHODS.includes(method));
 }
-function validDimension(value, status, ids, evidence = false) {
+function validDimension(value, status, ids, evidence2 = false) {
   if (!object(value)) return false;
-  const keys = evidence ? ["id", "confidence", "methods", "evidence"] : ids ? ["id", "confidence", "methods"] : ["status", "confidence", "methods"];
-  return exactKeys(value, keys) && (ids ? typeof value.id === "string" || value.id === null : status.includes(value.status)) && (typeof value.confidence === "number" || value.confidence === null) && validMethods(value.methods) && (!evidence || value.evidence === "first_party_executed" || value.evidence === "heuristic" || value.evidence === null);
+  const keys = evidence2 ? ["id", "confidence", "methods", "evidence"] : ids ? ["id", "confidence", "methods"] : ["status", "confidence", "methods"];
+  return exactKeys(value, keys) && (ids ? typeof value.id === "string" || value.id === null : status.includes(value.status)) && (typeof value.confidence === "number" || value.confidence === null) && validMethods(value.methods) && (!evidence2 || value.evidence === "first_party_executed" || value.evidence === "heuristic" || value.evidence === null);
 }
 function validAttribution(value) {
   if (!object(value) || !exactKeys(value, ["agent", "harness", "exact_model"])) return false;
@@ -8894,6 +10214,8 @@ corpus-enumerate --manifest <cohort.json> --cache-dir <path> [--repo <owner/name
                  (HOK-3022 corpus; prs.jsonl in the cache holds raw titles/bodies and stays local)
 corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
                  (S2 v1.1.0 rows per enumerated PR \xD7 14/30/60 into <cache>/<repo>/s2.jsonl)
+corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
+                 (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
