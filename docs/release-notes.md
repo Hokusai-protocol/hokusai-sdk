@@ -18,7 +18,16 @@ git push origin v0.x.y
 
 ## Releases
 
-### 0.5.0 — unreleased
+### 0.5.0 — 2026-10-15
+
+**Requires:** the task-cost API (`aggregateTaskCost`,
+`aggregateTaskCostByModel`, `validateTaskCostEventV1` and the other
+validators, `TASK_COST_*` constants) needs **`@hokusai/core` ≥ 0.5.0**. It does
+not exist in 0.4.0. Importing it there fails with `does not provide an export
+named 'aggregateTaskCost'`. `@hokusai/costs` pins `@hokusai/core` to its own
+exact version, so a host that also depends on core directly should depend on
+the same version. See the
+[version-to-contract table](versioning-policy.md#task-cost-contract-versions).
 
 - **`@hokusai/costs` is published for the first time** — drop-in per-task cost
   measurement: `measureTask(options, fn)` wraps one run and returns a typed
@@ -71,7 +80,7 @@ Also in 0.5.0:
   package, not published to npm): wires OpenHands `RouterLLM` and SDK metrics
   into Hokusai routing and contribution rows.
 
-### 0.3.0 — unreleased
+### 0.3.0 — 2026-07-15
 
 - **`@hokusai/router` is published for the first time.** The façade existed in the repo but had never been released, so the documented install (`npm install @hokusai/router`) did not resolve.
 - **Outcomes are submitted as Model 30 contribution rows.** `@hokusai/router` and the Codex plugin previously posted to the legacy `/outcomes` endpoint, which 404s and which bypasses training and reward attribution entirely. Pass `maxCostUsd` when routing and `actualCostUsd` when reporting: without both, the server files the row as `partial` — telemetry that trains nothing and earns nothing.

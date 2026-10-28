@@ -124,6 +124,47 @@ const response = await client.submitContribution({
 Use `@hokusai/router`'s `route.reportExternalOutcome()` helper when you want
 this report-only path without manually building rows.
 
+## Task-cost contract
+
+**Requires `@hokusai/core` ≥ 0.5.0.** None of the following exists in 0.4.0.
+Importing it there fails with `does not provide an export named
+'aggregateTaskCost'`.
+
+`@hokusai/core` exports the versioned task-cost contract (`task_cost_*/v1`,
+`TASK_COST_CONTRACT_VERSION` `1.0.0`). It contains types, validators, and one
+pure reducer:
+
+- **Reducers:** `aggregateTaskCost`, `aggregateTaskCostByModel`
+- **Validators:** `validateTaskCostEventV1`, `validateTaskCostSummaryV1`,
+  `validateTaskCostLedgerV1`, the `isTaskCost*V1` guards, and
+  `TaskCostValidationError`
+- **Versions:** `TASK_COST_CONTRACT_VERSION`, `TASK_COST_EVENT_SCHEMA_VERSION`,
+  `TASK_COST_SUMMARY_SCHEMA_VERSION`, `TASK_COST_LEDGER_SCHEMA_VERSION`,
+  `TASK_COST_ADAPTER_CONTRACT_VERSION`, `PROVIDER_CONTRACT_VERSIONS`
+- **Enums and types:** the `TASK_COST_*` value lists, plus `TaskCostEventV1`,
+  `TaskCostSummaryV1`, `TaskCostLedgerV1`, and `TaskCostAdapterV1`
+
+To measure a task rather than reduce events yourself, use
+[`@hokusai/costs`](https://www.npmjs.com/package/@hokusai/costs).
+`@hokusai/costs` pins `@hokusai/core` to its **exact** version. If you also
+depend on core directly, use that same version. Otherwise you get two copies
+of core, or keep running an older one.
+
+A host that loads task-cost lazily can feature-detect it:
+
+```ts
+const core = await import('@hokusai/core');
+if (!('aggregateTaskCost' in core)) {
+  throw new Error('task-cost requires @hokusai/core >= 0.5.0');
+}
+```
+
+The full contract (records, reducer rules, missing vs zero, and compatibility
+rules) is in the
+[task-cost contract README](https://github.com/Hokusai-protocol/hokusai-sdk/blob/main/packages/core/src/task-cost/README.md).
+The version mapping is in the
+[versioning policy](https://github.com/Hokusai-protocol/hokusai-sdk/blob/main/docs/versioning-policy.md#task-cost-contract-versions).
+
 ## Attaching cost to a contribution row
 
 Where does `actualCostUsd` come from? For multi-turn or multi-model work —
