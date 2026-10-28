@@ -1,6 +1,6 @@
 # Rework Risk backtest: pre-registered decision gate (HOK-3028)
 
-**Status:** DRAFT. Not frozen. The ranking thresholds were decided on 2026-10-28. Values still marked **[PROPOSED]** are open for review before freeze.
+**Status:** FROZEN (gate), 2026-10-28. §3–§8 and the holdout commitment are fixed. The only field still open is `definition_version` in §2, which the target-pin commit sets.
 **Owner:** Tim Ogilvie
 **Freeze rule:** freezing happens in two dated commits, and both must land before any arm is scored on the evaluation slice (§4):
 
@@ -47,8 +47,8 @@ Every arm is scored on the same rows. A result is valid only if all of these are
   * Each tercile is ordered by `sha256(salt ‖ repo)`, using a 32-byte random salt. The first 2 repos of each tercile, 6 in all, are the slice. The rest of each tercile's order is the replacement order if HOK-3268 drops a slice repo.
   * The time window is the last 6 months of the cohort window. It extends back 3 months at a time if the slice has fewer than 500 positives at 30 days under the labels available at draw time.
   * Development repos are the other runnable repos; slice repos are excluded from development entirely.
-* **Sealed holdout commitment:** the evaluation slice's manifest (repos, time window and salt) is kept privately. Its SHA-256 is written here at freeze: `holdout_sha256 = <TBD at freeze>`. Publishing the manifest after the result lets anyone check that the slice was fixed in advance.
-* **[PROPOSED] Minimum power:** the evaluation slice must contain ≥ 5 repos and ≥ 500 corrective positives at 30 days. Otherwise the gate result is **INCONCLUSIVE (underpowered)**, not a pass or a fail.
+* **Sealed holdout commitment:** the evaluation slice's manifest (repos, time window and salt) is kept privately. Its SHA-256 is written here at freeze: `holdout_sha256 = a1a436e57183aa141cfe1b45bc7a7f50f393c648c24139dd6703ee4abdb09886`. Publishing the manifest after the result lets anyone check that the slice was fixed in advance.
+* **Minimum power:** the evaluation slice must contain ≥ 5 repos and ≥ 500 corrective positives at 30 days. Otherwise the gate result is **INCONCLUSIVE (underpowered)**, not a pass or a fail.
 
 ## 5. Metrics
 
@@ -68,15 +68,15 @@ Let **Δ** = macro top-decile capture (arm 5) − macro top-decile capture (arm 
 
 | Outcome | Condition (all must hold) | Consequence |
 | --- | --- | --- |
-| **COMPELLING** (thesis proven) | Δ ≥ **10 pp**, and the CI lower bound > 0, and arm 5 / arm 4 capture ≥ **1.25×**, and calibration is non-inferior (below), and arm 5 beats arms 1 and 2 (CI lower bound > 0), and Δ > 0 in ≥ **[PROPOSED] ⅔** of evaluation repos | The marquee number is publishable under the report honesty rules. Proceed to naming and copy. |
+| **COMPELLING** (thesis proven) | Δ ≥ **10 pp**, and the CI lower bound > 0, and arm 5 / arm 4 capture ≥ **1.25×**, and calibration is non-inferior (below), and arm 5 beats arms 1 and 2 (CI lower bound > 0), and Δ > 0 in ≥ **⅔** of evaluation repos | The marquee number is publishable under the report honesty rules. Proceed to naming and copy. |
 | **HALF-WIN** | Ranking conditions pass; calibration non-inferiority fails | No calibration claim, and no launch number until calibration is fixed and the gate is re-run on a *new* evaluation slice |
 | **TIE** (≈ arm 4) | CI includes 0, or 0 < Δ < threshold | Run the label-noise diagnostic (below). Then either fix the pipeline, or revise the moat story toward the hybrid architecture. No launch number. |
 | **LOSS** | CI upper bound < 0 | Snap judgment beats outcome training at this horizon. Revisit the thesis and re-plan the project. |
 | **TABLE-STAKES FAIL** | Arm 5 does not beat arms 1 and 2 | Treat as a pipeline or leakage bug until proven otherwise. Run the HOK-3023 audit again. |
 
-**Calibration non-inferiority [PROPOSED]:** macro Brier(arm 5) ≤ macro Brier(arm 4) + 0.002, **and** macro ECE(arm 5) ≤ macro ECE(arm 4) + 0.01, both judged on the CI upper bound of the difference.
+**Calibration non-inferiority:** macro Brier(arm 5) ≤ macro Brier(arm 4) + 0.002, **and** macro ECE(arm 5) ≤ macro ECE(arm 4) + 0.01, both judged on the CI upper bound of the difference.
 
-**Label-noise diagnostic (TIE branch):** compare `corrective_rework` with the HOK-3269 human calibration sample. **[PROPOSED]** If precision against the human labels is < 0.80, the outcome is "labels too noisy": fix the pipeline and re-run on a new evaluation slice. Otherwise, the outcome is "snap judgment suffices at 30 days".
+**Label-noise diagnostic (TIE branch):** compare `corrective_rework` with the HOK-3269 human calibration sample. If precision against the human labels is < 0.80, the outcome is "labels too noisy": fix the pipeline and re-run on a new evaluation slice. Otherwise, the outcome is "snap judgment suffices at 30 days".
 
 ## 7. Secondary questions (reported, never gating)
 
@@ -104,3 +104,4 @@ Let **Δ** = macro top-decile capture (arm 5) − macro top-decile capture (arm 
 
 * 2026-10-28: first draft (HOK-3028). Owner decisions: lift bar Δ ≥ 10 pp and ≥ 1.25×; target version pinned after HOK-3269; document lives in `hokusai-sdk/docs/arbiter/`.
 * 2026-10-28: slice selection is mechanical (§4, `draw-evaluation-slice.mjs`). The draw happens after per-repo S2 and P1/P2 corrective base rates were posted on HOK-3268 and HOK-3267, but before any arm was built or scored. The seeded draw, and the published salt after the result, let anyone check that those rates did not choose the slice. Whoever builds or tunes arms does not see the manifest.
+* 2026-10-28: **gate frozen.** The owner accepted the remaining defaults (minimum power, ⅔ repo consistency, calibration margins, label precision 0.80) and committed the holdout hash. Pre-scoring power check: the evaluation slice has ≥ 500 corrective positives at 30 days under the current labels. Only counts were examined; no arm was scored.
