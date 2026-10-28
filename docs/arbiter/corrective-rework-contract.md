@@ -64,8 +64,8 @@ The label is monotone across horizons: if a row is true at 14 days, it is also t
 
 | Tier | `proxy` | Fires when | Confidence | Admitted in cr-0.1.0 |
 |---|---|---|---|---|
-| P1 | `revert` | The fix reverts the original, in whole or in part: a `This reverts commit <sha>` message, `Reverts owner/repo#N`, or revert metadata from a bot. | high | yes |
-| P2 | `repair_reference` | The fix cites the original by PR, URL or SHA and carries a fix signal (`Regression in`, a fix label or prefix, or closing an issue that cites the original). | high | yes |
+| P1 | `revert` | The fix reverts the original, in whole or in part: a `This reverts commit <sha>` message, `Reverts owner/repo#N`, or revert metadata from a bot. Revert commits pushed without a PR count too; they are read from the branch's first-parent history. | high | yes |
+| P2 | `repair_reference` | The fix cites the original by PR, URL or SHA in regression wording (`Regression in <sha>`, `broken since #N`, `introduced by #N`), or closes an issue that cited the original after the original merged. A fix label or `fix:` title is recorded as supporting evidence but is not enough by itself. | high | yes |
 | P3 | `szz` | The fix closes a bug or regression issue, and blame on the lines it deletes or modifies lands in the original. | medium | yes |
 | P4 | `regression_issue` | A regression or incident issue links the fix and the original. | medium | yes |
 | P5 | `abnormal_churn` | Churn is abnormally high. | low | no: such candidates are recorded with the `proxy_disabled` exclusion code |
@@ -89,7 +89,13 @@ The labeller applies these codes automatically, before acceptance:
 - `fix_too_large`: the fix exceeds the SZZ size cap.
 - `proxy_disabled`
 
+The labeller also applies `revert_non_defect` itself when a merge bot records a collateral or process reason for the revert, for example a merge conflict, reverting a dependent PR, or a land race. Reverts for broken CI or internal builds stay accepted, and calibration decides whether they belong in the target.
+
 The `linkage_error` rate is reported separately, because it measures how good the linkage is.
+
+## Fix sources
+
+Fixes can land after the cohort window closes. So the labeller also enumerates PRs merged between the window's end and `as_of`, writing them to `fix-prs.jsonl`, a local-only cache of raw PR text. They are used only as fixes, never as originals.
 
 ## Privacy
 
