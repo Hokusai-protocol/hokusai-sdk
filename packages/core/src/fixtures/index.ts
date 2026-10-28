@@ -5,6 +5,14 @@ export {
   survivalLabelFixtureLineRanges,
 } from './arbiter-survival-label.js';
 export {
+  acceptedCorrectiveCandidateFixture,
+  correctiveFalseFixture,
+  correctiveMissingFixture,
+  correctiveTrueFixture,
+  rejectedCorrectiveCandidateFixture,
+  repairPairFixture,
+} from './arbiter-corrective-rework.js';
+export {
   completeCandidateFeaturesV1Fixture,
   observedZeroCandidateFeaturesV1Fixture,
   sparseCandidateFeaturesV1Fixture,
