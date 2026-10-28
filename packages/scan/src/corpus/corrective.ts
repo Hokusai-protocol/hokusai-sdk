@@ -46,7 +46,7 @@ import {
   type RevertReasonClass,
 } from '@hokusai/core';
 import type { CrossReference, GitRunner } from '../survival-labeller.js';
-import { blameFix, buildLandingIndex, isBugIssue, regressionLabels, TEST_PATH, type IssueMeta, type SzzResult } from './corrective-szz.js';
+import { blameFix, buildLandingIndex, diffHeaderPath, isBugIssue, regressionLabels, TEST_PATH, type IssueMeta, type SzzResult } from './corrective-szz.js';
 import type { CorpusPrRecord } from './enumerate.js';
 
 export const CORRECTIVE_LABELLER_VERSION = '1.0.0';
@@ -544,6 +544,7 @@ function existingPaths(runGit: GitRunner, sha: string, paths: readonly string[])
  * parent removed are matched by content, per file, as multisets.
  */
 function lineSurvival(runGit: GitRunner, original: CorpusPrRecord, fixParent: string): number | null {
+  if (addedLineCount(runGit, original.base_sha, original.merge_sha) > LINE_SURVIVAL_MAX_LINES) return null;
   const added = diffLines(runGit, original.base_sha, original.merge_sha, '+');
   let total = 0;
   for (const lines of added.values()) for (const count of lines.values()) total += count;
@@ -558,6 +559,18 @@ function lineSurvival(runGit: GitRunner, original: CorpusPrRecord, fixParent: st
   return Math.round((1 - lost / total) * 10_000) / 10_000;
 }
 
+/** Lines added from `from` to `to`, from `--numstat` (cheap: no diff text), so huge originals are skipped before diffing. */
+function addedLineCount(runGit: GitRunner, from: string, to: string): number {
+  const result = runGit(['diff', '--numstat', '--no-renames', from, to]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  let total = 0;
+  for (const line of result.stdout.split('\n')) {
+    const added = Number(line.split('\t')[0]);
+    if (Number.isFinite(added)) total += added;
+  }
+  return total;
+}
+
 /** Non-blank added (`+`) or removed (`-`) lines per file, trimmed, as counts. */
 function diffLines(runGit: GitRunner, from: string, to: string, side: '+' | '-', paths?: readonly string[]): Map<string, Map<string, number>> {
   const out = new Map<string, Map<string, number>>();
@@ -565,18 +578,23 @@ function diffLines(runGit: GitRunner, from: string, to: string, side: '+' | '-',
   const result = runGit(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', from, to, ...(paths ? ['--', ...paths] : [])]);
   if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
   let file: Map<string, number> | null = null;
+  let inHeader = false;
   for (const line of result.stdout.split('\n')) {
     if (line.startsWith('diff --git ')) {
       file = null;
+      inHeader = true;
       continue;
     }
-    if (line.startsWith('--- ') || line.startsWith('+++ ')) {
+    if (line.startsWith('@@')) {
+      inHeader = false;
+      continue;
+    }
+    if (inHeader) {
       // The side that names the file: `+++ b/path` for additions, `--- a/path` for removals.
       if (line.startsWith(side === '+' ? '+++ ' : '--- ')) {
-        const name = line.slice(4);
-        if (name === '/dev/null') file = null;
+        const path = diffHeaderPath(line);
+        if (path === null) file = null;
         else {
-          const path = name.replace(/^[ab]\//, '');
           file = out.get(path) ?? new Map();
           out.set(path, file);
         }

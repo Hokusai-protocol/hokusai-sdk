@@ -84,6 +84,12 @@ export function isBugIssue(issue: IssueMeta): boolean {
   return issue.type === 'Bug' || issue.labels.some((l) => BUG_LABEL.test(l)) || regressionLabels(issue).length > 0;
 }
 
+/** Path from a `--- a/path` or `+++ b/path` header line; null for `/dev/null`. Git appends a tab to paths containing spaces. */
+export function diffHeaderPath(line: string): string | null {
+  const name = line.slice(4).replace(/\t$/, '');
+  return name === '/dev/null' ? null : name.replace(/^[ab]\//, '');
+}
+
 // ── Blame ──────────────────────────────────────────────────────────────────
 
 /**
@@ -134,28 +140,32 @@ export function blameFix(
   landing: ReadonlyMap<string, CorpusPrRecord>,
   sinceEpoch: number,
 ): SzzResult {
-  const diff = runGit(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', fix.parentSha, fix.tipSha]);
+  // Submodule pointer bumps have no lines to blame, and blaming a gitlink asks the promisor remote for a commit it doesn't have.
+  const diff = runGit(['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', '--ignore-submodules', fix.parentSha, fix.tipSha]);
   if (diff.exitCode !== 0) throw new Error(`szz: cannot diff ${fix.parentSha}..${fix.tipSha}: ${diff.stderr.trim()}`);
   const ranges = new Map<string, [number, number][]>();
   // Old path (blame target) and either path (size): new files count toward size but have nothing to blame.
   let oldFile: string | null = null;
   let anyFile: string | null = null;
+  // `---`/`+++` are headers only before a file's first hunk; after it they are content (a deleted `-- comment`).
+  let inHeader = false;
   let changedLines = 0;
   const touched = new Set<string>();
   for (const line of diff.stdout.split('\n')) {
     if (line.startsWith('diff --git ')) {
       oldFile = anyFile = null;
+      inHeader = true;
       continue;
     }
-    if (line.startsWith('--- ') || line.startsWith('+++ ')) {
-      const name = line.slice(4);
-      if (name === '/dev/null') continue;
-      const path = name.replace(/^[ab]\//, '');
+    if (inHeader && (line.startsWith('--- ') || line.startsWith('+++ '))) {
+      const path = diffHeaderPath(line);
+      if (path === null) continue;
       if (line.startsWith('--- ')) oldFile = path;
       anyFile ??= path;
       continue;
     }
     const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/);
+    if (hunk) inHeader = false;
     if (!hunk || !anyFile || TEST_PATH.test(anyFile)) continue;
     const start = Number(hunk[1]);
     const deleted = hunk[2] === undefined ? 1 : Number(hunk[2]);

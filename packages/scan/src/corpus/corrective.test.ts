@@ -10,7 +10,7 @@ import { harvestedSurvivalLabelFixture } from '../../../core/src/fixtures/arbite
 import { execArgvCommand } from '../shell-utils.js';
 import type { CrossReference, GitRunner } from '../survival-labeller.js';
 import { correctiveCorpusRepo, type CorrectiveCorpusRepoResult } from './corrective.js';
-import type { IssueMeta } from './corrective-szz.js';
+import { blameFix, type IssueMeta } from './corrective-szz.js';
 import type { CorpusPrRecord } from './enumerate.js';
 
 const REPO = 'o/r';
@@ -224,5 +224,33 @@ describe('correctiveCorpusRepo', () => {
   it('writes no titles or bodies into any record', () => {
     const text = JSON.stringify([...result.candidates, ...result.repairPairs, ...result.corrective]);
     for (const fragment of ['crash in parser', 'Regression from', 'merge conflict', 'breaks trunk', 'Update docs']) expect(text).not.toContain(fragment);
+  });
+});
+
+describe('blameFix', () => {
+  it('reads `---`/`+++` as headers only before the first hunk, and strips the tab git adds to paths with spaces', () => {
+    const diff = [
+      'diff --git a/q.sql b/q.sql',
+      '--- a/q.sql',
+      '+++ b/q.sql',
+      '@@ -3,2 +3,0 @@',
+      '--- from integer interpreted as seconds',
+      '-select 1;',
+      'diff --git a/my dir/x.sql b/my dir/x.sql',
+      '--- a/my dir/x.sql\t',
+      '+++ b/my dir/x.sql\t',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+    ].join('\n');
+    const blamed: string[] = [];
+    const runGit: GitRunner = (args) => {
+      if (args[0] === 'diff') return { exitCode: 0, stdout: diff, stderr: '' };
+      blamed.push(`${args.at(-1)} ${args.filter((a, i) => args[i - 1] === '-L').join(' ')}`);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+    const result = blameFix(runGit, { parentSha: 'p', tipSha: 't' }, new Map(), 0);
+    expect(blamed).toEqual(['q.sql 3,4', 'my dir/x.sql 1,1']);
+    expect(result).toMatchObject({ status: 'blamed', files: 2, changedLines: 4 });
   });
 });
