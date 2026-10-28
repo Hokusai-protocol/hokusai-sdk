@@ -228,7 +228,7 @@ describe('correctiveCorpusRepo', () => {
 });
 
 describe('blameFix', () => {
-  it('reads `---`/`+++` as headers only before the first hunk, and strips the tab git adds to paths with spaces', () => {
+  it('reads `---`/`+++` as headers only before the first hunk, strips the tab git adds to paths with spaces, and skips generated files', () => {
     const diff = [
       'diff --git a/q.sql b/q.sql',
       '--- a/q.sql',
@@ -242,6 +242,12 @@ describe('blameFix', () => {
       '@@ -1 +1 @@',
       '-old',
       '+new',
+      'diff --git a/go.mod b/go.mod',
+      '--- a/go.mod',
+      '+++ b/go.mod',
+      '@@ -5 +5 @@',
+      '-require x v1',
+      '+require x v2',
     ].join('\n');
     const blamed: string[] = [];
     const runGit: GitRunner = (args) => {

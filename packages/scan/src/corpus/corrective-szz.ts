@@ -18,6 +18,13 @@ import type { CorpusPrRecord, GraphqlRunner } from './enumerate.js';
 /** Test files: excluded from blame, counted separately in repair pairs. */
 export const TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
 
+/**
+ * Generated or mechanical files: lockfiles and dependency manifests, snapshots, generated clients,
+ * test data, translation catalogues and images. Their lines are rewritten wholesale by tools,
+ * so blaming them links unrelated PRs. Excluded from blame and from fix size.
+ */
+export const GENERATED_PATH = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.(?:mod|sum)|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock)$|(?:^|\/)(?:__snapshots__|__generated__|generated|openapi-gen|testdata|translations)\/|\.(?:snap|pb\.go|pb\.cc|pb\.h|min\.js|png|jpe?g|gif|svg|ico)$|[._]generated\.[^/]+$/;
+
 /** Fixes past these sizes are tangled with other work; their candidates are rejected as `fix_too_large`. */
 export const SZZ_MAX_FILES = 20;
 export const SZZ_MAX_CHANGED_LINES = 500;
@@ -166,7 +173,7 @@ export function blameFix(
     }
     const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/);
     if (hunk) inHeader = false;
-    if (!hunk || !anyFile || TEST_PATH.test(anyFile)) continue;
+    if (!hunk || !anyFile || TEST_PATH.test(anyFile) || GENERATED_PATH.test(anyFile)) continue;
     const start = Number(hunk[1]);
     const deleted = hunk[2] === undefined ? 1 : Number(hunk[2]);
     const added = hunk[3] === undefined ? 1 : Number(hunk[3]);
