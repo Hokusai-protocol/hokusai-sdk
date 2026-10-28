@@ -154,7 +154,10 @@ const FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bu
  * not enough: django titles every ticket commit "Fixed #N", and fix PRs cite
  * earlier PRs they build on, discuss or include.
  */
-const REGRESSION_CONTEXT = /\b(?:regress\w*|broke(?:n)?|breaks|breakage|caused by|introduced (?:in|by)|bug (?:in|from|introduced)|crash\w*|fail\w*)\b[^.\n]{0,30}$/i;
+const REGRESSION_CONTEXT =
+  /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
+/** Issues citing more originals than this are trackers or umbrellas, not bug reports. */
+const MAX_ORIGINALS_PER_ISSUE = 3;
 const BACKPORT = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
 const BACKPORT_LABEL = /^(?:backport|cherry[- ]?pick)/i;
 const DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
@@ -287,8 +290,12 @@ export function detectCandidates(input: DetectCandidatesInput): { candidates: Co
       const hit = index.bySha(token);
       if (hit) cite(hit.pr, evidence('cites_original_sha', hit.sha), at);
     }
-    for (const issue of event.closingIssues) {
-      for (const { original, url } of issueCiters.get(issue) ?? []) {
+    // A closed issue counts only for a fix-shaped change and a narrow issue.
+    const fixShaped = signals.length > 0;
+    for (const issue of fixShaped ? event.closingIssues : []) {
+      const citers = issueCiters.get(issue) ?? [];
+      if (citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
+      for (const { original, url } of citers) {
         if (original.pr_url === event.pr?.pr_url) continue;
         const items = cited.get(original) ?? [];
         items.push(evidence('closes_issue_citing_original', url));

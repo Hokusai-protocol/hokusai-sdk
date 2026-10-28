@@ -94,10 +94,11 @@ describe('correctiveCorpusRepo', () => {
       record(5, r2, d5, '2025-01-08T00:00:00Z', { title: 'fix: bump lib', body: 'Fixes a regression from #1', author_login: 'dependabot[bot]' }),
       record(6, d5, p6, '2025-01-09T00:00:00Z', { title: 'Update docs', body: 'See #1 and other/repo#1' }),
       record(8, f7, p8, '2025-01-11T00:00:00Z', { title: 'Close tracker', closing_issues: [51] }),
-      record(10, p8, p8, '2025-01-12T00:00:00Z', { title: 'Fixed #36001 -- Added a thing', body: 'Builds on top of #1 and was inadvertently fixed in #2.' }),
+      record(10, p8, p8, '2025-01-12T00:00:00Z', { title: 'Fixed #36001 -- Added a thing', body: 'Builds on top of #1 and was inadvertently fixed in #2. Adds regression tests for #3.' }),
     ];
     const laterPrs = [
-      record(7, p6, f7, '2025-01-10T00:00:00Z', { title: 'Handle edge case', closing_issues: [50] }),
+      record(7, p6, f7, '2025-01-10T00:00:00Z', { title: 'Fix edge case', closing_issues: [50] }),
+      record(11, f7, f7, '2025-01-10T00:00:00Z', { title: 'Bump pin', closing_issues: [50] }),
       record(9, p8, late, '2025-04-01T00:00:00Z', { title: 'fix: late', body: 'Regression from #1' }),
     ];
     const ref = (issue: number, at: string): CrossReference => ({
@@ -147,9 +148,10 @@ describe('correctiveCorpusRepo', () => {
     expect(result.candidates.some((c) => c.fix.pr_url === url(6))).toBe(false);
   });
 
-  it('links a later PR closing an issue that cited the original after it merged, not a tracking issue', () => {
+  it('links a fix closing an issue that cited the original after it merged, not a tracking issue or a non-fix', () => {
     expect(find(1, 'repair_reference').filter((c) => c.fix.pr_url === url(7)).map((c) => c.evidence[0]?.kind)).toEqual(['closes_issue_citing_original']);
     expect(result.candidates.some((c) => c.fix.pr_url === url(8))).toBe(false);
+    expect(result.candidates.some((c) => c.fix.pr_url === url(11))).toBe(false);
   });
 
   it('drops fixes later than the longest horizon', () => {
