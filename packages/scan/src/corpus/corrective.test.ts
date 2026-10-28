@@ -90,7 +90,7 @@ describe('correctiveCorpusRepo', () => {
       record(1, c0, o1, '2025-01-02T00:00:00Z'),
       record(2, o1, o2, '2025-01-03T00:00:00Z'),
       record(3, o2, o3, '2025-01-04T00:00:00Z'),
-      record(4, o3, f4, '2025-01-05T00:00:00Z', { title: 'fix: crash in parser', body: 'Regression from #1.' }),
+      record(4, o3, f4, '2025-01-05T00:00:00Z', { title: 'fix: crash in parser', body: 'Regression from #1.', labels: ['backport:prev-minor'] }),
       record(5, r2, d5, '2025-01-08T00:00:00Z', { title: 'fix: bump lib', body: 'Fixes a regression from #1', author_login: 'dependabot[bot]' }),
       record(6, d5, p6, '2025-01-09T00:00:00Z', { title: 'Update docs', body: 'See #1 and other/repo#1' }),
       record(8, f7, p8, '2025-01-11T00:00:00Z', { title: 'Close tracker', closing_issues: [51] }),
@@ -119,7 +119,7 @@ describe('correctiveCorpusRepo', () => {
     }
   });
 
-  it('links a fix that cites the original with a fix signal (P2)', () => {
+  it('links a fix that cites the original with a fix signal (P2), whatever its backport request label', () => {
     const [candidate] = find(1, 'repair_reference').filter((c) => c.fix.pr_url === url(4));
     expect(candidate?.status).toBe('accepted');
     expect(candidate?.evidence.map((e) => e.kind).sort()).toEqual(['cites_original_pr', 'fix_title_prefix', 'regression_in_marker']);

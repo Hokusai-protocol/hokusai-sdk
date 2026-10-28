@@ -159,7 +159,6 @@ const REGRESSION_CONTEXT =
 /** Issues citing more originals than this are trackers or umbrellas, not bug reports. */
 const MAX_ORIGINALS_PER_ISSUE = 3;
 const BACKPORT = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
-const BACKPORT_LABEL = /^(?:backport|cherry[- ]?pick)/i;
 const DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
 /** Collateral and process reverts, from the reason a merge bot records ("Reverted <url> on behalf of <user> due to <reason>"). */
 const REVERT_REASON = /\bdue to\b([^\n]*)/i;
@@ -329,7 +328,8 @@ function isRevert(event: FixEvent): boolean {
 
 function commonExclusion(event: FixEvent): ExclusionCode | null {
   if (event.authorLogin && DEPENDENCY_BOT.test(event.authorLogin)) return 'dependency_bot';
-  if (BACKPORT.test(`${event.title}\n${event.body}`) || event.labels.some((l) => BACKPORT_LABEL.test(l))) return 'backport';
+  // Title and cherry-pick trailer only: on default-branch PRs, `backport:*` labels (kibana, grafana) request a backport rather than mark one.
+  if (BACKPORT.test(`${event.title}\n${event.body}`)) return 'backport';
   return null;
 }
 
