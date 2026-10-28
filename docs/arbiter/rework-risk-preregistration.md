@@ -42,6 +42,11 @@ Every arm is scored on the same rows. A result is valid only if all of these are
 
 * **Development:** leave-repo-out cross-validation over the development repos, with a time split inside each fold (train on PRs merged before the fold's split date). Used for every tuning decision.
 * **Evaluation slice (gate):** a private held-out slice of repos and a time window, chosen and recorded privately before freeze, per decision D2. It is scored **once**, for all arms in the same run. Its identity is published only after the result.
+* **How the slice is drawn:** mechanically, by `scripts/arbiter/draw-evaluation-slice.mjs` (procedure 1.0.0), so that per-repo base rates already seen cannot steer it:
+  * The runnable repos are split into size terciles by enumerated PR count.
+  * Each tercile is ordered by `sha256(salt ‖ repo)`, using a 32-byte random salt. The first 2 repos of each tercile, 6 in all, are the slice. The rest of each tercile's order is the replacement order if HOK-3268 drops a slice repo.
+  * The time window is the last 6 months of the cohort window. It extends back 3 months at a time if the slice has fewer than 500 positives at 30 days under the labels available at draw time.
+  * Development repos are the other runnable repos; slice repos are excluded from development entirely.
 * **Sealed holdout commitment:** the evaluation slice's manifest (repos, time window and salt) is kept privately. Its SHA-256 is written here at freeze: `holdout_sha256 = <TBD at freeze>`. Publishing the manifest after the result lets anyone check that the slice was fixed in advance.
 * **[PROPOSED] Minimum power:** the evaluation slice must contain ≥ 5 repos and ≥ 500 corrective positives at 30 days. Otherwise the gate result is **INCONCLUSIVE (underpowered)**, not a pass or a fail.
 
@@ -98,3 +103,4 @@ Let **Δ** = macro top-decile capture (arm 5) − macro top-decile capture (arm 
 ## Change log
 
 * 2026-10-28: first draft (HOK-3028). Owner decisions: lift bar Δ ≥ 10 pp and ≥ 1.25×; target version pinned after HOK-3269; document lives in `hokusai-sdk/docs/arbiter/`.
+* 2026-10-28: slice selection is mechanical (§4, `draw-evaluation-slice.mjs`). The draw happens after per-repo S2 and P1/P2 corrective base rates were posted on HOK-3268 and HOK-3267, but before any arm was built or scored. The seeded draw, and the published salt after the result, let anyone check that those rates did not choose the slice. Whoever builds or tunes arms does not see the manifest.
