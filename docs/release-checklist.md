@@ -35,6 +35,13 @@ Use this checklist before publishing SDK package or adapter changes.
 - [ ] Commit the result, **including the rebundled
       `packages/adapter-claude-code/plugin/dist/index.js`** (`pnpm -r build && pnpm --filter @hokusai/adapter-claude-code bundle:plugin`).
       The marketplace serves that file from `main` HEAD.
+- [ ] Confirm `pnpm version-packages` updated each package's `CHANGELOG.md`
+      (at minimum `packages/core` and `packages/costs`), and add a
+      `Released YYYY-MM-DD.` line under the new `## x.y.z` heading.
+- [ ] In [Release Notes](release-notes.md), replace the `— unreleased` heading
+      with the release date. If the release adds or changes a contract constant
+      (task-cost, schemas), add a **Requires** line and a row in the
+      [Versioning Policy](versioning-policy.md) tables.
 - [ ] Confirm `pnpm check:versions` passes. It is also enforced in CI on every PR.
 - [ ] Ensure repository secrets are configured: `NPM_TOKEN`, `GPG_PRIVATE_KEY`, and `GPG_PASSPHRASE`.
 - [ ] Push a `v*` tag **matching the new package version** to publish npm packages

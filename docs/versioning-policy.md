@@ -8,14 +8,20 @@ This repository uses semantic versioning for package releases and explicit schem
 - MINOR: backward-compatible public additions such as new exports, new optional schema fields, new adapter methods, or new enum values.
 - MAJOR: breaking contract changes such as removed exports, renamed required schema fields, removed enum values, changed method signatures, or removed adapter interface methods.
 
-## Package Independence
+## Package Versioning
 
-Packages are versioned independently through Changesets.
+All published `@hokusai/*` packages are versioned together through Changesets
+(`fixed` in `.changeset/config.json`): every release moves every package to the
+same version.
 
 - `@hokusai/core` is the stable dependency anchor.
-- Adapter packages depend on `@hokusai/core` as `workspace:*` in the monorepo.
-- Published adapter releases are expected to track the active `@hokusai/core` major version.
-- Coordinated releases should bump every affected package in the same changeset set.
+- Packages depend on `@hokusai/core` as `workspace:*` in the monorepo. pnpm
+  rewrites that to the **exact** version at publish time, so `@hokusai/costs@X`
+  (and every adapter) requires `@hokusai/core@X`.
+- A host that depends on `@hokusai/core` directly *and* on `@hokusai/costs` or
+  an adapter should depend on the same `@hokusai/core` version those packages
+  pin. If the ranges don't overlap, the host gets two copies of core, or keeps
+  running an older one.
 
 ## Schema Version and Package Version Relationship
 
@@ -49,6 +55,41 @@ Rules:
 - The report payload is frozen as `arbiter_report/vN`. Any field or semantic
   change requires a new major wire version. Consumers must accept that version
   before the scanner emits it; unknown versions are rejected.
+
+## Task-cost Contract Versions
+
+The task-cost contract is exported from `@hokusai/core` and documented in
+[`packages/core/src/task-cost/README.md`](../packages/core/src/task-cost/README.md):
+
+- `TASK_COST_CONTRACT_VERSION = "1.0.0"` (SemVer for the contract as a whole:
+  schemas and reducer semantics)
+- `TASK_COST_EVENT_SCHEMA_VERSION = "task_cost_event/v1"`
+- `TASK_COST_SUMMARY_SCHEMA_VERSION = "task_cost_summary/v1"`
+- `TASK_COST_LEDGER_SCHEMA_VERSION = "task_cost_ledger/v1"`
+- `TASK_COST_ADAPTER_CONTRACT_VERSION = "task_cost_adapter/v1"`
+
+| Contract | First `@hokusai/core` | Notes |
+| --- | --- | --- |
+| task-cost `1.0.0` (`task_cost_*/v1`) | **0.5.0** (2026-10-15) | First release of the contract, validators, `aggregateTaskCost`, and `aggregateTaskCostByModel`. None of it exists in 0.4.0. |
+
+Rules:
+
+- The task-cost API requires `@hokusai/core` ≥ 0.5.0. Each later release
+  supports every contract version listed above unless a row says otherwise.
+- Additive changes within `.../v1` (new optional fields, new diagnostic codes)
+  ship in a `@hokusai/core` MINOR release and bump
+  `TASK_COST_CONTRACT_VERSION` minor. A `.../v2` schema is a breaking change
+  and requires a `@hokusai/core` MAJOR release.
+- Add a row to this table in the release that changes any of these constants.
+- Hosts that load task-cost lazily can feature-detect it instead of trusting a
+  version range:
+
+  ```ts
+  const core = await import('@hokusai/core');
+  if (!('aggregateTaskCost' in core)) {
+    throw new Error('task-cost requires @hokusai/core >= 0.5.0');
+  }
+  ```
 
 ## The Scan Contract
 
