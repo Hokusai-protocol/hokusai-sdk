@@ -539,7 +539,7 @@ function diffLines(runGit: GitRunner, from: string, to: string, side: '+' | '-',
 
 /** One corrective row per S2 row, derived only from accepted repair pairs. */
 export function deriveCorrectiveRows(
-  s2Rows: readonly ArbiterSurvivalLabelV1[],
+  s2Rows: Iterable<ArbiterSurvivalLabelV1>,
   pairs: readonly RepairPairV1[],
   envelope: Omit<CorrectiveEnvelope, 'schema_version'>,
 ): CorrectiveReworkLabelV1[] {
@@ -549,16 +549,20 @@ export function deriveCorrectiveRows(
     list.push(pair);
     byOriginal.set(pair.original.pr_url, list);
   }
-  return s2Rows.map((row) =>
-    deriveCorrectiveLabel({
-      prUrl: row.prUrl,
-      horizon_days: row.horizon_days,
-      base_label_hash: canonicalHash(row),
-      base_label_present: row.outcome.report_outcome !== null,
-      repair_pairs: byOriginal.get(row.prUrl) ?? [],
-      envelope,
-    }),
-  );
+  const out: CorrectiveReworkLabelV1[] = [];
+  for (const row of s2Rows) {
+    out.push(
+      deriveCorrectiveLabel({
+        prUrl: row.prUrl,
+        horizon_days: row.horizon_days,
+        base_label_hash: canonicalHash(row),
+        base_label_present: row.outcome.report_outcome !== null,
+        repair_pairs: byOriginal.get(row.prUrl) ?? [],
+        envelope,
+      }),
+    );
+  }
+  return out;
 }
 
 export function correctiveEnvelope(branch: string, asOf: Date, now: Date): CorrectiveEnvelope {
@@ -586,7 +590,8 @@ export interface CorrectiveCorpusRepoInput {
   from: Date;
   asOf: Date;
   crossReferences: ReadonlyMap<number, readonly CrossReference[]>;
-  s2Rows: readonly ArbiterSurvivalLabelV1[];
+  /** Read once, in order; may be a stream. */
+  s2Rows: Iterable<ArbiterSurvivalLabelV1>;
 }
 
 export interface CorrectiveCorpusRepoDeps {

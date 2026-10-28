@@ -32,7 +32,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { gzipSync, inflateRawSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
 import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
 import { HORIZONS, type ArbiterSurvivalLabelV1 } from '@hokusai/core';
@@ -331,12 +331,27 @@ function runLabel(
 }
 
 function readJsonl<T>(path: string): T[] {
-  const raw = readFileSync(path);
-  const text = path.endsWith('.gz') ? gunzipSync(raw).toString('utf8') : raw.toString('utf8');
-  return text
+  return readFileSync(path, 'utf8')
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line) as T);
+}
+
+/**
+ * Rows of a gzip JSONL file written by {@link writeJsonl}, one gzip member at
+ * a time. Large repos' S2 files decompress past V8's string and buffer
+ * limits, so the file is never inflated whole. Members carry no optional
+ * header fields (gzipSync), so each is a 10-byte header, a raw deflate
+ * stream and an 8-byte trailer.
+ */
+export function* readGzipJsonlMembers<T>(path: string): Generator<T> {
+  const raw = readFileSync(path);
+  for (let offset = 0; offset < raw.length; ) {
+    if (raw[offset] !== 0x1f || raw[offset + 1] !== 0x8b || raw[offset + 3] !== 0) throw new Error(`${path}: unexpected gzip member header at byte ${offset}`);
+    const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+    offset += 10 + engine.bytesWritten + 8;
+    for (const line of buffer.toString('utf8').split('\n')) if (line) yield JSON.parse(line) as T;
+  }
 }
 
 function runCorrective(
@@ -375,7 +390,7 @@ function runCorrective(
       }
       log(`info: ${entry.repo}: loading cross-references and S2 rows`);
       const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
-      const s2Rows = readJsonl<ArbiterSurvivalLabelV1>(s2Path);
+      const s2Rows = readGzipJsonlMembers<ArbiterSurvivalLabelV1>(s2Path);
       const result = correctiveCorpusRepo(
         { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, s2Rows },
         { runGit, now: () => new Date(), onDiagnostic: log },

@@ -65,7 +65,7 @@ The label is monotone across horizons: if a row is true at 14 days, it is also t
 | Tier | `proxy` | Fires when | Confidence | Admitted in cr-0.1.0 |
 |---|---|---|---|---|
 | P1 | `revert` | The fix reverts the original, in whole or in part: a `This reverts commit <sha>` message, `Reverts owner/repo#N`, or revert metadata from a bot. Revert commits pushed without a PR count too; they are read from the branch's first-parent history. | high | yes |
-| P2 | `repair_reference` | The fix cites the original by PR, URL or SHA in regression wording (`Regression in <sha>`, `broken since #N`, `introduced by #N`), or closes an issue that cited the original after the original merged. A fix label or `fix:` title is recorded as supporting evidence but is not enough by itself. | high | yes |
+| P2 | `repair_reference` | The fix cites the original by PR, URL or SHA in regression wording just before the citation: a regression word followed by a preposition (`Regression in <sha>`, `broken by #N`, `failing since #N`), `caused by` or `introduced in/by`. "Regression tests for #N" does not count. The other route is a fix-shaped change (fix title or label) that closes an issue which cited the original after it merged and which cites at most 3 originals; issues citing more are trackers. A fix label or `fix:` title on its own is only supporting evidence. | high | yes |
 | P3 | `szz` | The fix closes a bug or regression issue, and blame on the lines it deletes or modifies lands in the original. | medium | yes |
 | P4 | `regression_issue` | A regression or incident issue links the fix and the original. | medium | yes |
 | P5 | `abnormal_churn` | Churn is abnormally high. | low | no: such candidates are recorded with the `proxy_disabled` exclusion code |

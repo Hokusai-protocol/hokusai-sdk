@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
-import { writeJsonl } from './cli.js';
+import { readGzipJsonlMembers, writeJsonl } from './cli.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'corpus-jsonl-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -20,6 +20,12 @@ describe('writeJsonl', () => {
     const text = gunzipSync(raw).toString('utf8');
     expect(text.trimEnd().split('\n').map((line) => JSON.parse(line) as unknown)).toEqual(rows);
     expect(written).toMatchObject({ bytes: Buffer.byteLength(text), writtenBytes: raw.length });
+  });
+
+  it('reads gzip members back one at a time', () => {
+    const path = join(dir, 'members.jsonl.gz');
+    writeJsonl(path, rows, { gzip: true, memberBytes: 200 });
+    expect([...readGzipJsonlMembers(path)]).toEqual(rows);
   });
 
   it('writes plain JSONL without gzip', () => {
