@@ -67,7 +67,7 @@ function buildActionArgv(env) {
 
 // src/cli-core.ts
 import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname2, join as join10, resolve as resolve5 } from "node:path";
+import { dirname as dirname3, join as join10, resolve as resolve5 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
 import { parseArgs as parseArgs3 } from "node:util";
 
@@ -2507,6 +2507,28 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
     }
   }
 );
+
+// ../core/src/arbiter-calibration-label.ts
+var CALIBRATION_VERDICTS = ["yes", "no", "unclear"];
+var CAUSE_CODES = [
+  "missing_context",
+  "blast_radius",
+  "test_gap",
+  "plan_error",
+  "local_generation_error",
+  "dependency_drift",
+  "review_gap",
+  "not_rework",
+  "unclear"
+];
+var HUMAN_EXCLUSION_CODES = [
+  "planned_iteration",
+  "requirement_change",
+  "unrelated_edit",
+  "refactor",
+  "revert_non_defect",
+  "linkage_error"
+];
 
 // ../core/src/task-cost/enums.ts
 var TASK_COST_FIELD_AVAILABILITIES = [
@@ -8110,11 +8132,539 @@ function runShadowCli(command, args, io) {
 }
 
 // src/corpus/cli.ts
-import { createHash as createHash3 } from "node:crypto";
-import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
-import { join as join7, resolve as resolve4 } from "node:path";
+import { createHash as createHash4, randomBytes } from "node:crypto";
+import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
+import { dirname, join as join7, resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
 import { gzipSync, inflateRawSync } from "node:zlib";
+
+// src/corpus/calibration.ts
+import { createHash as createHash3 } from "node:crypto";
+
+// src/report/stats.ts
+function round42(value) {
+  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+}
+function roundedInterval(low, high, value) {
+  let lo = round42(Math.max(0, Math.min(1, low)));
+  let hi = round42(Math.max(0, Math.min(1, high)));
+  if (value !== void 0) {
+    lo = Math.min(lo, round42(value));
+    hi = Math.max(hi, round42(value));
+  }
+  return { low: lo, high: hi };
+}
+function wilsonInterval(k, n, z = 1.959964) {
+  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
+    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
+  }
+  if (n === 0) return null;
+  const p = k / n;
+  const z2 = z * z;
+  const den = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / den;
+  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
+  return roundedInterval(center - half, center + half, p);
+}
+function katzLogRatioInterval(k1, n1, k2, n2) {
+  for (const [k, n] of [[k1, n1], [k2, n2]]) {
+    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
+      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
+    }
+  }
+  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
+  const a = k1 + (corrected ? 0.5 : 0);
+  const b = n1 - k1 + (corrected ? 0.5 : 0);
+  const c = k2 + (corrected ? 0.5 : 0);
+  const d = n2 - k2 + (corrected ? 0.5 : 0);
+  const ratio3 = a / (a + b) / (c / (c + d));
+  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
+  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
+  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
+  const r = round42(ratio3);
+  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
+}
+function nearestRankQuartiles(sorted) {
+  if (!sorted.length) return null;
+  for (let i = 0; i < sorted.length; i++) {
+    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
+      throw new RangeError("nearestRankQuartiles requires finite ascending values");
+    }
+  }
+  const at = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  return [at(0.25), at(0.5), at(0.75)];
+}
+function quartileOf(value, cuts) {
+  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
+    throw new RangeError("quartileOf requires finite values and ascending cuts");
+  }
+  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
+}
+
+// src/corpus/calibration.ts
+var CALIBRATION_SAMPLER_VERSION = "1.0.0";
+var CALIBRATION_STRATA = ["revert", "repair_reference", "regression_issue", "szz_strong", "szz_weak", "rejected", "negative"];
+function parseCalibrationPlan(raw) {
+  const plan = raw;
+  if (!plan || typeof plan !== "object") throw new Error("plan must be an object");
+  const allocation = plan.allocation;
+  if (!allocation || typeof allocation !== "object") throw new Error("plan.allocation is required");
+  for (const stratum of CALIBRATION_STRATA) {
+    if (!Number.isInteger(allocation[stratum]) || allocation[stratum] < 0) throw new Error(`plan.allocation.${stratum} must be a non-negative integer`);
+  }
+  const extra = Object.keys(allocation).filter((k) => !CALIBRATION_STRATA.includes(k));
+  if (extra.length) throw new Error(`plan.allocation has unknown strata: ${extra.join(", ")}`);
+  const num2 = (key, ok) => {
+    const v = plan[key];
+    if (typeof v !== "number" || !ok(v)) throw new Error(`plan.${key} is out of range`);
+    return v;
+  };
+  if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
+  return {
+    plan_version: plan.plan_version,
+    horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
+    allocation,
+    double_label_share: num2("double_label_share", (v) => v >= 0 && v <= 1),
+    min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
+    szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
+    kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
+    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
+  };
+}
+var sha256 = (...parts) => createHash3("sha256").update(parts.join("\0")).digest("hex");
+function seededOrder(list, key) {
+  return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
+}
+var STRATUM_PRIORITY = ["revert", "repair_reference", "regression_issue", "szz"];
+function classifyCalibrationRepo(input) {
+  const horizonSeconds = input.horizonDays * 86400;
+  const byOriginal = /* @__PURE__ */ new Map();
+  for (const c of input.candidates) {
+    if (c.lag_seconds > horizonSeconds) continue;
+    const list = byOriginal.get(c.original.pr_url) ?? [];
+    list.push({
+      candidate_id: c.candidate_id,
+      proxy: c.proxy,
+      status: c.status,
+      exclusion_code: c.exclusion_code,
+      fix_url: c.fix.pr_url ?? `https://github.com/${input.repo}/commit/${c.fix.sha}`,
+      lag_days: Math.round(c.lag_seconds / 86400 * 10) / 10,
+      blamed_lines: c.evidence.find((e) => e.kind === "blamed_lines")?.count ?? null,
+      revert_reason: c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? null
+    });
+    byOriginal.set(c.original.pr_url, list);
+  }
+  const units = [];
+  for (const row of input.correctiveRows) {
+    if (row.horizon_days !== input.horizonDays || row.corrective === null) continue;
+    const candidates = (byOriginal.get(row.prUrl) ?? []).sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
+    const accepted2 = new Set(row.repair_pair_ids);
+    const acceptedCandidates = candidates.filter((c) => accepted2.has(c.candidate_id));
+    const proxies = [...new Set(acceptedCandidates.map((c) => c.proxy))].filter((p) => ADMITTED_PROXIES.includes(p)).sort();
+    let stratum;
+    if (row.corrective) {
+      const top = STRATUM_PRIORITY.find((p) => proxies.includes(p));
+      if (!top) throw new Error(`${row.prUrl}: corrective row without an accepted pair within ${input.horizonDays} days`);
+      if (top === "szz") {
+        const lines = Math.max(...acceptedCandidates.filter((c) => c.proxy === "szz").map((c) => c.blamed_lines ?? 0));
+        stratum = lines >= input.szzStrongMinLines ? "szz_strong" : "szz_weak";
+      } else stratum = top;
+    } else stratum = candidates.length ? "rejected" : "negative";
+    units.push({ repo: input.repo, pr_url: row.prUrl, stratum, proxies, candidates });
+  }
+  return units;
+}
+function drawCalibrationSample(units, plan, seed) {
+  const items = [];
+  const cells = /* @__PURE__ */ new Map();
+  const shortfalls = [];
+  for (const stratum of CALIBRATION_STRATA) {
+    const byRepo = /* @__PURE__ */ new Map();
+    for (const u of units) {
+      if (u.stratum !== stratum) continue;
+      const list = byRepo.get(u.repo);
+      if (list) list.push(u);
+      else byRepo.set(u.repo, [u]);
+    }
+    for (const [repo, list] of byRepo) {
+      byRepo.set(repo, seededOrder(list, (u) => sha256(seed, stratum, u.pr_url)));
+      cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
+    }
+    const repos = seededOrder([...byRepo.keys()], (repo) => sha256(seed, "repo", stratum, repo));
+    const want = plan.allocation[stratum];
+    const picked = [];
+    for (let round = 0; picked.length < want; round++) {
+      let any = false;
+      for (const repo of repos) {
+        const unit = byRepo.get(repo)[round];
+        if (!unit || picked.length >= want) continue;
+        picked.push(unit);
+        cells.get(`${repo}\0${stratum}`).sampled++;
+        any = true;
+      }
+      if (!any) break;
+    }
+    if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
+    const doubles = new Set(
+      seededOrder(picked, (u) => sha256(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
+    );
+    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url) });
+  }
+  return {
+    items: seededOrder(items, (i) => sha256(seed, "order", i.item_id)),
+    cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
+    shortfalls
+  };
+}
+var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "corrective", "cause_code", "exclusion_code", "notes"];
+var csvCell = (value) => /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+function renderLabelSheet(items) {
+  const rows = items.map((item) => [item.item_id, item.pr_url, [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "), "", "", "", ""]);
+  return `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
+`;
+}
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell2 = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell2 += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell2 += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {
+      row.push(cell2);
+      cell2 = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell2);
+      rows.push(row);
+      row = [];
+      cell2 = "";
+    } else cell2 += ch;
+  }
+  if (cell2 || row.length) {
+    row.push(cell2);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((c) => c.trim()));
+}
+function parseLabelSheet(text, items) {
+  const [header, ...rows] = parseCsv(text);
+  const col = (name) => header?.indexOf(name) ?? -1;
+  const errors = [];
+  const missing = ["item_id", "corrective", "cause_code", "exclusion_code"].filter((c) => col(c) < 0);
+  if (missing.length) return { labels: /* @__PURE__ */ new Map(), unlabelled: [], errors: [`missing columns: ${missing.join(", ")}`] };
+  const labels = /* @__PURE__ */ new Map();
+  const unlabelled = [];
+  const causes = CAUSE_CODES;
+  const exclusions = HUMAN_EXCLUSION_CODES;
+  for (const r of rows) {
+    const get = (name) => (r[col(name)] ?? "").trim().toLowerCase();
+    const id2 = (r[col("item_id")] ?? "").trim();
+    const item = items.get(id2);
+    if (!item) {
+      errors.push(`${id2 || "(blank)"}: not in the sample`);
+      continue;
+    }
+    if (labels.has(id2)) {
+      errors.push(`${id2}: labelled twice on one sheet`);
+      continue;
+    }
+    const verdict = get("corrective");
+    const cause = get("cause_code");
+    const exclusion = get("exclusion_code") || null;
+    if (!verdict) {
+      unlabelled.push(id2);
+      continue;
+    }
+    if (!CALIBRATION_VERDICTS.includes(verdict)) {
+      errors.push(`${id2}: corrective must be yes, no or unclear, not "${verdict}"`);
+      continue;
+    }
+    if (verdict === "yes") {
+      if (!causes.includes(cause) || cause === "not_rework") errors.push(`${id2}: a yes needs a cause code other than not_rework`);
+      if (exclusion) errors.push(`${id2}: a yes takes no exclusion code`);
+      labels.set(id2, { verdict, cause_code: cause, exclusion_code: null });
+    } else if (verdict === "no") {
+      if (cause && cause !== "not_rework") errors.push(`${id2}: a no takes cause not_rework (or blank)`);
+      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
+      if (!exclusion && item.candidates.length) errors.push(`${id2}: a no on an item with candidate fixes needs an exclusion code`);
+      labels.set(id2, { verdict, cause_code: "not_rework", exclusion_code: exclusion });
+    } else {
+      if (cause && cause !== "unclear") errors.push(`${id2}: an unclear takes cause unclear (or blank)`);
+      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
+      labels.set(id2, { verdict: "unclear", cause_code: "unclear", exclusion_code: exclusion });
+    }
+  }
+  return { labels, unlabelled, errors };
+}
+function cohensKappa(pairs) {
+  if (!pairs.length) return null;
+  const n = pairs.length;
+  const a = /* @__PURE__ */ new Map();
+  const b = /* @__PURE__ */ new Map();
+  let agree = 0;
+  for (const [x, y] of pairs) {
+    if (x === y) agree++;
+    a.set(x, (a.get(x) ?? 0) + 1);
+    b.set(y, (b.get(y) ?? 0) + 1);
+  }
+  const po = agree / n;
+  let pe = 0;
+  for (const [k, count] of a) pe += count / n * ((b.get(k) ?? 0) / n);
+  if (pe === 1) return null;
+  return round43((po - pe) / (1 - pe));
+}
+function kappaWithCodes(pairs, codes, floor) {
+  const per_code = {};
+  for (const code of codes) {
+    const used = pairs.filter(([x, y]) => x === code || y === code).length;
+    const kappa = used ? cohensKappa(pairs.map(([x, y]) => [String(x === code), String(y === code)])) : null;
+    per_code[code] = { used, kappa, verdict: !used ? "not_observed" : kappa === null ? "undefined" : kappa >= floor ? "pass" : "below_floor" };
+  }
+  return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
+}
+var round43 = (x) => Math.round(x * 1e4) / 1e4;
+function definitionVariants(plan) {
+  const strongSzz = (c) => c.proxy !== "szz" || (c.blamed_lines ?? 0) >= plan.szz_strong_min_lines;
+  const notInternal = (c) => c.proxy !== "revert" || c.revert_reason !== "internal_build";
+  return [
+    { name: "cr-0.1.0", description: "all admitted proxies (P1\u2013P4)", keep: () => true },
+    { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
+    { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
+    { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
+    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
+  ];
+}
+var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
+var precisionOf = (positive) => (rows) => {
+  let num2 = 0;
+  let den = 0;
+  for (const r of rows) {
+    if (!positive(r.item)) continue;
+    den += r.weight;
+    if (r.label.verdict === "yes") num2 += r.weight;
+  }
+  return den ? num2 / den : null;
+};
+var recallOf = (positive) => (rows) => {
+  let num2 = 0;
+  let den = 0;
+  for (const r of rows) {
+    if (r.label.verdict !== "yes") continue;
+    den += r.weight;
+    if (positive(r.item)) num2 += r.weight;
+  }
+  return den ? num2 / den : null;
+};
+function prng(seed) {
+  let a = parseInt(sha256(seed, "bootstrap").slice(0, 8), 16) >>> 0;
+  return () => {
+    a = a + 1831565813 >>> 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function bootstrap(rows, estimator, relevant, seed, resamples) {
+  const estimate = estimator(rows);
+  const n = rows.filter(relevant).length;
+  if (estimate === null) return { estimate: null, ci95: null, n };
+  const cells = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    const key = `${r.item.repo}\0${r.item.stratum}`;
+    const cell2 = cells.get(key);
+    if (cell2) cell2.push(r);
+    else cells.set(key, [r]);
+  }
+  const groups = [...cells.values()];
+  const rand = prng(seed);
+  const values = [];
+  for (let b = 0; b < resamples; b++) {
+    const resampled = [];
+    for (const g of groups) for (let i = 0; i < g.length; i++) resampled.push(g[Math.floor(rand() * g.length)]);
+    const v = estimator(resampled);
+    if (v !== null) values.push(v);
+  }
+  values.sort((x, y) => x - y);
+  const at = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
+  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at(0.025)), high: round43(at(0.975)) } : null, n };
+}
+function scoreCalibration(input) {
+  const { plan, items, sheetA, sheetB, seed } = input;
+  const resamples = input.resamples ?? 2e3;
+  const decided = (id2) => {
+    const l = sheetA.get(id2);
+    return l && l.verdict !== "unclear" ? l : null;
+  };
+  const decidedPerCell = /* @__PURE__ */ new Map();
+  for (const item of items) if (decided(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
+  const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
+  const rows = items.flatMap((item) => {
+    const label2 = decided(item.item_id);
+    const key = `${item.repo}\0${item.stratum}`;
+    return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
+  });
+  const unrepresented = input.cells.filter((c) => !decidedPerCell.get(`${c.repo}\0${c.stratum}`)).reduce((s, c) => s + c.population, 0);
+  const est = (name, estimator, relevant, subset = rows) => bootstrap(subset, estimator, relevant, `${seed}\0${name}`, resamples);
+  const strata = CALIBRATION_STRATA.map((stratum) => {
+    const inStratum = items.filter((i) => i.stratum === stratum);
+    const count = (v) => inStratum.filter((i) => sheetA.get(i.item_id)?.verdict === v).length;
+    const yes = count("yes");
+    const no = count("no");
+    return {
+      stratum,
+      sampled: inStratum.length,
+      yes,
+      no,
+      unclear: count("unclear"),
+      unlabelled: inStratum.filter((i) => !sheetA.has(i.item_id)).length,
+      yes_rate: yes + no ? round43(yes / (yes + no)) : null,
+      yes_rate_ci95: wilsonInterval(yes, yes + no)
+    };
+  });
+  const proxies = {};
+  for (const proxy of ADMITTED_PROXIES) {
+    const fired = (item) => item.proxies.includes(proxy);
+    proxies[proxy] = {
+      precision: est(`p:${proxy}`, precisionOf(fired), (r) => fired(r.item)),
+      recall: est(`r:${proxy}`, recallOf(fired), (r) => r.label.verdict === "yes")
+    };
+  }
+  const definitions = definitionVariants(plan).map((d) => {
+    const positive = (item) => accepted(item).some(d.keep);
+    return {
+      name: d.name,
+      description: d.description,
+      precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
+      recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
+    };
+  });
+  let chosen = null;
+  for (const d of definitions) {
+    if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
+    if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
+  }
+  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha256(seed, "pseudonym", repo));
+  const anyProxy = (item) => item.proxies.length > 0;
+  const repos = repoNames.map((repo, i) => {
+    const subset = rows.filter((r) => r.item.repo === repo);
+    return {
+      repo,
+      pseudonym: `R${i + 1}`,
+      sampled: items.filter((it) => it.repo === repo).length,
+      precision: est(`rp:${repo}`, precisionOf(anyProxy), (r) => anyProxy(r.item), subset),
+      recall: est(`rr:${repo}`, recallOf(anyProxy), (r) => r.label.verdict === "yes", subset)
+    };
+  });
+  const rejected = items.filter((i) => i.stratum === "rejected");
+  const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
+  const rejDecided = rejected.filter((i) => decided(i.item_id)).length;
+  const by_code = {};
+  for (const item of rejected) {
+    const label2 = sheetA.get(item.item_id);
+    if (label2?.verdict !== "no") continue;
+    const human = label2.exclusion_code ?? "(none)";
+    for (const auto of new Set(item.candidates.map((c) => c.exclusion_code ?? "(accepted)"))) {
+      by_code[auto] ??= {};
+      by_code[auto][human] = (by_code[auto][human] ?? 0) + 1;
+    }
+  }
+  const linkage_error = {};
+  for (const proxy of ADMITTED_PROXIES) {
+    const nos = items.filter((i) => i.proxies.includes(proxy) && sheetA.get(i.item_id)?.verdict === "no");
+    const linkage = nos.filter((i) => sheetA.get(i.item_id)?.exclusion_code === "linkage_error").length;
+    linkage_error[proxy] = { no: nos.length, linkage_error: linkage, rate: nos.length ? round43(linkage / nos.length) : null };
+  }
+  const raw = {};
+  const weighted = {};
+  let yesWeight = 0;
+  for (const item of items) {
+    const label2 = sheetA.get(item.item_id);
+    if (label2?.verdict === "yes") raw[label2.cause_code] = (raw[label2.cause_code] ?? 0) + 1;
+  }
+  for (const r of rows) {
+    if (r.label.verdict !== "yes") continue;
+    weighted[r.label.cause_code] = (weighted[r.label.cause_code] ?? 0) + r.weight;
+    yesWeight += r.weight;
+  }
+  const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round43(v / yesWeight)]));
+  const doubles = items.filter((i) => sheetA.has(i.item_id) && sheetB.has(i.item_id));
+  const pairs = (pick) => doubles.flatMap((i) => {
+    const x = pick(sheetA.get(i.item_id));
+    const y = pick(sheetB.get(i.item_id));
+    return x !== null && y !== null ? [[x, y]] : [];
+  });
+  const agreement = {
+    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, plan.kappa_floor),
+    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, plan.kappa_floor),
+    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, plan.kappa_floor)
+  };
+  return {
+    sampler_version: CALIBRATION_SAMPLER_VERSION,
+    plan,
+    items: items.length,
+    labelled: sheetA.size,
+    unlabelled: items.length - sheetA.size,
+    unclear: [...sheetA.values()].filter((l) => l.verdict === "unclear").length,
+    unrepresented_population: unrepresented,
+    strata,
+    proxies,
+    definitions,
+    chosen_definition: chosen?.name ?? null,
+    repos,
+    rejections: { wrongly_rejected: { yes: rejYes, decided: rejDecided, rate: rejDecided ? round43(rejYes / rejDecided) : null, ci95: wilsonInterval(rejYes, rejDecided) }, by_code },
+    linkage_error,
+    causes: { raw, weighted_share },
+    agreement
+  };
+}
+var pct = (x) => x === null || x === void 0 ? "\u2014" : `${(x * 100).toFixed(1)}%`;
+var estCell = (e) => e.estimate === null ? "\u2014" : `${pct(e.estimate)} (${pct(e.ci95?.low)}\u2013${pct(e.ci95?.high)})`;
+var kappaCell = (k) => k === null ? "\u2014" : k.toFixed(2);
+function renderCalibrationMarkdown(r) {
+  const lines = [];
+  const complete = r.unlabelled === 0;
+  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
+  lines.push(`Horizon ${r.plan.horizon_days} days \xB7 ${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos \xB7 plan ${r.plan.plan_version} \xB7 sampler ${r.sampler_version}`);
+  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
+  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by the estimates.`);
+  lines.push("", "## Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
+  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
+  lines.push("", `Pre-registered pick (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
+  lines.push("", "## Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
+  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
+  lines.push("", "## Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
+  for (const s of r.strata) lines.push(`| ${s.stratum} | ${s.sampled} | ${s.yes} | ${s.no} | ${s.unclear} | ${pct(s.yes_rate)} (${pct(s.yes_rate_ci95?.low)}\u2013${pct(s.yes_rate_ci95?.high)}) |`);
+  lines.push("", "## Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
+  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
+  const w = r.rejections.wrongly_rejected;
+  lines.push("", "## Rejections", "", `Wrongly rejected (a person judged it corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
+  const humanCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
+  if (humanCodes.length) {
+    lines.push("", `| Automatic code \\ human code | ${humanCodes.join(" | ")} |`, `| --- |${humanCodes.map(() => " --- |").join("")}`);
+    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${humanCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
+  }
+  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
+  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
+  lines.push("", "## Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
+  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
+  lines.push("", `## Agreement (double-labelled subset; floor \u03BA \u2265 ${r.plan.kappa_floor})`, "");
+  for (const [field, k] of Object.entries(r.agreement)) {
+    lines.push(`**${field}:** \u03BA = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, "", "| Code | Used | \u03BA | Verdict |", "| --- | --- | --- | --- |");
+    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
+    lines.push("");
+  }
+  return `${lines.join("\n").trimEnd()}
+`;
+}
 
 // src/corpus/corrective-szz.ts
 var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
@@ -8758,9 +9308,9 @@ function correctiveCorpusRepo(input, deps) {
   const byUrl = new Map(input.originals.map((pr) => [pr.pr_url, pr]));
   const repairPairs = [];
   const failedPairs = [];
-  const accepted = candidates.filter((c) => c.status === "accepted");
-  for (const [i, candidate] of accepted.entries()) {
-    if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: measured ${i}/${accepted.length} repair pairs`);
+  const accepted2 = candidates.filter((c) => c.status === "accepted");
+  for (const [i, candidate] of accepted2.entries()) {
+    if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: measured ${i}/${accepted2.length} repair pairs`);
     try {
       repairPairs.push(buildRepairPair(candidate, byUrl.get(candidate.original.pr_url), eventsById.get(candidate.candidate_id), deps.runGit));
     } catch (error) {
@@ -9200,66 +9750,6 @@ function runnableRepos(manifest, only) {
   return all.filter((r) => RUNNABLE_STATUSES.includes(r.status));
 }
 
-// src/report/stats.ts
-function round42(value) {
-  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
-}
-function roundedInterval(low, high, value) {
-  let lo = round42(Math.max(0, Math.min(1, low)));
-  let hi = round42(Math.max(0, Math.min(1, high)));
-  if (value !== void 0) {
-    lo = Math.min(lo, round42(value));
-    hi = Math.max(hi, round42(value));
-  }
-  return { low: lo, high: hi };
-}
-function wilsonInterval(k, n, z = 1.959964) {
-  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
-    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
-  }
-  if (n === 0) return null;
-  const p = k / n;
-  const z2 = z * z;
-  const den = 1 + z2 / n;
-  const center = (p + z2 / (2 * n)) / den;
-  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
-  return roundedInterval(center - half, center + half, p);
-}
-function katzLogRatioInterval(k1, n1, k2, n2) {
-  for (const [k, n] of [[k1, n1], [k2, n2]]) {
-    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
-      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
-    }
-  }
-  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
-  const a = k1 + (corrected ? 0.5 : 0);
-  const b = n1 - k1 + (corrected ? 0.5 : 0);
-  const c = k2 + (corrected ? 0.5 : 0);
-  const d = n2 - k2 + (corrected ? 0.5 : 0);
-  const ratio3 = a / (a + b) / (c / (c + d));
-  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
-  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
-  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
-  const r = round42(ratio3);
-  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
-}
-function nearestRankQuartiles(sorted) {
-  if (!sorted.length) return null;
-  for (let i = 0; i < sorted.length; i++) {
-    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
-      throw new RangeError("nearestRankQuartiles requires finite ascending values");
-    }
-  }
-  const at = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
-  return [at(0.25), at(0.5), at(0.75)];
-}
-function quartileOf(value, cuts) {
-  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
-    throw new RangeError("quartileOf requires finite values and ascending cuts");
-  }
-  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
-}
-
 // src/corpus/report.ts
 var CORPUS_REPORT_VERSION = "1.0.0";
 var DEGENERATE_RATE = 5e-3;
@@ -9267,8 +9757,8 @@ var CHURN_RATE = 0.25;
 var FLAG_HORIZON = 30;
 var SZZ_SENSITIVITY_MIN_LINES = 3;
 var HIGH_PRECISION = ["revert", "repair_reference"];
-var ratio2 = (k, n) => n ? round43(k / n) : null;
-function round43(value) {
+var ratio2 = (k, n) => n ? round44(k / n) : null;
+function round44(value) {
   return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
 }
 var bump = (map, key, by = 1) => {
@@ -9308,10 +9798,10 @@ function summarizeCorpusRepo(input) {
     s.prs++;
     bump(s.s2_outcomes, row.outcome.report_outcome ?? "missing");
   }
-  const accepted = /* @__PURE__ */ new Map();
+  const accepted2 = /* @__PURE__ */ new Map();
   const revertReasons = {};
   for (const c of input.candidates) {
-    if (c.status === "accepted") accepted.set(c.candidate_id, c);
+    if (c.status === "accepted") accepted2.set(c.candidate_id, c);
     if (c.status === "accepted" && c.proxy === "revert") {
       const reason = c.evidence.find((e) => e.kind === "revert_reason")?.ref;
       if (reason) bump(revertReasons, reason);
@@ -9349,7 +9839,7 @@ function summarizeCorpusRepo(input) {
       if (proxies.length === 1) cell2.sole++;
     }
     if (proxies.some((p) => HIGH_PRECISION.includes(p))) highPrecision.set(row.horizon_days, (highPrecision.get(row.horizon_days) ?? 0) + 1);
-    const pairs = row.repair_pair_ids.map((id2) => accepted.get(id2)).filter((c) => c !== void 0);
+    const pairs = row.repair_pair_ids.map((id2) => accepted2.get(id2)).filter((c) => c !== void 0);
     const kept = pairs.length === 0 || pairs.some((c) => c.proxy !== "szz" || blamedLines(c) >= SZZ_SENSITIVITY_MIN_LINES);
     if (kept) szzMin.set(row.horizon_days, (szzMin.get(row.horizon_days) ?? 0) + 1);
   }
@@ -9374,15 +9864,15 @@ function summarizeCorpusRepo(input) {
     revert_reasons: sortKeys(revertReasons)
   };
 }
-var pct = (r) => r === null ? "n/a" : `${(r * 100).toFixed(1)}%`;
+var pct2 = (r) => r === null ? "n/a" : `${(r * 100).toFixed(1)}%`;
 var rateAt = (repo, field = "corrective_rate") => repo.horizons.find((h) => h.horizon_days === FLAG_HORIZON)?.[field] ?? null;
 function sanityFlags(repos, notes = []) {
   const flags = [];
   for (const repo of repos) {
     const rate = rateAt(repo);
     if (rate === null) continue;
-    if (rate < DEGENERATE_RATE) flags.push({ code: "degenerate_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is below ${pct(DEGENERATE_RATE)}`, resolution: null });
-    if (rate > CHURN_RATE) flags.push({ code: "churn_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is above ${pct(CHURN_RATE)}`, resolution: null });
+    if (rate < DEGENERATE_RATE) flags.push({ code: "degenerate_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct2(rate)} at ${FLAG_HORIZON}d is below ${pct2(DEGENERATE_RATE)}`, resolution: null });
+    if (rate > CHURN_RATE) flags.push({ code: "churn_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct2(rate)} at ${FLAG_HORIZON}d is above ${pct2(CHURN_RATE)}`, resolution: null });
   }
   for (const flag of flags) {
     const note = notes.find((n) => n.code === flag.code && n.repo === flag.repos[0]);
@@ -9420,7 +9910,7 @@ function renderCorpusReportMarkdown(report) {
       const labelled = h.prs - (h.s2_outcomes.missing ?? 0);
       const c = h.proxy_contribution;
       lines.push(
-        `| ${repo.repo} | ${repo.merge_convention ?? ""} | ${h.horizon_days} | ${h.prs} | ${pct(ratio2(h.s2_outcomes.survived ?? 0, labelled))} | ${pct(h.corrective_rate)} | ${ci(h.corrective_rate_ci95)} | ${pct(h.corrective_rate_high_precision)} | ${pct(h.corrective_rate_szz_min_lines)} | ${c.revert?.rows ?? 0} | ${c.repair_reference?.rows ?? 0} | ${c.szz?.rows ?? 0} | ${c.regression_issue?.rows ?? 0} | ${pct(h.candidates.rejection_rate)} | ${h.linkage_error.rejected} |`
+        `| ${repo.repo} | ${repo.merge_convention ?? ""} | ${h.horizon_days} | ${h.prs} | ${pct2(ratio2(h.s2_outcomes.survived ?? 0, labelled))} | ${pct2(h.corrective_rate)} | ${ci(h.corrective_rate_ci95)} | ${pct2(h.corrective_rate_high_precision)} | ${pct2(h.corrective_rate_szz_min_lines)} | ${c.revert?.rows ?? 0} | ${c.repair_reference?.rows ?? 0} | ${c.szz?.rows ?? 0} | ${c.regression_issue?.rows ?? 0} | ${pct2(h.candidates.rejection_rate)} | ${h.linkage_error.rejected} |`
       );
     }
   }
@@ -9432,7 +9922,7 @@ function renderCorpusReportMarkdown(report) {
   }
   if (report.spread?.length) {
     lines.push("", `## Spread by merge convention (${FLAG_HORIZON}d, informational)`, "", "| Convention | Repos | Lowest | Highest | P1+P2 range |", "|---|---|---|---|---|");
-    for (const g of report.spread) lines.push(`| ${g.merge_convention} | ${g.repos} | ${pct(g.low.rate)} (${g.low.repo}) | ${pct(g.high.rate)} (${g.high.repo}) | ${pct(g.high_precision.low)}\u2013${pct(g.high_precision.high)} |`);
+    for (const g of report.spread) lines.push(`| ${g.merge_convention} | ${g.repos} | ${pct2(g.low.rate)} (${g.low.repo}) | ${pct2(g.high.rate)} (${g.high.repo}) | ${pct2(g.high_precision.low)}\u2013${pct2(g.high_precision.high)} |`);
   }
   if (report.conventionFindings?.length) {
     lines.push("", "## Merge-convention findings", "");
@@ -9449,9 +9939,13 @@ var OPTIONS = {
   repo: { type: "string" },
   "as-of": { type: "string" },
   out: { type: "string" },
-  notes: { type: "string" }
+  notes: { type: "string" },
+  plan: { type: "string" },
+  "exclude-slice": { type: "string" },
+  seed: { type: "string" },
+  sample: { type: "string" }
 };
-var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label", "corpus-corrective", "corpus-report"];
+var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label", "corpus-corrective", "corpus-report", "corpus-calibration-sample", "corpus-calibration-score"];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
 function secondsUntilReset() {
@@ -9558,7 +10052,7 @@ function writeJsonl(path4, rows, options = {}) {
 }
 function fileCache(dir) {
   mkdirSync2(dir, { recursive: true });
-  const path4 = (key) => join7(dir, `${createHash3("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  const path4 = (key) => join7(dir, `${createHash4("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
     get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync3(path4(key), "utf8")) : void 0,
     set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
@@ -9589,6 +10083,19 @@ function runCorpusCli(command, argv, io) {
   let window;
   try {
     ({ values } = parseArgs2({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (command === "corpus-calibration-score") {
+    if (!values.sample) {
+      io.writeStderr("error: corpus-calibration-score needs --sample <dir>\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationScore(resolve4(io.cwd, values.sample), io);
+  }
+  try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
     manifestBytes = readFileSync3(resolve4(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
@@ -9601,6 +10108,17 @@ function runCorpusCli(command, argv, io) {
   }
   const log = (line) => io.writeStderr(`${line}
 `);
+  if (command === "corpus-calibration-sample") {
+    if (!values.plan || !values["exclude-slice"] || !values.out) {
+      io.writeStderr("error: corpus-calibration-sample needs --plan <json>, --exclude-slice <slice manifest> and --out <private dir>\n");
+      return { exitCode: 2 };
+    }
+    if (values.seed !== void 0 && !/^[0-9a-f]{64}$/.test(values.seed)) {
+      io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log);
+  }
   if (command === "corpus-report") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : null;
     if (!asOf || !Number.isFinite(asOf.getTime()) || !values.out) {
@@ -9785,7 +10303,7 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
 }
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha256 = (bytes) => createHash3("sha256").update(bytes).digest("hex");
+  const sha2562 = (bytes) => createHash4("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
@@ -9799,7 +10317,7 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
       const counted = (file, onRow) => {
         const path4 = join7(repoDir, file);
         const bytes = readFileSync3(path4);
-        const record = { repo: entry.repo, file, sha256: sha256(bytes), bytes: bytes.length, rows: 0 };
+        const record = { repo: entry.repo, file, sha256: sha2562(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
           for (const row of readGzipJsonlMembers(path4)) {
@@ -9836,11 +10354,11 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
-    cohort_manifest_sha256: sha256(manifestBytes),
+    cohort_manifest_sha256: sha2562(manifestBytes),
     label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
     inputs
   };
-  const run_id = sha256(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  const run_id = sha2562(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
   mkdirSync2(outDir, { recursive: true });
   writeFileSync2(join7(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
@@ -9851,6 +10369,124 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
 `);
   return { exitCode: unresolved ? 1 : 0 };
+}
+function insideGitWorkTree(path4) {
+  for (let dir = path4; ; dir = dirname(dir)) {
+    if (existsSync4(join7(dir, ".git"))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
+function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log) {
+  const sha2562 = (bytes2) => createHash4("sha256").update(bytes2).digest("hex");
+  let plan;
+  let planBytes;
+  let sliceBytes;
+  let sliceRepos;
+  try {
+    planBytes = readFileSync3(planPath);
+    plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
+    sliceBytes = readFileSync3(slicePath);
+    const slice = JSON.parse(sliceBytes.toString("utf8"));
+    if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
+    sliceRepos = new Set(slice.repos);
+    if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
+    if (existsSync4(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const development = entries.filter((e) => !sliceRepos.has(e.repo));
+  const seed = seedArg ?? randomBytes(32).toString("hex");
+  const units = [];
+  const inputs = [];
+  let failures = 0;
+  for (const entry of development) {
+    const [owner, name] = entry.repo.split("/");
+    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    try {
+      const files = ["candidates.jsonl.gz", "corrective.jsonl.gz"];
+      for (const file2 of files) {
+        const path4 = join7(repoDir, file2);
+        if (!existsSync4(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
+        inputs.push({ repo: entry.repo, file: file2, sha256: sha2562(readFileSync3(path4)) });
+      }
+      units.push(
+        ...classifyCalibrationRepo({
+          repo: entry.repo,
+          horizonDays: plan.horizon_days,
+          szzStrongMinLines: plan.szz_strong_min_lines,
+          candidates: readGzipJsonlMembers(join7(repoDir, files[0])),
+          correctiveRows: readGzipJsonlMembers(join7(repoDir, files[1]))
+        })
+      );
+    } catch (error) {
+      failures++;
+      log(`error: ${entry.repo}: ${error.message}`);
+    }
+  }
+  if (failures) return { exitCode: 3 };
+  const sample = drawCalibrationSample(units, plan, seed);
+  const repos = new Set(sample.items.map((i) => i.repo)).size;
+  if (repos < plan.min_repos) {
+    io.writeStderr(`error: the sample spans ${repos} repos; the plan needs at least ${plan.min_repos}
+`);
+    return { exitCode: 3 };
+  }
+  const file = {
+    procedure: "hok-3269-calibration-sample",
+    sampler_version: CALIBRATION_SAMPLER_VERSION,
+    plan,
+    plan_sha256: sha2562(planBytes),
+    cohort_manifest_sha256: sha2562(manifestBytes),
+    excluded_slice_sha256: sha2562(sliceBytes),
+    seed,
+    inputs,
+    cells: sample.cells,
+    items: sample.items,
+    drawn_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  mkdirSync2(outDir, { recursive: true, mode: 448 });
+  const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
+`, "utf8");
+  writeFileSync2(join7(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
+  writeFileSync2(join7(outDir, "sheet-a.csv"), renderLabelSheet(sample.items), { mode: 384, flag: "wx" });
+  writeFileSync2(join7(outDir, "sheet-b.csv"), renderLabelSheet(sample.items.filter((i) => i.double)), { mode: 384, flag: "wx" });
+  const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
+  io.writeStdout(
+    `${JSON.stringify({ sample_sha256: sha2562(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, repos, strata, shortfalls: sample.shortfalls })}
+`
+  );
+  return { exitCode: 0 };
+}
+function runCalibrationScore(sampleDir, io) {
+  let sample;
+  let sheets;
+  try {
+    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    sheets = { a: readFileSync3(join7(sampleDir, "sheet-a.csv"), "utf8"), b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8") };
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const items = new Map(sample.items.map((i) => [i.item_id, i]));
+  const a = parseLabelSheet(sheets.a, items);
+  const b = parseLabelSheet(sheets.b, new Map(sample.items.filter((i) => i.double).map((i) => [i.item_id, i])));
+  const errors = [...a.errors.map((e) => `sheet-a: ${e}`), ...b.errors.map((e) => `sheet-b: ${e}`)];
+  if (errors.length) {
+    io.writeStderr(`${errors.map((e) => `error: ${e}`).join("\n")}
+`);
+    return { exitCode: 2 };
+  }
+  const results = scoreCalibration({ plan: sample.plan, items: sample.items, cells: sample.cells, sheetA: a.labels, sheetB: b.labels, seed: sample.seed });
+  writeFileSync2(join7(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...results }, null, 2)}
+`, { mode: 384 });
+  writeFileSync2(join7(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(results), { mode: 384 });
+  io.writeStdout(`${JSON.stringify({ items: results.items, labelled: results.labelled, unlabelled: results.unlabelled, double_pairs: results.agreement.corrective.pairs, table: join7(sampleDir, "calibration-table.md") })}
+`);
+  return { exitCode: 0 };
 }
 
 // src/orchestrate/github.ts
@@ -10331,13 +10967,13 @@ function enumerateWindow(options) {
   const end = Math.floor(to.getTime() / 1e3);
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from.getTime() > to.getTime() || cutoff > end) throw new RangeError("Invalid merge window");
   let reset = false;
-  let bootstrap = cursor === null;
+  let bootstrap2 = cursor === null;
   if (cursor !== null && !isAncestor(runGit3, cursor, branch)) {
     reset = true;
-    bootstrap = true;
+    bootstrap2 = true;
   }
   const fmt = "%H%x09%P%x09%ct%x09%s";
-  const args = bootstrap ? ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, ...cutoff > 0 ? [`--since=${from.toISOString()}`] : [], branch] : ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, `${cursor}..${branch}`];
+  const args = bootstrap2 ? ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, ...cutoff > 0 ? [`--since=${from.toISOString()}`] : [], branch] : ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, `${cursor}..${branch}`];
   const result = runGit3(args);
   if (result.exitCode !== 0) throw new Error("Unable to enumerate integration branch history");
   const merges = [];
@@ -10359,9 +10995,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash4("sha256").update(stableJson(config)).digest("hex");
+  return createHash5("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -10722,6 +11358,10 @@ corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/nam
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo \xD7 horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+                 (stratified human-calibration sample and blank label sheets, evaluation slice excluded; HOK-3269)
+corpus-calibration-score --sample <private dir>
+                 (precision, recall, kappa and cause distribution from the labelled sheets; HOK-3269)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -10847,7 +11487,7 @@ function runScanCli(argv, io) {
       io.writeStdout(output);
     } else {
       outputPath = resolve5(outSpec);
-      mkdirSync4(dirname2(outputPath), { recursive: true });
+      mkdirSync4(dirname3(outputPath), { recursive: true });
       writeFileSync4(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
@@ -10991,7 +11631,7 @@ async function runReportCli(argv, io) {
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync4(dirname2(outputPath), { recursive: true });
+          mkdirSync4(dirname3(outputPath), { recursive: true });
           writeFileSync4(outputPath, built.body);
         }
       } else {
@@ -11001,13 +11641,13 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync4(dirname2(outputPath), { recursive: true });
+          mkdirSync4(dirname3(outputPath), { recursive: true });
           writeFileSync4(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync4(dirname2(outputPath), { recursive: true });
+      mkdirSync4(dirname3(outputPath), { recursive: true });
       writeFileSync4(outputPath, output);
     }
     try {

@@ -117,6 +117,10 @@ corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/nam
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo × horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+                 (stratified human-calibration sample and blank label sheets, evaluation slice excluded; HOK-3269)
+corpus-calibration-score --sample <private dir>
+                 (precision, recall, kappa and cause distribution from the labelled sheets; HOK-3269)
 `;
 
 const OPTION_SPEC = {

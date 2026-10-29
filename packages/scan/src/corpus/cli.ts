@@ -28,21 +28,48 @@
  *   run-manifest.json    run ID, label versions, and the SHA-256 and row count of every input file
  * A flag is resolved by a note in `--notes` (explained, or the repo dropped); unresolved flags exit 1.
  *
+ * `hokusai-scan corpus-calibration-sample` (HOK-3269) draws the human calibration sample into a
+ * private `--out` directory outside any git work tree, never overwriting a drawn sample:
+ *   sample.json          plan, seed, input hashes, cells and items (PR URLs) — PRIVATE
+ *   sheet-a.csv          every item, for the primary labeller — PRIVATE once labelled
+ *   sheet-b.csv          the double-labelled subset, for the second labeller — PRIVATE once labelled
+ * Repos in `--exclude-slice` (the HOK-3028 evaluation slice) are dropped before the draw; the
+ * slice file is read here only, and nothing about it but its SHA-256 is written or printed.
+ * `hokusai-scan corpus-calibration-score --sample <dir>` then scores the labelled sheets:
+ *   calibration-results.json  every estimate, with real repo names — PRIVATE
+ *   calibration-table.md      the shareable table, repos pseudonymized
+ * Invalid labels exit 2 with the item IDs; unlabelled items are counted and the table marked INCOMPLETE.
+ *
  * stdout: one stats JSON line per repo. Exit 0 when every repo enumerated,
  * 2 on invalid input, 3 when any repo failed upstream (others still finish).
  * No ambient process state is read here; the caller supplies `cwd`, and `gh`
  * supplies GitHub auth.
  */
 
-import { createHash } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gzipSync, inflateRawSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
 import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
 import { HORIZONS, type ArbiterSurvivalLabelV1, type CorrectiveCandidateV1, type CorrectiveReworkLabelV1 } from '@hokusai/core';
 import { summarizeLabels } from '../survival-labeller.js';
+import {
+  CALIBRATION_SAMPLER_VERSION,
+  CALIBRATION_STRATA,
+  classifyCalibrationRepo,
+  drawCalibrationSample,
+  parseCalibrationPlan,
+  parseLabelSheet,
+  renderCalibrationMarkdown,
+  renderLabelSheet,
+  scoreCalibration,
+  type CalibrationPlan,
+  type PopulationUnit,
+  type SampleCell,
+  type SampleItem,
+} from './calibration.js';
 import { correctiveCorpusRepo, summarizeCorrective } from './corrective.js';
 import { prefetchIssueMeta } from './corrective-szz.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
@@ -70,9 +97,13 @@ const OPTIONS = {
   'as-of': { type: 'string' },
   out: { type: 'string' },
   notes: { type: 'string' },
+  plan: { type: 'string' },
+  'exclude-slice': { type: 'string' },
+  seed: { type: 'string' },
+  sample: { type: 'string' },
 } as const;
 
-export const CORPUS_COMMANDS = ['corpus-enumerate', 'corpus-label', 'corpus-corrective', 'corpus-report'] as const;
+export const CORPUS_COMMANDS = ['corpus-enumerate', 'corpus-label', 'corpus-corrective', 'corpus-report', 'corpus-calibration-sample', 'corpus-calibration-score'] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 const RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -230,12 +261,25 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(', ')}\n`);
     return { exitCode: 2 };
   }
-  let values: { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string };
+  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string };
+  let values: Values;
   let entries: CohortRepo[];
   let manifestBytes: Buffer;
   let window: { from: Date; until: Date };
   try {
     ({ values } = parseArgs({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+  if (command === 'corpus-calibration-score') {
+    if (!values.sample) {
+      io.writeStderr('error: corpus-calibration-score needs --sample <dir>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationScore(resolve(io.cwd, values.sample), io);
+  }
+  try {
     if (!values.manifest || !values['cache-dir']) throw new Error('--manifest and --cache-dir are required');
     manifestBytes = readFileSync(resolve(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString('utf8')));
@@ -247,6 +291,17 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
   }
 
   const log = (line: string) => io.writeStderr(`${line}\n`);
+  if (command === 'corpus-calibration-sample') {
+    if (!values.plan || !values['exclude-slice'] || !values.out) {
+      io.writeStderr('error: corpus-calibration-sample needs --plan <json>, --exclude-slice <slice manifest> and --out <private dir>\n');
+      return { exitCode: 2 };
+    }
+    if (values.seed !== undefined && !/^[0-9a-f]{64}$/.test(values.seed)) {
+      io.writeStderr('error: --seed must be 64 lowercase hex characters\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationSample(entries, manifestBytes, resolve(io.cwd, values['cache-dir']), resolve(io.cwd, values.plan), resolve(io.cwd, values['exclude-slice']), resolve(io.cwd, values.out), values.seed, io, log);
+  }
   if (command === 'corpus-report') {
     const asOf = values['as-of'] ? new Date(values['as-of']) : null;
     if (!asOf || !Number.isFinite(asOf.getTime()) || !values.out) {
@@ -532,4 +587,144 @@ function runReport(
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}\n`);
   return { exitCode: unresolved ? 1 : 0 };
+}
+
+/** True when `path`, or any directory above it, holds a `.git` entry. */
+function insideGitWorkTree(path: string): boolean {
+  for (let dir = path; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, '.git'))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
+
+interface SampleFile {
+  procedure: 'hok-3269-calibration-sample';
+  sampler_version: string;
+  plan: CalibrationPlan;
+  plan_sha256: string;
+  cohort_manifest_sha256: string;
+  /** SHA-256 of the evaluation-slice manifest whose repos were excluded; equals the HOK-3028 holdout hash. */
+  excluded_slice_sha256: string;
+  seed: string;
+  inputs: { repo: string; file: string; sha256: string }[];
+  cells: SampleCell[];
+  items: SampleItem[];
+  drawn_at: string;
+}
+
+function runCalibrationSample(
+  entries: CohortRepo[],
+  manifestBytes: Buffer,
+  cacheRoot: string,
+  planPath: string,
+  slicePath: string,
+  outDir: string,
+  seedArg: string | undefined,
+  io: CorpusCliIO,
+  log: (line: string) => void,
+): { exitCode: number } {
+  const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  let plan: CalibrationPlan;
+  let planBytes: Buffer;
+  let sliceBytes: Buffer;
+  let sliceRepos: Set<string>;
+  try {
+    planBytes = readFileSync(planPath);
+    plan = parseCalibrationPlan(JSON.parse(planBytes.toString('utf8')));
+    sliceBytes = readFileSync(slicePath);
+    const slice = JSON.parse(sliceBytes.toString('utf8')) as { repos?: unknown };
+    if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === 'string')) throw new Error('--exclude-slice has no repos list');
+    sliceRepos = new Set(slice.repos);
+    if (insideGitWorkTree(outDir)) throw new Error('--out must be outside any git work tree; the sample and its labels stay private');
+    if (existsSync(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+  const development = entries.filter((e) => !sliceRepos.has(e.repo));
+  const seed = seedArg ?? randomBytes(32).toString('hex');
+  const units: PopulationUnit[] = [];
+  const inputs: SampleFile['inputs'] = [];
+  let failures = 0;
+  for (const entry of development) {
+    const [owner, name] = entry.repo.split('/') as [string, string];
+    const repoDir = join(cacheRoot, `${owner}__${name}`);
+    try {
+      const files = ['candidates.jsonl.gz', 'corrective.jsonl.gz'] as const;
+      for (const file of files) {
+        const path = join(repoDir, file);
+        if (!existsSync(path)) throw new Error(`missing ${file}; run corpus-corrective first`);
+        inputs.push({ repo: entry.repo, file, sha256: sha256(readFileSync(path)) });
+      }
+      units.push(
+        ...classifyCalibrationRepo({
+          repo: entry.repo,
+          horizonDays: plan.horizon_days,
+          szzStrongMinLines: plan.szz_strong_min_lines,
+          candidates: readGzipJsonlMembers<CorrectiveCandidateV1>(join(repoDir, files[0])),
+          correctiveRows: readGzipJsonlMembers<CorrectiveReworkLabelV1>(join(repoDir, files[1])),
+        }),
+      );
+    } catch (error) {
+      failures++;
+      log(`error: ${entry.repo}: ${(error as Error).message}`);
+    }
+  }
+  if (failures) return { exitCode: 3 };
+  const sample = drawCalibrationSample(units, plan, seed);
+  const repos = new Set(sample.items.map((i) => i.repo)).size;
+  if (repos < plan.min_repos) {
+    io.writeStderr(`error: the sample spans ${repos} repos; the plan needs at least ${plan.min_repos}\n`);
+    return { exitCode: 3 };
+  }
+  const file: SampleFile = {
+    procedure: 'hok-3269-calibration-sample',
+    sampler_version: CALIBRATION_SAMPLER_VERSION,
+    plan,
+    plan_sha256: sha256(planBytes),
+    cohort_manifest_sha256: sha256(manifestBytes),
+    excluded_slice_sha256: sha256(sliceBytes),
+    seed,
+    inputs,
+    cells: sample.cells,
+    items: sample.items,
+    drawn_at: new Date().toISOString(),
+  };
+  mkdirSync(outDir, { recursive: true, mode: 0o700 });
+  const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}\n`, 'utf8');
+  writeFileSync(join(outDir, 'sample.json'), bytes, { mode: 0o600, flag: 'wx' });
+  writeFileSync(join(outDir, 'sheet-a.csv'), renderLabelSheet(sample.items), { mode: 0o600, flag: 'wx' });
+  writeFileSync(join(outDir, 'sheet-b.csv'), renderLabelSheet(sample.items.filter((i) => i.double)), { mode: 0o600, flag: 'wx' });
+  // Aggregates only: per-repo counts would name the development repos, and so narrow down the slice.
+  const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
+  io.writeStdout(
+    `${JSON.stringify({ sample_sha256: sha256(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, repos, strata, shortfalls: sample.shortfalls })}\n`,
+  );
+  return { exitCode: 0 };
+}
+
+function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: number } {
+  let sample: SampleFile;
+  let sheets: { a: string; b: string };
+  try {
+    sample = JSON.parse(readFileSync(join(sampleDir, 'sample.json'), 'utf8')) as SampleFile;
+    if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    sheets = { a: readFileSync(join(sampleDir, 'sheet-a.csv'), 'utf8'), b: readFileSync(join(sampleDir, 'sheet-b.csv'), 'utf8') };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+  const items = new Map(sample.items.map((i) => [i.item_id, i]));
+  const a = parseLabelSheet(sheets.a, items);
+  const b = parseLabelSheet(sheets.b, new Map(sample.items.filter((i) => i.double).map((i) => [i.item_id, i])));
+  const errors = [...a.errors.map((e) => `sheet-a: ${e}`), ...b.errors.map((e) => `sheet-b: ${e}`)];
+  if (errors.length) {
+    io.writeStderr(`${errors.map((e) => `error: ${e}`).join('\n')}\n`);
+    return { exitCode: 2 };
+  }
+  const results = scoreCalibration({ plan: sample.plan, items: sample.items, cells: sample.cells, sheetA: a.labels, sheetB: b.labels, seed: sample.seed });
+  writeFileSync(join(sampleDir, 'calibration-results.json'), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...results }, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(join(sampleDir, 'calibration-table.md'), renderCalibrationMarkdown(results), { mode: 0o600 });
+  io.writeStdout(`${JSON.stringify({ items: results.items, labelled: results.labelled, unlabelled: results.unlabelled, double_pairs: results.agreement.corrective.pairs, table: join(sampleDir, 'calibration-table.md') })}\n`);
+  return { exitCode: 0 };
 }

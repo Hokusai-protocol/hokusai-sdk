@@ -346,6 +346,15 @@ export {
 } from './arbiter-corrective-rework.js';
 export { ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA } from './arbiter-corrective-rework-schema.js';
 export {
+  CALIBRATION_TAXONOMY_VERSION,
+  CALIBRATION_VERDICTS,
+  CAUSE_CODES,
+  HUMAN_EXCLUSION_CODES,
+  type CalibrationVerdict,
+  type CauseCode,
+  type HumanExclusionCode,
+} from './arbiter-calibration-label.js';
+export {
   ARBITER_REPORT_SCHEMA_VERSION,
   ARBITER_REPORT_V1_JSON_SCHEMA,
   ARBITER_REPORT_INVARIANT_CODES,
