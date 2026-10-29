@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { ArbiterSurvivalLabelV1, CorrectiveCandidateV1, CorrectiveReworkLabelV1 } from '@hokusai/core';
 import { harvestedSurvivalLabelFixture } from '../../../core/src/fixtures/arbiter-survival-label.js';
 import { runCorpusCli, writeJsonl } from './cli.js';
-import { renderCorpusReportMarkdown, sanityFlags, summarizeCorpusRepo, type RepoSummary } from './report.js';
+import { conventionSpread, renderCorpusReportMarkdown, sanityFlags, summarizeCorpusRepo, type RepoSummary } from './report.js';
 
 const url = (n: number) => `https://github.com/o/r/pull/${n}`;
 
@@ -79,21 +79,32 @@ describe('sanityFlags', () => {
   const repo = (name: string, rate: number, convention = 'squash'): RepoSummary =>
     ({ repo: name, merge_convention: convention, horizons: [{ horizon_days: 30, corrective_rate: rate, corrective_rate_high_precision: rate }] }) as unknown as RepoSummary;
 
-  it('flags degenerate and churn rates, and a convention group spread over 3×', () => {
+  it('flags degenerate and churn rates only', () => {
     const flags = sanityFlags([repo('a/low', 0.004), repo('a/mid', 0.02), repo('a/high', 0.3), repo('b/solo', 0.4, 'rollup')]);
     expect(flags.map((f) => [f.code, f.repos])).toEqual([
       ['degenerate_rate', ['a/low']],
       ['churn_rate', ['a/high']],
       ['churn_rate', ['b/solo']],
-      ['convention_spread', ['a/low', 'a/high']],
     ]);
     expect(flags.every((f) => f.resolution === null)).toBe(true);
   });
 
-  it('does not flag a group within 3×, and resolves a flag from its note', () => {
-    expect(sanityFlags([repo('a/x', 0.01), repo('a/y', 0.03)])).toEqual([]);
-    const [flag] = sanityFlags([repo('a/x', 0.01), repo('a/y', 0.05)], [{ code: 'convention_spread', merge_convention: 'squash', action: 'explained', note: 'why' }]);
-    expect(flag!.resolution).toEqual({ action: 'explained', note: 'why' });
+  it('resolves a flag from its note', () => {
+    const [flag] = sanityFlags([repo('a/x', 0.3)], [{ code: 'churn_rate', repo: 'a/x', action: 'dropped', note: 'why' }]);
+    expect(flag!.resolution).toEqual({ action: 'dropped', note: 'why' });
+  });
+});
+
+describe('conventionSpread', () => {
+  it('reports the lowest and highest 30-day rate per convention, without flagging a wide spread', () => {
+    const repo = (name: string, rate: number, hp: number, convention: string): RepoSummary =>
+      ({ repo: name, merge_convention: convention, horizons: [{ horizon_days: 30, corrective_rate: rate, corrective_rate_high_precision: hp }] }) as unknown as RepoSummary;
+    const repos = [repo('a/x', 0.01, 0.006, 'squash'), repo('a/y', 0.05, 0.04, 'squash'), repo('b/z', 0.03, 0.01, 'rollup')];
+    expect(conventionSpread(repos)).toEqual([
+      { merge_convention: 'rollup', repos: 1, low: { repo: 'b/z', rate: 0.03 }, high: { repo: 'b/z', rate: 0.03 }, high_precision: { low: 0.01, high: 0.01 } },
+      { merge_convention: 'squash', repos: 2, low: { repo: 'a/x', rate: 0.01 }, high: { repo: 'a/y', rate: 0.05 }, high_precision: { low: 0.006, high: 0.04 } },
+    ]);
+    expect(sanityFlags(repos)).toEqual([]);
   });
 });
 

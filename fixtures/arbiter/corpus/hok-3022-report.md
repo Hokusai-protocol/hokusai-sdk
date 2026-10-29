@@ -61,11 +61,21 @@ Run `b7afd6a32f066a72`, as-of 2026-10-20. Corrective rate = true / (true + false
 
 ## Sanity flags
 
-- **convention_spread** (mattermost/mattermost, llvm/llvm-project): 12 squash repos span 1.0% (mattermost/mattermost) to 4.8% (llvm/llvm-project) at 30d, over 3×; P1+P2 alone span 0.6% to 4.2%.
-  - explained: Squash merging doesn't decide which proxies can fire; two repo practices do. (1) Revert culture: llvm reverts post-commit buildbot breakage first and asks later, so 2,417 of its 30-day corrective rows rest on reverts, against 15 for mattermost; P1+P2 alone already span 0.6% to 4.2%. (2) Where bugs are tracked: P3 and P4 need a fix that closes a GitHub bug issue, and mattermost and discourse close none (their trackers are off GitHub), so both get zero P3/P4 rows. Every squash repo is inside the 0.5% to 25% band. Kept: the spread reflects observable process differences that the model should see, not a labelling fault.
+None.
+
+## Spread by merge convention (30d, informational)
+
+| Convention | Repos | Lowest | Highest | P1+P2 range |
+|---|---|---|---|---|
+| merge_bot_trailer | 1 | 10.1% (pytorch/pytorch) | 10.1% (pytorch/pytorch) | 10.0%–10.0% |
+| merge_commit | 3 | 2.9% (kubernetes/kubernetes) | 4.5% (ClickHouse/ClickHouse) | 1.1%–3.5% |
+| rebase_or_mixed | 1 | 0.8% (django/django) | 0.8% (django/django) | 0.8%–0.8% |
+| rollup | 1 | 2.7% (rust-lang/rust) | 2.7% (rust-lang/rust) | 1.4%–1.4% |
+| squash | 12 | 1.0% (mattermost/mattermost) | 4.8% (llvm/llvm-project) | 0.6%–4.2% |
 
 ## Merge-convention findings
 
+- **squash** (mattermost/mattermost, llvm/llvm-project): Squash merging doesn't decide which proxies can fire; two repo practices do. (1) Revert culture: llvm reverts post-commit buildbot breakage first and asks later, so 2,417 of its 30-day corrective rows rest on reverts, against 15 for mattermost; P1+P2 alone already span 0.6% to 4.2%. (2) Where bugs are tracked: P3 and P4 need a fix that closes a GitHub bug issue, and mattermost and discourse close none (their trackers are off GitHub), so both get zero P3/P4 rows. Every squash repo is inside the 0.5% to 25% band. The spread is kept: it reflects process differences the model should see, not a labelling fault.
 - **rollup** (rust-lang/rust): 84% of PRs (12,689 of 15,184) land inside a rollup merge. git blame --first-parent attributes their lines to the rollup, which several PRs share, so they can never be SZZ originals. rust's P3 contribution covers only the 16% landed individually and is a lower bound; P1/P2/P4 are unaffected.
 - **merge_commit** (cockroachdb/cockroach): 36% of PRs (3,866 of 10,799) land in bors batches that share one merge commit, so, as with rust rollups, SZZ can't attribute lines to them. The cohort expected 'batched' and observed 'merge_commit'; treat cockroach as batched for SZZ coverage.
 - **merge_bot_trailer** (pytorch/pytorch): The merge bot records revert reasons, and reverts support 2,604 of pytorch's 2,780 30-day corrective rows. 974 of its accepted reverts are classed internal_build (Meta-internal breakage); excluding that class at calibration takes the 60-day rate from 10.3% to 7.7%.

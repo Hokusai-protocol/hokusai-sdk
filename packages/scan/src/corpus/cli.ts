@@ -23,7 +23,7 @@
  *   corrective.summary.json  counts by proxy, exclusion and horizon
  *
  * `hokusai-scan corpus-report` (HOK-3268) then summarizes the persisted outputs once, into `--out`:
- *   corpus-report.json   per repo × horizon summaries and sanity flags
+ *   corpus-report.json   per repo × horizon summaries, sanity flags and the rate spread per merge convention
  *   corpus-report.md     the same as a table
  *   run-manifest.json    run ID, label versions, and the SHA-256 and row count of every input file
  * A flag is resolved by a note in `--notes` (explained, or the repo dropped); unresolved flags exit 1.
@@ -48,7 +48,7 @@ import { prefetchIssueMeta } from './corrective-szz.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
 import { labelCorpusRepo, prefetchCrossReferences, prefetchedGithubClient } from './label.js';
 import { parseCohortManifest, runnableRepos, type CohortRepo } from './manifest.js';
-import { CORPUS_REPORT_VERSION, renderCorpusReportMarkdown, sanityFlags, summarizeCorpusRepo, type ConventionFinding, type FlagNote, type RepoSummary } from './report.js';
+import { CORPUS_REPORT_VERSION, conventionSpread, renderCorpusReportMarkdown, sanityFlags, summarizeCorpusRepo, type ConventionFinding, type FlagNote, type RepoSummary } from './report.js';
 
 interface ReportNotes {
   notes: FlagNote[];
@@ -501,7 +501,8 @@ function runReport(
         versions.corrective.add(`schema ${r.schema_version}, definition ${r.envelope.definition_version}, labeller ${r.envelope.labeller_version}`);
       });
       // Repair pairs are hashed and counted for the manifest; the report reads their candidates.
-      for (const _ of counted<unknown>('repair_pairs.jsonl.gz', () => {}));
+      const pairs = counted<unknown>('repair_pairs.jsonl.gz', () => {})[Symbol.iterator]();
+      while (!pairs.next().done);
       const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
       repos.push(summary);
       log(`info: ${entry.repo}: summarized`);
@@ -514,6 +515,7 @@ function runReport(
 
   const flags = sanityFlags(repos, notes.notes);
   const findings = notes.convention_findings;
+  const spread = conventionSpread(repos);
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
@@ -525,8 +527,8 @@ function runReport(
   const run_id = sha256(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'run-manifest.json'), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}\n`);
-  writeFileSync(join(outDir, 'corpus-report.json'), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_findings: findings }, null, 2)}\n`);
-  writeFileSync(join(outDir, 'corpus-report.md'), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, conventionFindings: findings }));
+  writeFileSync(join(outDir, 'corpus-report.json'), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}\n`);
+  writeFileSync(join(outDir, 'corpus-report.md'), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}\n`);
   return { exitCode: unresolved ? 1 : 0 };

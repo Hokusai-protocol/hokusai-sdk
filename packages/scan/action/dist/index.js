@@ -9264,7 +9264,6 @@ function quartileOf(value, cuts) {
 var CORPUS_REPORT_VERSION = "1.0.0";
 var DEGENERATE_RATE = 5e-3;
 var CHURN_RATE = 0.25;
-var CONVENTION_SPREAD_RATIO = 3;
 var FLAG_HORIZON = 30;
 var SZZ_SENSITIVITY_MIN_LINES = 3;
 var HIGH_PRECISION = ["revert", "repair_reference"];
@@ -9385,31 +9384,26 @@ function sanityFlags(repos, notes = []) {
     if (rate < DEGENERATE_RATE) flags.push({ code: "degenerate_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is below ${pct(DEGENERATE_RATE)}`, resolution: null });
     if (rate > CHURN_RATE) flags.push({ code: "churn_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is above ${pct(CHURN_RATE)}`, resolution: null });
   }
-  const groups = /* @__PURE__ */ new Map();
-  for (const repo of repos) if (repo.merge_convention && rateAt(repo) !== null) groups.set(repo.merge_convention, [...groups.get(repo.merge_convention) ?? [], repo]);
-  for (const [convention, members] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
-    if (members.length < 2) continue;
-    const sorted = [...members].sort((a, b) => rateAt(a) - rateAt(b) || a.repo.localeCompare(b.repo));
-    const low = sorted[0];
-    const high = sorted.at(-1);
-    const lo = rateAt(low);
-    const hi = rateAt(high);
-    if (lo > 0 ? hi / lo <= CONVENTION_SPREAD_RATIO : hi === 0) continue;
-    const hpLo = Math.min(...members.map((m) => rateAt(m, "corrective_rate_high_precision") ?? 0));
-    const hpHi = Math.max(...members.map((m) => rateAt(m, "corrective_rate_high_precision") ?? 0));
-    flags.push({
-      code: "convention_spread",
-      repos: [low.repo, high.repo],
-      merge_convention: convention,
-      detail: `${members.length} ${convention} repos span ${pct(lo)} (${low.repo}) to ${pct(hi)} (${high.repo}) at ${FLAG_HORIZON}d, over ${CONVENTION_SPREAD_RATIO}\xD7; P1+P2 alone span ${pct(hpLo)} to ${pct(hpHi)}`,
-      resolution: null
-    });
-  }
   for (const flag of flags) {
-    const note = notes.find((n) => n.code === flag.code && (flag.code === "convention_spread" ? n.merge_convention === flag.merge_convention : n.repo === flag.repos[0]));
+    const note = notes.find((n) => n.code === flag.code && n.repo === flag.repos[0]);
     if (note) flag.resolution = { action: note.action, note: note.note };
   }
   return flags;
+}
+function conventionSpread(repos) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const repo of repos) if (repo.merge_convention && rateAt(repo) !== null) groups.set(repo.merge_convention, [...groups.get(repo.merge_convention) ?? [], repo]);
+  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([convention, members]) => {
+    const sorted = [...members].sort((a, b) => rateAt(a) - rateAt(b) || a.repo.localeCompare(b.repo));
+    const hp = members.map((m) => rateAt(m, "corrective_rate_high_precision") ?? 0);
+    return {
+      merge_convention: convention,
+      repos: members.length,
+      low: { repo: sorted[0].repo, rate: rateAt(sorted[0]) },
+      high: { repo: sorted.at(-1).repo, rate: rateAt(sorted.at(-1)) },
+      high_precision: { low: Math.min(...hp), high: Math.max(...hp) }
+    };
+  });
 }
 var ci = (i) => i ? `${(i.low * 100).toFixed(1)}\u2013${(i.high * 100).toFixed(1)}` : "n/a";
 function renderCorpusReportMarkdown(report) {
@@ -9435,6 +9429,10 @@ function renderCorpusReportMarkdown(report) {
   for (const flag of report.flags) {
     lines.push(`- **${flag.code}** (${flag.repos.join(", ")}): ${flag.detail}.`);
     lines.push(flag.resolution ? `  - ${flag.resolution.action}: ${flag.resolution.note}` : "  - **unresolved**");
+  }
+  if (report.spread?.length) {
+    lines.push("", `## Spread by merge convention (${FLAG_HORIZON}d, informational)`, "", "| Convention | Repos | Lowest | Highest | P1+P2 range |", "|---|---|---|---|---|");
+    for (const g of report.spread) lines.push(`| ${g.merge_convention} | ${g.repos} | ${pct(g.low.rate)} (${g.low.repo}) | ${pct(g.high.rate)} (${g.high.repo}) | ${pct(g.high_precision.low)}\u2013${pct(g.high_precision.high)} |`);
   }
   if (report.conventionFindings?.length) {
     lines.push("", "## Merge-convention findings", "");
@@ -9820,8 +9818,9 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
         checkAsOf(r.envelope.as_of, "corrective.jsonl.gz");
         versions.corrective.add(`schema ${r.schema_version}, definition ${r.envelope.definition_version}, labeller ${r.envelope.labeller_version}`);
       });
-      for (const _ of counted("repair_pairs.jsonl.gz", () => {
-      })) ;
+      const pairs = counted("repair_pairs.jsonl.gz", () => {
+      })[Symbol.iterator]();
+      while (!pairs.next().done) ;
       const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
       repos.push(summary);
       log(`info: ${entry.repo}: summarized`);
@@ -9833,6 +9832,7 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   if (failures) return { exitCode: 3 };
   const flags = sanityFlags(repos, notes.notes);
   const findings = notes.convention_findings;
+  const spread = conventionSpread(repos);
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
@@ -9844,9 +9844,9 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   mkdirSync2(outDir, { recursive: true });
   writeFileSync2(join7(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_findings: findings }, null, 2)}
+  writeFileSync2(join7(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, conventionFindings: findings }));
+  writeFileSync2(join7(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
 `);

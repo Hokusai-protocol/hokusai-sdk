@@ -517,21 +517,16 @@
       "rows": 234
     }
   ],
-  "flags": [
+  "flags": [],
+  "convention_findings": [
     {
-      "code": "convention_spread",
+      "merge_convention": "squash",
       "repos": [
         "mattermost/mattermost",
         "llvm/llvm-project"
       ],
-      "merge_convention": "squash",
-      "resolution": {
-        "action": "explained",
-        "note": "Squash merging doesn't decide which proxies can fire; two repo practices do. (1) Revert culture: llvm reverts post-commit buildbot breakage first and asks later, so 2,417 of its 30-day corrective rows rest on reverts, against 15 for mattermost; P1+P2 alone already span 0.6% to 4.2%. (2) Where bugs are tracked: P3 and P4 need a fix that closes a GitHub bug issue, and mattermost and discourse close none (their trackers are off GitHub), so both get zero P3/P4 rows. Every squash repo is inside the 0.5% to 25% band. Kept: the spread reflects observable process differences that the model should see, not a labelling fault."
-      }
-    }
-  ],
-  "convention_findings": [
+      "finding": "Squash merging doesn't decide which proxies can fire; two repo practices do. (1) Revert culture: llvm reverts post-commit buildbot breakage first and asks later, so 2,417 of its 30-day corrective rows rest on reverts, against 15 for mattermost; P1+P2 alone already span 0.6% to 4.2%. (2) Where bugs are tracked: P3 and P4 need a fix that closes a GitHub bug issue, and mattermost and discourse close none (their trackers are off GitHub), so both get zero P3/P4 rows. Every squash repo is inside the 0.5% to 25% band. The spread is kept: it reflects process differences the model should see, not a labelling fault."
+    },
     {
       "merge_convention": "rollup",
       "repos": [

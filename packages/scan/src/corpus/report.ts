@@ -22,8 +22,6 @@ export const CORPUS_REPORT_VERSION = '1.0.0';
 /** Sanity bounds on the 30-day corrective rate (HOK-3268). */
 export const DEGENERATE_RATE = 0.005;
 export const CHURN_RATE = 0.25;
-/** Repos sharing a merge convention whose 30-day rates differ by more than this factor are flagged. */
-export const CONVENTION_SPREAD_RATIO = 3;
 export const FLAG_HORIZON = 30;
 /** Sensitivity: the rate when SZZ links need at least this many blamed lines (a calibration choice, HOK-3269). */
 export const SZZ_SENSITIVITY_MIN_LINES = 3;
@@ -190,11 +188,10 @@ export function summarizeCorpusRepo(input: RepoSummaryInput): RepoSummary {
 
 // ── Flags ──────────────────────────────────────────────────────────────────
 
-export type SanityFlagCode = 'degenerate_rate' | 'churn_rate' | 'convention_spread';
+export type SanityFlagCode = 'degenerate_rate' | 'churn_rate';
 
 export interface SanityFlag {
   code: SanityFlagCode;
-  /** Repos the flag is about; a spread flag names the group's lowest and highest. */
   repos: string[];
   merge_convention: string | null;
   detail: string;
@@ -204,9 +201,7 @@ export interface SanityFlag {
 
 export interface FlagNote {
   code: SanityFlagCode;
-  /** A degenerate/churn note names one repo; a spread note names the convention. */
-  repo?: string;
-  merge_convention?: string;
+  repo: string;
   action: 'explained' | 'dropped';
   note: string;
 }
@@ -224,31 +219,42 @@ export function sanityFlags(repos: readonly RepoSummary[], notes: readonly FlagN
     if (rate < DEGENERATE_RATE) flags.push({ code: 'degenerate_rate', repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is below ${pct(DEGENERATE_RATE)}`, resolution: null });
     if (rate > CHURN_RATE) flags.push({ code: 'churn_rate', repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is above ${pct(CHURN_RATE)}`, resolution: null });
   }
-  const groups = new Map<string, RepoSummary[]>();
-  for (const repo of repos) if (repo.merge_convention && rateAt(repo) !== null) groups.set(repo.merge_convention, [...(groups.get(repo.merge_convention) ?? []), repo]);
-  for (const [convention, members] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
-    if (members.length < 2) continue;
-    const sorted = [...members].sort((a, b) => rateAt(a)! - rateAt(b)! || a.repo.localeCompare(b.repo));
-    const low = sorted[0]!;
-    const high = sorted.at(-1)!;
-    const lo = rateAt(low)!;
-    const hi = rateAt(high)!;
-    if (lo > 0 ? hi / lo <= CONVENTION_SPREAD_RATIO : hi === 0) continue;
-    const hpLo = Math.min(...members.map((m) => rateAt(m, 'corrective_rate_high_precision') ?? 0));
-    const hpHi = Math.max(...members.map((m) => rateAt(m, 'corrective_rate_high_precision') ?? 0));
-    flags.push({
-      code: 'convention_spread',
-      repos: [low.repo, high.repo],
-      merge_convention: convention,
-      detail: `${members.length} ${convention} repos span ${pct(lo)} (${low.repo}) to ${pct(hi)} (${high.repo}) at ${FLAG_HORIZON}d, over ${CONVENTION_SPREAD_RATIO}×; P1+P2 alone span ${pct(hpLo)} to ${pct(hpHi)}`,
-      resolution: null,
-    });
-  }
   for (const flag of flags) {
-    const note = notes.find((n) => n.code === flag.code && (flag.code === 'convention_spread' ? n.merge_convention === flag.merge_convention : n.repo === flag.repos[0]));
+    const note = notes.find((n) => n.code === flag.code && n.repo === flag.repos[0]);
     if (note) flag.resolution = { action: note.action, note: note.note };
   }
   return flags;
+}
+
+/**
+ * Range of 30-day rates among repos sharing a merge convention. Informational, not a flag:
+ * teams with the same convention differ widely in revert culture and in where they track bugs.
+ */
+export interface ConventionSpread {
+  merge_convention: string;
+  repos: number;
+  low: { repo: string; rate: number };
+  high: { repo: string; rate: number };
+  /** The same range when only P1 (revert) and P2 (repair_reference) count. */
+  high_precision: { low: number; high: number };
+}
+
+export function conventionSpread(repos: readonly RepoSummary[]): ConventionSpread[] {
+  const groups = new Map<string, RepoSummary[]>();
+  for (const repo of repos) if (repo.merge_convention && rateAt(repo) !== null) groups.set(repo.merge_convention, [...(groups.get(repo.merge_convention) ?? []), repo]);
+  return [...groups]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([convention, members]) => {
+      const sorted = [...members].sort((a, b) => rateAt(a)! - rateAt(b)! || a.repo.localeCompare(b.repo));
+      const hp = members.map((m) => rateAt(m, 'corrective_rate_high_precision') ?? 0);
+      return {
+        merge_convention: convention,
+        repos: members.length,
+        low: { repo: sorted[0]!.repo, rate: rateAt(sorted[0]!)! },
+        high: { repo: sorted.at(-1)!.repo, rate: rateAt(sorted.at(-1)!)! },
+        high_precision: { low: Math.min(...hp), high: Math.max(...hp) },
+      };
+    });
 }
 
 /** A merge-convention observation fed back to HOK-2822, recorded in the notes file. */
@@ -268,6 +274,7 @@ export function renderCorpusReportMarkdown(report: {
   as_of: string;
   repos: readonly RepoSummary[];
   flags: readonly SanityFlag[];
+  spread?: readonly ConventionSpread[];
   conventionFindings?: readonly ConventionFinding[];
 }): string {
   const lines = [
@@ -295,6 +302,10 @@ export function renderCorpusReportMarkdown(report: {
   for (const flag of report.flags) {
     lines.push(`- **${flag.code}** (${flag.repos.join(', ')}): ${flag.detail}.`);
     lines.push(flag.resolution ? `  - ${flag.resolution.action}: ${flag.resolution.note}` : '  - **unresolved**');
+  }
+  if (report.spread?.length) {
+    lines.push('', `## Spread by merge convention (${FLAG_HORIZON}d, informational)`, '', '| Convention | Repos | Lowest | Highest | P1+P2 range |', '|---|---|---|---|---|');
+    for (const g of report.spread) lines.push(`| ${g.merge_convention} | ${g.repos} | ${pct(g.low.rate)} (${g.low.repo}) | ${pct(g.high.rate)} (${g.high.repo}) | ${pct(g.high_precision.low)}–${pct(g.high_precision.high)} |`);
   }
   if (report.conventionFindings?.length) {
     lines.push('', '## Merge-convention findings', '');
