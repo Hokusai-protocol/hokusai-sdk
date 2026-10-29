@@ -1,0 +1,25 @@
+{
+  "issue": "HOK-3269",
+  "plan_version": "1.0.0",
+  "status": "DRAFT: pre-registered when this file's freeze commit lands, before any item is labelled",
+  "horizon_days": 30,
+  "allocation": {
+    "revert": 20,
+    "repair_reference": 20,
+    "regression_issue": 15,
+    "szz_strong": 25,
+    "szz_weak": 25,
+    "rejected": 25,
+    "negative": 40
+  },
+  "double_label_share": 1.0,
+  "human_audit_share": 0.3,
+  "min_repos": 5,
+  "szz_strong_min_lines": 3,
+  "kappa_floor": 0.6,
+  "definition_precision_floor": 0.8,
+  "labellers": {
+    "a": "claude-opus-5-5",
+    "b": "claude-sonnet-5-5"
+  }
+}
