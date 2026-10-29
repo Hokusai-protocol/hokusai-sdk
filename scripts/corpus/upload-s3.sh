@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Upload derived corpus outputs to S3 (HOK-3266). Allowlist only: prs.jsonl
-# (raw titles and bodies) and the clones never leave the machine.
+# Upload derived corpus outputs to S3 (HOK-3266, HOK-3267, HOK-3268). Allowlist only:
+# prs.jsonl and fix-prs.jsonl (raw titles and bodies) and the clones never leave the machine.
 #
 # Usage: scripts/corpus/upload-s3.sh <cache-dir> <s3-prefix> <as-of YYYY-MM-DD> owner/name [owner/name ...]
 #   e.g. scripts/corpus/upload-s3.sh ~/hokusai-data/arbiter-corpus \
@@ -12,6 +12,9 @@
 #   as-of=<date>/<owner>__<name>/s2.jsonl.gz      S2 v1.1.0 rows
 #   as-of=<date>/<owner>__<name>/s2.summary.json  counts, base rates, timing
 #   as-of=<date>/<owner>__<name>/enumeration.json
+#   as-of=<date>/<owner>__<name>/{candidates,repair_pairs,corrective}.jsonl.gz, corrective.summary.json
+#                                                 corrective-rework records, when corpus-corrective has run
+#   as-of=<date>/report/                          corpus-report outputs, when REPORT_DIR is set
 # Each repo's rows are schema-validated first; a repo that fails is skipped.
 # Requires AWS credentials for the bucket. Safe to re-run (objects are replaced; the bucket is versioned).
 set -euo pipefail
@@ -37,6 +40,10 @@ default branch of the 18-repo cohort in `cohort.json`, merged 2024-07-01 to 2026
 - `as-of=<date>/<owner>__<name>/s2.jsonl.gz`: one row per PR x horizon (14/30/60 days), labelled
   against history up to `<date>`. Gzip (concatenated members); read with `zcat` or any gzip reader.
 - `as-of=<date>/<owner>__<name>/s2.summary.json`: row counts, base rates, failures, timing
+- `as-of=<date>/<owner>__<name>/{candidates,repair_pairs,corrective}.jsonl.gz`: corrective-rework
+  records (schema `arbiter-corrective-rework.schema.json`); `corrective.summary.json` counts them
+- `as-of=<date>/report/`: `corpus-report.{json,md}` (per repo x horizon rates, flags) and
+  `run-manifest.json` (run ID, label versions, SHA-256 of every input file)
 
 Rows carry no PR titles, bodies or diffs. Schema: `packages/core/schemas/arbiter-survival-label.schema.json`
 in hokusai-sdk. Produced by `hokusai-scan corpus-enumerate` / `corpus-label`; uploaded by
@@ -65,6 +72,15 @@ for repo in "$@"; do
   cp_s3 --content-type application/gzip "$dir/s2.jsonl.gz" "$dest/s2.jsonl.gz"
   cp_s3 "$dir/s2.summary.json" "$dest/s2.summary.json"
   cp_s3 "$dir/enumeration.json" "$dest/enumeration.json"
+  if [ -f "$dir/corrective.summary.json" ]; then
+    for f in candidates repair_pairs corrective; do cp_s3 --content-type application/gzip "$dir/$f.jsonl.gz" "$dest/$f.jsonl.gz"; done
+    cp_s3 "$dir/corrective.summary.json" "$dest/corrective.summary.json"
+  fi
   echo "$repo uploaded to $dest/"
 done
+# REPORT_DIR: the --out of `hokusai-scan corpus-report` for this as-of.
+if [ -n "${REPORT_DIR:-}" ]; then
+  for f in corpus-report.json corpus-report.md run-manifest.json; do cp_s3 "$REPORT_DIR/$f" "$prefix/as-of=$as_of/report/$f"; done
+  echo "report uploaded to $prefix/as-of=$as_of/report/"
+fi
 exit $status

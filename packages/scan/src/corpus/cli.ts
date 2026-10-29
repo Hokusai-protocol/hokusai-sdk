@@ -22,6 +22,12 @@
  *   corrective.jsonl.gz      one per S2 row (derived; no raw content)
  *   corrective.summary.json  counts by proxy, exclusion and horizon
  *
+ * `hokusai-scan corpus-report` (HOK-3268) then summarizes the persisted outputs once, into `--out`:
+ *   corpus-report.json   per repo × horizon summaries, sanity flags and the rate spread per merge convention
+ *   corpus-report.md     the same as a table
+ *   run-manifest.json    run ID, label versions, and the SHA-256 and row count of every input file
+ * A flag is resolved by a note in `--notes` (explained, or the repo dropped); unresolved flags exit 1.
+ *
  * stdout: one stats JSON line per repo. Exit 0 when every repo enumerated,
  * 2 on invalid input, 3 when any repo failed upstream (others still finish).
  * No ambient process state is read here; the caller supplies `cwd`, and `gh`
@@ -35,13 +41,19 @@ import { parseArgs } from 'node:util';
 import { gzipSync, inflateRawSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
 import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
-import { HORIZONS, type ArbiterSurvivalLabelV1 } from '@hokusai/core';
+import { HORIZONS, type ArbiterSurvivalLabelV1, type CorrectiveCandidateV1, type CorrectiveReworkLabelV1 } from '@hokusai/core';
 import { summarizeLabels } from '../survival-labeller.js';
 import { correctiveCorpusRepo, summarizeCorrective } from './corrective.js';
 import { prefetchIssueMeta } from './corrective-szz.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
 import { labelCorpusRepo, prefetchCrossReferences, prefetchedGithubClient } from './label.js';
 import { parseCohortManifest, runnableRepos, type CohortRepo } from './manifest.js';
+import { CORPUS_REPORT_VERSION, conventionSpread, renderCorpusReportMarkdown, sanityFlags, summarizeCorpusRepo, type ConventionFinding, type FlagNote, type RepoSummary } from './report.js';
+
+interface ReportNotes {
+  notes: FlagNote[];
+  convention_findings: ConventionFinding[];
+}
 
 export interface CorpusCliIO {
   writeStdout: (text: string) => void;
@@ -56,9 +68,11 @@ const OPTIONS = {
   'cache-dir': { type: 'string' },
   repo: { type: 'string' },
   'as-of': { type: 'string' },
+  out: { type: 'string' },
+  notes: { type: 'string' },
 } as const;
 
-export const CORPUS_COMMANDS = ['corpus-enumerate', 'corpus-label', 'corpus-corrective'] as const;
+export const CORPUS_COMMANDS = ['corpus-enumerate', 'corpus-label', 'corpus-corrective', 'corpus-report'] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 const RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -216,13 +230,15 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(', ')}\n`);
     return { exitCode: 2 };
   }
-  let values: { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string };
+  let values: { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string };
   let entries: CohortRepo[];
+  let manifestBytes: Buffer;
   let window: { from: Date; until: Date };
   try {
     ({ values } = parseArgs({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
     if (!values.manifest || !values['cache-dir']) throw new Error('--manifest and --cache-dir are required');
-    const manifest = parseCohortManifest(JSON.parse(readFileSync(resolve(io.cwd, values.manifest), 'utf8')));
+    manifestBytes = readFileSync(resolve(io.cwd, values.manifest));
+    const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString('utf8')));
     entries = runnableRepos(manifest, values.repo);
     window = { from: new Date(`${manifest.window.merged_from}T00:00:00Z`), until: new Date(`${manifest.window.merged_until}T00:00:00Z`) };
   } catch (error) {
@@ -231,6 +247,24 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
   }
 
   const log = (line: string) => io.writeStderr(`${line}\n`);
+  if (command === 'corpus-report') {
+    const asOf = values['as-of'] ? new Date(values['as-of']) : null;
+    if (!asOf || !Number.isFinite(asOf.getTime()) || !values.out) {
+      io.writeStderr('error: corpus-report needs --as-of <iso> and --out <dir>\n');
+      return { exitCode: 2 };
+    }
+    let notes: ReportNotes = { notes: [], convention_findings: [] };
+    try {
+      if (values.notes) {
+        const parsed = JSON.parse(readFileSync(resolve(io.cwd, values.notes), 'utf8')) as Partial<ReportNotes>;
+        notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
+      }
+    } catch (error) {
+      io.writeStderr(`error: --notes: ${(error as Error).message}\n`);
+      return { exitCode: 2 };
+    }
+    return runReport(entries, resolve(io.cwd, values['cache-dir']), asOf, manifestBytes, notes, resolve(io.cwd, values.out), io, log);
+  }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve(io.cwd, values['cache-dir']);
   if (command === 'corpus-label' || command === 'corpus-corrective') {
@@ -419,4 +453,83 @@ function runCorrective(
     }
   }
   return { exitCode: failures ? 3 : 0 };
+}
+
+const REPORT_INPUTS = ['s2.jsonl.gz', 'candidates.jsonl.gz', 'repair_pairs.jsonl.gz', 'corrective.jsonl.gz'] as const;
+
+function runReport(
+  entries: CohortRepo[],
+  cacheRoot: string,
+  asOf: Date,
+  manifestBytes: Buffer,
+  notes: ReportNotes,
+  outDir: string,
+  io: CorpusCliIO,
+  log: (line: string) => void,
+): { exitCode: number } {
+  const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const repos: RepoSummary[] = [];
+  const inputs: { repo: string; file: string; sha256: string; bytes: number; rows: number }[] = [];
+  const versions = { s2: new Set<string>(), corrective: new Set<string>() };
+  const day = asOf.toISOString().slice(0, 10);
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split('/') as [string, string];
+    const repoDir = join(cacheRoot, `${owner}__${name}`);
+    try {
+      for (const file of REPORT_INPUTS) if (!existsSync(join(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      const counted = <T>(file: string, onRow: (row: T) => void): Iterable<T> => {
+        const path = join(repoDir, file);
+        const bytes = readFileSync(path);
+        const record = { repo: entry.repo, file, sha256: sha256(bytes), bytes: bytes.length, rows: 0 };
+        inputs.push(record);
+        return (function* () {
+          for (const row of readGzipJsonlMembers<T>(path)) {
+            record.rows++;
+            onRow(row);
+            yield row;
+          }
+        })();
+      };
+      const checkAsOf = (value: string, file: string) => {
+        if (value.slice(0, 10) !== day) throw new Error(`${file} is labelled as of ${value}, not ${day}`);
+      };
+      const s2Rows = counted<ArbiterSurvivalLabelV1>('s2.jsonl.gz', (r) => versions.s2.add(`schema ${r.schema_version}, labeller ${r.envelope.labeller_version}`));
+      const candidates = counted<CorrectiveCandidateV1>('candidates.jsonl.gz', (r) => checkAsOf(r.envelope.as_of, 'candidates.jsonl.gz'));
+      const correctiveRows = counted<CorrectiveReworkLabelV1>('corrective.jsonl.gz', (r) => {
+        checkAsOf(r.envelope.as_of, 'corrective.jsonl.gz');
+        versions.corrective.add(`schema ${r.schema_version}, definition ${r.envelope.definition_version}, labeller ${r.envelope.labeller_version}`);
+      });
+      // Repair pairs are hashed and counted for the manifest; the report reads their candidates.
+      const pairs = counted<unknown>('repair_pairs.jsonl.gz', () => {})[Symbol.iterator]();
+      while (!pairs.next().done);
+      const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
+      repos.push(summary);
+      log(`info: ${entry.repo}: summarized`);
+    } catch (error) {
+      failures++;
+      log(`error: ${entry.repo}: ${(error as Error).message}`);
+    }
+  }
+  if (failures) return { exitCode: 3 };
+
+  const flags = sanityFlags(repos, notes.notes);
+  const findings = notes.convention_findings;
+  const spread = conventionSpread(repos);
+  const manifest = {
+    report_version: CORPUS_REPORT_VERSION,
+    as_of: asOf.toISOString(),
+    cohort_manifest_sha256: sha256(manifestBytes),
+    label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
+    inputs,
+  };
+  // The run ID names the inputs, not the moment the report ran: the same files give the same ID.
+  const run_id = sha256(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, 'run-manifest.json'), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}\n`);
+  writeFileSync(join(outDir, 'corpus-report.json'), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}\n`);
+  writeFileSync(join(outDir, 'corpus-report.md'), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
+  const unresolved = flags.filter((f) => !f.resolution).length;
+  io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}\n`);
+  return { exitCode: unresolved ? 1 : 0 };
 }

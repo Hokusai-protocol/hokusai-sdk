@@ -141,3 +141,5 @@ The labeller writes these files next to each repo's `s2.jsonl.gz` and uploads th
 - `corrective.jsonl.gz`
 
 HOK-3268 aggregates these files and HOK-3269 samples them. Neither reads the corpus again.
+
+`hokusai-scan corpus-report` does the aggregation. It writes `corpus-report.{json,md}` and `run-manifest.json` under `as-of=<date>/report/`. The manifest's `run_id` is derived from the SHA-256 of every input file, so the same inputs always give the same ID. A flag fires when a repo's 30-day rate falls outside 0.5–25%. Each flag must be resolved in `fixtures/arbiter/corpus/hok-3022-sanity-notes.json`, either explained or by dropping the repo. That file also records the merge-convention findings for HOK-2822. The spread of rates within a merge convention is reported but never flagged: teams that use the same convention differ widely.

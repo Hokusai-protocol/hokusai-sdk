@@ -115,6 +115,8 @@ corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name
                  (S2 v1.1.0 rows per enumerated PR × 14/30/60 into <cache>/<repo>/s2.jsonl)
 corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
+corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
+                 (per repo × horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
 `;
 
 const OPTION_SPEC = {
