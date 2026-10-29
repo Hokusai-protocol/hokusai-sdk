@@ -5929,13 +5929,13 @@ function collectComplexityDelta(checkoutDir, baseRef, timeoutMs) {
   let baseTotal = 0;
   let headTotal = 0;
   let anyMeasured = false;
-  for (const change of changes) {
-    const ext = getExtension(change.headPath || change.basePath || "");
+  for (const change2 of changes) {
+    const ext = getExtension(change2.headPath || change2.basePath || "");
     if (!COMPLEXITY_EXTENSIONS.has(ext)) continue;
-    if (change.basePath && change.status !== "A") {
+    if (change2.basePath && change2.status !== "A") {
       const baseSource = runGit(
         checkoutDir,
-        ["show", `${mergeBase}:${change.basePath}`],
+        ["show", `${mergeBase}:${change2.basePath}`],
         timeoutMs,
         { allowFailure: true }
       );
@@ -5947,8 +5947,8 @@ function collectComplexityDelta(checkoutDir, baseRef, timeoutMs) {
         }
       }
     }
-    if (change.headPath && change.status !== "D") {
-      const absPath = join2(checkoutDir, change.headPath);
+    if (change2.headPath && change2.status !== "D") {
+      const absPath = join2(checkoutDir, change2.headPath);
       try {
         const stat = statSync(absPath);
         if (stat.isFile()) {
@@ -8133,7 +8133,7 @@ function runShadowCli(command, args, io) {
 
 // src/corpus/cli.ts
 import { createHash as createHash4, randomBytes } from "node:crypto";
-import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
+import { chmodSync, closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
 import { dirname, join as join7, resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
 import { gzipSync, inflateRawSync } from "node:zlib";
@@ -8225,11 +8225,19 @@ function parseCalibrationPlan(raw) {
     horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
     allocation,
     double_label_share: num2("double_label_share", (v) => v >= 0 && v <= 1),
+    human_audit_share: num2("human_audit_share", (v) => v > 0 && v <= 1),
+    labellers: parseLabellers(plan.labellers),
     min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
     szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
     kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
     definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
   };
+}
+function parseLabellers(raw) {
+  const l = raw;
+  if (!l || typeof l.a !== "string" || typeof l.b !== "string" || !l.a || !l.b) throw new Error("plan.labellers needs model IDs for a and b");
+  if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
+  return { a: l.a, b: l.b };
 }
 var sha256 = (...parts) => createHash3("sha256").update(parts.join("\0")).digest("hex");
 function seededOrder(list, key) {
@@ -8308,7 +8316,10 @@ function drawCalibrationSample(units, plan, seed) {
     const doubles = new Set(
       seededOrder(picked, (u) => sha256(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
     );
-    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url) });
+    const audited = new Set(
+      seededOrder(picked, (u) => sha256(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
+    );
+    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   return {
     items: seededOrder(items, (i) => sha256(seed, "order", i.item_id)),
@@ -8316,10 +8327,19 @@ function drawCalibrationSample(units, plan, seed) {
     shortfalls
   };
 }
-var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "corrective", "cause_code", "exclusion_code", "notes"];
+var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "related_prs", "corrective", "cause_code", "exclusion_code", "notes"];
 var csvCell = (value) => /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-function renderLabelSheet(items) {
-  const rows = items.map((item) => [item.item_id, item.pr_url, [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "), "", "", "", ""]);
+function renderLabelSheet(items, related = /* @__PURE__ */ new Map(), filled = /* @__PURE__ */ new Map()) {
+  const rows = items.map((item) => {
+    const row = {
+      item_id: item.item_id,
+      pr_url: item.pr_url,
+      candidate_fixes: [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "),
+      related_prs: (related.get(item.item_id) ?? []).join(" "),
+      ...filled.get(item.item_id)
+    };
+    return SHEET_COLUMNS.map((c) => row[c] ?? "");
+  });
   return `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
 `;
 }
@@ -8429,6 +8449,19 @@ function kappaWithCodes(pairs, codes, floor) {
     per_code[code] = { used, kappa, verdict: !used ? "not_observed" : kappa === null ? "undefined" : kappa >= floor ? "pass" : "below_floor" };
   }
   return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
+}
+function agreementBetween(items, x, y, floor) {
+  const both = items.filter((i) => x.has(i.item_id) && y.has(i.item_id));
+  const pairs = (pick) => both.flatMap((i) => {
+    const a = pick(x.get(i.item_id));
+    const b = pick(y.get(i.item_id));
+    return a !== null && b !== null ? [[a, b]] : [];
+  });
+  return {
+    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, floor),
+    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, floor),
+    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, floor)
+  };
 }
 var round43 = (x) => Math.round(x * 1e4) / 1e4;
 function definitionVariants(plan) {
@@ -8596,17 +8629,7 @@ function scoreCalibration(input) {
     yesWeight += r.weight;
   }
   const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round43(v / yesWeight)]));
-  const doubles = items.filter((i) => sheetA.has(i.item_id) && sheetB.has(i.item_id));
-  const pairs = (pick) => doubles.flatMap((i) => {
-    const x = pick(sheetA.get(i.item_id));
-    const y = pick(sheetB.get(i.item_id));
-    return x !== null && y !== null ? [[x, y]] : [];
-  });
-  const agreement = {
-    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, plan.kappa_floor),
-    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, plan.kappa_floor),
-    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, plan.kappa_floor)
-  };
+  const agreement = agreementBetween(items, sheetA, sheetB, plan.kappa_floor);
   return {
     sampler_version: CALIBRATION_SAMPLER_VERSION,
     plan,
@@ -8626,44 +8649,136 @@ function scoreCalibration(input) {
     agreement
   };
 }
+function scoreCalibrationRun(input) {
+  const { plan, items, cells, sheets, seed, resamples } = input;
+  const model = scoreCalibration({ plan, items, cells, sheetA: sheets.a, sheetB: sheets.b, seed, resamples });
+  const audited = items.filter((i) => i.audit);
+  const human = scoreCalibration({ plan, items: audited, cells, sheetA: sheets.h, sheetB: sheets.a, seed, resamples });
+  const kappa = human.agreement.corrective.kappa;
+  const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
+  const primary = models_stand_in ? model : human;
+  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
+  return {
+    plan,
+    model,
+    human,
+    human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
+    models_stand_in,
+    primary: models_stand_in ? "model" : "human",
+    chosen_definition: primary.chosen_definition,
+    gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
+  };
+}
 var pct = (x) => x === null || x === void 0 ? "\u2014" : `${(x * 100).toFixed(1)}%`;
 var estCell = (e) => e.estimate === null ? "\u2014" : `${pct(e.estimate)} (${pct(e.ci95?.low)}\u2013${pct(e.ci95?.high)})`;
 var kappaCell = (k) => k === null ? "\u2014" : k.toFixed(2);
-function renderCalibrationMarkdown(r) {
-  const lines = [];
-  const complete = r.unlabelled === 0;
-  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
-  lines.push(`Horizon ${r.plan.horizon_days} days \xB7 ${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos \xB7 plan ${r.plan.plan_version} \xB7 sampler ${r.sampler_version}`);
-  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
-  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by the estimates.`);
-  lines.push("", "## Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
-  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
-  lines.push("", `Pre-registered pick (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
-  lines.push("", "## Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
-  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
-  lines.push("", "## Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
-  for (const s of r.strata) lines.push(`| ${s.stratum} | ${s.sampled} | ${s.yes} | ${s.no} | ${s.unclear} | ${pct(s.yes_rate)} (${pct(s.yes_rate_ci95?.low)}\u2013${pct(s.yes_rate_ci95?.high)}) |`);
-  lines.push("", "## Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
-  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
-  const w = r.rejections.wrongly_rejected;
-  lines.push("", "## Rejections", "", `Wrongly rejected (a person judged it corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
-  const humanCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
-  if (humanCodes.length) {
-    lines.push("", `| Automatic code \\ human code | ${humanCodes.join(" | ")} |`, `| --- |${humanCodes.map(() => " --- |").join("")}`);
-    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${humanCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
-  }
-  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
-  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
-  lines.push("", "## Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
-  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
-  lines.push("", `## Agreement (double-labelled subset; floor \u03BA \u2265 ${r.plan.kappa_floor})`, "");
-  for (const [field, k] of Object.entries(r.agreement)) {
+function renderAgreement(lines, title, agreement, floor) {
+  lines.push("", `### ${title} (floor \u03BA \u2265 ${floor})`, "");
+  for (const [field, k] of Object.entries(agreement)) {
     lines.push(`**${field}:** \u03BA = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, "", "| Code | Used | \u03BA | Verdict |", "| --- | --- | --- | --- |");
     for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
     lines.push("");
   }
+}
+function renderEstimates(lines, r) {
+  lines.push("", `${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos`);
+  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by these estimates.`);
+  lines.push("", "### Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
+  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
+  lines.push("", `Pick under the plan (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
+  lines.push("", "### Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
+  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
+  lines.push("", "### Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
+  for (const st of r.strata) lines.push(`| ${st.stratum} | ${st.sampled} | ${st.yes} | ${st.no} | ${st.unclear} | ${pct(st.yes_rate)} (${pct(st.yes_rate_ci95?.low)}\u2013${pct(st.yes_rate_ci95?.high)}) |`);
+  lines.push("", "### Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
+  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
+  const w = r.rejections.wrongly_rejected;
+  lines.push("", "### Rejections", "", `Wrongly rejected (judged corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
+  const labelCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
+  if (labelCodes.length) {
+    lines.push("", `| Automatic code \\ labelled code | ${labelCodes.join(" | ")} |`, `| --- |${labelCodes.map(() => " --- |").join("")}`);
+    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${labelCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
+  }
+  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
+  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
+  lines.push("", "### Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
+  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
+}
+function renderCalibrationMarkdown(run) {
+  const { plan, model, human } = run;
+  const lines = [];
+  const complete = model.unlabelled === 0 && human.unlabelled === 0;
+  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
+  lines.push(`Horizon ${plan.horizon_days} days \xB7 plan ${plan.plan_version} \xB7 sampler ${CALIBRATION_SAMPLER_VERSION} \xB7 labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
+  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
+  const k = human.agreement.corrective.kappa;
+  lines.push("", "## Verdict", "");
+  lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
+  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
+  lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
+  lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
+  renderEstimates(lines, model);
+  lines.push("", `## Human audit${run.primary === "human" ? " (primary)" : ""}`);
+  renderEstimates(lines, human);
+  lines.push("", "## Agreement");
+  renderAgreement(lines, "Person vs model A (audit subset)", human.agreement, plan.kappa_floor);
+  renderAgreement(lines, "Person vs model B (audit subset)", run.human_vs_b, plan.kappa_floor);
+  renderAgreement(lines, "Model A vs model B", model.agreement, plan.kappa_floor);
   return `${lines.join("\n").trimEnd()}
 `;
+}
+
+// src/corpus/calibration-evidence.ts
+var EVIDENCE_DIFF_MAX_CHARS = 6e4;
+var EVIDENCE_RELATED_MAX = 15;
+var EVIDENCE_RELATED_MAX_FILES = 50;
+function git(runGit3, args) {
+  const result = runGit3(args);
+  if (result.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim().split("\n").pop()}`);
+  return result.stdout;
+}
+function cap(diff) {
+  return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
+[diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
+}
+function change(runGit3, url, from, to, pr) {
+  const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
+  return {
+    url,
+    title: pr?.title ?? null,
+    body: pr?.body ?? null,
+    merged_at: pr?.merged_at ?? null,
+    files,
+    ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
+  };
+}
+function buildItemEvidence(item, context, runGit3) {
+  const pr = context.prs.get(item.pr_url);
+  if (!pr) throw new Error(`${item.item_id}: original not in the enumeration cache`);
+  const original = change(runGit3, pr.pr_url, pr.base_sha, pr.merge_sha, pr);
+  const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
+  const fixes = fixUrls.map((url) => {
+    const fixPr = context.prs.get(url);
+    if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
+    const sha = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
+    if (!sha) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
+    return change(runGit3, url, `${sha}^`, sha, void 0);
+  });
+  const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
+  const since = new Date(pr.merged_at);
+  const until = new Date(since.getTime() + context.horizonDays * 864e5);
+  const related = [];
+  if (searched.length) {
+    const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
+    const seen = /* @__PURE__ */ new Set([pr.pr_url, ...fixUrls]);
+    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
+    for (const r of later) {
+      if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
+      seen.add(r.pr_url);
+      related.push({ url: r.pr_url, title: r.title, merged_at: r.merged_at });
+    }
+  }
+  return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
 }
 
 // src/corpus/corrective-szz.ts
@@ -9945,7 +10060,15 @@ var OPTIONS = {
   seed: { type: "string" },
   sample: { type: "string" }
 };
-var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label", "corpus-corrective", "corpus-report", "corpus-calibration-sample", "corpus-calibration-score"];
+var CORPUS_COMMANDS = [
+  "corpus-enumerate",
+  "corpus-label",
+  "corpus-corrective",
+  "corpus-report",
+  "corpus-calibration-sample",
+  "corpus-calibration-evidence",
+  "corpus-calibration-score"
+];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
 function secondsUntilReset() {
@@ -10118,6 +10241,13 @@ function runCorpusCli(command, argv, io) {
       return { exitCode: 2 };
     }
     return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log);
+  }
+  if (command === "corpus-calibration-evidence") {
+    if (!values.sample) {
+      io.writeStderr("error: corpus-calibration-evidence needs --sample <dir>\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationEvidence(resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.sample), io, log);
   }
   if (command === "corpus-report") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : null;
@@ -10450,11 +10580,9 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
 `, "utf8");
   writeFileSync2(join7(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
-  writeFileSync2(join7(outDir, "sheet-a.csv"), renderLabelSheet(sample.items), { mode: 384, flag: "wx" });
-  writeFileSync2(join7(outDir, "sheet-b.csv"), renderLabelSheet(sample.items.filter((i) => i.double)), { mode: 384, flag: "wx" });
   const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
   io.writeStdout(
-    `${JSON.stringify({ sample_sha256: sha2562(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, repos, strata, shortfalls: sample.shortfalls })}
+    `${JSON.stringify({ sample_sha256: sha2562(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
 `
   );
   return { exitCode: 0 };
@@ -10465,26 +10593,74 @@ function runCalibrationScore(sampleDir, io) {
   try {
     sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    sheets = { a: readFileSync3(join7(sampleDir, "sheet-a.csv"), "utf8"), b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8") };
+    sheets = {
+      a: readFileSync3(join7(sampleDir, "sheet-a.csv"), "utf8"),
+      b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8"),
+      h: readFileSync3(join7(sampleDir, "sheet-h.csv"), "utf8")
+    };
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
     return { exitCode: 2 };
   }
-  const items = new Map(sample.items.map((i) => [i.item_id, i]));
-  const a = parseLabelSheet(sheets.a, items);
-  const b = parseLabelSheet(sheets.b, new Map(sample.items.filter((i) => i.double).map((i) => [i.item_id, i])));
-  const errors = [...a.errors.map((e) => `sheet-a: ${e}`), ...b.errors.map((e) => `sheet-b: ${e}`)];
+  const subset = (keep) => new Map(sample.items.filter(keep).map((i) => [i.item_id, i]));
+  const a = parseLabelSheet(sheets.a, subset(() => true));
+  const b = parseLabelSheet(sheets.b, subset((i) => i.double));
+  const h = parseLabelSheet(sheets.h, subset((i) => i.audit));
+  const errors = [...a.errors.map((e) => `sheet-a: ${e}`), ...b.errors.map((e) => `sheet-b: ${e}`), ...h.errors.map((e) => `sheet-h: ${e}`)];
   if (errors.length) {
     io.writeStderr(`${errors.map((e) => `error: ${e}`).join("\n")}
 `);
     return { exitCode: 2 };
   }
-  const results = scoreCalibration({ plan: sample.plan, items: sample.items, cells: sample.cells, sheetA: a.labels, sheetB: b.labels, seed: sample.seed });
-  writeFileSync2(join7(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...results }, null, 2)}
+  const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
+  writeFileSync2(join7(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
 `, { mode: 384 });
-  writeFileSync2(join7(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(results), { mode: 384 });
-  io.writeStdout(`${JSON.stringify({ items: results.items, labelled: results.labelled, unlabelled: results.unlabelled, double_pairs: results.agreement.corrective.pairs, table: join7(sampleDir, "calibration-table.md") })}
+  writeFileSync2(join7(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
+  io.writeStdout(
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join7(sampleDir, "calibration-table.md") })}
+`
+  );
+  return { exitCode: 0 };
+}
+function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
+  let sample;
+  try {
+    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync4(join7(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const evidence2 = [];
+  let failures = 0;
+  for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
+    const repoDir = join7(cacheRoot, repo.replace("/", "__"));
+    try {
+      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
+      const records = [...readJsonl2(join7(repoDir, "prs.jsonl")), ...existsSync4(join7(repoDir, "fix-prs.jsonl")) ? readJsonl2(join7(repoDir, "fix-prs.jsonl")) : []];
+      const prs = new Map(records.map((r) => [r.pr_url, r]));
+      const bySha = /* @__PURE__ */ new Map();
+      for (const r of records) for (const sha of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha)) bySha.set(sha, r);
+      const gitDir = join7(repoDir, "repo.git");
+      const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+      for (const item of sample.items.filter((i) => i.repo === repo)) evidence2.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
+    } catch (error) {
+      failures++;
+      log(`error: evidence failed for one repo: ${error.message}`);
+    }
+  }
+  if (failures) return { exitCode: 3 };
+  const order = new Map(sample.items.map((i, n) => [i.item_id, n]));
+  evidence2.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
+  writeJsonl(join7(sampleDir, "evidence.jsonl"), evidence2);
+  chmodSync(join7(sampleDir, "evidence.jsonl"), 384);
+  const related = new Map(evidence2.map((e) => [e.item_id, e.related.map((r) => r.url)]));
+  writeFileSync2(join7(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
+  const truncated = evidence2.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
+  io.writeStdout(`${JSON.stringify({ items: evidence2.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence2.filter((e) => e.related.length).length })}
 `);
   return { exitCode: 0 };
 }
@@ -10988,8 +11164,8 @@ function enumerateWindow(options) {
     const subject = subjectParts.join("	");
     merges.push({ mergeSha: sha, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha });
   }
-  const cap = Math.max(0, Math.floor(maxPrs));
-  return { merges: cap < merges.length ? merges.slice(-cap) : merges, cursorReset: reset };
+  const cap2 = Math.max(0, Math.floor(maxPrs));
+  return { merges: cap2 < merges.length ? merges.slice(-cap2) : merges, cursorReset: reset };
 }
 
 // src/orchestrate/state.ts
@@ -11359,9 +11535,11 @@ corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/nam
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo \xD7 horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
 corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
-                 (stratified human-calibration sample and blank label sheets, evaluation slice excluded; HOK-3269)
+                 (stratified calibration sample, evaluation slice excluded; HOK-3269)
+corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample <private dir>
+                 (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
-                 (precision, recall, kappa and cause distribution from the labelled sheets; HOK-3269)
+                 (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },

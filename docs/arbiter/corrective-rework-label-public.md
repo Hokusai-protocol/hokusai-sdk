@@ -49,7 +49,7 @@ Candidate links that fail a check are kept and recorded with a reason, so false 
 
 ## Validation
 
-People labelled a stratified sample of PRs from repositories outside the evaluation set. The sample covered every signal, rejected links, and PRs with no signal at all, and part of it was labelled twice to measure agreement.
+A stratified sample of PRs from repositories outside the evaluation set was labelled by two models and audited by an experienced engineer, who labelled part of it blind. The sample covered every signal, rejected links, and PRs with no signal at all.
 
 _Precision, recall and agreement are added here when calibration completes._
 

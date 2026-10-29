@@ -46,8 +46,12 @@ export interface CalibrationPlan {
   horizon_days: number;
   /** Items drawn per stratum, spread round-robin across repos. */
   allocation: Record<CalibrationStratum, number>;
-  /** Share of each stratum labelled a second time, independently. */
+  /** Share of each stratum labelled a second time, independently (sheet B). */
   double_label_share: number;
+  /** Share of each stratum a person labels blind (sheet H): validates the labellers, and is the gate's human sample. */
+  human_audit_share: number;
+  /** Model IDs that label sheets A and B; recorded so results name their labellers. */
+  labellers: { a: string; b: string };
   min_repos: number;
   /** SZZ links with at least this many blamed lines are `szz_strong`. */
   szz_strong_min_lines: number;
@@ -78,11 +82,20 @@ export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
     horizon_days: num('horizon_days', (v) => Number.isInteger(v) && v > 0),
     allocation: allocation as Record<CalibrationStratum, number>,
     double_label_share: num('double_label_share', (v) => v >= 0 && v <= 1),
+    human_audit_share: num('human_audit_share', (v) => v > 0 && v <= 1),
+    labellers: parseLabellers(plan.labellers),
     min_repos: num('min_repos', (v) => Number.isInteger(v) && v >= 1),
     szz_strong_min_lines: num('szz_strong_min_lines', (v) => Number.isInteger(v) && v >= 1),
     kappa_floor: num('kappa_floor', (v) => v > 0 && v <= 1),
     definition_precision_floor: num('definition_precision_floor', (v) => v > 0 && v <= 1),
   };
+}
+
+function parseLabellers(raw: unknown): CalibrationPlan['labellers'] {
+  const l = raw as Partial<CalibrationPlan['labellers']> | undefined;
+  if (!l || typeof l.a !== 'string' || typeof l.b !== 'string' || !l.a || !l.b) throw new Error('plan.labellers needs model IDs for a and b');
+  if (l.a === l.b) throw new Error('plan.labellers.a and .b must be different models');
+  return { a: l.a, b: l.b };
 }
 
 const sha256 = (...parts: string[]) => createHash('sha256').update(parts.join('\0')).digest('hex');
@@ -174,6 +187,8 @@ export interface SampleItem extends PopulationUnit {
   item_id: string;
   /** Also on sheet B, labelled independently. */
   double: boolean;
+  /** Also on sheet H, labelled blind by a person. */
+  audit: boolean;
 }
 
 export interface SampleCell {
@@ -232,7 +247,12 @@ export function drawCalibrationSample(units: readonly PopulationUnit[], plan: Ca
         .slice(0, Math.ceil(picked.length * plan.double_label_share))
         .map((u) => u.pr_url),
     );
-    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, 'item', unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url) });
+    const audited = new Set(
+      seededOrder(picked, (u) => sha256(seed, 'audit', u.pr_url))
+        .slice(0, Math.ceil(picked.length * plan.human_audit_share))
+        .map((u) => u.pr_url),
+    );
+    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, 'item', unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   // Sheet order mixes strata, so a labeller can't read the stratum off the position.
   return {
@@ -244,16 +264,28 @@ export function drawCalibrationSample(units: readonly PopulationUnit[], plan: Ca
 
 // ── Label sheets ───────────────────────────────────────────────────────────
 
-export const SHEET_COLUMNS = ['item_id', 'pr_url', 'candidate_fixes', 'corrective', 'cause_code', 'exclusion_code', 'notes'] as const;
+export const SHEET_COLUMNS = ['item_id', 'pr_url', 'candidate_fixes', 'related_prs', 'corrective', 'cause_code', 'exclusion_code', 'notes'] as const;
 
 const csvCell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
+export type SheetRow = Partial<Record<(typeof SHEET_COLUMNS)[number], string>>;
+
 /**
  * One row per item, blind to stratum, proxy and acceptance: the labeller sees
- * the PR and every candidate fix within the horizon, accepted or rejected.
+ * the PR, every candidate fix within the horizon (accepted or rejected), and
+ * the later PRs that touched its files. `filled` supplies label columns.
  */
-export function renderLabelSheet(items: readonly SampleItem[]): string {
-  const rows = items.map((item) => [item.item_id, item.pr_url, [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(' '), '', '', '', '']);
+export function renderLabelSheet(items: readonly SampleItem[], related: ReadonlyMap<string, readonly string[]> = new Map(), filled: ReadonlyMap<string, SheetRow> = new Map()): string {
+  const rows = items.map((item) => {
+    const row: SheetRow = {
+      item_id: item.item_id,
+      pr_url: item.pr_url,
+      candidate_fixes: [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(' '),
+      related_prs: (related.get(item.item_id) ?? []).join(' '),
+      ...filled.get(item.item_id),
+    };
+    return SHEET_COLUMNS.map((c) => row[c] ?? '');
+  });
   return `${[SHEET_COLUMNS as readonly string[], ...rows].map((r) => r.map(csvCell).join(',')).join('\n')}\n`;
 }
 
@@ -389,6 +421,28 @@ function kappaWithCodes(pairs: readonly (readonly [string, string])[], codes: re
     per_code[code] = { used, kappa, verdict: !used ? 'not_observed' : kappa === null ? 'undefined' : kappa >= floor ? 'pass' : 'below_floor' };
   }
   return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
+}
+
+export interface Agreement {
+  corrective: KappaResult;
+  cause_code: KappaResult;
+  exclusion_code: KappaResult;
+}
+
+/** Kappa between two sheets over the items both labelled. */
+export function agreementBetween(items: readonly SampleItem[], x: ReadonlyMap<string, HumanLabel>, y: ReadonlyMap<string, HumanLabel>, floor: number): Agreement {
+  const both = items.filter((i) => x.has(i.item_id) && y.has(i.item_id));
+  const pairs = (pick: (l: HumanLabel) => string | null) =>
+    both.flatMap((i) => {
+      const a = pick(x.get(i.item_id)!);
+      const b = pick(y.get(i.item_id)!);
+      return a !== null && b !== null ? [[a, b] as const] : [];
+    });
+  return {
+    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, floor),
+    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, floor),
+    exclusion_code: kappaWithCodes(pairs((l) => (l.verdict === 'no' ? (l.exclusion_code ?? '(none)') : null)), HUMAN_EXCLUSION_CODES, floor),
+  };
 }
 
 // ── Estimates ──────────────────────────────────────────────────────────────
@@ -530,9 +584,11 @@ export interface CalibrationResults {
   /** Proxy-positive items a person labelled `no` with linkage_error, per proxy. */
   linkage_error: Record<string, { no: number; linkage_error: number; rate: number | null }>;
   causes: { raw: Record<string, number>; weighted_share: Record<string, number> };
-  agreement: { corrective: KappaResult; cause_code: KappaResult; exclusion_code: KappaResult };
+  /** Between the scored sheet and the comparison sheet. */
+  agreement: Agreement;
 }
 
+/** Estimates from one labelled sheet (`sheetA`), with its agreement against `sheetB`. */
 export function scoreCalibration(input: {
   plan: CalibrationPlan;
   items: readonly SampleItem[];
@@ -540,7 +596,7 @@ export function scoreCalibration(input: {
   sheetA: ReadonlyMap<string, HumanLabel>;
   sheetB: ReadonlyMap<string, HumanLabel>;
   seed: string;
-  resamples?: number;
+  resamples?: number | undefined;
 }): CalibrationResults {
   const { plan, items, sheetA, sheetB, seed } = input;
   const resamples = input.resamples ?? 2000;
@@ -649,18 +705,7 @@ export function scoreCalibration(input: {
   }
   const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round4(v / yesWeight)]));
 
-  const doubles = items.filter((i) => sheetA.has(i.item_id) && sheetB.has(i.item_id));
-  const pairs = (pick: (l: HumanLabel) => string | null) =>
-    doubles.flatMap((i) => {
-      const x = pick(sheetA.get(i.item_id)!);
-      const y = pick(sheetB.get(i.item_id)!);
-      return x !== null && y !== null ? [[x, y] as const] : [];
-    });
-  const agreement = {
-    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, plan.kappa_floor),
-    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, plan.kappa_floor),
-    exclusion_code: kappaWithCodes(pairs((l) => (l.verdict === 'no' ? (l.exclusion_code ?? '(none)') : null)), HUMAN_EXCLUSION_CODES, plan.kappa_floor),
-  };
+  const agreement = agreementBetween(items, sheetA, sheetB, plan.kappa_floor);
 
   return {
     sampler_version: CALIBRATION_SAMPLER_VERSION,
@@ -682,56 +727,124 @@ export function scoreCalibration(input: {
   };
 }
 
+export interface CalibrationRun {
+  plan: CalibrationPlan;
+  /** Model labeller A's labels on every item; model B's are the agreement check. */
+  model: CalibrationResults;
+  /** The person's labels on the audit subset, compared with model A. */
+  human: CalibrationResults;
+  /** The person against model B, for a second view of model–human agreement. */
+  human_vs_b: Agreement;
+  /** Model labels stand in for the full sample only if the person and model A agree on the verdict at or above the floor. */
+  models_stand_in: boolean;
+  /** The estimates the pick and the validation table use: the model's if they stand in, else the human audit's. */
+  primary: 'model' | 'human';
+  chosen_definition: string | null;
+  /** HOK-3028 §6 label-noise diagnostic: precision of the chosen definition (else cr-0.1.0) against the person's labels. */
+  gate_label_precision: { definition: string; precision: Estimate };
+}
+
+export function scoreCalibrationRun(input: {
+  plan: CalibrationPlan;
+  items: readonly SampleItem[];
+  cells: readonly SampleCell[];
+  sheets: { a: ReadonlyMap<string, HumanLabel>; b: ReadonlyMap<string, HumanLabel>; h: ReadonlyMap<string, HumanLabel> };
+  seed: string;
+  resamples?: number | undefined;
+}): CalibrationRun {
+  const { plan, items, cells, sheets, seed, resamples } = input;
+  const model = scoreCalibration({ plan, items, cells, sheetA: sheets.a, sheetB: sheets.b, seed, resamples });
+  const audited = items.filter((i) => i.audit);
+  const human = scoreCalibration({ plan, items: audited, cells, sheetA: sheets.h, sheetB: sheets.a, seed, resamples });
+  const kappa = human.agreement.corrective.kappa;
+  const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
+  const primary = models_stand_in ? model : human;
+  const gateDefinition = primary.chosen_definition ?? 'cr-0.1.0';
+  return {
+    plan,
+    model,
+    human,
+    human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
+    models_stand_in,
+    primary: models_stand_in ? 'model' : 'human',
+    chosen_definition: primary.chosen_definition,
+    gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition)!.precision },
+  };
+}
+
 // ── Shareable table ────────────────────────────────────────────────────────
 
 const pct = (x: number | null | undefined) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(1)}%`);
 const estCell = (e: Estimate) => (e.estimate === null ? '—' : `${pct(e.estimate)} (${pct(e.ci95?.low)}–${pct(e.ci95?.high)})`);
 const kappaCell = (k: number | null) => (k === null ? '—' : k.toFixed(2));
 
+function renderAgreement(lines: string[], title: string, agreement: Agreement, floor: number) {
+  lines.push('', `### ${title} (floor κ ≥ ${floor})`, '');
+  for (const [field, k] of Object.entries(agreement) as [string, KappaResult][]) {
+    lines.push(`**${field}:** κ = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, '', '| Code | Used | κ | Verdict |', '| --- | --- | --- | --- |');
+    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
+    lines.push('');
+  }
+}
+
+function renderEstimates(lines: string[], r: CalibrationResults) {
+  lines.push('', `${r.items} items · ${r.labelled} labelled · ${r.unclear} unclear · ${r.repos.length} repos`);
+  if (r.unrepresented_population) lines.push('', `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by these estimates.`);
+
+  lines.push('', '### Definitions', '', '| Definition | Precision | Recall |', '| --- | --- | --- |');
+  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
+  lines.push('', `Pick under the plan (highest recall with precision ≥ ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? 'none qualifies'}**`);
+
+  lines.push('', '### Proxies', '', '| Proxy | Precision | n | Recall |', '| --- | --- | --- | --- |');
+  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
+
+  lines.push('', '### Strata (unweighted)', '', '| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |', '| --- | --- | --- | --- | --- | --- |');
+  for (const st of r.strata) lines.push(`| ${st.stratum} | ${st.sampled} | ${st.yes} | ${st.no} | ${st.unclear} | ${pct(st.yes_rate)} (${pct(st.yes_rate_ci95?.low)}–${pct(st.yes_rate_ci95?.high)}) |`);
+
+  lines.push('', '### Repos (pseudonymized)', '', '| Repo | Sampled | Precision (any proxy) | Recall |', '| --- | --- | --- | --- |');
+  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
+
+  const w = r.rejections.wrongly_rejected;
+  lines.push('', '### Rejections', '', `Wrongly rejected (judged corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}–${pct(w.ci95?.high)}).`);
+  const labelCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
+  if (labelCodes.length) {
+    lines.push('', `| Automatic code \\ labelled code | ${labelCodes.join(' | ')} |`, `| --- |${labelCodes.map(() => ' --- |').join('')}`);
+    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${labelCodes.map((h) => m[h] ?? 0).join(' | ')} |`);
+  }
+  lines.push('', '| Proxy | Labelled no | linkage_error | Rate |', '| --- | --- | --- | --- |');
+  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
+
+  lines.push('', '### Causes (items labelled yes)', '', '| Cause | Count | Weighted share |', '| --- | --- | --- |');
+  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
+}
+
 /**
  * The validation table to post. Repos appear only as pseudonyms, and no cell
  * populations are shown: populations would identify repos, and the repo set
  * would narrow down which repos the evaluation slice holds.
  */
-export function renderCalibrationMarkdown(r: CalibrationResults): string {
+export function renderCalibrationMarkdown(run: CalibrationRun): string {
+  const { plan, model, human } = run;
   const lines: string[] = [];
-  const complete = r.unlabelled === 0;
+  const complete = model.unlabelled === 0 && human.unlabelled === 0;
   lines.push(`# HOK-3269 calibration results${complete ? '' : ' (INCOMPLETE)'}`, '');
-  lines.push(`Horizon ${r.plan.horizon_days} days · ${r.items} items · ${r.labelled} labelled · ${r.unclear} unclear · ${r.repos.length} repos · plan ${r.plan.plan_version} · sampler ${r.sampler_version}`);
+  lines.push(`Horizon ${plan.horizon_days} days · plan ${plan.plan_version} · sampler ${CALIBRATION_SAMPLER_VERSION} · labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
   lines.push('', 'Estimates are reweighted by cell (repo × stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.');
-  if (r.unrepresented_population) lines.push('', `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by the estimates.`);
 
-  lines.push('', '## Definitions', '', '| Definition | Precision | Recall |', '| --- | --- | --- |');
-  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
-  lines.push('', `Pre-registered pick (highest recall with precision ≥ ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? 'none qualifies'}**`);
+  const k = human.agreement.corrective.kappa;
+  lines.push('', '## Verdict', '');
+  lines.push(`- Person vs model A on the verdict: κ = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? '**stand in** for the full sample' : '**do not** stand in; estimates come from the human audit alone'}.`);
+  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? 'none qualifies'}**`);
+  lines.push(`- HOK-3028 §6 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
 
-  lines.push('', '## Proxies', '', '| Proxy | Precision | n | Recall |', '| --- | --- | --- | --- |');
-  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
+  lines.push('', `## Full sample, model A labels${run.primary === 'model' ? ' (primary)' : ''}`);
+  renderEstimates(lines, model);
+  lines.push('', `## Human audit${run.primary === 'human' ? ' (primary)' : ''}`);
+  renderEstimates(lines, human);
 
-  lines.push('', '## Strata (unweighted)', '', '| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |', '| --- | --- | --- | --- | --- | --- |');
-  for (const s of r.strata) lines.push(`| ${s.stratum} | ${s.sampled} | ${s.yes} | ${s.no} | ${s.unclear} | ${pct(s.yes_rate)} (${pct(s.yes_rate_ci95?.low)}–${pct(s.yes_rate_ci95?.high)}) |`);
-
-  lines.push('', '## Repos (pseudonymized)', '', '| Repo | Sampled | Precision (any proxy) | Recall |', '| --- | --- | --- | --- |');
-  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
-
-  const w = r.rejections.wrongly_rejected;
-  lines.push('', '## Rejections', '', `Wrongly rejected (a person judged it corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}–${pct(w.ci95?.high)}).`);
-  const humanCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
-  if (humanCodes.length) {
-    lines.push('', `| Automatic code \\ human code | ${humanCodes.join(' | ')} |`, `| --- |${humanCodes.map(() => ' --- |').join('')}`);
-    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${humanCodes.map((h) => m[h] ?? 0).join(' | ')} |`);
-  }
-  lines.push('', '| Proxy | Labelled no | linkage_error | Rate |', '| --- | --- | --- | --- |');
-  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
-
-  lines.push('', '## Causes (items labelled yes)', '', '| Cause | Count | Weighted share |', '| --- | --- | --- |');
-  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
-
-  lines.push('', `## Agreement (double-labelled subset; floor κ ≥ ${r.plan.kappa_floor})`, '');
-  for (const [field, k] of Object.entries(r.agreement)) {
-    lines.push(`**${field}:** κ = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, '', '| Code | Used | κ | Verdict |', '| --- | --- | --- | --- |');
-    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
-    lines.push('');
-  }
+  lines.push('', '## Agreement');
+  renderAgreement(lines, 'Person vs model A (audit subset)', human.agreement, plan.kappa_floor);
+  renderAgreement(lines, 'Person vs model B (audit subset)', run.human_vs_b, plan.kappa_floor);
+  renderAgreement(lines, 'Model A vs model B', model.agreement, plan.kappa_floor);
   return `${lines.join('\n').trimEnd()}\n`;
 }

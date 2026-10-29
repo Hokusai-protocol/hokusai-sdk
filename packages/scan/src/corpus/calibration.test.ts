@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { CorrectiveCandidateV1, CorrectiveReworkLabelV1 } from '@hokusai/core';
 import {
@@ -13,6 +14,7 @@ import {
   renderCalibrationMarkdown,
   renderLabelSheet,
   scoreCalibration,
+  scoreCalibrationRun,
   type CalibrationPlan,
   type HumanLabel,
   type PopulationUnit,
@@ -29,6 +31,8 @@ const plan: CalibrationPlan = parseCalibrationPlan({
   horizon_days: 30,
   allocation: { revert: 2, repair_reference: 2, regression_issue: 2, szz_strong: 2, szz_weak: 2, rejected: 2, negative: 4 },
   double_label_share: 0.5,
+  human_audit_share: 0.5,
+  labellers: { a: 'model-a', b: 'model-b' },
   min_repos: 2,
   szz_strong_min_lines: 3,
   kappa_floor: 0.6,
@@ -162,7 +166,7 @@ describe('label sheets', () => {
 
   it('round-trips through CSV, quotes included, and is blind to stratum and proxy', () => {
     const sheet = renderLabelSheet([item('i1')]);
-    expect(sheet.split('\n')[0]).toBe('item_id,pr_url,candidate_fixes,corrective,cause_code,exclusion_code,notes');
+    expect(sheet.split('\n')[0]).toBe('item_id,pr_url,candidate_fixes,related_prs,corrective,cause_code,exclusion_code,notes');
     expect(sheet).not.toContain('revert');
     expect(parseCsv('a,"b, ""c""\nd",e\n')).toEqual([['a', 'b, "c"\nd', 'e']]);
   });
@@ -214,6 +218,7 @@ describe('scoreCalibration', () => {
     candidates: stratum === 'revert' ? [{ candidate_id: `c${n}`, proxy: 'revert', status: 'accepted', exclusion_code: null, fix_url: url('o/r', 99), lag_days: 1, blamed_lines: null, revert_reason: n === 1 ? 'internal_build' : 'public_ci' }] : [],
     item_id: `i${n}`,
     double: true,
+    audit: true,
   });
   const items = [unit(1, 'revert'), unit(2, 'revert'), unit(3, 'negative'), unit(4, 'negative')];
   const cells: SampleCell[] = [
@@ -253,9 +258,23 @@ describe('scoreCalibration', () => {
     expect(results.causes.raw).toEqual({ test_gap: 1, plan_error: 1, blast_radius: 1 });
   });
 
+  it('lets model labels stand in only when the person agrees with model A at the floor', () => {
+    const agreeing = scoreCalibrationRun({ plan, items, cells, sheets: { a: sheetA, b: sheetB, h: sheetA }, seed: SEED, resamples: 200 });
+    expect(agreeing.models_stand_in).toBe(true);
+    expect(agreeing.primary).toBe('model');
+    expect(agreeing.human.agreement.corrective.kappa).toBe(1);
+    expect(agreeing.gate_label_precision).toMatchObject({ definition: 'cr-0.1.0', precision: { estimate: 1 } });
+    // The person disagrees on i3: κ 0.5 < 0.6, so the human audit's own estimates are primary.
+    const split = scoreCalibrationRun({ plan, items, cells, sheets: { a: sheetA, b: sheetB, h: sheetB }, seed: SEED, resamples: 200 });
+    expect(split.models_stand_in).toBe(false);
+    expect(split.primary).toBe('human');
+    expect(split.human.definitions[0]!.recall.estimate).toBe(1); // the person's only yes PRs are proxy-positive
+  });
+
   it('renders a table that names no repo', () => {
-    const md = renderCalibrationMarkdown(results);
+    const md = renderCalibrationMarkdown(scoreCalibrationRun({ plan, items, cells, sheets: { a: sheetA, b: sheetB, h: sheetA }, seed: SEED, resamples: 200 }));
     expect(md).toContain('| R1 | 4 |');
+    expect(md).toContain('Model labels **stand in**');
     expect(md).not.toContain('o/r');
     expect(md).not.toContain('INCOMPLETE');
   });
@@ -324,9 +343,10 @@ describe('corpus-calibration CLI', () => {
     const sheet = (items: SampleItem[]) => ['item_id,pr_url,candidate_fixes,corrective,cause_code,exclusion_code,notes', ...items.map((i) => `${i.item_id},,,${label(i)},`)].join('\n');
     writeFileSync(join(dir, 'private', 'sheet-a.csv'), sheet(sample.items));
     writeFileSync(join(dir, 'private', 'sheet-b.csv'), sheet(sample.items.filter((i) => i.double)));
+    writeFileSync(join(dir, 'private', 'sheet-h.csv'), sheet(sample.items.filter((i) => i.audit)));
     const scored = run('corpus-calibration-score', dir, ['--sample', 'private']);
     expect(scored.exitCode).toBe(0);
-    expect(JSON.parse(scored.out)).toMatchObject({ items: sample.items.length, unlabelled: 0 });
+    expect(JSON.parse(scored.out)).toMatchObject({ items: sample.items.length, model_unlabelled: 0, audit_unlabelled: 0, models_stand_in: true });
     const md = readFileSync(join(dir, 'private', 'calibration-table.md'), 'utf8');
     for (const repo of repos) expect(md).not.toContain(repo);
     expect(md).toContain('| cr-0.1.0: all admitted proxies (P1–P4) | 100.0%');
@@ -335,5 +355,15 @@ describe('corpus-calibration CLI', () => {
     const bad = run('corpus-calibration-score', dir, ['--sample', 'private']);
     expect(bad.exitCode).toBe(2);
     expect(bad.err).toContain('sheet-b: nope: not in the sample');
+  });
+});
+
+describe('labelling guide', () => {
+  it('keeps the headings the model labeller extracts (scripts/corpus/label-calibration.mjs)', () => {
+    const doc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../../docs/arbiter/corrective-rework-label.md'), 'utf8');
+    for (const [from, to] of [['## 1. Definition', '## 2.'], ['## 4. Labelling guide', '### Independence']] as const) {
+      expect(doc.indexOf(from)).toBeGreaterThanOrEqual(0);
+      expect(doc.indexOf(to, doc.indexOf(from))).toBeGreaterThan(doc.indexOf(from));
+    }
   });
 });
