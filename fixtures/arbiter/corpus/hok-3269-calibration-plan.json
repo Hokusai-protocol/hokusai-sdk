@@ -1,7 +1,7 @@
 {
   "issue": "HOK-3269",
   "plan_version": "1.0.0",
-  "status": "DRAFT: pre-registered when this file's freeze commit lands, before any item is labelled",
+  "status": "FROZEN 2026-10-29: pre-registered before the sample was drawn; changes need a new plan_version and a change-log entry",
   "horizon_days": 30,
   "allocation": {
     "revert": 20,

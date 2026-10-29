@@ -1,6 +1,6 @@
 # Corrective-rework label: definition and calibration (HOK-3269)
 
-**Status:** DRAFT. The calibration plan (§3) is pre-registered when the freeze commit lands, before anyone labels an item. §6 is filled in from the scored sheets, and `cr-0.2.0` is pinned from §6 by the rule in §3.4.
+**Status:** Plan FROZEN on 2026-10-29, before the sample was drawn. The calibration plan (§3) and `hok-3269-calibration-plan.json` change only with a new `plan_version` and a change-log entry. §6 is filled in from the scored sheets, and `cr-0.2.0` is pinned from §6 by the rule in §3.4.
 **Internal.** The public excerpt is [corrective-rework-label-public.md](corrective-rework-label-public.md).
 
 ## 1. Definition
@@ -238,3 +238,4 @@ _To be filled in from `calibration-table.md` once labelling is complete._
 
 - 2026-10-29: first draft.
 - 2026-10-29: labelling moves to two model labellers plus a paid human audit (53 items). Each item gets an evidence bundle with related PRs. Model labels stand in only if the person agrees with model A at κ ≥ 0.6. The defaults are kept and their rationale recorded: κ 0.6, precision floor 0.80 (HOK-3028's bar), 40 negatives, SZZ split at 3 lines.
+- 2026-10-29: plan 1.0.0 frozen, before the sample draw.
