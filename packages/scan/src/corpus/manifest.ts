@@ -16,6 +16,8 @@ export interface CohortRepo {
   repo: string;
   status: CohortStatus;
   default_branch_aliases?: string[];
+  tier?: string;
+  observed_merge_convention?: string;
 }
 
 export interface CohortManifest {

@@ -9200,14 +9200,260 @@ function runnableRepos(manifest, only) {
   return all.filter((r) => RUNNABLE_STATUSES.includes(r.status));
 }
 
+// src/report/stats.ts
+function round42(value) {
+  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+}
+function roundedInterval(low, high, value) {
+  let lo = round42(Math.max(0, Math.min(1, low)));
+  let hi = round42(Math.max(0, Math.min(1, high)));
+  if (value !== void 0) {
+    lo = Math.min(lo, round42(value));
+    hi = Math.max(hi, round42(value));
+  }
+  return { low: lo, high: hi };
+}
+function wilsonInterval(k, n, z = 1.959964) {
+  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
+    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
+  }
+  if (n === 0) return null;
+  const p = k / n;
+  const z2 = z * z;
+  const den = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / den;
+  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
+  return roundedInterval(center - half, center + half, p);
+}
+function katzLogRatioInterval(k1, n1, k2, n2) {
+  for (const [k, n] of [[k1, n1], [k2, n2]]) {
+    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
+      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
+    }
+  }
+  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
+  const a = k1 + (corrected ? 0.5 : 0);
+  const b = n1 - k1 + (corrected ? 0.5 : 0);
+  const c = k2 + (corrected ? 0.5 : 0);
+  const d = n2 - k2 + (corrected ? 0.5 : 0);
+  const ratio3 = a / (a + b) / (c / (c + d));
+  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
+  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
+  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
+  const r = round42(ratio3);
+  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
+}
+function nearestRankQuartiles(sorted) {
+  if (!sorted.length) return null;
+  for (let i = 0; i < sorted.length; i++) {
+    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
+      throw new RangeError("nearestRankQuartiles requires finite ascending values");
+    }
+  }
+  const at = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  return [at(0.25), at(0.5), at(0.75)];
+}
+function quartileOf(value, cuts) {
+  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
+    throw new RangeError("quartileOf requires finite values and ascending cuts");
+  }
+  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
+}
+
+// src/corpus/report.ts
+var CORPUS_REPORT_VERSION = "1.0.0";
+var DEGENERATE_RATE = 5e-3;
+var CHURN_RATE = 0.25;
+var CONVENTION_SPREAD_RATIO = 3;
+var FLAG_HORIZON = 30;
+var SZZ_SENSITIVITY_MIN_LINES = 3;
+var HIGH_PRECISION = ["revert", "repair_reference"];
+var ratio2 = (k, n) => n ? round43(k / n) : null;
+function round43(value) {
+  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+}
+var bump = (map, key, by = 1) => {
+  map[key] = (map[key] ?? 0) + by;
+};
+var sortKeys = (map) => Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)));
+function blamedLines(candidate) {
+  return candidate.evidence.filter((e) => e.kind === "blamed_lines").reduce((sum, e) => sum + (e.count ?? 0), 0);
+}
+function summarizeCorpusRepo(input) {
+  const horizons = /* @__PURE__ */ new Map();
+  const at = (h) => {
+    let s = horizons.get(h);
+    if (!s) {
+      s = {
+        horizon_days: h,
+        prs: 0,
+        s2_outcomes: {},
+        corrective: { true: 0, false: 0, null: 0 },
+        corrective_rate: null,
+        corrective_rate_ci95: null,
+        proxy_contribution: Object.fromEntries(ADMITTED_PROXIES.map((p) => [p, { rows: 0, sole: 0 }])),
+        corrective_rate_high_precision: null,
+        corrective_rate_szz_min_lines: null,
+        candidates: { total: 0, rejected: 0, rejection_rate: null },
+        rejections_by_reason: {},
+        rejections_by_proxy: {},
+        linkage_error: { rejected: 0, rate: null }
+      };
+      horizons.set(h, s);
+    }
+    return s;
+  };
+  for (const h of HORIZONS) at(h);
+  for (const row of input.s2Rows) {
+    const s = at(row.horizon_days);
+    s.prs++;
+    bump(s.s2_outcomes, row.outcome.report_outcome ?? "missing");
+  }
+  const accepted = /* @__PURE__ */ new Map();
+  const revertReasons = {};
+  for (const c of input.candidates) {
+    if (c.status === "accepted") accepted.set(c.candidate_id, c);
+    if (c.status === "accepted" && c.proxy === "revert") {
+      const reason = c.evidence.find((e) => e.kind === "revert_reason")?.ref;
+      if (reason) bump(revertReasons, reason);
+    }
+    for (const s of horizons.values()) {
+      if (c.lag_seconds > s.horizon_days * 86400) continue;
+      const rejected = c.status === "rejected";
+      s.candidates.total++;
+      const byProxy = s.rejections_by_proxy[c.proxy] ??= { total: 0, rejected: 0, rejection_rate: null };
+      byProxy.total++;
+      if (!rejected) continue;
+      s.candidates.rejected++;
+      byProxy.rejected++;
+      bump(s.rejections_by_reason, c.exclusion_code ?? "unknown");
+      if (c.exclusion_code === "linkage_error") s.linkage_error.rejected++;
+    }
+  }
+  const highPrecision = /* @__PURE__ */ new Map();
+  const szzMin = /* @__PURE__ */ new Map();
+  for (const row of input.correctiveRows) {
+    const s = at(row.horizon_days);
+    if (row.corrective === null) {
+      s.corrective.null++;
+      continue;
+    }
+    if (!row.corrective) {
+      s.corrective.false++;
+      continue;
+    }
+    s.corrective.true++;
+    const proxies = row.reason_codes.filter((c) => ADMITTED_PROXIES.includes(c));
+    for (const p of proxies) {
+      const cell2 = s.proxy_contribution[p];
+      cell2.rows++;
+      if (proxies.length === 1) cell2.sole++;
+    }
+    if (proxies.some((p) => HIGH_PRECISION.includes(p))) highPrecision.set(row.horizon_days, (highPrecision.get(row.horizon_days) ?? 0) + 1);
+    const pairs = row.repair_pair_ids.map((id2) => accepted.get(id2)).filter((c) => c !== void 0);
+    const kept = pairs.length === 0 || pairs.some((c) => c.proxy !== "szz" || blamedLines(c) >= SZZ_SENSITIVITY_MIN_LINES);
+    if (kept) szzMin.set(row.horizon_days, (szzMin.get(row.horizon_days) ?? 0) + 1);
+  }
+  for (const s of horizons.values()) {
+    const n = s.corrective.true + s.corrective.false;
+    s.corrective_rate = ratio2(s.corrective.true, n);
+    s.corrective_rate_ci95 = wilsonInterval(s.corrective.true, n);
+    s.corrective_rate_high_precision = ratio2(highPrecision.get(s.horizon_days) ?? 0, n);
+    s.corrective_rate_szz_min_lines = ratio2(szzMin.get(s.horizon_days) ?? 0, n);
+    s.candidates.rejection_rate = ratio2(s.candidates.rejected, s.candidates.total);
+    s.linkage_error.rate = ratio2(s.linkage_error.rejected, s.candidates.total);
+    for (const cell2 of Object.values(s.rejections_by_proxy)) cell2.rejection_rate = ratio2(cell2.rejected, cell2.total);
+    s.s2_outcomes = sortKeys(s.s2_outcomes);
+    s.rejections_by_reason = sortKeys(s.rejections_by_reason);
+    s.rejections_by_proxy = sortKeys(s.rejections_by_proxy);
+  }
+  return {
+    repo: input.repo,
+    tier: input.tier ?? null,
+    merge_convention: input.mergeConvention ?? null,
+    horizons: [...horizons.values()].sort((a, b) => a.horizon_days - b.horizon_days),
+    revert_reasons: sortKeys(revertReasons)
+  };
+}
+var pct = (r) => r === null ? "n/a" : `${(r * 100).toFixed(1)}%`;
+var rateAt = (repo, field = "corrective_rate") => repo.horizons.find((h) => h.horizon_days === FLAG_HORIZON)?.[field] ?? null;
+function sanityFlags(repos, notes = []) {
+  const flags = [];
+  for (const repo of repos) {
+    const rate = rateAt(repo);
+    if (rate === null) continue;
+    if (rate < DEGENERATE_RATE) flags.push({ code: "degenerate_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is below ${pct(DEGENERATE_RATE)}`, resolution: null });
+    if (rate > CHURN_RATE) flags.push({ code: "churn_rate", repos: [repo.repo], merge_convention: repo.merge_convention, detail: `${pct(rate)} at ${FLAG_HORIZON}d is above ${pct(CHURN_RATE)}`, resolution: null });
+  }
+  const groups = /* @__PURE__ */ new Map();
+  for (const repo of repos) if (repo.merge_convention && rateAt(repo) !== null) groups.set(repo.merge_convention, [...groups.get(repo.merge_convention) ?? [], repo]);
+  for (const [convention, members] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    if (members.length < 2) continue;
+    const sorted = [...members].sort((a, b) => rateAt(a) - rateAt(b) || a.repo.localeCompare(b.repo));
+    const low = sorted[0];
+    const high = sorted.at(-1);
+    const lo = rateAt(low);
+    const hi = rateAt(high);
+    if (lo > 0 ? hi / lo <= CONVENTION_SPREAD_RATIO : hi === 0) continue;
+    const hpLo = Math.min(...members.map((m) => rateAt(m, "corrective_rate_high_precision") ?? 0));
+    const hpHi = Math.max(...members.map((m) => rateAt(m, "corrective_rate_high_precision") ?? 0));
+    flags.push({
+      code: "convention_spread",
+      repos: [low.repo, high.repo],
+      merge_convention: convention,
+      detail: `${members.length} ${convention} repos span ${pct(lo)} (${low.repo}) to ${pct(hi)} (${high.repo}) at ${FLAG_HORIZON}d, over ${CONVENTION_SPREAD_RATIO}\xD7; P1+P2 alone span ${pct(hpLo)} to ${pct(hpHi)}`,
+      resolution: null
+    });
+  }
+  for (const flag of flags) {
+    const note = notes.find((n) => n.code === flag.code && (flag.code === "convention_spread" ? n.merge_convention === flag.merge_convention : n.repo === flag.repos[0]));
+    if (note) flag.resolution = { action: note.action, note: note.note };
+  }
+  return flags;
+}
+var ci = (i) => i ? `${(i.low * 100).toFixed(1)}\u2013${(i.high * 100).toFixed(1)}` : "n/a";
+function renderCorpusReportMarkdown(report) {
+  const lines = [
+    `# Corpus sanity report`,
+    "",
+    `Run \`${report.run_id}\`, as-of ${report.as_of}. Corrective rate = true / (true + false), 95% Wilson CI. Proxy columns count corrective rows each proxy supports (rows can have several). "P1+P2" is the rate from reverts and repair references alone; "SZZ\u2265${SZZ_SENSITIVITY_MIN_LINES}" requires SZZ links to blame at least ${SZZ_SENSITIVITY_MIN_LINES} lines. Rejected = share of candidates (lag \u2264 horizon) the labeller rejected.`,
+    "",
+    "| Repo | Convention | H | PRs | S2 survived | Corrective | 95% CI | P1+P2 | SZZ\u22653 | revert | repair_ref | szz | regr_issue | Rejected | linkage_error |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+  ];
+  for (const repo of report.repos) {
+    for (const h of repo.horizons) {
+      const labelled = h.prs - (h.s2_outcomes.missing ?? 0);
+      const c = h.proxy_contribution;
+      lines.push(
+        `| ${repo.repo} | ${repo.merge_convention ?? ""} | ${h.horizon_days} | ${h.prs} | ${pct(ratio2(h.s2_outcomes.survived ?? 0, labelled))} | ${pct(h.corrective_rate)} | ${ci(h.corrective_rate_ci95)} | ${pct(h.corrective_rate_high_precision)} | ${pct(h.corrective_rate_szz_min_lines)} | ${c.revert?.rows ?? 0} | ${c.repair_reference?.rows ?? 0} | ${c.szz?.rows ?? 0} | ${c.regression_issue?.rows ?? 0} | ${pct(h.candidates.rejection_rate)} | ${h.linkage_error.rejected} |`
+      );
+    }
+  }
+  lines.push("", "## Sanity flags", "");
+  if (!report.flags.length) lines.push("None.");
+  for (const flag of report.flags) {
+    lines.push(`- **${flag.code}** (${flag.repos.join(", ")}): ${flag.detail}.`);
+    lines.push(flag.resolution ? `  - ${flag.resolution.action}: ${flag.resolution.note}` : "  - **unresolved**");
+  }
+  if (report.conventionFindings?.length) {
+    lines.push("", "## Merge-convention findings", "");
+    for (const f of report.conventionFindings) lines.push(`- **${f.merge_convention}**${f.repos.length ? ` (${f.repos.join(", ")})` : ""}: ${f.finding}`);
+  }
+  return `${lines.join("\n")}
+`;
+}
+
 // src/corpus/cli.ts
 var OPTIONS = {
   manifest: { type: "string" },
   "cache-dir": { type: "string" },
   repo: { type: "string" },
-  "as-of": { type: "string" }
+  "as-of": { type: "string" },
+  out: { type: "string" },
+  notes: { type: "string" }
 };
-var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label", "corpus-corrective"];
+var CORPUS_COMMANDS = ["corpus-enumerate", "corpus-label", "corpus-corrective", "corpus-report"];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
 function secondsUntilReset() {
@@ -9341,11 +9587,13 @@ function runCorpusCli(command, argv, io) {
   }
   let values;
   let entries;
+  let manifestBytes;
   let window;
   try {
     ({ values } = parseArgs2({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
-    const manifest = parseCohortManifest(JSON.parse(readFileSync3(resolve4(io.cwd, values.manifest), "utf8")));
+    manifestBytes = readFileSync3(resolve4(io.cwd, values.manifest));
+    const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
     entries = runnableRepos(manifest, values.repo);
     window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
   } catch (error) {
@@ -9355,6 +9603,25 @@ function runCorpusCli(command, argv, io) {
   }
   const log = (line) => io.writeStderr(`${line}
 `);
+  if (command === "corpus-report") {
+    const asOf = values["as-of"] ? new Date(values["as-of"]) : null;
+    if (!asOf || !Number.isFinite(asOf.getTime()) || !values.out) {
+      io.writeStderr("error: corpus-report needs --as-of <iso> and --out <dir>\n");
+      return { exitCode: 2 };
+    }
+    let notes = { notes: [], convention_findings: [] };
+    try {
+      if (values.notes) {
+        const parsed = JSON.parse(readFileSync3(resolve4(io.cwd, values.notes), "utf8"));
+        notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
+      }
+    } catch (error) {
+      io.writeStderr(`error: --notes: ${error.message}
+`);
+      return { exitCode: 2 };
+    }
+    return runReport(entries, resolve4(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve4(io.cwd, values.out), io, log);
+  }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
   if (command === "corpus-label" || command === "corpus-corrective") {
@@ -9517,6 +9784,73 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
     }
   }
   return { exitCode: failures ? 3 : 0 };
+}
+var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
+function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
+  const sha256 = (bytes) => createHash3("sha256").update(bytes).digest("hex");
+  const repos = [];
+  const inputs = [];
+  const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
+  const day = asOf.toISOString().slice(0, 10);
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split("/");
+    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    try {
+      for (const file of REPORT_INPUTS) if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      const counted = (file, onRow) => {
+        const path4 = join7(repoDir, file);
+        const bytes = readFileSync3(path4);
+        const record = { repo: entry.repo, file, sha256: sha256(bytes), bytes: bytes.length, rows: 0 };
+        inputs.push(record);
+        return (function* () {
+          for (const row of readGzipJsonlMembers(path4)) {
+            record.rows++;
+            onRow(row);
+            yield row;
+          }
+        })();
+      };
+      const checkAsOf = (value, file) => {
+        if (value.slice(0, 10) !== day) throw new Error(`${file} is labelled as of ${value}, not ${day}`);
+      };
+      const s2Rows = counted("s2.jsonl.gz", (r) => versions.s2.add(`schema ${r.schema_version}, labeller ${r.envelope.labeller_version}`));
+      const candidates = counted("candidates.jsonl.gz", (r) => checkAsOf(r.envelope.as_of, "candidates.jsonl.gz"));
+      const correctiveRows = counted("corrective.jsonl.gz", (r) => {
+        checkAsOf(r.envelope.as_of, "corrective.jsonl.gz");
+        versions.corrective.add(`schema ${r.schema_version}, definition ${r.envelope.definition_version}, labeller ${r.envelope.labeller_version}`);
+      });
+      for (const _ of counted("repair_pairs.jsonl.gz", () => {
+      })) ;
+      const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
+      repos.push(summary);
+      log(`info: ${entry.repo}: summarized`);
+    } catch (error) {
+      failures++;
+      log(`error: ${entry.repo}: ${error.message}`);
+    }
+  }
+  if (failures) return { exitCode: 3 };
+  const flags = sanityFlags(repos, notes.notes);
+  const findings = notes.convention_findings;
+  const manifest = {
+    report_version: CORPUS_REPORT_VERSION,
+    as_of: asOf.toISOString(),
+    cohort_manifest_sha256: sha256(manifestBytes),
+    label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
+    inputs
+  };
+  const run_id = sha256(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  mkdirSync2(outDir, { recursive: true });
+  writeFileSync2(join7(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
+`);
+  writeFileSync2(join7(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_findings: findings }, null, 2)}
+`);
+  writeFileSync2(join7(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, conventionFindings: findings }));
+  const unresolved = flags.filter((f) => !f.resolution).length;
+  io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
+`);
+  return { exitCode: unresolved ? 1 : 0 };
 }
 
 // src/orchestrate/github.ts
@@ -9734,75 +10068,15 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
   return valid.value;
 }
 
-// src/report/stats.ts
-function round42(value) {
-  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
-}
-function roundedInterval(low, high, value) {
-  let lo = round42(Math.max(0, Math.min(1, low)));
-  let hi = round42(Math.max(0, Math.min(1, high)));
-  if (value !== void 0) {
-    lo = Math.min(lo, round42(value));
-    hi = Math.max(hi, round42(value));
-  }
-  return { low: lo, high: hi };
-}
-function wilsonInterval(k, n, z = 1.959964) {
-  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
-    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
-  }
-  if (n === 0) return null;
-  const p = k / n;
-  const z2 = z * z;
-  const den = 1 + z2 / n;
-  const center = (p + z2 / (2 * n)) / den;
-  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
-  return roundedInterval(center - half, center + half, p);
-}
-function katzLogRatioInterval(k1, n1, k2, n2) {
-  for (const [k, n] of [[k1, n1], [k2, n2]]) {
-    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
-      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
-    }
-  }
-  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
-  const a = k1 + (corrected ? 0.5 : 0);
-  const b = n1 - k1 + (corrected ? 0.5 : 0);
-  const c = k2 + (corrected ? 0.5 : 0);
-  const d = n2 - k2 + (corrected ? 0.5 : 0);
-  const ratio2 = a / (a + b) / (c / (c + d));
-  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
-  const low = Math.exp(Math.log(ratio2) - 1.959964 * se);
-  const high = Math.exp(Math.log(ratio2) + 1.959964 * se);
-  const r = round42(ratio2);
-  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
-}
-function nearestRankQuartiles(sorted) {
-  if (!sorted.length) return null;
-  for (let i = 0; i < sorted.length; i++) {
-    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
-      throw new RangeError("nearestRankQuartiles requires finite ascending values");
-    }
-  }
-  const at = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
-  return [at(0.25), at(0.5), at(0.75)];
-}
-function quartileOf(value, cuts) {
-  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
-    throw new RangeError("quartileOf requires finite values and ascending cuts");
-  }
-  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
-}
-
 // src/report/aggregate.ts
 var OUTCOMES = ["survived", "followup", "substantially_rewritten", "reverted"];
 var emptySection = (rows) => ({ basis: "descriptive", status: "shown", suppression_reasons: [], rows });
 function makeCell(k, n) {
-  const ci = wilsonInterval(k, n);
-  return { basis: "descriptive", n, value: n ? Math.round(k / n * 1e4) / 1e4 : null, ci: ci ? { ...ci, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
+  const ci2 = wilsonInterval(k, n);
+  return { basis: "descriptive", n, value: n ? Math.round(k / n * 1e4) / 1e4 : null, ci: ci2 ? { ...ci2, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
-function ratioCell(ratio2, n, ci) {
-  return { basis: "descriptive", n, value: ratio2, ci: ci ? { low: ci.low, high: ci.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
+function ratioCell(ratio3, n, ci2) {
+  return { basis: "descriptive", n, value: ratio3, ci: ci2 ? { low: ci2.low, high: ci2.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
 function labelAt(pr, horizon2) {
   return pr.labels.find((label2) => label2.horizon_days === horizon2);
@@ -10446,6 +10720,8 @@ corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name
                  (S2 v1.1.0 rows per enumerated PR \xD7 14/30/60 into <cache>/<repo>/s2.jsonl)
 corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
+corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
+                 (per repo \xD7 horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },

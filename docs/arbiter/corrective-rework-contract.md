@@ -141,3 +141,5 @@ The labeller writes these files next to each repo's `s2.jsonl.gz` and uploads th
 - `corrective.jsonl.gz`
 
 HOK-3268 aggregates these files and HOK-3269 samples them. Neither reads the corpus again.
+
+`hokusai-scan corpus-report` does the aggregation. It writes `corpus-report.{json,md}` and `run-manifest.json` under `as-of=<date>/report/`. The manifest's `run_id` is derived from the SHA-256 of every input file, so the same inputs always give the same ID. Flags are resolved, explained or dropped, in `fixtures/arbiter/corpus/hok-3022-sanity-notes.json`, which also records the merge-convention findings for HOK-2822.
