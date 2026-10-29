@@ -10,6 +10,7 @@ import { harvestedSurvivalLabelFixture } from '../../../core/src/fixtures/arbite
 import { execArgvCommand } from '../shell-utils.js';
 import type { CrossReference, GitRunner } from '../survival-labeller.js';
 import { correctiveCorpusRepo, type CorrectiveCorpusRepoResult } from './corrective.js';
+import { blameFix, type IssueMeta } from './corrective-szz.js';
 import type { CorpusPrRecord } from './enumerate.js';
 
 const REPO = 'o/r';
@@ -85,6 +86,11 @@ describe('correctiveCorpusRepo', () => {
     const p6 = commit({ 'docs.md': 'see\n' }, 'Update docs (#6)', '2025-01-09T00:00:00Z');
     const f7 = commit({ 'src/a.py': 'zero\none\ntwo\nthree\nfive\n' }, 'Handle edge case (#7)', '2025-01-10T00:00:00Z');
     const p8 = commit({ 'src/d.py': 'dee\n' }, 'Close tracker (#8)', '2025-01-11T00:00:00Z');
+    // A bug fix rewriting #8's line (P3), and a fix closing a regression issue that reported #2 (P4).
+    const c10 = commit({ 'docs/x.md': 'x\n' }, 'Added a thing (#10)', '2025-01-12T00:00:00Z');
+    const s12 = commit({ 'src/d.py': 'DEE\n' }, 'Handle d (#12)', '2025-01-13T00:00:00Z');
+    const s13 = commit({ 'src/e.py': 'e\n' }, 'Restore b (#13)', '2025-01-14T00:00:00Z');
+    const s14 = commit({ 'src/d.py': 'DEE!\n' }, 'Tweak d (#14)', '2025-01-15T00:00:00Z');
     const late = commit({ 'src/a.py': 'zero\n' }, 'fix: late (#9)', '2025-04-01T00:00:00Z');
     originals = [
       record(1, c0, o1, '2025-01-02T00:00:00Z'),
@@ -94,21 +100,30 @@ describe('correctiveCorpusRepo', () => {
       record(5, r2, d5, '2025-01-08T00:00:00Z', { title: 'fix: bump lib', body: 'Fixes a regression from #1', author_login: 'dependabot[bot]' }),
       record(6, d5, p6, '2025-01-09T00:00:00Z', { title: 'Update docs', body: 'See #1 and other/repo#1' }),
       record(8, f7, p8, '2025-01-11T00:00:00Z', { title: 'Close tracker', closing_issues: [51] }),
-      record(10, p8, p8, '2025-01-12T00:00:00Z', { title: 'Fixed #36001 -- Added a thing', body: 'Builds on top of #1 and was inadvertently fixed in #2. Adds regression tests for #3.' }),
+      record(10, p8, c10, '2025-01-12T00:00:00Z', { title: 'Fixed #36001 -- Added a thing', body: 'Builds on top of #1 and was inadvertently fixed in #2. Adds regression tests for #3.' }),
     ];
     const laterPrs = [
       record(7, p6, f7, '2025-01-10T00:00:00Z', { title: 'Fix edge case', closing_issues: [50] }),
       record(11, f7, f7, '2025-01-10T00:00:00Z', { title: 'Bump pin', closing_issues: [50] }),
-      record(9, p8, late, '2025-04-01T00:00:00Z', { title: 'fix: late', body: 'Regression from #1' }),
+      record(9, s14, late, '2025-04-01T00:00:00Z', { title: 'fix: late', body: 'Regression from #1' }),
+      record(12, c10, s12, '2025-01-13T00:00:00Z', { title: 'Handle d', closing_issues: [60] }),
+      record(13, s12, s13, '2025-01-14T00:00:00Z', { title: 'Restore b', closing_issues: [61, 62] }),
+      // Closes a bug-bash issue: not a bug report, so no blame.
+      record(14, s13, s14, '2025-01-15T00:00:00Z', { title: 'Tweak d', closing_issues: [63] }),
     ];
+    const issue = (n: number, labels: string[], type: string | null = null): [number, IssueMeta] => [n, { url: `https://github.com/${REPO}/issues/${n}`, labels, type }];
+    const issues = new Map([issue(50, []), issue(51, []), issue(60, ['triaged'], 'Bug'), issue(61, ['regression']), issue(62, ['not a regression']), issue(63, ['bug-bash'])]);
     const ref = (issue: number, at: string): CrossReference => ({
       createdAtEpoch: Date.parse(at) / 1000, url: `https://github.com/${REPO}/issues/${issue}`, sourceAuthorLogin: null, sourceAuthorType: null, sourceBaseRef: null,
     });
     // Issue 50 reported #1 after it merged; issue 51 tracked #1 before it merged.
-    const crossReferences = new Map([[1, [ref(50, '2025-01-09T00:00:00Z'), ref(51, '2025-01-01T12:00:00Z')]]]);
+    const crossReferences = new Map([
+      [1, [ref(50, '2025-01-09T00:00:00Z'), ref(51, '2025-01-01T12:00:00Z')]],
+      [2, [ref(61, '2025-01-10T00:00:00Z'), ref(62, '2025-01-10T00:00:00Z')]],
+    ]);
     const s2Rows = [s2Row(url(1), 14), s2Row(url(1), 60), s2Row(url(2), 14), s2Row(url(3), 14), s2Row(url(6), 14, true)];
     result = correctiveCorpusRepo(
-      { repo: REPO, branch: 'main', originals, laterPrs, from: new Date('2025-01-01T00:00:00Z'), asOf: new Date('2025-06-01T00:00:00Z'), crossReferences, s2Rows },
+      { repo: REPO, branch: 'main', originals, laterPrs, from: new Date('2025-01-01T00:00:00Z'), asOf: new Date('2025-06-01T00:00:00Z'), crossReferences, issues, szz: true, s2Rows },
       { runGit, now: () => new Date('2025-06-02T00:00:00Z') },
     );
   });
@@ -134,6 +149,29 @@ describe('correctiveCorpusRepo', () => {
     const [candidate] = find(2, 'revert');
     expect(candidate).toMatchObject({ status: 'accepted', fix: { pr_url: null } });
     expect(candidate?.evidence[0]?.kind).toBe('revert_message');
+  });
+
+  it('records the class of the reason a bot gave for a revert', () => {
+    expect(find(2, 'revert')[0]?.evidence).toContainEqual({ kind: 'revert_reason', ref: 'public_ci', count: null });
+  });
+
+  it('blames a bug fix back to the original that landed the lines it rewrites (P3)', () => {
+    const [candidate] = find(8, 'szz');
+    expect(candidate).toMatchObject({ status: 'accepted', confidence: 'medium', fix: { pr_url: url(12) } });
+    expect(candidate?.evidence).toEqual([
+      { kind: 'closes_bug_issue', ref: `https://github.com/${REPO}/issues/60`, count: null },
+      { kind: 'blamed_lines', ref: originals.find((o) => o.pr_number === 8)!.merge_sha, count: 1 },
+    ]);
+    // #14 rewrites #12's line too, but closes only a bug-bash issue, and #12 is not an original.
+    expect(result.candidates.some((c) => c.fix.pr_url === url(14))).toBe(false);
+  });
+
+  it('links a fix closing a regression issue that reported the original (P4), not a "not a regression" one', () => {
+    const p4 = find(2, 'regression_issue');
+    expect(p4.map((c) => [c.fix.pr_url, c.status, c.evidence.map((e) => e.kind)])).toEqual([
+      [url(13), 'accepted', ['regression_issue_label', 'closes_issue_citing_original']],
+    ]);
+    expect(p4[0]?.evidence[1]?.ref).toBe(`https://github.com/${REPO}/issues/61`);
   });
 
   it('rejects a collateral revert as revert_non_defect', () => {
@@ -176,7 +214,7 @@ describe('correctiveCorpusRepo', () => {
   it('derives one corrective row per S2 row from accepted pairs only', () => {
     const rows = new Map(result.corrective.map((r) => [`${r.prUrl}@${r.horizon_days}`, r]));
     expect(rows.get(`${url(1)}@14`)).toMatchObject({ corrective: true, confidence: 'high', reason_codes: ['repair_reference'] });
-    expect(rows.get(`${url(2)}@14`)).toMatchObject({ corrective: true, reason_codes: ['revert'] });
+    expect(rows.get(`${url(2)}@14`)).toMatchObject({ corrective: true, reason_codes: ['revert', 'regression_issue'] });
     expect(rows.get(`${url(3)}@14`)).toMatchObject({ corrective: false, reason_codes: ['no_accepted_fix'] });
     expect(rows.get(`${url(6)}@14`)).toMatchObject({ corrective: null, reason_codes: ['base_label_missing'] });
     expect(rows.get(`${url(1)}@14`)?.base_label_hash).toBe(canonicalHash(s2Row(url(1), 14)));
@@ -186,5 +224,39 @@ describe('correctiveCorpusRepo', () => {
   it('writes no titles or bodies into any record', () => {
     const text = JSON.stringify([...result.candidates, ...result.repairPairs, ...result.corrective]);
     for (const fragment of ['crash in parser', 'Regression from', 'merge conflict', 'breaks trunk', 'Update docs']) expect(text).not.toContain(fragment);
+  });
+});
+
+describe('blameFix', () => {
+  it('reads `---`/`+++` as headers only before the first hunk, strips the tab git adds to paths with spaces, and skips generated files', () => {
+    const diff = [
+      'diff --git a/q.sql b/q.sql',
+      '--- a/q.sql',
+      '+++ b/q.sql',
+      '@@ -3,2 +3,0 @@',
+      '--- from integer interpreted as seconds',
+      '-select 1;',
+      'diff --git a/my dir/x.sql b/my dir/x.sql',
+      '--- a/my dir/x.sql\t',
+      '+++ b/my dir/x.sql\t',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      'diff --git a/go.mod b/go.mod',
+      '--- a/go.mod',
+      '+++ b/go.mod',
+      '@@ -5 +5 @@',
+      '-require x v1',
+      '+require x v2',
+    ].join('\n');
+    const blamed: string[] = [];
+    const runGit: GitRunner = (args) => {
+      if (args[0] === 'diff') return { exitCode: 0, stdout: diff, stderr: '' };
+      blamed.push(`${args.at(-1)} ${args.filter((a, i) => args[i - 1] === '-L').join(' ')}`);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+    const result = blameFix(runGit, { parentSha: 'p', tipSha: 't' }, new Map(), 0);
+    expect(blamed).toEqual(['q.sql 3,4', 'my dir/x.sql 1,1']);
+    expect(result).toMatchObject({ status: 'blamed', files: 2, changedLines: 4 });
   });
 });

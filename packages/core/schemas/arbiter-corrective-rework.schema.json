@@ -27,7 +27,7 @@
       "pattern": "^https?://\\S+$"
     },
     "schemaVersion": {
-      "enum": ["1.0.0"],
+      "enum": ["1.1.0"],
       "description": "Contract version. Must equal envelope.schema_version."
     },
     "proxy": {
@@ -70,13 +70,14 @@
             "closes_issue_citing_original",
             "closes_bug_issue",
             "blamed_lines",
-            "regression_issue_label"
+            "regression_issue_label",
+            "revert_reason"
           ]
         },
         "ref": {
           "type": ["string", "null"],
           "maxLength": 512,
-          "description": "URL, SHA or label name. Never free text."
+          "description": "URL, SHA, label name or revert-reason class. Never free text."
         },
         "count": { "type": ["integer", "null"], "minimum": 0 }
       }

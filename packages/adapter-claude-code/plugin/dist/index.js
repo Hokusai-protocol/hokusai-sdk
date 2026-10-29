@@ -6652,7 +6652,7 @@ var ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
 
 // ../core/src/arbiter-corrective-rework.ts
 import { createHash as createHash2 } from "node:crypto";
-var ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = "1.0.0";
+var ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = "1.1.0";
 var CORRECTIVE_REWORK_DEFINITION_VERSION = "cr-0.1.0";
 var PROXY_CONFIDENCE = Object.freeze({
   revert: "high",
@@ -6741,7 +6741,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
       },
       "schemaVersion": {
         "enum": [
-          "1.0.0"
+          "1.1.0"
         ],
         "description": "Contract version. Must equal envelope.schema_version."
       },
@@ -6799,7 +6799,8 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
               "closes_issue_citing_original",
               "closes_bug_issue",
               "blamed_lines",
-              "regression_issue_label"
+              "regression_issue_label",
+              "revert_reason"
             ]
           },
           "ref": {
@@ -6808,7 +6809,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
               "null"
             ],
             "maxLength": 512,
-            "description": "URL, SHA or label name. Never free text."
+            "description": "URL, SHA, label name or revert-reason class. Never free text."
           },
           "count": {
             "type": [
