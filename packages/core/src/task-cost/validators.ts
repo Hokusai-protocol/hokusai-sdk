@@ -130,22 +130,28 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$/;
 const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 const PROVIDER_CONTRACT_PATTERN = /^[a-z][a-z0-9-]{0,31}\/[0-9]{1,4}$/;
+/**
+ * A minted identifier: a lowercase RFC 9562 UUID (v7 recommended) or a ULID.
+ * Never derived from a head, a timestamp or a session.
+ */
+export const MINTED_ID_PATTERN =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/;
 const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function fail(message: string, code: TaskCostValidationCode = 'schema_validation_failed'): never {
+export function fail(message: string, code: TaskCostValidationCode = 'schema_validation_failed'): never {
   throw new TaskCostValidationError(code, message);
 }
 
-function requireObject(value: unknown, label: string): Record<string, unknown> {
+export function requireObject(value: unknown, label: string): Record<string, unknown> {
   if (!isPlainObject(value)) fail(`${label} must be an object`);
   return value;
 }
 
-function requireEnum<T extends string>(
+export function requireEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
   label: string,
@@ -156,25 +162,32 @@ function requireEnum<T extends string>(
   return value as T;
 }
 
-function requireId(value: unknown, label: string): string {
+export function requireId(value: unknown, label: string): string {
   if (typeof value !== 'string' || !ID_PATTERN.test(value)) {
     fail(`${label} must be an identifier matching ${ID_PATTERN}`);
   }
   return value;
 }
 
-function optionalId(value: unknown, label: string): string | undefined {
+export function requireMintedId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !MINTED_ID_PATTERN.test(value)) {
+    fail(`${label} must be a minted UUID or ULID, not a derived value`);
+  }
+  return value;
+}
+
+export function optionalId(value: unknown, label: string): string | undefined {
   return value === undefined ? undefined : requireId(value, label);
 }
 
-function requirePattern(value: unknown, pattern: RegExp, label: string): string {
+export function requirePattern(value: unknown, pattern: RegExp, label: string): string {
   if (typeof value !== 'string' || !pattern.test(value)) {
     fail(`${label} must match ${pattern}`);
   }
   return value;
 }
 
-function requireModel(value: unknown, label: string): string {
+export function requireModel(value: unknown, label: string): string {
   const model = requirePattern(value, MODEL_PATTERN, label);
   if (model.includes('..') || model.includes('//')) {
     fail(`${label} must not contain path-like sequences`);
@@ -182,7 +195,7 @@ function requireModel(value: unknown, label: string): string {
   return model;
 }
 
-function requireTimestamp(value: unknown, label: string): string {
+export function requireTimestamp(value: unknown, label: string): string {
   if (typeof value !== 'string') fail(`${label} must be an ISO-8601 UTC timestamp`, 'invalid_timestamp');
   const match = TIMESTAMP_PATTERN.exec(value);
   if (!match) fail(`${label} must be an ISO-8601 UTC timestamp`, 'invalid_timestamp');
@@ -201,12 +214,12 @@ function requireTimestamp(value: unknown, label: string): string {
   return value;
 }
 
-function requireBoolean(value: unknown, label: string): boolean {
+export function requireBoolean(value: unknown, label: string): boolean {
   if (typeof value !== 'boolean') fail(`${label} must be a boolean`);
   return value;
 }
 
-function requireCount(value: unknown, label: string): number {
+export function requireCount(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
     fail(`${label} must be a non-negative integer`, 'usage_out_of_range');
   }
@@ -247,7 +260,7 @@ function requireTokenUsage(value: unknown, label: string): TaskCostTokenUsage {
   return usage;
 }
 
-function checkSchemaVersion(record: Record<string, unknown>, expected: string, label: string): void {
+export function checkSchemaVersion(record: Record<string, unknown>, expected: string, label: string): void {
   const version = record.schema_version;
   if (typeof version !== 'string') fail(`${label}.schema_version is required`);
   if (version !== expected) {
@@ -269,6 +282,13 @@ export function validateTaskCostEventV1(value: unknown): asserts value is TaskCo
   if (record.is_subagent !== undefined) requireBoolean(record.is_subagent, 'event.is_subagent');
   const replayOf = optionalId(record.replay_of_event_id, 'event.replay_of_event_id');
   if (replayOf === eventId) fail('event.replay_of_event_id must not reference the event itself');
+
+  // Attempt identity (task_attempt/v1, contract 1.1.0). Optional on v1 events.
+  if (record.run_id !== undefined) requireMintedId(record.run_id, 'event.run_id');
+  if (record.stage_attempt_id !== undefined) {
+    if (record.run_id === undefined) fail('event.stage_attempt_id requires event.run_id');
+    requireMintedId(record.stage_attempt_id, 'event.stage_attempt_id');
+  }
 
   requireEnum(record.harness, TASK_COST_HARNESSES, 'event.harness');
   if (record.harness_version !== undefined) {

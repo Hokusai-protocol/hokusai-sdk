@@ -67,16 +67,19 @@ Rules:
 The task-cost contract is exported from `@hokusai/core` and documented in
 [`packages/core/src/task-cost/README.md`](../packages/core/src/task-cost/README.md):
 
-- `TASK_COST_CONTRACT_VERSION = "1.0.0"` (SemVer for the contract as a whole:
+- `TASK_COST_CONTRACT_VERSION = "1.1.0"` (SemVer for the contract as a whole:
   schemas and reducer semantics)
 - `TASK_COST_EVENT_SCHEMA_VERSION = "task_cost_event/v1"`
 - `TASK_COST_SUMMARY_SCHEMA_VERSION = "task_cost_summary/v1"`
 - `TASK_COST_LEDGER_SCHEMA_VERSION = "task_cost_ledger/v1"`
 - `TASK_COST_ADAPTER_CONTRACT_VERSION = "task_cost_adapter/v1"`
+- `TASK_ATTEMPT_SCHEMA_VERSION = "task_attempt/v1"` (attempt identity; rules in
+  [`attempt-identity.md`](../packages/core/src/task-cost/attempt-identity.md))
 
 | Contract | First `@hokusai/core` | Notes |
 | --- | --- | --- |
 | task-cost `1.0.0` (`task_cost_*/v1`) | **0.5.0** (2026-10-15) | First release of the contract, validators, `aggregateTaskCost`, and `aggregateTaskCostByModel`. None of it exists in 0.4.0. |
+| task-cost `1.1.0` (+ `task_attempt/v1`) | next minor (unreleased) | Attempt identity: `task_attempt/v1` records, `reduceTaskAttemptLog`, `taskAttemptFixtures`, optional `run_id` / `stage_attempt_id` on events. Older readers ignore the new event fields (unknown fields are tolerated); events without them are unchanged. |
 
 Rules:
 
