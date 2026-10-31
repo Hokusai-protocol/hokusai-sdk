@@ -1,5 +1,9 @@
 # Task-cost contract (v1)
 
+> **1.1.0** adds attempt identity (`task_attempt/v1`): which run and stage
+> attempt every record belongs to, and which writes may change it. See
+> [`attempt-identity.md`](./attempt-identity.md).
+
 The versioned event, summary, ledger, and adapter contract for an account-free,
 local-first task cost tracker, and the target of the Wavemill cost migration.
 This module is **types, validators, and one pure reference reducer**. No adapter
@@ -13,11 +17,12 @@ Everything is exported from `@hokusai/core`. Fixtures live in
 
 | Constant | Value | Versions |
 | --- | --- | --- |
-| `TASK_COST_CONTRACT_VERSION` | `1.0.0` | The contract as a whole (schemas + reducer semantics), SemVer |
+| `TASK_COST_CONTRACT_VERSION` | `1.1.0` | The contract as a whole (schemas + reducer semantics), SemVer |
 | `TASK_COST_EVENT_SCHEMA_VERSION` | `task_cost_event/v1` | `TaskCostEventV1` |
 | `TASK_COST_SUMMARY_SCHEMA_VERSION` | `task_cost_summary/v1` | `TaskCostSummaryV1` |
 | `TASK_COST_LEDGER_SCHEMA_VERSION` | `task_cost_ledger/v1` | `TaskCostLedgerV1` |
 | `TASK_COST_ADAPTER_CONTRACT_VERSION` | `task_cost_adapter/v1` | `TaskCostAdapterV1` |
+| `TASK_ATTEMPT_SCHEMA_VERSION` | `task_attempt/v1` | Attempt identity records ([`attempt-identity.md`](./attempt-identity.md)) |
 | `PROVIDER_CONTRACT_VERSIONS` | `claude-code/1`, `codex/2`, `native/1`, `pi/1` | Each harness's parsing contract |
 
 `claude-code/1` mirrors Wavemill's existing value (HOK-2958). `codex/2`
@@ -42,6 +47,11 @@ oracle.
 - **Summary** (`TaskCostSummaryV1`): the per-task aggregate, produced by
   `aggregateTaskCost(events, options)`. This is what Wavemill's workflow-cost
   and execution-economics output migrates to.
+- **Attempt identity** (`task_attempt/v1`): minted `run_id` /
+  `stage_attempt_id` (plus `pair_id` / `arm_id` for challenge arms), typed
+  `parent_id` / `retry_of` edges, and the control-vs-evidence write rules.
+  Events may carry `run_id` and `stage_attempt_id` (optional, 1.1.0). See
+  [`attempt-identity.md`](./attempt-identity.md).
 - **Adapter** (`TaskCostAdapterV1`): a synchronous interface
   (`describeCapabilities`, `pollLedger`, `summarizeTask`). Types only.
 
@@ -230,3 +240,6 @@ appears.
 | `wavemill-parity` | Multi-model, cache-tier session with a real Wavemill golden |
 
 See [`wavemill-parity.md`](./wavemill-parity.md) for the migration oracle.
+
+Attempt-identity fixtures (`taskAttemptFixtures`, 8 modules) are listed in
+[`attempt-identity.md`](./attempt-identity.md#fixtures).
