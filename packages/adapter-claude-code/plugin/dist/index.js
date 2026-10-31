@@ -2094,9 +2094,9 @@ var HokusaiClient = class {
         }
       );
     }
-    let attempt = 0;
+    let attempt2 = 0;
     let lastError;
-    while (attempt <= this.#maxRetries) {
+    while (attempt2 <= this.#maxRetries) {
       try {
         const response = await this.#executeRequest({
           path: options.path,
@@ -2135,25 +2135,25 @@ var HokusaiClient = class {
           requestId: headerRequestId,
           status: response.status
         });
-        if (!shouldRetryResponse(response.status, attempt, this.#maxRetries)) {
+        if (!shouldRetryResponse(response.status, attempt2, this.#maxRetries)) {
           throw lastError;
         }
         await this.#sleep(
           getRetryDelayMs({
-            attempt,
+            attempt: attempt2,
             backoffMs: this.#backoffMs,
             retryAfter: parsedError.retryAfter
           })
         );
       } catch (error) {
         if (error instanceof HokusaiApiError) {
-          if (!isRetryableApiError(error) || attempt >= this.#maxRetries) {
+          if (!isRetryableApiError(error) || attempt2 >= this.#maxRetries) {
             throw error;
           }
           lastError = error;
           await this.#sleep(
             getRetryDelayMs({
-              attempt,
+              attempt: attempt2,
               backoffMs: this.#backoffMs,
               retryAfter: error instanceof HokusaiRateLimitError ? error.retryAfter : void 0
             })
@@ -2165,19 +2165,19 @@ var HokusaiClient = class {
               requestId: options.requestId
             }
           );
-          if (attempt >= this.#maxRetries) {
+          if (attempt2 >= this.#maxRetries) {
             throw networkError;
           }
           lastError = networkError;
           await this.#sleep(
             getRetryDelayMs({
-              attempt,
+              attempt: attempt2,
               backoffMs: this.#backoffMs
             })
           );
         }
       }
-      attempt += 1;
+      attempt2 += 1;
     }
     throw lastError ?? new HokusaiNetworkError("Hokusai API request failed.", {
       requestId: options.requestId
@@ -2269,8 +2269,8 @@ function createRequestId() {
   }
   return `hokusai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
-function defaultBackoffMs(attempt) {
-  return Math.min(250 * 2 ** attempt, 2e3);
+function defaultBackoffMs(attempt2) {
+  return Math.min(250 * 2 ** attempt2, 2e3);
 }
 function defaultErrorMessageForStatus(status) {
   if (status === 404) {
@@ -2928,8 +2928,8 @@ async function readJsonBody(response, requestId) {
     });
   }
 }
-function shouldRetryResponse(status, attempt, maxRetries) {
-  if (attempt >= maxRetries) {
+function shouldRetryResponse(status, attempt2, maxRetries) {
+  if (attempt2 >= maxRetries) {
     return false;
   }
   return status === 429 || status >= 500;
@@ -3334,16 +3334,16 @@ async function recordOnboardingFunnelSignal(input) {
     return;
   }
   const now = input.now ?? /* @__PURE__ */ new Date();
-  const state = await getOrCreateState(input.store, now);
-  const stages = new Set(state.emittedStages);
+  const state2 = await getOrCreateState(input.store, now);
+  const stages = new Set(state2.emittedStages);
   const pendingSignals = [];
   if (!stages.has("install")) {
-    pendingSignals.push(buildSignal("install", state, now, input.harness));
+    pendingSignals.push(buildSignal("install", state2, now, input.harness));
     stages.add("install");
   }
   if (!stages.has(input.stage)) {
     pendingSignals.push(
-      buildSignal(input.stage, state, now, input.harness)
+      buildSignal(input.stage, state2, now, input.harness)
     );
     stages.add(input.stage);
   }
@@ -3354,16 +3354,16 @@ async function recordOnboardingFunnelSignal(input) {
     await input.client.signal(signal);
   }
   await putState(input.store, {
-    ...state,
+    ...state2,
     emittedStages: [...stages]
   });
 }
-function buildSignal(stage, state, now, harness) {
+function buildSignal(stage, state2, now, harness) {
   const signal = {
     kind: "onboarding_funnel",
     stage,
-    installationId: state.installationId,
-    installedAt: state.installedAt,
+    installationId: state2.installationId,
+    installedAt: state2.installedAt,
     occurredAt: now.toISOString()
   };
   if (harness) {
@@ -3372,7 +3372,7 @@ function buildSignal(stage, state, now, harness) {
   if (stage === "first_route") {
     signal.timeToFirstRouteMs = Math.max(
       0,
-      now.getTime() - Date.parse(state.installedAt)
+      now.getTime() - Date.parse(state2.installedAt)
     );
   }
   return signal;
@@ -3382,13 +3382,13 @@ async function getOrCreateState(store, now) {
   if (stored) {
     return normalizeState(stored, now);
   }
-  const state = {
+  const state2 = {
     installationId: createInstallationId(now),
     installedAt: now.toISOString(),
     emittedStages: []
   };
-  await putState(store, state);
-  return state;
+  await putState(store, state2);
+  return state2;
 }
 function normalizeState(stored, now) {
   const installationId = typeof stored.installationId === "string" && stored.installationId.trim() ? stored.installationId : createInstallationId(now);
@@ -3400,11 +3400,11 @@ function normalizeState(stored, now) {
     emittedStages
   };
 }
-function putState(store, state) {
+function putState(store, state2) {
   return store.putConfigRecord(STORE_ID, {
-    installationId: state.installationId,
-    installedAt: state.installedAt,
-    emittedStages: state.emittedStages
+    installationId: state2.installationId,
+    installedAt: state2.installedAt,
+    emittedStages: state2.emittedStages
   });
 }
 function isOnboardingFunnelStage(value) {
@@ -8626,6 +8626,7 @@ var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 var MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$/;
 var VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 var PROVIDER_CONTRACT_PATTERN = /^[a-z][a-z0-9-]{0,31}\/[0-9]{1,4}$/;
+var MINTED_ID_PATTERN = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/;
 var TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
 function isPlainObject4(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -8646,6 +8647,12 @@ function requireEnum(value, allowed, label2) {
 function requireId(value, label2) {
   if (typeof value !== "string" || !ID_PATTERN.test(value)) {
     fail2(`${label2} must be an identifier matching ${ID_PATTERN}`);
+  }
+  return value;
+}
+function requireMintedId(value, label2) {
+  if (typeof value !== "string" || !MINTED_ID_PATTERN.test(value)) {
+    fail2(`${label2} must be a minted UUID or ULID, not a derived value`);
   }
   return value;
 }
@@ -8734,6 +8741,11 @@ function validateTaskCostEventV1(value) {
   if (record.is_subagent !== void 0) requireBoolean(record.is_subagent, "event.is_subagent");
   const replayOf = optionalId(record.replay_of_event_id, "event.replay_of_event_id");
   if (replayOf === eventId2) fail2("event.replay_of_event_id must not reference the event itself");
+  if (record.run_id !== void 0) requireMintedId(record.run_id, "event.run_id");
+  if (record.stage_attempt_id !== void 0) {
+    if (record.run_id === void 0) fail2("event.stage_attempt_id requires event.run_id");
+    requireMintedId(record.stage_attempt_id, "event.stage_attempt_id");
+  }
   requireEnum(record.harness, TASK_COST_HARNESSES, "event.harness");
   if (record.harness_version !== void 0) {
     requirePattern(record.harness_version, VERSION_PATTERN, "event.harness_version");
@@ -8872,6 +8884,467 @@ function makeGuard(validate) {
 var isTaskCostEventV1 = makeGuard(validateTaskCostEventV1);
 var isTaskCostSummaryV1 = makeGuard(validateTaskCostSummaryV1);
 var isTaskCostLedgerV1 = makeGuard(validateTaskCostLedgerV1);
+
+// ../core/src/task-cost/attempt-schema.ts
+var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "task-attempt.v1.schema.json",
+    "title": "TaskAttemptLogEntryV1",
+    "description": "Attempt identity for the task-cost contract (task_attempt/v1, contract 1.1.0, HOK-3372). One schema, four record types discriminated by record_type: attempt (the launch of a minted pair, arm, run or stage attempt), control (a write that changes execution state; accepted only for the current, unsettled attempt), evidence (a write that describes an attempt; always accepted against its own identity) and derived (a result computed from evidence versions). IDs are minted UUIDs or ULIDs, never derived. Single-record shape only: currency, settlement and edge targets are reducer rules (reduceTaskAttemptLog). Rules: packages/core/src/task-cost/attempt-identity.md. Readers ignore unknown fields.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/attempt"
+      },
+      {
+        "$ref": "#/$defs/control"
+      },
+      {
+        "$ref": "#/$defs/evidence"
+      },
+      {
+        "$ref": "#/$defs/derived"
+      }
+    ],
+    "$defs": {
+      "schemaVersion": {
+        "const": "task_attempt/v1"
+      },
+      "mintedId": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+        "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID, minted before the launch. Never computed from a head, timestamp or session."
+      },
+      "identifier": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      },
+      "slug": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+      },
+      "gitSha": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+      },
+      "evidenceKind": {
+        "enum": [
+          "executed_model",
+          "session_resolution",
+          "cost",
+          "review_findings",
+          "check_run",
+          "code_identity"
+        ]
+      },
+      "evidenceVersion": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "codeIdentity": {
+        "type": "object",
+        "description": "The code an attempt saw. Associated with the attempt, never part of its identity.",
+        "properties": {
+          "head_sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "base_sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "change_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{1,16}:[0-9a-f]{16,128}$"
+          }
+        }
+      },
+      "sessionRef": {
+        "type": "object",
+        "required": [
+          "harness",
+          "session_id"
+        ],
+        "properties": {
+          "harness": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "session_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "resolves": {
+            "type": "string",
+            "pattern": "^pending:[A-Za-z0-9._-]{1,120}$"
+          }
+        },
+        "if": {
+          "required": [
+            "resolves"
+          ]
+        },
+        "then": {
+          "properties": {
+            "session_id": {
+              "not": {
+                "pattern": "^pending:"
+              }
+            }
+          }
+        }
+      },
+      "sessionRefs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/sessionRef"
+        }
+      },
+      "attemptRef": {
+        "type": "object",
+        "description": "How any record names the attempt it belongs to. Downstream records embed this instead of defining their own run or attempt id.",
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "properties": {
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "run_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "stage_attempt_id": {
+            "$ref": "#/$defs/mintedId"
+          }
+        }
+      },
+      "attempt": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "kind",
+          "id",
+          "task_id",
+          "parent_id"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "attempt"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "kind": {
+            "enum": [
+              "pair",
+              "arm",
+              "run",
+              "stage_attempt"
+            ]
+          },
+          "id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "parent_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "stage": {
+            "$ref": "#/$defs/slug"
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "challenger"
+            ]
+          },
+          "retry_of": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "code_identity": {
+            "$ref": "#/$defs/codeIdentity"
+          },
+          "session_refs": {
+            "$ref": "#/$defs/sessionRefs"
+          },
+          "legacy_ids": {
+            "type": "array",
+            "description": "Producer-local labels (e.g. Wavemill's kind@head7#epoch). Not unique; never a key.",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@#-]{0,127}$",
+              "not": {
+                "pattern": "@[^@]*\\.[A-Za-z]{2,}$"
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "stage_attempt"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "stage"
+              ],
+              "properties": {
+                "parent_id": {
+                  "$ref": "#/$defs/mintedId"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "stage"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "arm"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "role"
+              ],
+              "properties": {
+                "parent_id": {
+                  "$ref": "#/$defs/mintedId"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "role"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "pair",
+                    "arm"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "retry_of"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "control": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "write_id",
+          "attempt",
+          "action"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "control"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "write_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "action": {
+            "enum": [
+              "outcome",
+              "phase",
+              "next_action",
+              "linear_transition",
+              "merge_decision"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "succeeded",
+              "failed",
+              "aborted",
+              "abandoned"
+            ]
+          },
+          "value": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "if": {
+          "properties": {
+            "action": {
+              "const": "outcome"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "outcome"
+          ],
+          "not": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "value"
+          ],
+          "not": {
+            "required": [
+              "outcome"
+            ]
+          }
+        }
+      },
+      "evidence": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "write_id",
+          "attempt",
+          "evidence_kind",
+          "evidence_version"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "evidence"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "write_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "evidence_kind": {
+            "$ref": "#/$defs/evidenceKind"
+          },
+          "evidence_version": {
+            "$ref": "#/$defs/evidenceVersion"
+          },
+          "executed_model": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+          },
+          "session_refs": {
+            "$ref": "#/$defs/sessionRefs"
+          },
+          "code_identity": {
+            "$ref": "#/$defs/codeIdentity"
+          },
+          "cost_event_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
+      },
+      "derived": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "derived_id",
+          "derived_kind",
+          "inputs"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "derived"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "derived_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "derived_kind": {
+            "$ref": "#/$defs/slug"
+          },
+          "inputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "attempt",
+                "evidence_kind",
+                "evidence_version"
+              ],
+              "properties": {
+                "attempt": {
+                  "$ref": "#/$defs/attemptRef"
+                },
+                "evidence_kind": {
+                  "$ref": "#/$defs/evidenceKind"
+                },
+                "evidence_version": {
+                  "$ref": "#/$defs/evidenceVersion"
+                }
+              }
+            }
+          },
+          "supersedes": {
+            "$ref": "#/$defs/mintedId"
+          }
+        }
+      }
+    }
+  }
+);
 
 // ../core/src/fixtures/task-cost/builders.ts
 var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
@@ -10114,6 +10587,551 @@ var wavemillParityFixture = {
     }
   ]
 };
+
+// ../core/src/fixtures/task-cost/attempt/builders.ts
+function mint(n) {
+  return `019a3c00-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
+}
+function at(seconds) {
+  const date2 = new Date(Date.UTC(2026, 9, 31, 12, 0, 0) + seconds * 1e3);
+  return date2.toISOString().replace(".000Z", "Z");
+}
+var TASK = "HOK-9001";
+var OTHER_TASK = "HOK-9002";
+var HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+var BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f001234567";
+function attempt(input) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "attempt",
+    observed_at: at(input.t),
+    kind: input.kind,
+    id: input.id,
+    task_id: input.task ?? TASK,
+    parent_id: input.parent,
+    ...input.stage !== void 0 ? { stage: input.stage } : {},
+    ...input.role !== void 0 ? { role: input.role } : {},
+    ...input.retryOf !== void 0 ? { retry_of: input.retryOf } : {},
+    ...input.code !== void 0 ? { code_identity: input.code } : {},
+    ...input.sessions !== void 0 ? { session_refs: input.sessions } : {},
+    ...input.legacy !== void 0 ? { legacy_ids: input.legacy } : {}
+  };
+}
+function ref2(runId, stageAttemptId, task = TASK) {
+  return {
+    task_id: task,
+    run_id: runId,
+    ...stageAttemptId !== void 0 ? { stage_attempt_id: stageAttemptId } : {}
+  };
+}
+function outcome(writeId, attemptRef, value, t) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "control",
+    observed_at: at(t),
+    write_id: writeId,
+    attempt: attemptRef,
+    action: "outcome",
+    outcome: value
+  };
+}
+function control(writeId, attemptRef, action, value, t) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "control",
+    observed_at: at(t),
+    write_id: writeId,
+    attempt: attemptRef,
+    action,
+    value
+  };
+}
+function evidence(writeId, attemptRef, kind, version, t, payload = {}) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "evidence",
+    observed_at: at(t),
+    write_id: writeId,
+    attempt: attemptRef,
+    evidence_kind: kind,
+    evidence_version: version,
+    ...payload
+  };
+}
+function derivedResult(derivedId, inputs, t, supersedes) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "derived",
+    observed_at: at(t),
+    derived_id: derivedId,
+    derived_kind: "challenge_comparison",
+    inputs,
+    ...supersedes !== void 0 ? { supersedes } : {}
+  };
+}
+function decision(index, entry, value, reasons2) {
+  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+  return {
+    index,
+    record_type: entry.record_type,
+    key,
+    decision: value,
+    ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
+  };
+}
+function state(record, overrides) {
+  return {
+    id: record.id,
+    kind: record.kind,
+    task_id: record.task_id,
+    parent_id: record.parent_id,
+    ...record.stage !== void 0 ? { stage: record.stage } : {},
+    ...record.role !== void 0 ? { role: record.role } : {},
+    ...record.retry_of !== void 0 ? { retry_of: record.retry_of } : {},
+    outcome: null,
+    ...record.code_identity !== void 0 ? { code_identity: record.code_identity } : {},
+    session_refs: record.session_refs ?? [],
+    ...overrides
+  };
+}
+
+// ../core/src/fixtures/task-cost/attempt/fixtures.ts
+var stageRetry = (() => {
+  const run = attempt({ kind: "run", id: mint(1), parent: TASK, t: 0 });
+  const plan1 = attempt({ kind: "stage_attempt", id: mint(2), parent: run.id, stage: "planning", t: 1 });
+  const plan1Failed = outcome(mint(101), ref2(run.id, plan1.id), "failed", 2);
+  const plan2 = attempt({
+    kind: "stage_attempt",
+    id: mint(3),
+    parent: run.id,
+    stage: "planning",
+    retryOf: plan1.id,
+    t: 3
+  });
+  const impl = attempt({ kind: "stage_attempt", id: mint(4), parent: run.id, stage: "implementation", t: 4 });
+  const crossStageRetry = attempt({
+    kind: "stage_attempt",
+    id: mint(5),
+    parent: run.id,
+    stage: "implementation",
+    retryOf: plan1.id,
+    t: 5
+  });
+  const plan2Done = outcome(mint(102), ref2(run.id, plan2.id), "succeeded", 6);
+  const lateFirstPlan = outcome(mint(103), ref2(run.id, plan1.id), "succeeded", 7);
+  const log = [run, plan1, plan1Failed, plan2, impl, crossStageRetry, plan2Done, lateFirstPlan];
+  return {
+    name: "stage-retry-vs-child",
+    description: "Planning fails and is retried (retry_of): the retry supersedes it. Implementation is a child of the run (parent_id), not a retry. A retry across stages is rejected, and a late completion of the superseded planning attempt cannot settle it.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run, "accepted"),
+        decision(1, plan1, "accepted"),
+        decision(2, plan1Failed, "accepted"),
+        decision(3, plan2, "accepted"),
+        decision(4, impl, "accepted"),
+        decision(5, crossStageRetry, "rejected", ["retry_target_invalid"]),
+        decision(6, plan2Done, "accepted"),
+        decision(7, lateFirstPlan, "rejected", ["stale_stage_attempt"])
+      ],
+      attempts: [
+        state(run, { current: true }),
+        state(plan1, { current: false, superseded_by: plan2.id, outcome: "failed" }),
+        state(plan2, { current: true, outcome: "succeeded" }),
+        state(impl, { current: true })
+      ],
+      evidence: [],
+      derived: []
+    }
+  };
+})();
+var relaunchSettled = (() => {
+  const run1 = attempt({ kind: "run", id: mint(11), parent: TASK, t: 0, code: { head_sha: HEAD, base_sha: BASE } });
+  const run1Done = outcome(mint(111), ref2(run1.id), "succeeded", 1);
+  const reuse = attempt({ kind: "run", id: run1.id, parent: TASK, t: 2 });
+  const retryOfSucceeded = attempt({ kind: "run", id: mint(12), parent: TASK, retryOf: run1.id, t: 3 });
+  const run2 = attempt({ kind: "run", id: mint(13), parent: TASK, t: 4 });
+  const run2Phase = control(mint(112), ref2(run2.id), "phase", "planning", 5);
+  const log = [run1, run1Done, reuse, retryOfSucceeded, run2, run2Phase];
+  return {
+    name: "relaunch-settled-task",
+    description: "A settled task is relaunched. The launch cannot reuse the settled run id, and cannot claim to retry a run that succeeded; it is a new run that supersedes the old one, and inherits none of its state.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run1, "accepted"),
+        decision(1, run1Done, "accepted"),
+        decision(2, reuse, "rejected", ["id_reused"]),
+        decision(3, retryOfSucceeded, "rejected", ["retry_of_succeeded"]),
+        decision(4, run2, "accepted"),
+        decision(5, run2Phase, "accepted")
+      ],
+      attempts: [
+        state(run1, { current: false, superseded_by: run2.id, outcome: "succeeded" }),
+        state(run2, { current: true })
+      ],
+      evidence: [],
+      derived: []
+    }
+  };
+})();
+var staleAfterRelaunch = (() => {
+  const run1 = attempt({ kind: "run", id: mint(21), parent: TASK, t: 0 });
+  const impl1 = attempt({ kind: "stage_attempt", id: mint(22), parent: run1.id, stage: "implementation", t: 1 });
+  const run2 = attempt({ kind: "run", id: mint(23), parent: TASK, retryOf: run1.id, t: 10 });
+  const impl2 = attempt({ kind: "stage_attempt", id: mint(24), parent: run2.id, stage: "implementation", t: 11 });
+  const staleCompletion = outcome(mint(121), ref2(run1.id, impl1.id), "succeeded", 12);
+  const staleAbort = outcome(mint(122), ref2(run1.id), "aborted", 13);
+  const staleCost = evidence(mint(123), ref2(run1.id, impl1.id), "cost", 1, 14, {
+    cost_event_ids: ["event-0001", "event-0002"]
+  });
+  const currentCost = evidence(mint(124), ref2(run2.id, impl2.id), "cost", 1, 15, {
+    cost_event_ids: ["event-0003"]
+  });
+  const impl2Done = outcome(mint(125), ref2(run2.id, impl2.id), "succeeded", 16);
+  const log = [run1, impl1, run2, impl2, staleCompletion, staleAbort, staleCost, currentCost, impl2Done];
+  return {
+    name: "stale-control-and-evidence-after-relaunch",
+    description: "Run 1 is abandoned and relaunched as run 2. A completion and an abort from run 1 arrive late: both are control writes for a run that is not current and are rejected, so they cannot settle or abort run 2. A late cost report for run 1 is evidence: accepted, attributed to run 1, not run 2.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run1, "accepted"),
+        decision(1, impl1, "accepted"),
+        decision(2, run2, "accepted"),
+        decision(3, impl2, "accepted"),
+        decision(4, staleCompletion, "rejected", ["stale_run"]),
+        decision(5, staleAbort, "rejected", ["stale_run"]),
+        decision(6, staleCost, "accepted"),
+        decision(7, currentCost, "accepted"),
+        decision(8, impl2Done, "accepted")
+      ],
+      attempts: [
+        state(run1, { current: false, superseded_by: run2.id }),
+        // Latest in its stage group, but its run is not current.
+        state(impl1, { current: false }),
+        state(run2, { current: true }),
+        state(impl2, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [
+        { attempt_id: impl1.id, evidence_kind: "cost", latest_version: 1, write_ids: [staleCost.write_id] },
+        { attempt_id: impl2.id, evidence_kind: "cost", latest_version: 1, write_ids: [currentCost.write_id] }
+      ],
+      derived: []
+    }
+  };
+})();
+var pendingSessionResolved = (() => {
+  const pending = { harness: "codex", session_id: "pending:7f3a9c21" };
+  const resolved = {
+    harness: "codex",
+    session_id: "019a3c11-2222-7333-8444-555566667777",
+    resolves: "pending:7f3a9c21"
+  };
+  const run = attempt({ kind: "run", id: mint(31), parent: TASK, t: 0 });
+  const review = attempt({
+    kind: "stage_attempt",
+    id: mint(32),
+    parent: run.id,
+    stage: "review",
+    t: 1,
+    sessions: [pending]
+  });
+  const firstSessions = evidence(mint(131), ref2(run.id, review.id), "session_resolution", 1, 2, {
+    session_refs: [pending]
+  });
+  const reviewDone = outcome(mint(132), ref2(run.id, review.id), "succeeded", 3);
+  const runDone = outcome(mint(133), ref2(run.id), "succeeded", 4);
+  const resolution = evidence(mint(134), ref2(run.id, review.id), "session_resolution", 2, 60, {
+    session_refs: [resolved]
+  });
+  const lateModel = evidence(mint(135), ref2(run.id, review.id), "executed_model", 1, 61, {
+    executed_model: "gpt-5.5-codex"
+  });
+  const latePhase = control(mint(136), ref2(run.id, review.id), "phase", "review", 62);
+  const replayedResolution = { ...resolution };
+  const log = [run, review, firstSessions, reviewDone, runDone, resolution, lateModel, latePhase, replayedResolution];
+  return {
+    name: "codex-pending-session-resolved",
+    description: "A review stage launches a Codex session known only as pending:<nonce>. The run settles. The session resolves a minute later: the resolution is evidence for the same stage_attempt_id at evidence_version 2, adds a session ref, and changes no ID or outcome. A control write after settlement is rejected; a replayed write is a duplicate.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run, "accepted"),
+        decision(1, review, "accepted"),
+        decision(2, firstSessions, "accepted"),
+        decision(3, reviewDone, "accepted"),
+        decision(4, runDone, "accepted"),
+        decision(5, resolution, "accepted"),
+        decision(6, lateModel, "accepted"),
+        decision(7, latePhase, "rejected", ["settled"]),
+        decision(8, replayedResolution, "duplicate")
+      ],
+      attempts: [
+        state(run, { current: true, outcome: "succeeded" }),
+        state(review, { current: true, outcome: "succeeded", session_refs: [pending, resolved] })
+      ],
+      evidence: [
+        {
+          attempt_id: review.id,
+          evidence_kind: "session_resolution",
+          latest_version: 2,
+          write_ids: [firstSessions.write_id, resolution.write_id]
+        },
+        { attempt_id: review.id, evidence_kind: "executed_model", latest_version: 1, write_ids: [lateModel.write_id] }
+      ],
+      derived: []
+    }
+  };
+})();
+var sameSecondLaunches = (() => {
+  const legacy = "planning@a1b2c3d#1793396483";
+  const run = attempt({ kind: "run", id: mint(41), parent: TASK, t: 0 });
+  const first = attempt({
+    kind: "stage_attempt",
+    id: mint(42),
+    parent: run.id,
+    stage: "planning",
+    t: 5,
+    legacy: [legacy]
+  });
+  const second = attempt({
+    kind: "stage_attempt",
+    id: mint(43),
+    parent: run.id,
+    stage: "planning",
+    t: 5,
+    legacy: [legacy]
+  });
+  const firstDone = outcome(mint(141), ref2(run.id, first.id), "succeeded", 6);
+  const firstCost = evidence(mint(142), ref2(run.id, first.id), "cost", 1, 6);
+  const secondDone = outcome(mint(143), ref2(run.id, second.id), "succeeded", 7);
+  const log = [run, first, second, firstDone, firstCost, secondDone];
+  return {
+    name: "same-second-launches",
+    description: "Two planning launches in the same second share Wavemill's derived label (kind@head7#epoch-seconds) but get distinct minted stage_attempt_ids. The later launch is current; the earlier one keeps its own evidence and cannot settle the stage.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run, "accepted"),
+        decision(1, first, "accepted"),
+        decision(2, second, "accepted"),
+        decision(3, firstDone, "rejected", ["stale_stage_attempt"]),
+        decision(4, firstCost, "accepted"),
+        decision(5, secondDone, "accepted")
+      ],
+      attempts: [
+        state(run, { current: true }),
+        state(first, { current: false, superseded_by: second.id }),
+        state(second, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [{ attempt_id: first.id, evidence_kind: "cost", latest_version: 1, write_ids: [firstCost.write_id] }],
+      derived: []
+    }
+  };
+})();
+var challengePair = (() => {
+  const pair = attempt({ kind: "pair", id: mint(51), parent: TASK, t: 0 });
+  const primary = attempt({ kind: "arm", id: mint(52), parent: pair.id, role: "primary", t: 1 });
+  const challenger = attempt({ kind: "arm", id: mint(53), parent: pair.id, role: "challenger", t: 1 });
+  const primaryRun = attempt({ kind: "run", id: mint(54), parent: primary.id, t: 2 });
+  const challengerRun = attempt({ kind: "run", id: mint(55), parent: challenger.id, t: 2 });
+  const challengerAborted = outcome(mint(151), ref2(challengerRun.id), "aborted", 30);
+  const challengerRelaunch = attempt({
+    kind: "run",
+    id: mint(56),
+    parent: challenger.id,
+    retryOf: challengerRun.id,
+    t: 40
+  });
+  const relaunchPhase = control(mint(152), ref2(challengerRelaunch.id), "phase", "planning", 41);
+  const lateAbort = outcome(mint(153), ref2(challengerRun.id), "aborted", 42);
+  const primaryDone = outcome(mint(154), ref2(primaryRun.id), "succeeded", 50);
+  const challengerDone = outcome(mint(155), ref2(challengerRelaunch.id), "succeeded", 60);
+  const log = [
+    pair,
+    primary,
+    challenger,
+    primaryRun,
+    challengerRun,
+    challengerAborted,
+    challengerRelaunch,
+    relaunchPhase,
+    lateAbort,
+    primaryDone,
+    challengerDone
+  ];
+  return {
+    name: "challenge-pair",
+    description: "One pair, a primary and a challenger arm, each with its own run. Both runs are current at once. The challenger is aborted and relaunched as a new run under the same arm (retry_of): it does not inherit the abort, a late repeat of the abort cannot reach it, and the primary is unaffected.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, pair, "accepted"),
+        decision(1, primary, "accepted"),
+        decision(2, challenger, "accepted"),
+        decision(3, primaryRun, "accepted"),
+        decision(4, challengerRun, "accepted"),
+        decision(5, challengerAborted, "accepted"),
+        decision(6, challengerRelaunch, "accepted"),
+        decision(7, relaunchPhase, "accepted"),
+        decision(8, lateAbort, "rejected", ["stale_run"]),
+        decision(9, primaryDone, "accepted"),
+        decision(10, challengerDone, "accepted")
+      ],
+      attempts: [
+        state(pair, { current: true }),
+        state(primary, { current: true }),
+        state(challenger, { current: true }),
+        state(primaryRun, { current: true, outcome: "succeeded" }),
+        state(challengerRun, { current: false, superseded_by: challengerRelaunch.id, outcome: "aborted" }),
+        state(challengerRelaunch, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [],
+      derived: []
+    }
+  };
+})();
+var comparisonRecomputed = (() => {
+  const pair = attempt({ kind: "pair", id: mint(61), parent: TASK, t: 0 });
+  const primary = attempt({ kind: "arm", id: mint(62), parent: pair.id, role: "primary", t: 0 });
+  const challenger = attempt({ kind: "arm", id: mint(63), parent: pair.id, role: "challenger", t: 0 });
+  const primaryRun = attempt({ kind: "run", id: mint(64), parent: primary.id, t: 1 });
+  const challengerRun = attempt({ kind: "run", id: mint(65), parent: challenger.id, t: 1 });
+  const primaryDone = outcome(mint(161), ref2(primaryRun.id), "succeeded", 10);
+  const challengerDone = outcome(mint(162), ref2(challengerRun.id), "succeeded", 11);
+  const primaryCost = evidence(mint(163), ref2(primaryRun.id), "cost", 1, 12, { cost_event_ids: ["event-0101"] });
+  const challengerCost1 = evidence(mint(164), ref2(challengerRun.id), "cost", 1, 12, {
+    cost_event_ids: ["event-0201"]
+  });
+  const comparison1 = derivedResult(
+    mint(165),
+    [
+      { attempt: ref2(primaryRun.id), evidence_kind: "cost", evidence_version: 1 },
+      { attempt: ref2(challengerRun.id), evidence_kind: "cost", evidence_version: 1 }
+    ],
+    13
+  );
+  const challengerCost2 = evidence(mint(166), ref2(challengerRun.id), "cost", 2, 120, {
+    cost_event_ids: ["event-0201", "event-0202"]
+  });
+  const comparison2 = derivedResult(
+    mint(167),
+    [
+      { attempt: ref2(primaryRun.id), evidence_kind: "cost", evidence_version: 1 },
+      { attempt: ref2(challengerRun.id), evidence_kind: "cost", evidence_version: 2 }
+    ],
+    121,
+    comparison1.derived_id
+  );
+  const log = [
+    pair,
+    primary,
+    challenger,
+    primaryRun,
+    challengerRun,
+    primaryDone,
+    challengerDone,
+    primaryCost,
+    challengerCost1,
+    comparison1,
+    challengerCost2,
+    comparison2
+  ];
+  return {
+    name: "comparison-recomputed",
+    description: "A challenge comparison is computed from incomplete challenger cost (evidence_version 1). Corrected cost arrives as version 2 after both runs settled: the outcomes do not change, the comparison becomes stale, and a recomputed comparison supersedes it.",
+    log,
+    prefixExpectations: [
+      {
+        length: 10,
+        derived: [{ derived_id: comparison1.derived_id, derived_kind: "challenge_comparison", status: "current" }]
+      },
+      {
+        length: 11,
+        derived: [
+          {
+            derived_id: comparison1.derived_id,
+            derived_kind: "challenge_comparison",
+            status: "stale",
+            stale_inputs: [{ attempt: ref2(challengerRun.id), evidence_kind: "cost", evidence_version: 1 }]
+          }
+        ]
+      }
+    ],
+    expected: {
+      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      attempts: [
+        state(pair, { current: true }),
+        state(primary, { current: true }),
+        state(challenger, { current: true }),
+        state(primaryRun, { current: true, outcome: "succeeded" }),
+        state(challengerRun, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [
+        { attempt_id: primaryRun.id, evidence_kind: "cost", latest_version: 1, write_ids: [primaryCost.write_id] },
+        {
+          attempt_id: challengerRun.id,
+          evidence_kind: "cost",
+          latest_version: 2,
+          write_ids: [challengerCost1.write_id, challengerCost2.write_id]
+        }
+      ],
+      derived: [
+        {
+          derived_id: comparison1.derived_id,
+          derived_kind: "challenge_comparison",
+          status: "superseded",
+          superseded_by: comparison2.derived_id
+        },
+        { derived_id: comparison2.derived_id, derived_kind: "challenge_comparison", status: "current" }
+      ]
+    }
+  };
+})();
+var twoPrMergeCandidate = (() => {
+  const runA = attempt({ kind: "run", id: mint(71), parent: TASK, t: 0 });
+  const runB = attempt({ kind: "run", id: mint(72), parent: OTHER_TASK, task: OTHER_TASK, t: 0 });
+  const runADone = outcome(mint(171), ref2(runA.id), "succeeded", 10);
+  const runBDone = outcome(mint(172), ref2(runB.id, void 0, OTHER_TASK), "succeeded", 11);
+  const checkA = evidence(mint(173), ref2(runA.id), "check_run", 1, 20);
+  const checkB = evidence(mint(174), ref2(runB.id, void 0, OTHER_TASK), "check_run", 1, 20);
+  const wrongTask = evidence(mint(175), ref2(runB.id), "check_run", 2, 21);
+  const log = [runA, runB, runADone, runBDone, checkA, checkB, wrongTask];
+  return {
+    name: "two-pr-merge-candidate",
+    description: "A merge-queue candidate spans two PRs from two tasks. The candidate references both runs (attempt_refs); it is not itself a run or attempt. Check-run evidence lands on each run. A ref naming a run under the wrong task is rejected as a mismatch.",
+    log,
+    extensionRecords: [
+      {
+        event_id: mint(176),
+        candidate_id: mint(177),
+        attempt_refs: [ref2(runA.id), ref2(runB.id, void 0, OTHER_TASK)]
+      }
+    ],
+    expected: {
+      decisions: [
+        decision(0, runA, "accepted"),
+        decision(1, runB, "accepted"),
+        decision(2, runADone, "accepted"),
+        decision(3, runBDone, "accepted"),
+        decision(4, checkA, "accepted"),
+        decision(5, checkB, "accepted"),
+        decision(6, wrongTask, "rejected", ["ref_mismatch"])
+      ],
+      attempts: [
+        state(runA, { current: true, outcome: "succeeded" }),
+        state(runB, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [
+        { attempt_id: runA.id, evidence_kind: "check_run", latest_version: 1, write_ids: [checkA.write_id] },
+        { attempt_id: runB.id, evidence_kind: "check_run", latest_version: 1, write_ids: [checkB.write_id] }
+      ],
+      derived: []
+    }
+  };
+})();
 
 // ../core/src/contribution/schema.ts
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
@@ -12258,9 +13276,9 @@ async function readStateFile(filePath) {
     return {};
   }
 }
-async function writeStateFile(filePath, state) {
+async function writeStateFile(filePath, state2) {
   await mkdir4(path3.dirname(filePath), { recursive: true });
-  await writeFile4(filePath, JSON.stringify(state, null, 2), "utf8");
+  await writeFile4(filePath, JSON.stringify(state2, null, 2), "utf8");
 }
 function createClaudeCodeAdapter(options) {
   return {
@@ -12438,22 +13456,22 @@ function createClaudeCodeHarnessAdapter(options) {
     },
     storage: {
       async get(key) {
-        const state = await readStateFile(stateFilePath);
-        return ok3(state[key]);
+        const state2 = await readStateFile(stateFilePath);
+        return ok3(state2[key]);
       },
       async set(key, value) {
-        const state = await readStateFile(stateFilePath);
-        state[key] = value;
-        await writeStateFile(stateFilePath, state);
+        const state2 = await readStateFile(stateFilePath);
+        state2[key] = value;
+        await writeStateFile(stateFilePath, state2);
         return ok3(void 0);
       },
       async delete(key) {
-        const state = await readStateFile(stateFilePath);
-        delete state[key];
-        if (Object.keys(state).length === 0) {
+        const state2 = await readStateFile(stateFilePath);
+        delete state2[key];
+        if (Object.keys(state2).length === 0) {
           await rm5(stateFilePath, { force: true });
         } else {
-          await writeStateFile(stateFilePath, state);
+          await writeStateFile(stateFilePath, state2);
         }
         return ok3(void 0);
       }
