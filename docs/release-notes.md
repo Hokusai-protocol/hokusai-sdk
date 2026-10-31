@@ -18,6 +18,41 @@ git push origin v0.x.y
 
 ## Releases
 
+### 0.6.0 — 2026-10-31
+
+**Requires:** attempt identity (`task_attempt/v1` records, the
+`TASK_ATTEMPT_*` constants and validators, `reduceTaskAttemptLog`,
+`taskAttemptFixtures`) and the optional `run_id` / `stage_attempt_id` fields on
+`TaskCostEventV1` need **`@hokusai/core` ≥ 0.6.0** (task-cost contract `1.1.0`).
+Readers on 0.5.0 ignore the new event fields, and events without them are
+unchanged. See the
+[version-to-contract table](versioning-policy.md#task-cost-contract-versions).
+
+- **Attempt identity in the task-cost contract (HOK-3372).** Minted `run_id`,
+  `pair_id`, `arm_id` and `stage_attempt_id` with typed `parent_id` /
+  `retry_of` edges. Control writes are accepted only for the current, unsettled
+  attempt; evidence writes are always accepted against the attempt they name.
+  Evidence is versioned, and a derived result that read an older version is
+  reported stale. Ships the JSON schema, validators, the reference reducer,
+  eight golden fixtures and the Wavemill field mapping.
+- **Arbiter contracts in `@hokusai/core`.** The versioned Arbiter report
+  payload with scanner-owned suppression and aggregation APIs; the
+  corrective-rework contract (`cr-0.1.0`, schema 1.1.0 with a `revert_reason`
+  evidence kind) and `deriveCorrectiveLabel()`; the HOK-3269 calibration
+  taxonomy; and S2 survival label v1.1.0 with `envelope.integration_mode`
+  (`promotion` | `direct`). v1.0.0 label rows stay valid.
+- **`hokusai-scan` corpus commands.** `corpus-corrective` (P1–P4 corrective
+  detection), `corpus-report` (per repo × horizon corrective rates with Wilson
+  CIs and a hashed run manifest), and `corpus-calibration-sample` /
+  `-evidence` / `-score`.
+- **Survival labeller 1.3.0 → 1.4.0.** `linked_issue_or_pr` counts only
+  same-repo, non-bot cross-references. `undone_by` credits the commits that
+  changed the PR's files rather than the merge commit, and agent identities
+  match whole names. Labelling on large repos is faster, and labels are
+  otherwise unchanged.
+- `@hokusai/costs` 0.6.0 has no changes of its own; it moves to
+  `@hokusai/core` 0.6.0.
+
 ### 0.5.0 — 2026-10-15
 
 **Requires:** the task-cost API (`aggregateTaskCost`,
