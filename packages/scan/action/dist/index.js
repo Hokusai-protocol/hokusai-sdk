@@ -4074,6 +4074,7 @@ var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 var MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$/;
 var VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 var PROVIDER_CONTRACT_PATTERN = /^[a-z][a-z0-9-]{0,31}\/[0-9]{1,4}$/;
+var MINTED_ID_PATTERN = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/;
 var TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
 function isPlainObject3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -4094,6 +4095,12 @@ function requireEnum(value, allowed, label2) {
 function requireId(value, label2) {
   if (typeof value !== "string" || !ID_PATTERN.test(value)) {
     fail(`${label2} must be an identifier matching ${ID_PATTERN}`);
+  }
+  return value;
+}
+function requireMintedId(value, label2) {
+  if (typeof value !== "string" || !MINTED_ID_PATTERN.test(value)) {
+    fail(`${label2} must be a minted UUID or ULID, not a derived value`);
   }
   return value;
 }
@@ -4182,6 +4189,11 @@ function validateTaskCostEventV1(value) {
   if (record.is_subagent !== void 0) requireBoolean(record.is_subagent, "event.is_subagent");
   const replayOf = optionalId(record.replay_of_event_id, "event.replay_of_event_id");
   if (replayOf === eventId2) fail("event.replay_of_event_id must not reference the event itself");
+  if (record.run_id !== void 0) requireMintedId(record.run_id, "event.run_id");
+  if (record.stage_attempt_id !== void 0) {
+    if (record.run_id === void 0) fail("event.stage_attempt_id requires event.run_id");
+    requireMintedId(record.stage_attempt_id, "event.stage_attempt_id");
+  }
   requireEnum(record.harness, TASK_COST_HARNESSES, "event.harness");
   if (record.harness_version !== void 0) {
     requirePattern(record.harness_version, VERSION_PATTERN, "event.harness_version");
@@ -4320,6 +4332,467 @@ function makeGuard(validate) {
 var isTaskCostEventV1 = makeGuard(validateTaskCostEventV1);
 var isTaskCostSummaryV1 = makeGuard(validateTaskCostSummaryV1);
 var isTaskCostLedgerV1 = makeGuard(validateTaskCostLedgerV1);
+
+// ../core/src/task-cost/attempt-schema.ts
+var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "task-attempt.v1.schema.json",
+    "title": "TaskAttemptLogEntryV1",
+    "description": "Attempt identity for the task-cost contract (task_attempt/v1, contract 1.1.0, HOK-3372). One schema, four record types discriminated by record_type: attempt (the launch of a minted pair, arm, run or stage attempt), control (a write that changes execution state; accepted only for the current, unsettled attempt), evidence (a write that describes an attempt; always accepted against its own identity) and derived (a result computed from evidence versions). IDs are minted UUIDs or ULIDs, never derived. Single-record shape only: currency, settlement and edge targets are reducer rules (reduceTaskAttemptLog). Rules: packages/core/src/task-cost/attempt-identity.md. Readers ignore unknown fields.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/attempt"
+      },
+      {
+        "$ref": "#/$defs/control"
+      },
+      {
+        "$ref": "#/$defs/evidence"
+      },
+      {
+        "$ref": "#/$defs/derived"
+      }
+    ],
+    "$defs": {
+      "schemaVersion": {
+        "const": "task_attempt/v1"
+      },
+      "mintedId": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+        "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID, minted before the launch. Never computed from a head, timestamp or session."
+      },
+      "identifier": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      },
+      "slug": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+      },
+      "gitSha": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+      },
+      "evidenceKind": {
+        "enum": [
+          "executed_model",
+          "session_resolution",
+          "cost",
+          "review_findings",
+          "check_run",
+          "code_identity"
+        ]
+      },
+      "evidenceVersion": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "codeIdentity": {
+        "type": "object",
+        "description": "The code an attempt saw. Associated with the attempt, never part of its identity.",
+        "properties": {
+          "head_sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "base_sha": {
+            "$ref": "#/$defs/gitSha"
+          },
+          "change_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{1,16}:[0-9a-f]{16,128}$"
+          }
+        }
+      },
+      "sessionRef": {
+        "type": "object",
+        "required": [
+          "harness",
+          "session_id"
+        ],
+        "properties": {
+          "harness": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "session_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "resolves": {
+            "type": "string",
+            "pattern": "^pending:[A-Za-z0-9._-]{1,120}$"
+          }
+        },
+        "if": {
+          "required": [
+            "resolves"
+          ]
+        },
+        "then": {
+          "properties": {
+            "session_id": {
+              "not": {
+                "pattern": "^pending:"
+              }
+            }
+          }
+        }
+      },
+      "sessionRefs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/sessionRef"
+        }
+      },
+      "attemptRef": {
+        "type": "object",
+        "description": "How any record names the attempt it belongs to. Downstream records embed this instead of defining their own run or attempt id.",
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "properties": {
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "run_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "stage_attempt_id": {
+            "$ref": "#/$defs/mintedId"
+          }
+        }
+      },
+      "attempt": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "kind",
+          "id",
+          "task_id",
+          "parent_id"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "attempt"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "kind": {
+            "enum": [
+              "pair",
+              "arm",
+              "run",
+              "stage_attempt"
+            ]
+          },
+          "id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "parent_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "stage": {
+            "$ref": "#/$defs/slug"
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "challenger"
+            ]
+          },
+          "retry_of": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "code_identity": {
+            "$ref": "#/$defs/codeIdentity"
+          },
+          "session_refs": {
+            "$ref": "#/$defs/sessionRefs"
+          },
+          "legacy_ids": {
+            "type": "array",
+            "description": "Producer-local labels (e.g. Wavemill's kind@head7#epoch). Not unique; never a key.",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@#-]{0,127}$",
+              "not": {
+                "pattern": "@[^@]*\\.[A-Za-z]{2,}$"
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "stage_attempt"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "stage"
+              ],
+              "properties": {
+                "parent_id": {
+                  "$ref": "#/$defs/mintedId"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "stage"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "arm"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "role"
+              ],
+              "properties": {
+                "parent_id": {
+                  "$ref": "#/$defs/mintedId"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "role"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "pair",
+                    "arm"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "retry_of"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "control": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "write_id",
+          "attempt",
+          "action"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "control"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "write_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "action": {
+            "enum": [
+              "outcome",
+              "phase",
+              "next_action",
+              "linear_transition",
+              "merge_decision"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "succeeded",
+              "failed",
+              "aborted",
+              "abandoned"
+            ]
+          },
+          "value": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "if": {
+          "properties": {
+            "action": {
+              "const": "outcome"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "outcome"
+          ],
+          "not": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "value"
+          ],
+          "not": {
+            "required": [
+              "outcome"
+            ]
+          }
+        }
+      },
+      "evidence": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "write_id",
+          "attempt",
+          "evidence_kind",
+          "evidence_version"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "evidence"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "write_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "evidence_kind": {
+            "$ref": "#/$defs/evidenceKind"
+          },
+          "evidence_version": {
+            "$ref": "#/$defs/evidenceVersion"
+          },
+          "executed_model": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+          },
+          "session_refs": {
+            "$ref": "#/$defs/sessionRefs"
+          },
+          "code_identity": {
+            "$ref": "#/$defs/codeIdentity"
+          },
+          "cost_event_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
+      },
+      "derived": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "record_type",
+          "observed_at",
+          "derived_id",
+          "derived_kind",
+          "inputs"
+        ],
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "record_type": {
+            "const": "derived"
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "derived_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "derived_kind": {
+            "$ref": "#/$defs/slug"
+          },
+          "inputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "attempt",
+                "evidence_kind",
+                "evidence_version"
+              ],
+              "properties": {
+                "attempt": {
+                  "$ref": "#/$defs/attemptRef"
+                },
+                "evidence_kind": {
+                  "$ref": "#/$defs/evidenceKind"
+                },
+                "evidence_version": {
+                  "$ref": "#/$defs/evidenceVersion"
+                }
+              }
+            }
+          },
+          "supersedes": {
+            "$ref": "#/$defs/mintedId"
+          }
+        }
+      }
+    }
+  }
+);
 
 // ../core/src/fixtures/task-cost/builders.ts
 var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
@@ -5563,6 +6036,551 @@ var wavemillParityFixture = {
   ]
 };
 
+// ../core/src/fixtures/task-cost/attempt/builders.ts
+function mint(n) {
+  return `019a3c00-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
+}
+function at(seconds) {
+  const date2 = new Date(Date.UTC(2026, 9, 31, 12, 0, 0) + seconds * 1e3);
+  return date2.toISOString().replace(".000Z", "Z");
+}
+var TASK = "HOK-9001";
+var OTHER_TASK = "HOK-9002";
+var HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+var BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f001234567";
+function attempt(input) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "attempt",
+    observed_at: at(input.t),
+    kind: input.kind,
+    id: input.id,
+    task_id: input.task ?? TASK,
+    parent_id: input.parent,
+    ...input.stage !== void 0 ? { stage: input.stage } : {},
+    ...input.role !== void 0 ? { role: input.role } : {},
+    ...input.retryOf !== void 0 ? { retry_of: input.retryOf } : {},
+    ...input.code !== void 0 ? { code_identity: input.code } : {},
+    ...input.sessions !== void 0 ? { session_refs: input.sessions } : {},
+    ...input.legacy !== void 0 ? { legacy_ids: input.legacy } : {}
+  };
+}
+function ref2(runId, stageAttemptId, task = TASK) {
+  return {
+    task_id: task,
+    run_id: runId,
+    ...stageAttemptId !== void 0 ? { stage_attempt_id: stageAttemptId } : {}
+  };
+}
+function outcome(writeId, attemptRef, value, t) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "control",
+    observed_at: at(t),
+    write_id: writeId,
+    attempt: attemptRef,
+    action: "outcome",
+    outcome: value
+  };
+}
+function control(writeId, attemptRef, action, value, t) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "control",
+    observed_at: at(t),
+    write_id: writeId,
+    attempt: attemptRef,
+    action,
+    value
+  };
+}
+function evidence(writeId, attemptRef, kind, version, t, payload = {}) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "evidence",
+    observed_at: at(t),
+    write_id: writeId,
+    attempt: attemptRef,
+    evidence_kind: kind,
+    evidence_version: version,
+    ...payload
+  };
+}
+function derivedResult(derivedId, inputs, t, supersedes) {
+  return {
+    schema_version: "task_attempt/v1",
+    record_type: "derived",
+    observed_at: at(t),
+    derived_id: derivedId,
+    derived_kind: "challenge_comparison",
+    inputs,
+    ...supersedes !== void 0 ? { supersedes } : {}
+  };
+}
+function decision(index, entry, value, reasons2) {
+  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+  return {
+    index,
+    record_type: entry.record_type,
+    key,
+    decision: value,
+    ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
+  };
+}
+function state(record, overrides) {
+  return {
+    id: record.id,
+    kind: record.kind,
+    task_id: record.task_id,
+    parent_id: record.parent_id,
+    ...record.stage !== void 0 ? { stage: record.stage } : {},
+    ...record.role !== void 0 ? { role: record.role } : {},
+    ...record.retry_of !== void 0 ? { retry_of: record.retry_of } : {},
+    outcome: null,
+    ...record.code_identity !== void 0 ? { code_identity: record.code_identity } : {},
+    session_refs: record.session_refs ?? [],
+    ...overrides
+  };
+}
+
+// ../core/src/fixtures/task-cost/attempt/fixtures.ts
+var stageRetry = (() => {
+  const run = attempt({ kind: "run", id: mint(1), parent: TASK, t: 0 });
+  const plan1 = attempt({ kind: "stage_attempt", id: mint(2), parent: run.id, stage: "planning", t: 1 });
+  const plan1Failed = outcome(mint(101), ref2(run.id, plan1.id), "failed", 2);
+  const plan2 = attempt({
+    kind: "stage_attempt",
+    id: mint(3),
+    parent: run.id,
+    stage: "planning",
+    retryOf: plan1.id,
+    t: 3
+  });
+  const impl = attempt({ kind: "stage_attempt", id: mint(4), parent: run.id, stage: "implementation", t: 4 });
+  const crossStageRetry = attempt({
+    kind: "stage_attempt",
+    id: mint(5),
+    parent: run.id,
+    stage: "implementation",
+    retryOf: plan1.id,
+    t: 5
+  });
+  const plan2Done = outcome(mint(102), ref2(run.id, plan2.id), "succeeded", 6);
+  const lateFirstPlan = outcome(mint(103), ref2(run.id, plan1.id), "succeeded", 7);
+  const log = [run, plan1, plan1Failed, plan2, impl, crossStageRetry, plan2Done, lateFirstPlan];
+  return {
+    name: "stage-retry-vs-child",
+    description: "Planning fails and is retried (retry_of): the retry supersedes it. Implementation is a child of the run (parent_id), not a retry. A retry across stages is rejected, and a late completion of the superseded planning attempt cannot settle it.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run, "accepted"),
+        decision(1, plan1, "accepted"),
+        decision(2, plan1Failed, "accepted"),
+        decision(3, plan2, "accepted"),
+        decision(4, impl, "accepted"),
+        decision(5, crossStageRetry, "rejected", ["retry_target_invalid"]),
+        decision(6, plan2Done, "accepted"),
+        decision(7, lateFirstPlan, "rejected", ["stale_stage_attempt"])
+      ],
+      attempts: [
+        state(run, { current: true }),
+        state(plan1, { current: false, superseded_by: plan2.id, outcome: "failed" }),
+        state(plan2, { current: true, outcome: "succeeded" }),
+        state(impl, { current: true })
+      ],
+      evidence: [],
+      derived: []
+    }
+  };
+})();
+var relaunchSettled = (() => {
+  const run1 = attempt({ kind: "run", id: mint(11), parent: TASK, t: 0, code: { head_sha: HEAD, base_sha: BASE } });
+  const run1Done = outcome(mint(111), ref2(run1.id), "succeeded", 1);
+  const reuse = attempt({ kind: "run", id: run1.id, parent: TASK, t: 2 });
+  const retryOfSucceeded = attempt({ kind: "run", id: mint(12), parent: TASK, retryOf: run1.id, t: 3 });
+  const run2 = attempt({ kind: "run", id: mint(13), parent: TASK, t: 4 });
+  const run2Phase = control(mint(112), ref2(run2.id), "phase", "planning", 5);
+  const log = [run1, run1Done, reuse, retryOfSucceeded, run2, run2Phase];
+  return {
+    name: "relaunch-settled-task",
+    description: "A settled task is relaunched. The launch cannot reuse the settled run id, and cannot claim to retry a run that succeeded; it is a new run that supersedes the old one, and inherits none of its state.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run1, "accepted"),
+        decision(1, run1Done, "accepted"),
+        decision(2, reuse, "rejected", ["id_reused"]),
+        decision(3, retryOfSucceeded, "rejected", ["retry_of_succeeded"]),
+        decision(4, run2, "accepted"),
+        decision(5, run2Phase, "accepted")
+      ],
+      attempts: [
+        state(run1, { current: false, superseded_by: run2.id, outcome: "succeeded" }),
+        state(run2, { current: true })
+      ],
+      evidence: [],
+      derived: []
+    }
+  };
+})();
+var staleAfterRelaunch = (() => {
+  const run1 = attempt({ kind: "run", id: mint(21), parent: TASK, t: 0 });
+  const impl1 = attempt({ kind: "stage_attempt", id: mint(22), parent: run1.id, stage: "implementation", t: 1 });
+  const run2 = attempt({ kind: "run", id: mint(23), parent: TASK, retryOf: run1.id, t: 10 });
+  const impl2 = attempt({ kind: "stage_attempt", id: mint(24), parent: run2.id, stage: "implementation", t: 11 });
+  const staleCompletion = outcome(mint(121), ref2(run1.id, impl1.id), "succeeded", 12);
+  const staleAbort = outcome(mint(122), ref2(run1.id), "aborted", 13);
+  const staleCost = evidence(mint(123), ref2(run1.id, impl1.id), "cost", 1, 14, {
+    cost_event_ids: ["event-0001", "event-0002"]
+  });
+  const currentCost = evidence(mint(124), ref2(run2.id, impl2.id), "cost", 1, 15, {
+    cost_event_ids: ["event-0003"]
+  });
+  const impl2Done = outcome(mint(125), ref2(run2.id, impl2.id), "succeeded", 16);
+  const log = [run1, impl1, run2, impl2, staleCompletion, staleAbort, staleCost, currentCost, impl2Done];
+  return {
+    name: "stale-control-and-evidence-after-relaunch",
+    description: "Run 1 is abandoned and relaunched as run 2. A completion and an abort from run 1 arrive late: both are control writes for a run that is not current and are rejected, so they cannot settle or abort run 2. A late cost report for run 1 is evidence: accepted, attributed to run 1, not run 2.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run1, "accepted"),
+        decision(1, impl1, "accepted"),
+        decision(2, run2, "accepted"),
+        decision(3, impl2, "accepted"),
+        decision(4, staleCompletion, "rejected", ["stale_run"]),
+        decision(5, staleAbort, "rejected", ["stale_run"]),
+        decision(6, staleCost, "accepted"),
+        decision(7, currentCost, "accepted"),
+        decision(8, impl2Done, "accepted")
+      ],
+      attempts: [
+        state(run1, { current: false, superseded_by: run2.id }),
+        // Latest in its stage group, but its run is not current.
+        state(impl1, { current: false }),
+        state(run2, { current: true }),
+        state(impl2, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [
+        { attempt_id: impl1.id, evidence_kind: "cost", latest_version: 1, write_ids: [staleCost.write_id] },
+        { attempt_id: impl2.id, evidence_kind: "cost", latest_version: 1, write_ids: [currentCost.write_id] }
+      ],
+      derived: []
+    }
+  };
+})();
+var pendingSessionResolved = (() => {
+  const pending = { harness: "codex", session_id: "pending:7f3a9c21" };
+  const resolved = {
+    harness: "codex",
+    session_id: "019a3c11-2222-7333-8444-555566667777",
+    resolves: "pending:7f3a9c21"
+  };
+  const run = attempt({ kind: "run", id: mint(31), parent: TASK, t: 0 });
+  const review = attempt({
+    kind: "stage_attempt",
+    id: mint(32),
+    parent: run.id,
+    stage: "review",
+    t: 1,
+    sessions: [pending]
+  });
+  const firstSessions = evidence(mint(131), ref2(run.id, review.id), "session_resolution", 1, 2, {
+    session_refs: [pending]
+  });
+  const reviewDone = outcome(mint(132), ref2(run.id, review.id), "succeeded", 3);
+  const runDone = outcome(mint(133), ref2(run.id), "succeeded", 4);
+  const resolution = evidence(mint(134), ref2(run.id, review.id), "session_resolution", 2, 60, {
+    session_refs: [resolved]
+  });
+  const lateModel = evidence(mint(135), ref2(run.id, review.id), "executed_model", 1, 61, {
+    executed_model: "gpt-5.5-codex"
+  });
+  const latePhase = control(mint(136), ref2(run.id, review.id), "phase", "review", 62);
+  const replayedResolution = { ...resolution };
+  const log = [run, review, firstSessions, reviewDone, runDone, resolution, lateModel, latePhase, replayedResolution];
+  return {
+    name: "codex-pending-session-resolved",
+    description: "A review stage launches a Codex session known only as pending:<nonce>. The run settles. The session resolves a minute later: the resolution is evidence for the same stage_attempt_id at evidence_version 2, adds a session ref, and changes no ID or outcome. A control write after settlement is rejected; a replayed write is a duplicate.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run, "accepted"),
+        decision(1, review, "accepted"),
+        decision(2, firstSessions, "accepted"),
+        decision(3, reviewDone, "accepted"),
+        decision(4, runDone, "accepted"),
+        decision(5, resolution, "accepted"),
+        decision(6, lateModel, "accepted"),
+        decision(7, latePhase, "rejected", ["settled"]),
+        decision(8, replayedResolution, "duplicate")
+      ],
+      attempts: [
+        state(run, { current: true, outcome: "succeeded" }),
+        state(review, { current: true, outcome: "succeeded", session_refs: [pending, resolved] })
+      ],
+      evidence: [
+        {
+          attempt_id: review.id,
+          evidence_kind: "session_resolution",
+          latest_version: 2,
+          write_ids: [firstSessions.write_id, resolution.write_id]
+        },
+        { attempt_id: review.id, evidence_kind: "executed_model", latest_version: 1, write_ids: [lateModel.write_id] }
+      ],
+      derived: []
+    }
+  };
+})();
+var sameSecondLaunches = (() => {
+  const legacy = "planning@a1b2c3d#1793396483";
+  const run = attempt({ kind: "run", id: mint(41), parent: TASK, t: 0 });
+  const first = attempt({
+    kind: "stage_attempt",
+    id: mint(42),
+    parent: run.id,
+    stage: "planning",
+    t: 5,
+    legacy: [legacy]
+  });
+  const second = attempt({
+    kind: "stage_attempt",
+    id: mint(43),
+    parent: run.id,
+    stage: "planning",
+    t: 5,
+    legacy: [legacy]
+  });
+  const firstDone = outcome(mint(141), ref2(run.id, first.id), "succeeded", 6);
+  const firstCost = evidence(mint(142), ref2(run.id, first.id), "cost", 1, 6);
+  const secondDone = outcome(mint(143), ref2(run.id, second.id), "succeeded", 7);
+  const log = [run, first, second, firstDone, firstCost, secondDone];
+  return {
+    name: "same-second-launches",
+    description: "Two planning launches in the same second share Wavemill's derived label (kind@head7#epoch-seconds) but get distinct minted stage_attempt_ids. The later launch is current; the earlier one keeps its own evidence and cannot settle the stage.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, run, "accepted"),
+        decision(1, first, "accepted"),
+        decision(2, second, "accepted"),
+        decision(3, firstDone, "rejected", ["stale_stage_attempt"]),
+        decision(4, firstCost, "accepted"),
+        decision(5, secondDone, "accepted")
+      ],
+      attempts: [
+        state(run, { current: true }),
+        state(first, { current: false, superseded_by: second.id }),
+        state(second, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [{ attempt_id: first.id, evidence_kind: "cost", latest_version: 1, write_ids: [firstCost.write_id] }],
+      derived: []
+    }
+  };
+})();
+var challengePair = (() => {
+  const pair = attempt({ kind: "pair", id: mint(51), parent: TASK, t: 0 });
+  const primary = attempt({ kind: "arm", id: mint(52), parent: pair.id, role: "primary", t: 1 });
+  const challenger = attempt({ kind: "arm", id: mint(53), parent: pair.id, role: "challenger", t: 1 });
+  const primaryRun = attempt({ kind: "run", id: mint(54), parent: primary.id, t: 2 });
+  const challengerRun = attempt({ kind: "run", id: mint(55), parent: challenger.id, t: 2 });
+  const challengerAborted = outcome(mint(151), ref2(challengerRun.id), "aborted", 30);
+  const challengerRelaunch = attempt({
+    kind: "run",
+    id: mint(56),
+    parent: challenger.id,
+    retryOf: challengerRun.id,
+    t: 40
+  });
+  const relaunchPhase = control(mint(152), ref2(challengerRelaunch.id), "phase", "planning", 41);
+  const lateAbort = outcome(mint(153), ref2(challengerRun.id), "aborted", 42);
+  const primaryDone = outcome(mint(154), ref2(primaryRun.id), "succeeded", 50);
+  const challengerDone = outcome(mint(155), ref2(challengerRelaunch.id), "succeeded", 60);
+  const log = [
+    pair,
+    primary,
+    challenger,
+    primaryRun,
+    challengerRun,
+    challengerAborted,
+    challengerRelaunch,
+    relaunchPhase,
+    lateAbort,
+    primaryDone,
+    challengerDone
+  ];
+  return {
+    name: "challenge-pair",
+    description: "One pair, a primary and a challenger arm, each with its own run. Both runs are current at once. The challenger is aborted and relaunched as a new run under the same arm (retry_of): it does not inherit the abort, a late repeat of the abort cannot reach it, and the primary is unaffected.",
+    log,
+    expected: {
+      decisions: [
+        decision(0, pair, "accepted"),
+        decision(1, primary, "accepted"),
+        decision(2, challenger, "accepted"),
+        decision(3, primaryRun, "accepted"),
+        decision(4, challengerRun, "accepted"),
+        decision(5, challengerAborted, "accepted"),
+        decision(6, challengerRelaunch, "accepted"),
+        decision(7, relaunchPhase, "accepted"),
+        decision(8, lateAbort, "rejected", ["stale_run"]),
+        decision(9, primaryDone, "accepted"),
+        decision(10, challengerDone, "accepted")
+      ],
+      attempts: [
+        state(pair, { current: true }),
+        state(primary, { current: true }),
+        state(challenger, { current: true }),
+        state(primaryRun, { current: true, outcome: "succeeded" }),
+        state(challengerRun, { current: false, superseded_by: challengerRelaunch.id, outcome: "aborted" }),
+        state(challengerRelaunch, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [],
+      derived: []
+    }
+  };
+})();
+var comparisonRecomputed = (() => {
+  const pair = attempt({ kind: "pair", id: mint(61), parent: TASK, t: 0 });
+  const primary = attempt({ kind: "arm", id: mint(62), parent: pair.id, role: "primary", t: 0 });
+  const challenger = attempt({ kind: "arm", id: mint(63), parent: pair.id, role: "challenger", t: 0 });
+  const primaryRun = attempt({ kind: "run", id: mint(64), parent: primary.id, t: 1 });
+  const challengerRun = attempt({ kind: "run", id: mint(65), parent: challenger.id, t: 1 });
+  const primaryDone = outcome(mint(161), ref2(primaryRun.id), "succeeded", 10);
+  const challengerDone = outcome(mint(162), ref2(challengerRun.id), "succeeded", 11);
+  const primaryCost = evidence(mint(163), ref2(primaryRun.id), "cost", 1, 12, { cost_event_ids: ["event-0101"] });
+  const challengerCost1 = evidence(mint(164), ref2(challengerRun.id), "cost", 1, 12, {
+    cost_event_ids: ["event-0201"]
+  });
+  const comparison1 = derivedResult(
+    mint(165),
+    [
+      { attempt: ref2(primaryRun.id), evidence_kind: "cost", evidence_version: 1 },
+      { attempt: ref2(challengerRun.id), evidence_kind: "cost", evidence_version: 1 }
+    ],
+    13
+  );
+  const challengerCost2 = evidence(mint(166), ref2(challengerRun.id), "cost", 2, 120, {
+    cost_event_ids: ["event-0201", "event-0202"]
+  });
+  const comparison2 = derivedResult(
+    mint(167),
+    [
+      { attempt: ref2(primaryRun.id), evidence_kind: "cost", evidence_version: 1 },
+      { attempt: ref2(challengerRun.id), evidence_kind: "cost", evidence_version: 2 }
+    ],
+    121,
+    comparison1.derived_id
+  );
+  const log = [
+    pair,
+    primary,
+    challenger,
+    primaryRun,
+    challengerRun,
+    primaryDone,
+    challengerDone,
+    primaryCost,
+    challengerCost1,
+    comparison1,
+    challengerCost2,
+    comparison2
+  ];
+  return {
+    name: "comparison-recomputed",
+    description: "A challenge comparison is computed from incomplete challenger cost (evidence_version 1). Corrected cost arrives as version 2 after both runs settled: the outcomes do not change, the comparison becomes stale, and a recomputed comparison supersedes it.",
+    log,
+    prefixExpectations: [
+      {
+        length: 10,
+        derived: [{ derived_id: comparison1.derived_id, derived_kind: "challenge_comparison", status: "current" }]
+      },
+      {
+        length: 11,
+        derived: [
+          {
+            derived_id: comparison1.derived_id,
+            derived_kind: "challenge_comparison",
+            status: "stale",
+            stale_inputs: [{ attempt: ref2(challengerRun.id), evidence_kind: "cost", evidence_version: 1 }]
+          }
+        ]
+      }
+    ],
+    expected: {
+      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      attempts: [
+        state(pair, { current: true }),
+        state(primary, { current: true }),
+        state(challenger, { current: true }),
+        state(primaryRun, { current: true, outcome: "succeeded" }),
+        state(challengerRun, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [
+        { attempt_id: primaryRun.id, evidence_kind: "cost", latest_version: 1, write_ids: [primaryCost.write_id] },
+        {
+          attempt_id: challengerRun.id,
+          evidence_kind: "cost",
+          latest_version: 2,
+          write_ids: [challengerCost1.write_id, challengerCost2.write_id]
+        }
+      ],
+      derived: [
+        {
+          derived_id: comparison1.derived_id,
+          derived_kind: "challenge_comparison",
+          status: "superseded",
+          superseded_by: comparison2.derived_id
+        },
+        { derived_id: comparison2.derived_id, derived_kind: "challenge_comparison", status: "current" }
+      ]
+    }
+  };
+})();
+var twoPrMergeCandidate = (() => {
+  const runA = attempt({ kind: "run", id: mint(71), parent: TASK, t: 0 });
+  const runB = attempt({ kind: "run", id: mint(72), parent: OTHER_TASK, task: OTHER_TASK, t: 0 });
+  const runADone = outcome(mint(171), ref2(runA.id), "succeeded", 10);
+  const runBDone = outcome(mint(172), ref2(runB.id, void 0, OTHER_TASK), "succeeded", 11);
+  const checkA = evidence(mint(173), ref2(runA.id), "check_run", 1, 20);
+  const checkB = evidence(mint(174), ref2(runB.id, void 0, OTHER_TASK), "check_run", 1, 20);
+  const wrongTask = evidence(mint(175), ref2(runB.id), "check_run", 2, 21);
+  const log = [runA, runB, runADone, runBDone, checkA, checkB, wrongTask];
+  return {
+    name: "two-pr-merge-candidate",
+    description: "A merge-queue candidate spans two PRs from two tasks. The candidate references both runs (attempt_refs); it is not itself a run or attempt. Check-run evidence lands on each run. A ref naming a run under the wrong task is rejected as a mismatch.",
+    log,
+    extensionRecords: [
+      {
+        event_id: mint(176),
+        candidate_id: mint(177),
+        attempt_refs: [ref2(runA.id), ref2(runB.id, void 0, OTHER_TASK)]
+      }
+    ],
+    expected: {
+      decisions: [
+        decision(0, runA, "accepted"),
+        decision(1, runB, "accepted"),
+        decision(2, runADone, "accepted"),
+        decision(3, runBDone, "accepted"),
+        decision(4, checkA, "accepted"),
+        decision(5, checkB, "accepted"),
+        decision(6, wrongTask, "rejected", ["ref_mismatch"])
+      ],
+      attempts: [
+        state(runA, { current: true, outcome: "succeeded" }),
+        state(runB, { current: true, outcome: "succeeded" })
+      ],
+      evidence: [
+        { attempt_id: runA.id, evidence_kind: "check_run", latest_version: 1, write_ids: [checkA.write_id] },
+        { attempt_id: runB.id, evidence_kind: "check_run", latest_version: 1, write_ids: [checkB.write_id] }
+      ],
+      derived: []
+    }
+  };
+})();
+
 // ../core/src/contribution/schema.ts
 var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "schema_version",
@@ -5866,8 +6884,8 @@ function collectBuildOk(checkoutDir, config, timeoutMs, ciEvidence) {
     }
   }
   if (ciEvidence) {
-    const evidence2 = ciEvidence();
-    if (evidence2) return { value: evidence2.value, evidence: evidence2.provenance };
+    const evidence3 = ciEvidence();
+    if (evidence3) return { value: evidence3.value, evidence: evidence3.provenance };
   }
   return { value: null, evidence: null };
 }
@@ -6491,7 +7509,7 @@ function resolveMergedPr(target, deps, prUrl, options = {}) {
   const prNumber = numberMatch ? Number(numberMatch[1]) : null;
   if (prNumber !== null) {
     const enumerated = enumerateMergedPrs(target, deps, { maxCount: options.searchLimit ?? 5e3 });
-    const match = enumerated.find((ref2) => ref2.prNumber === prNumber);
+    const match = enumerated.find((ref3) => ref3.prNumber === prNumber);
     if (match) return { ...match, prUrl };
   }
   const metadata = deps.github.getPrMetadata(prUrl);
@@ -6736,11 +7754,11 @@ function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
   };
 }
 var BOT_LOGIN_PATTERN = /(?:\[bot\]|bot|robot)$/i;
-function isFollowupReference(ref2, target) {
+function isFollowupReference(ref3, target) {
   const sameRepo = new RegExp(`^https://github\\.com/${escapeRegExp(target.owner)}/${escapeRegExp(target.repo)}/(?:issues|pull)/\\d+`, "i");
-  if (!sameRepo.test(ref2.url)) return false;
-  if (ref2.sourceAuthorType === "Bot" || ref2.sourceAuthorLogin && BOT_LOGIN_PATTERN.test(ref2.sourceAuthorLogin)) return false;
-  if (typeof ref2.sourceBaseRef === "string" && ref2.sourceBaseRef !== target.integrationBranch) return false;
+  if (!sameRepo.test(ref3.url)) return false;
+  if (ref3.sourceAuthorType === "Bot" || ref3.sourceAuthorLogin && BOT_LOGIN_PATTERN.test(ref3.sourceAuthorLogin)) return false;
+  if (typeof ref3.sourceBaseRef === "string" && ref3.sourceBaseRef !== target.integrationBranch) return false;
   return true;
 }
 function escapeRegExp(value) {
@@ -6925,7 +7943,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
       }
     }
     return crossReferences.some(
-      (ref2) => ref2.createdAtEpoch > pr.mergedAtEpoch && ref2.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref2, target)
+      (ref3) => ref3.createdAtEpoch > pr.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target)
     );
   };
   const issueKeys = extractIssueKeys(pr.subject);
@@ -7034,9 +8052,9 @@ function summarizeLabels(repo, labels) {
       survival_rate: null
     };
     bucket.rows += 1;
-    const outcome = label2.outcome.report_outcome;
-    if (outcome === null) bucket.missing += 1;
-    else bucket[outcome] += 1;
+    const outcome2 = label2.outcome.report_outcome;
+    if (outcome2 === null) bucket.missing += 1;
+    else bucket[outcome2] += 1;
     horizons[key] = bucket;
   }
   for (const bucket of Object.values(horizons)) {
@@ -7139,7 +8157,7 @@ function createDefaultDeps(target, options = {}) {
           // The timeline does not carry a referencing PR's base branch; sourceBaseRef stays unknown.
           sourceAuthorLogin: event17.source?.issue?.user?.login ?? null,
           sourceAuthorType: event17.source?.issue?.user?.type ?? null
-        })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
+        })).filter((ref3) => Number.isFinite(ref3.createdAtEpoch));
       } catch {
         return [];
       }
@@ -7419,27 +8437,27 @@ import { join as join4 } from "node:path";
 
 // src/shadow/discover.ts
 var EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-function isAncestor(runGit3, sha, ref2) {
+function isAncestor(runGit3, sha, ref3) {
   try {
-    const result = runGit3(["merge-base", "--is-ancestor", sha, ref2]);
+    const result = runGit3(["merge-base", "--is-ancestor", sha, ref3]);
     return result.exitCode === 0;
   } catch {
     return false;
   }
 }
 function discoverMerges(opts) {
-  const { runGit: runGit3, ref: ref2, cursor, bootstrapDays, now, maxPrs } = opts;
+  const { runGit: runGit3, ref: ref3, cursor, bootstrapDays, now, maxPrs } = opts;
   const merges = [];
   let cursorReset = false;
   let useBootstrapWindow = cursor === null;
-  if (cursor !== null && !isAncestor(runGit3, cursor, ref2)) {
+  if (cursor !== null && !isAncestor(runGit3, cursor, ref3)) {
     cursorReset = true;
     useBootstrapWindow = true;
   }
   const cutoffEpoch = Math.floor(now().getTime() / 1e3) - bootstrapDays * 86400;
   const format = "%H%x09%P%x09%ct%x09%s";
   const sinceArgs = cutoffEpoch > 0 ? [`--since=${new Date(cutoffEpoch * 1e3).toISOString()}`] : [];
-  const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref2] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref2}`];
+  const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref3] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref3}`];
   const result = runGit3(args);
   if (result.exitCode !== 0) {
     throw new ShadowError("NOT_A_GIT_REPO");
@@ -7581,13 +8599,13 @@ function readState(dir, repo, scorerId, scorerVersion) {
     };
   }
 }
-function writeState(dir, state) {
+function writeState(dir, state2) {
   const stateFile = path.join(dir, "state.json");
-  const result = validateShadowState(state);
+  const result = validateShadowState(state2);
   if (!result.ok) {
     throw new ShadowError("INVALID_ROW");
   }
-  writeFileAtomic(stateFile, JSON.stringify(state, null, 2));
+  writeFileAtomic(stateFile, JSON.stringify(state2, null, 2));
 }
 function writeReport(dir, date2, serialized) {
   const reportsDir = path.join(dir, "reports");
@@ -7816,7 +8834,7 @@ function runShadowBackfill(opts) {
           pending++;
           continue;
         }
-        const outcome = {
+        const outcome2 = {
           schema_version: "arbiter_shadow_outcome/v1",
           repo: score.repo,
           pr_number: score.pr_number,
@@ -7833,13 +8851,13 @@ function runShadowBackfill(opts) {
             envelope: result.envelope
           }
         };
-        const validation = validateShadowOutcomeRow(outcome);
+        const validation = validateShadowOutcomeRow(outcome2);
         if (!validation.ok) {
           log(`SHADOW_SKIP pr=${score.pr_number} code=INVALID_ROW`);
           skipped++;
           continue;
         }
-        rows.push(outcome);
+        rows.push(outcome2);
         labelled++;
       } catch {
         log(`SHADOW_SKIP pr=${score.pr_number} code=LABEL_FAILED`);
@@ -7871,12 +8889,12 @@ function metricsAtThreshold({ scores, outcomeFor }, threshold) {
   for (const score of scores) {
     const isFlagged = score.score < threshold;
     if (isFlagged) flagged++;
-    const outcome = outcomeFor(score);
-    if (!outcome || outcome.survived === null) continue;
-    if (outcome.survived) survived++;
+    const outcome2 = outcomeFor(score);
+    if (!outcome2 || outcome2.survived === null) continue;
+    if (outcome2.survived) survived++;
     if (isFlagged) {
       flaggedMatured++;
-      if (outcome.survived) flaggedSurvived++;
+      if (outcome2.survived) flaggedSurvived++;
       else flaggedNotSurvived++;
     }
   }
@@ -7907,9 +8925,9 @@ function computeShadowReport(scores, outcomes, opts) {
     let n_matured = 0;
     let n_unlabelled = 0;
     for (const score of scored) {
-      const outcome = outcomeFor(score);
-      if (!outcome) continue;
-      if (outcome.survived === null) n_unlabelled++;
+      const outcome2 = outcomeFor(score);
+      if (!outcome2) continue;
+      if (outcome2.survived === null) n_unlabelled++;
       else n_matured++;
     }
     const lastScore = scored[scored.length - 1];
@@ -8191,8 +9209,8 @@ function nearestRankQuartiles(sorted) {
       throw new RangeError("nearestRankQuartiles requires finite ascending values");
     }
   }
-  const at = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
-  return [at(0.25), at(0.5), at(0.75)];
+  const at2 = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  return [at2(0.25), at2(0.5), at2(0.75)];
 }
 function quartileOf(value, cuts) {
   if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
@@ -8527,8 +9545,8 @@ function bootstrap(rows, estimator, relevant, seed, resamples) {
     if (v !== null) values.push(v);
   }
   values.sort((x, y) => x - y);
-  const at = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
-  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at(0.025)), high: round43(at(0.975)) } : null, n };
+  const at2 = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
+  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at2(0.025)), high: round43(at2(0.975)) } : null, n };
 }
 function scoreCalibration(input) {
   const { plan, items, sheetA, sheetB, seed } = input;
@@ -9008,8 +10026,8 @@ var BACKPORT2 = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherr
 var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
 var REVERT_REASON = /\bdue to\b([^\n]*)/i;
 var NON_DEFECT_REASON = /merge conflict|conflicts? with|(?:to|in order to)(?: be able to)? (?:cleanly )?revert|dependen(?:cy|t) (?:of|on)|depends on|land ?race|stack (?:is )?in a (?:weird|bad|broken) state|wait(?:ing)? for .{0,40}(?:confirm|approv|review)|before merging|needs? to (?:be )?land(?:ed)? internally|ghfirst|diff train/i;
-function evidence(kind, ref2 = null, count = null) {
-  return { kind, ref: ref2, count };
+function evidence2(kind, ref3 = null, count = null) {
+  return { kind, ref: ref3, count };
 }
 function escapeRegExp2(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -9075,7 +10093,7 @@ ${event17.body}`;
     const common = commonExclusion(event17);
     if (isRevert(event17)) {
       const exclusion = common ?? revertExclusion(event17);
-      const reason = evidence("revert_reason", revertReasonClass(event17));
+      const reason = evidence2("revert_reason", revertReasonClass(event17));
       for (const target of revertTargets(event17, text, input.repo, index)) {
         const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
         add(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
@@ -9083,22 +10101,22 @@ ${event17.body}`;
       continue;
     }
     const signals = [];
-    if (FIX_TITLE.test(event17.title)) signals.push(evidence("fix_title_prefix"));
-    for (const label2 of event17.labels) if (FIX_LABEL.test(label2)) signals.push(evidence("fix_label", label2));
+    if (FIX_TITLE.test(event17.title)) signals.push(evidence2("fix_title_prefix"));
+    for (const label2 of event17.labels) if (FIX_LABEL.test(label2)) signals.push(evidence2("fix_label", label2));
     const cited = /* @__PURE__ */ new Map();
-    const cite = (original, item, at) => {
-      if (!REGRESSION_CONTEXT.test(text.slice(Math.max(0, at - 60), at))) return;
+    const cite = (original, item, at2) => {
+      if (!REGRESSION_CONTEXT.test(text.slice(Math.max(0, at2 - 60), at2))) return;
       const items = cited.get(original) ?? [];
-      items.push(item, evidence("regression_in_marker"));
+      items.push(item, evidence2("regression_in_marker"));
       cited.set(original, items);
     };
-    for (const { n, index: at } of citedNumbers(text, input.repo)) {
+    for (const { n, index: at2 } of citedNumbers(text, input.repo)) {
       const original = index.byNumber.get(n);
-      if (original) cite(original, evidence("cites_original_pr", original.pr_url), at);
+      if (original) cite(original, evidence2("cites_original_pr", original.pr_url), at2);
     }
-    for (const { token, index: at } of shaTokens(text)) {
+    for (const { token, index: at2 } of shaTokens(text)) {
       const hit = index.bySha(token);
-      if (hit) cite(hit.pr, evidence("cites_original_sha", hit.sha), at);
+      if (hit) cite(hit.pr, evidence2("cites_original_sha", hit.sha), at2);
     }
     const fixShaped = signals.length > 0;
     for (const issue of fixShaped ? event17.closingIssues : []) {
@@ -9107,7 +10125,7 @@ ${event17.body}`;
       for (const { original, url } of citers) {
         if (original.pr_url === event17.pr?.pr_url) continue;
         const items = cited.get(original) ?? [];
-        items.push(evidence("closes_issue_citing_original", url));
+        items.push(evidence2("closes_issue_citing_original", url));
         cited.set(original, items);
       }
     }
@@ -9121,7 +10139,7 @@ ${event17.body}`;
       const citers = issueCiters.get(n) ?? [];
       if (!labels.length || citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
       for (const { original, url } of citers) {
-        add(original, event17, "regression_issue", [...labels.map((l) => evidence("regression_issue_label", l)), evidence("closes_issue_citing_original", url)], common);
+        add(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
       }
     }
     const bugs = closed.filter(({ issue }) => isBugIssue(issue));
@@ -9133,9 +10151,9 @@ ${event17.body}`;
       continue;
     }
     if (szz.tooLarge) szzStats.too_large++;
-    const bugEvidence = bugs.map(({ issue }) => evidence("closes_bug_issue", issue.url));
+    const bugEvidence = bugs.map(({ issue }) => evidence2("closes_bug_issue", issue.url));
     for (const [original, lines] of szz.blamed) {
-      add(original, event17, "szz", [...bugEvidence, evidence("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
+      add(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
     }
   }
   const candidates = [...drafts.entries()].map(([id2, d]) => ({
@@ -9193,24 +10211,24 @@ function revertTargets(event17, text, repo, index) {
   };
   for (const m of text.matchAll(REVERTS_COMMIT)) {
     const hit = index.bySha(m[1]);
-    if (hit) push(hit.pr, evidence("revert_message", hit.sha));
+    if (hit) push(hit.pr, evidence2("revert_message", hit.sha));
   }
   const prRef = new RegExp(`^\\s*reverts? ${escapeRegExp2(repo)}#(\\d+)|^\\s*reverted https://github\\.com/${escapeRegExp2(repo)}/pull/(\\d+)`, "gim");
   for (const m of text.matchAll(prRef)) {
     const original = index.byNumber.get(Number(m[1] ?? m[2]));
-    push(original, evidence("reverts_pr_reference", original?.pr_url ?? null));
+    push(original, evidence2("reverts_pr_reference", original?.pr_url ?? null));
   }
   if (!out.length) {
     for (const { token } of shaTokens(text)) {
       const hit = index.bySha(token);
-      if (hit) push(hit.pr, evidence("revert_message", hit.sha));
+      if (hit) push(hit.pr, evidence2("revert_message", hit.sha));
     }
   }
   if (!out.length) {
     const quoted = event17.title.match(/^\s*(?:\[[^\]]*\]\s*)?revert\s+"(.*)"/i)?.[1];
     for (const { n } of quoted ? citedNumbers(quoted, repo) : []) {
       const original = index.byNumber.get(n);
-      push(original, evidence("reverts_pr_reference", original?.pr_url ?? null));
+      push(original, evidence2("reverts_pr_reference", original?.pr_url ?? null));
     }
   }
   return out;
@@ -9220,12 +10238,12 @@ function issueCitations(repo, originals, crossReferences) {
   const issuePrefix = `https://github.com/${repo}/issues/`;
   for (const original of originals) {
     const merged = Math.floor(Date.parse(original.merged_at) / 1e3);
-    for (const ref2 of crossReferences.get(original.pr_number) ?? []) {
-      if (!ref2.url.startsWith(issuePrefix) || ref2.createdAtEpoch <= merged) continue;
-      const issue = Number(ref2.url.slice(issuePrefix.length));
+    for (const ref3 of crossReferences.get(original.pr_number) ?? []) {
+      if (!ref3.url.startsWith(issuePrefix) || ref3.createdAtEpoch <= merged) continue;
+      const issue = Number(ref3.url.slice(issuePrefix.length));
       if (!Number.isInteger(issue)) continue;
       const list = out.get(issue) ?? [];
-      if (!list.some((e) => e.original === original)) list.push({ original, url: ref2.url });
+      if (!list.some((e) => e.original === original)) list.push({ original, url: ref3.url });
       out.set(issue, list);
     }
   }
@@ -9799,7 +10817,7 @@ function prefetchCrossReferences(repo, prNumbers, graphql, cache) {
           sourceAuthorLogin: node.source?.author?.login ?? null,
           sourceAuthorType: node.source?.author?.__typename ?? null,
           sourceBaseRef: node.source?.baseRefName ?? null
-        })).filter((ref2) => Number.isFinite(ref2.createdAtEpoch));
+        })).filter((ref3) => Number.isFinite(ref3.createdAtEpoch));
         return [n, refs];
       });
       cache?.set(key, rows);
@@ -9885,7 +10903,7 @@ function blamedLines(candidate) {
 }
 function summarizeCorpusRepo(input) {
   const horizons = /* @__PURE__ */ new Map();
-  const at = (h) => {
+  const at2 = (h) => {
     let s = horizons.get(h);
     if (!s) {
       s = {
@@ -9907,9 +10925,9 @@ function summarizeCorpusRepo(input) {
     }
     return s;
   };
-  for (const h of HORIZONS) at(h);
+  for (const h of HORIZONS) at2(h);
   for (const row of input.s2Rows) {
-    const s = at(row.horizon_days);
+    const s = at2(row.horizon_days);
     s.prs++;
     bump(s.s2_outcomes, row.outcome.report_outcome ?? "missing");
   }
@@ -9937,7 +10955,7 @@ function summarizeCorpusRepo(input) {
   const highPrecision = /* @__PURE__ */ new Map();
   const szzMin = /* @__PURE__ */ new Map();
   for (const row of input.correctiveRows) {
-    const s = at(row.horizon_days);
+    const s = at2(row.horizon_days);
     if (row.corrective === null) {
       s.corrective.null++;
       continue;
@@ -10087,20 +11105,20 @@ function createGhGraphql(sleep, log) {
       if (value === null) continue;
       args.push(typeof value === "number" ? "-F" : "-f", `${key}=${value}`);
     }
-    for (let attempt = 0; ; attempt++) {
+    for (let attempt2 = 0; ; attempt2++) {
       const result = execArgvCommand("gh", args, { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       const parsed = parseGraphqlResponse(result.stdout);
       if (parsed?.data && (parsed.errors ?? []).every((error) => error.type === "NOT_FOUND")) return parsed.data;
       if (result.exitCode === 0 && parsed?.errors?.length) throw new Error(`GitHub GraphQL error: ${parsed.errors[0].message}`);
       const stderr = result.stderr || result.stdout;
-      if (RATE_LIMITED.test(stderr) && attempt < 48) {
+      if (RATE_LIMITED.test(stderr) && attempt2 < 48) {
         const wait = secondsUntilReset();
         log(`warn: GitHub rate limit reached; waiting ${wait}s for the window to reset`);
         sleep(wait * 1e3);
         continue;
       }
-      if (RETRYABLE.test(stderr) && attempt < 6) {
-        const wait = 2e3 * 2 ** attempt;
+      if (RETRYABLE.test(stderr) && attempt2 < 6) {
+        const wait = 2e3 * 2 ** attempt2;
         log(`warn: GitHub ${stderr.split("\n")[0]?.slice(0, 80)}; retrying in ${wait / 1e3}s`);
         sleep(wait);
         continue;
@@ -10118,18 +11136,18 @@ function parseGraphqlResponse(stdout) {
 }
 function createGhPullsForCommit(repo, sleep, log) {
   return (sha) => {
-    for (let attempt = 0; ; attempt++) {
+    for (let attempt2 = 0; ; attempt2++) {
       const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
       if (result.exitCode === 0) return JSON.parse(result.stdout || "[]");
-      if (RATE_LIMITED.test(result.stderr) && attempt < 48) {
+      if (RATE_LIMITED.test(result.stderr) && attempt2 < 48) {
         const wait = secondsUntilReset();
         log(`warn: GitHub rate limit reached; waiting ${wait}s for the window to reset`);
         sleep(wait * 1e3);
         continue;
       }
-      if (RETRYABLE.test(result.stderr) && attempt < 6) {
+      if (RETRYABLE.test(result.stderr) && attempt2 < 6) {
         log(`warn: GitHub ${result.stderr.split("\n")[0]?.slice(0, 80)}; retrying`);
-        sleep(2e3 * 2 ** attempt);
+        sleep(2e3 * 2 ** attempt2);
         continue;
       }
       throw new Error(`GitHub request failed: ${result.stderr.split("\n")[0]?.slice(0, 200)}`);
@@ -10184,11 +11202,11 @@ function fileCache(dir) {
 function syncClone(repo, dir, defaultBranch) {
   const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  for (let attempt = 1; !existsSync4(join7(dir, "HEAD")); attempt++) {
+  for (let attempt2 = 1; !existsSync4(join7(dir, "HEAD")); attempt2++) {
     const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
     if (cloned.exitCode === 0) break;
     rmSync2(dir, { recursive: true, force: true });
-    if (attempt >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
+    if (attempt2 >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
   }
   const fetched = runGit3(["fetch", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
   if (fetched.exitCode !== 0) throw new Error(`git fetch failed: ${fetched.stderr.trim().split("\n").pop()}`);
@@ -10634,7 +11652,7 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
 `);
     return { exitCode: 2 };
   }
-  const evidence2 = [];
+  const evidence3 = [];
   let failures = 0;
   for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
     const repoDir = join7(cacheRoot, repo.replace("/", "__"));
@@ -10646,7 +11664,7 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
       for (const r of records) for (const sha of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha)) bySha.set(sha, r);
       const gitDir = join7(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      for (const item of sample.items.filter((i) => i.repo === repo)) evidence2.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
+      for (const item of sample.items.filter((i) => i.repo === repo)) evidence3.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
     } catch (error) {
       failures++;
       log(`error: evidence failed for one repo: ${error.message}`);
@@ -10654,13 +11672,13 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   }
   if (failures) return { exitCode: 3 };
   const order = new Map(sample.items.map((i, n) => [i.item_id, n]));
-  evidence2.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
-  writeJsonl(join7(sampleDir, "evidence.jsonl"), evidence2);
+  evidence3.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
+  writeJsonl(join7(sampleDir, "evidence.jsonl"), evidence3);
   chmodSync(join7(sampleDir, "evidence.jsonl"), 384);
-  const related = new Map(evidence2.map((e) => [e.item_id, e.related.map((r) => r.url)]));
+  const related = new Map(evidence3.map((e) => [e.item_id, e.related.map((r) => r.url)]));
   writeFileSync2(join7(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
-  const truncated = evidence2.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
-  io.writeStdout(`${JSON.stringify({ items: evidence2.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence2.filter((e) => e.related.length).length })}
+  const truncated = evidence3.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
+  io.writeStdout(`${JSON.stringify({ items: evidence3.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence3.filter((e) => e.related.length).length })}
 `);
   return { exitCode: 0 };
 }
@@ -10699,36 +11717,36 @@ var IntegrationBranchError = class extends Error {
 var MAIN_GUIDANCE = "integration branch resolves to main and no promotion branch was detected. Pass --integration-branch <ref>, or --integration-mode direct if PRs merge straight into main (S2 v1.1.0).";
 var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
 var SQUASH2 = /\(#(\d+)\)\s*$/;
-function resolveIntegrationBranch(evidence2) {
-  const explicit = evidence2.explicitBranch?.trim();
-  const explicitMode = evidence2.explicitMode ?? null;
+function resolveIntegrationBranch(evidence3) {
+  const explicit = evidence3.explicitBranch?.trim();
+  const explicitMode = evidence3.explicitMode ?? null;
   if (explicit) {
     if (explicit.toLowerCase() === "main" && explicitMode !== "direct") throw new IntegrationBranchError(MAIN_GUIDANCE);
     return { branch: explicit, mode: explicitMode ?? "promotion", detected: false, summary: "explicit integration branch" };
   }
-  if (!evidence2.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
-  if (evidence2.defaultBranch.toLowerCase() !== "main") return { branch: evidence2.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
-  if (explicitMode === "direct") return { branch: evidence2.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
+  if (!evidence3.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
+  if (evidence3.defaultBranch.toLowerCase() !== "main") return { branch: evidence3.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
+  if (explicitMode === "direct") return { branch: evidence3.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
   const counts = /* @__PURE__ */ new Map();
   let promotions = 0;
-  for (const subject of evidence2.recentFirstParentSubjects.slice(0, 200)) {
+  for (const subject of evidence3.recentFirstParentSubjects.slice(0, 200)) {
     let number = null;
-    let ref2 = null;
+    let ref3 = null;
     const merge = subject.match(PR_MERGE);
     const squash = subject.match(SQUASH2);
     if (merge) {
       number = Number(merge[1]);
-      ref2 = merge[2];
+      ref3 = merge[2];
     } else if (squash) {
       number = Number(squash[1]);
-      ref2 = evidence2.headRefLookup(number);
+      ref3 = evidence3.headRefLookup(number);
     }
-    if (!number || !ref2 || !ref2.includes("/")) continue;
+    if (!number || !ref3 || !ref3.includes("/")) continue;
     promotions++;
-    counts.set(ref2, (counts.get(ref2) ?? 0) + 1);
+    counts.set(ref3, (counts.get(ref3) ?? 0) + 1);
   }
   const winner = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence2.remoteBranchExists(winner[0])) {
+  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence3.remoteBranchExists(winner[0])) {
     return { branch: winner[0], mode: "promotion", detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
   }
   throw new IntegrationBranchError(MAIN_GUIDANCE);
@@ -10910,9 +11928,9 @@ function buildAggregates(prs, horizons) {
       const l = labelAt(pr, h);
       return l?.outcome.report_outcome ? [{ pr, l }] : [];
     });
-    for (const outcome of OUTCOMES) {
-      const selected = labelled.filter(({ l }) => l.outcome.report_outcome === outcome);
-      survival.push({ horizon_days: h, outcome, cell: makeCell(selected.length, labelled.length) });
+    for (const outcome2 of OUTCOMES) {
+      const selected = labelled.filter(({ l }) => l.outcome.report_outcome === outcome2);
+      survival.push({ horizon_days: h, outcome: outcome2, cell: makeCell(selected.length, labelled.length) });
     }
     for (const feature of Object.keys(REPORT_FEATURE_BUCKETS)) {
       const locValues = feature === "loc_touched" ? labelled.map(({ pr }) => pr.features.loc_touched).filter((v) => v !== null).sort((a, b) => a - b) : [];
@@ -11216,10 +12234,10 @@ function exactKeys(value, keys) {
 function validMethods(value) {
   return Array.isArray(value) && value.every((method) => typeof method === "string" && REPORT_ATTRIBUTION_METHODS.includes(method));
 }
-function validDimension(value, status, ids, evidence2 = false) {
+function validDimension(value, status, ids, evidence3 = false) {
   if (!object(value)) return false;
-  const keys = evidence2 ? ["id", "confidence", "methods", "evidence"] : ids ? ["id", "confidence", "methods"] : ["status", "confidence", "methods"];
-  return exactKeys(value, keys) && (ids ? typeof value.id === "string" || value.id === null : status.includes(value.status)) && (typeof value.confidence === "number" || value.confidence === null) && validMethods(value.methods) && (!evidence2 || value.evidence === "first_party_executed" || value.evidence === "heuristic" || value.evidence === null);
+  const keys = evidence3 ? ["id", "confidence", "methods", "evidence"] : ids ? ["id", "confidence", "methods"] : ["status", "confidence", "methods"];
+  return exactKeys(value, keys) && (ids ? typeof value.id === "string" || value.id === null : status.includes(value.status)) && (typeof value.confidence === "number" || value.confidence === null) && validMethods(value.methods) && (!evidence3 || value.evidence === "first_party_executed" || value.evidence === "heuristic" || value.evidence === null);
 }
 function validAttribution(value) {
   if (!object(value) || !exactKeys(value, ["agent", "harness", "exact_model"])) return false;
@@ -11227,8 +12245,8 @@ function validAttribution(value) {
 }
 function validLabel(value) {
   if (!object(value) || !exactKeys(value, ["horizon_days", "label_provenance", "outcome", "label_hash"]) || !HORIZONS.includes(value.horizon_days) || value.label_provenance !== "harvested" && value.label_provenance !== "owner_corrected" || typeof value.label_hash !== "string" || !/^[0-9a-f]{64}$/.test(value.label_hash) || !object(value.outcome)) return false;
-  const outcome = value.outcome;
-  return exactKeys(outcome, ["survived", "survival_ratio", "reverted", "undone_by", "followup", "report_outcome", "reason_codes"]) && (typeof outcome.survived === "boolean" || outcome.survived === null) && (typeof outcome.survival_ratio === "number" || outcome.survival_ratio === null) && (typeof outcome.reverted === "boolean" || outcome.reverted === null) && (outcome.undone_by === "human" || outcome.undone_by === "agent" || outcome.undone_by === null) && (typeof outcome.followup === "boolean" || outcome.followup === null) && ["survived", "followup", "substantially_rewritten", "reverted", null].includes(outcome.report_outcome) && Array.isArray(outcome.reason_codes) && outcome.reason_codes.every((code) => typeof code === "string" && REASON_CODES.includes(code));
+  const outcome2 = value.outcome;
+  return exactKeys(outcome2, ["survived", "survival_ratio", "reverted", "undone_by", "followup", "report_outcome", "reason_codes"]) && (typeof outcome2.survived === "boolean" || outcome2.survived === null) && (typeof outcome2.survival_ratio === "number" || outcome2.survival_ratio === null) && (typeof outcome2.reverted === "boolean" || outcome2.reverted === null) && (outcome2.undone_by === "human" || outcome2.undone_by === "agent" || outcome2.undone_by === null) && (typeof outcome2.followup === "boolean" || outcome2.followup === null) && ["survived", "followup", "substantially_rewritten", "reverted", null].includes(outcome2.report_outcome) && Array.isArray(outcome2.reason_codes) && outcome2.reason_codes.every((code) => typeof code === "string" && REASON_CODES.includes(code));
 }
 function validLabelsByHorizon(value) {
   return object(value) && Object.entries(value).every(([horizon2, label2]) => /^(14|30|60)$/.test(horizon2) && validLabel(label2) && String(label2.horizon_days) === horizon2);
@@ -11310,7 +12328,7 @@ async function runReportScan(target, deps, options) {
     mergedAtEpoch: merge.mergedAtEpoch,
     subject: `#${merge.prNumber}`
   }]);
-  const refBySha = new Map(refs.map((ref2) => [ref2.mergeSha, ref2]));
+  const refBySha = new Map(refs.map((ref3) => [ref3.mergeSha, ref3]));
   let failedPrs = 0;
   const attemptedPrs = merges.filter((merge) => merge.prNumber !== null).length;
   for (const merge of merges) {
@@ -11369,7 +12387,7 @@ ${pr.body ?? ""}` }
         }
         await deps.github.getCheckConclusion(pr.headSha);
       }
-      const ref2 = refBySha.get(merge.mergeSha);
+      const ref3 = refBySha.get(merge.mergeSha);
       const labelCache = previous?.labels_by_horizon ?? {};
       const labelsByHorizon = /* @__PURE__ */ new Map();
       for (const horizon2 of horizons) {
@@ -11378,7 +12396,7 @@ ${pr.body ?? ""}` }
         if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
       }
       if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
-        const fresh = label2(labellerTarget, deps.labeller, ref2, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
+        const fresh = label2(labellerTarget, deps.labeller, ref3, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
         for (const item of fresh) {
           const old = labelCache[String(item.horizon_days)];
           const matured = merge.mergedAtEpoch + item.horizon_days * 86400 <= Math.floor(now.getTime() / 1e3);
@@ -11398,8 +12416,8 @@ ${pr.body ?? ""}` }
   const processedShas = new Set(merges.map((merge) => merge.mergeSha));
   for (const previous of cached?.rows ?? []) {
     if (processedShas.has(previous.merge_sha) || !reportMergeShas.has(previous.merge_sha)) continue;
-    const ref2 = refBySha.get(previous.merge_sha);
-    if (!ref2) continue;
+    const ref3 = refBySha.get(previous.merge_sha);
+    if (!ref3) continue;
     const labelsByHorizon = /* @__PURE__ */ new Map();
     for (const horizon2 of horizons) {
       const old = previous.labels_by_horizon[String(horizon2)];
@@ -11407,7 +12425,7 @@ ${pr.body ?? ""}` }
       if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
     }
     if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
-      const fresh = label2(labellerTarget, deps.labeller, ref2, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
+      const fresh = label2(labellerTarget, deps.labeller, ref3, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
       for (const item of fresh) {
         const old = previous.labels_by_horizon[String(item.horizon_days)];
         const matured = previous.merged_at_epoch + item.horizon_days * 86400 <= Math.floor(now.getTime() / 1e3);
@@ -11757,7 +12775,7 @@ async function runReportCli(argv, io) {
             return null;
           }
         },
-        remoteBranchExists: (ref2) => execArgvCommand("git", ["-C", repoDir, "ls-remote", "--exit-code", "--heads", "origin", ref2]).exitCode === 0
+        remoteBranchExists: (ref3) => execArgvCommand("git", ["-C", repoDir, "ls-remote", "--exit-code", "--heads", "origin", ref3]).exitCode === 0
       });
       integrationBranch = resolved.branch;
       integrationMode = resolved.mode;
