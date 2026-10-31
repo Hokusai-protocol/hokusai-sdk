@@ -18,6 +18,7 @@ export {
   TASK_COST_EVENT_SCHEMA_VERSION,
   TASK_COST_LEDGER_SCHEMA_VERSION,
   TASK_COST_SUMMARY_SCHEMA_VERSION,
+  TASK_ATTEMPT_SCHEMA_VERSION,
 } from './schema-version.js';
 
 export {
@@ -88,3 +89,51 @@ export {
   type AggregateTaskCostOptions,
   type TaskCostModelTotal,
 } from './aggregate.js';
+
+export {
+  TASK_ATTEMPT_ARM_ROLES,
+  TASK_ATTEMPT_CONTROL_ACTIONS,
+  TASK_ATTEMPT_EVIDENCE_KINDS,
+  TASK_ATTEMPT_KINDS,
+  TASK_ATTEMPT_OUTCOMES,
+  TASK_ATTEMPT_RECORD_TYPES,
+  type TaskAttemptArmRole,
+  type TaskAttemptCodeIdentity,
+  type TaskAttemptControlAction,
+  type TaskAttemptControlWriteV1,
+  type TaskAttemptDerivedInput,
+  type TaskAttemptDerivedResultV1,
+  type TaskAttemptEvidenceKind,
+  type TaskAttemptEvidenceWriteV1,
+  type TaskAttemptKind,
+  type TaskAttemptLogEntryV1,
+  type TaskAttemptOutcome,
+  type TaskAttemptRecordType,
+  type TaskAttemptRecordV1,
+  type TaskAttemptRef,
+  type TaskAttemptSessionRef,
+} from './attempt.js';
+
+export {
+  isTaskAttemptLogEntryV1,
+  validateTaskAttemptLogEntryV1,
+  validateTaskAttemptRef,
+} from './attempt-validators.js';
+
+export { MINTED_ID_PATTERN } from './validators.js';
+
+export {
+  TASK_ATTEMPT_DECISIONS,
+  TASK_ATTEMPT_DECISION_REASONS,
+  reduceTaskAttemptLog,
+  type TaskAttemptDecision,
+  type TaskAttemptDecisionKind,
+  type TaskAttemptDecisionReason,
+  type TaskAttemptDerivedState,
+  type TaskAttemptDerivedStatus,
+  type TaskAttemptEvidenceState,
+  type TaskAttemptLogResult,
+  type TaskAttemptState,
+} from './attempt-reducer.js';
+
+export { TASK_ATTEMPT_V1_JSON_SCHEMA } from './attempt-schema.js';

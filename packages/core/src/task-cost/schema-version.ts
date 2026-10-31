@@ -16,12 +16,18 @@
  */
 
 /** SemVer of the task-cost contract (schemas + reducer semantics). */
-export const TASK_COST_CONTRACT_VERSION = '1.0.0';
+export const TASK_COST_CONTRACT_VERSION = '1.1.0';
 
 export const TASK_COST_EVENT_SCHEMA_VERSION = 'task_cost_event/v1';
 export const TASK_COST_SUMMARY_SCHEMA_VERSION = 'task_cost_summary/v1';
 export const TASK_COST_LEDGER_SCHEMA_VERSION = 'task_cost_ledger/v1';
 export const TASK_COST_ADAPTER_CONTRACT_VERSION = 'task_cost_adapter/v1';
+/**
+ * Attempt identity records (HOK-3372, contract 1.1.0): attempt launches,
+ * control writes, evidence writes and derived results. See
+ * `attempt-identity.md`.
+ */
+export const TASK_ATTEMPT_SCHEMA_VERSION = 'task_attempt/v1';
 
 /**
  * Provider parsing-contract versions per harness. `claude-code/1` mirrors
