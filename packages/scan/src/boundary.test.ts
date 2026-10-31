@@ -45,7 +45,7 @@ const FORBIDDEN_PATTERNS = [
 const ALLOWED_LEGACY_LITERALS: Record<string, string[]> = {
   'static-features.ts': ['.wavemill-config.json', 'wavemill-cyclomatic/v1'],
 };
-const NEW_PURE_DIRS = ['attribution', 'report', 'orchestrate'];
+const NEW_PURE_DIRS = ['attribution', 'report', 'orchestrate', 'corpus'];
 const ALLOWED_PROTOCOL_LITERALS: Record<string, string[]> = {
   'attribution/engine.ts': ['wavemill'],
   'attribution/metadata-block.ts': ['wavemill-meta'],

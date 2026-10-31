@@ -10,7 +10,7 @@
  * ambient world.
  */
 
-import { HORIZONS, type HorizonDays } from '@hokusai/core';
+import { HORIZONS, type HorizonDays, type IntegrationMode } from '@hokusai/core';
 
 /** Invalid input surfaced by the CLI as exit code 2. */
 export class ScanInputError extends Error {
@@ -73,12 +73,19 @@ export function validateRepoDir(value: string | undefined): string {
   return value;
 }
 
-export function validateIntegrationBranch(value: string | undefined): string {
+/** `--integration-mode`; absent means `promotion`, the pre-v1.1.0 behaviour. */
+export function validateIntegrationMode(value: string | undefined): IntegrationMode {
+  if (value === undefined || value === 'promotion') return 'promotion';
+  if (value === 'direct') return 'direct';
+  throw new ScanInputError('--integration-mode must be promotion or direct');
+}
+
+export function validateIntegrationBranch(value: string | undefined, mode: IntegrationMode = 'promotion'): string {
   if (!value || !value.trim()) {
     throw new ScanInputError('--integration-branch is required');
   }
-  if (value === 'main') {
-    throw new ScanInputError('integration branch main is rejected (v1.0.0 contract)');
+  if (value === 'main' && mode !== 'direct') {
+    throw new ScanInputError('integration branch main requires --integration-mode direct (S2 v1.1.0): main is only safe to walk when PRs merge into it directly');
   }
   return value;
 }

@@ -285,6 +285,7 @@ export {
 } from './candidate-features.js';
 export {
   ARBITER_SURVIVAL_LABEL_SCHEMA_VERSION,
+  ARBITER_SURVIVAL_LABEL_SCHEMA_VERSIONS,
   HORIZONS,
   MISSING_REASON_CODES,
   REASON_CODES,
@@ -293,9 +294,11 @@ export {
   canonicalHash,
   canonicalSerialize,
   deriveReportOutcome,
+  type ArbiterSurvivalLabelSchemaVersion,
   type ArbiterSurvivalLabelV1,
   type BuildSurvivalLabelInput,
   type HorizonDays,
+  type IntegrationMode,
   type LabelProvenance,
   type LineRange,
   type LineRangeAnchor,
@@ -309,6 +312,48 @@ export {
   type UndoneBy,
 } from './arbiter-survival-label.js';
 export { ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA } from './arbiter-survival-label-schema.js';
+export {
+  ADMITTED_PROXIES,
+  ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  CORRECTIVE_PROXIES,
+  CORRECTIVE_REASON_CODES,
+  CORRECTIVE_REWORK_DEFINITION_VERSION,
+  EVIDENCE_KINDS,
+  EXCLUSION_CODES,
+  PROXY_CONFIDENCE,
+  REVERT_REASON_CLASSES,
+  correctiveCandidateId,
+  deriveCorrectiveLabel,
+  type ArbiterCorrectiveReworkRecordV1,
+  type CandidateEvidence,
+  type CorrectiveCandidateV1,
+  type CorrectiveConfidence,
+  type CorrectiveEnvelope,
+  type CorrectiveProxy,
+  type CorrectiveReasonCode,
+  type CorrectiveRecordType,
+  type CorrectiveReworkLabelV1,
+  type DeriveCorrectiveInput,
+  type EvidenceKind,
+  type ExclusionCode,
+  type FixChangeRef,
+  type OriginalChangeRef,
+  type OriginalReview,
+  type RepairPairFiles,
+  type RepairPairTestDelta,
+  type RepairPairV1,
+  type RevertReasonClass,
+} from './arbiter-corrective-rework.js';
+export { ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA } from './arbiter-corrective-rework-schema.js';
+export {
+  CALIBRATION_TAXONOMY_VERSION,
+  CALIBRATION_VERDICTS,
+  CAUSE_CODES,
+  HUMAN_EXCLUSION_CODES,
+  type CalibrationVerdict,
+  type CauseCode,
+  type HumanExclusionCode,
+} from './arbiter-calibration-label.js';
 export {
   ARBITER_REPORT_SCHEMA_VERSION,
   ARBITER_REPORT_V1_JSON_SCHEMA,
@@ -397,6 +442,12 @@ export {
   harvestedSurvivalLabelFixture,
   ownerCorrectedSurvivalLabelFixture,
   survivalLabelFixtureLineRanges,
+  acceptedCorrectiveCandidateFixture,
+  correctiveFalseFixture,
+  correctiveMissingFixture,
+  correctiveTrueFixture,
+  rejectedCorrectiveCandidateFixture,
+  repairPairFixture,
   codexAbandonedOutcomeFixture,
   codexSuccessOutcomeFixture,
   codexTaskPacketFixture,
@@ -409,7 +460,9 @@ export {
   wavemillTaskPacketFixture,
 } from './fixtures/index.js';
 export {
+  taskAttemptFixtures,
   taskCostFixtures,
+  type TaskAttemptFixture,
   type TaskCostFixture,
 } from './fixtures/task-cost/index.js';
 export {

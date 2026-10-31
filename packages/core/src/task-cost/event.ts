@@ -51,6 +51,13 @@ export interface TaskCostEventV1 {
    * example a retried turn). Both stay in the ledger; only this one counts.
    */
   replay_of_event_id?: string;
+  /**
+   * The run this usage belongs to (`task_attempt/v1`, contract 1.1.0). A
+   * minted UUID/ULID; see `attempt-identity.md`. Optional within v1.
+   */
+  run_id?: string;
+  /** The stage attempt within `run_id` this usage belongs to. Requires `run_id`. */
+  stage_attempt_id?: string;
   harness: TaskCostHarness;
   harness_version?: string;
   /** Parsing contract implemented by the emitter, e.g. `claude-code/1`. */

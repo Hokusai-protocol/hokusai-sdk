@@ -110,7 +110,11 @@ describe('core public surface', () => {
   });
 
   it('exposes the task-cost contract', () => {
-    expect(core.TASK_COST_CONTRACT_VERSION).toBe('1.0.0');
+    expect(core.TASK_COST_CONTRACT_VERSION).toBe('1.1.0');
+    expect(core.TASK_ATTEMPT_SCHEMA_VERSION).toBe('task_attempt/v1');
+    expect(core.reduceTaskAttemptLog).toBeDefined();
+    expect(core.validateTaskAttemptLogEntryV1).toBeDefined();
+    expect(core.taskAttemptFixtures).toHaveLength(8);
     expect(core.TASK_COST_EVENT_SCHEMA_VERSION).toBe('task_cost_event/v1');
     expect(core.TASK_COST_SUMMARY_SCHEMA_VERSION).toBe('task_cost_summary/v1');
     expect(core.TASK_COST_LEDGER_SCHEMA_VERSION).toBe('task_cost_ledger/v1');

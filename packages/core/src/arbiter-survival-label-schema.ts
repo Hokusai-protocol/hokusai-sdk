@@ -12,7 +12,7 @@ export const ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "arbiter-survival-label.schema.json",
     "title": "ArbiterSurvivalLabelV1",
-    "description": "Arbiter S2 survival label: one label per merged PR per elapsed horizon (14/30/60 days), aggregated over normalized PR line ranges walked on the integration branch (never main blame). Producer: the wavemill survival labeller. Consumer: Hokusai/hokusai-data-pipeline training ingest. Contract doc: docs/arbiter/survival-label-contract.md. Any change requires a schema_version bump coordinated with the pipeline.",
+    "description": "Arbiter S2 survival label: one label per merged PR per elapsed horizon (14/30/60 days), aggregated over normalized PR line ranges walked on the integration branch (never main blame in squash-promotion repos; v1.1.0 admits main for direct-merge repos). Producer: the wavemill survival labeller. Consumer: Hokusai/hokusai-data-pipeline training ingest. Contract doc: docs/arbiter/survival-label-contract.md. Any change requires a schema_version bump coordinated with the pipeline.",
     "type": "object",
     "required": [
       "schema_version",
@@ -26,8 +26,11 @@ export const ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
     "additionalProperties": false,
     "properties": {
       "schema_version": {
-        "const": "1.0.0",
-        "description": "Contract version of this label object. Must equal envelope.schema_version (asserted by the contract test)."
+        "enum": [
+          "1.0.0",
+          "1.1.0"
+        ],
+        "description": "Contract version of this label object. Must equal envelope.schema_version (asserted by the contract test). 1.0.0 rows stay valid; 1.1.0 adds envelope.integration_mode."
       },
       "prUrl": {
         "type": "string",
@@ -88,6 +91,70 @@ export const ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
             "required": [
               "owner_correction"
             ]
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "schema_version": {
+              "const": "1.0.0"
+            }
+          },
+          "required": [
+            "schema_version"
+          ]
+        },
+        "then": {
+          "properties": {
+            "envelope": {
+              "properties": {
+                "integration_mode": false,
+                "integration_branch": {
+                  "not": {
+                    "const": "main"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            }
+          },
+          "required": [
+            "schema_version"
+          ]
+        },
+        "then": {
+          "properties": {
+            "envelope": {
+              "required": [
+                "integration_mode"
+              ],
+              "if": {
+                "properties": {
+                  "integration_branch": {
+                    "const": "main"
+                  }
+                },
+                "required": [
+                  "integration_branch"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "integration_mode": {
+                    "const": "direct"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -486,10 +553,14 @@ export const ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA = Object.freeze(
           "integration_branch": {
             "type": "string",
             "minLength": 1,
-            "not": {
-              "const": "main"
-            },
-            "description": "Branch the labeller walked, e.g. auto/integration. 'main' is rejected in v1.0.0: squash-promotion rewrites the SHA lineage the labeller needs."
+            "description": "Branch the labeller walked, e.g. auto/integration or an OSS default branch. 'main' is rejected in v1.0.0 and admitted in v1.1.0 only with integration_mode 'direct': squash promotion rewrites the SHA lineage the labeller needs, direct merge does not."
+          },
+          "integration_mode": {
+            "enum": [
+              "promotion",
+              "direct"
+            ],
+            "description": "v1.1.0+. 'promotion': integration_branch is later squash-promoted to another branch (wavemill auto/integration -> main). 'direct': PRs merge straight into integration_branch, so its lineage is the final history (most OSS repos)."
           },
           "computed_at": {
             "$ref": "#/$defs/isoUtcTimestamp",

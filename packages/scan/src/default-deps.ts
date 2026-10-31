@@ -131,13 +131,16 @@ export function createDefaultDeps(
         const events = JSON.parse(result.stdout) as Array<{
           event?: string;
           created_at?: string;
-          source?: { issue?: { html_url?: string } };
+          source?: { issue?: { html_url?: string; user?: { login?: string; type?: string } } };
         }>;
         return events
           .filter((event) => event.event === 'cross-referenced' && event.created_at)
           .map((event) => ({
             createdAtEpoch: Math.floor(Date.parse(event.created_at as string) / 1000),
             url: event.source?.issue?.html_url ?? '',
+            // The timeline does not carry a referencing PR's base branch; sourceBaseRef stays unknown.
+            sourceAuthorLogin: event.source?.issue?.user?.login ?? null,
+            sourceAuthorType: event.source?.issue?.user?.type ?? null,
           }))
           .filter((ref) => Number.isFinite(ref.createdAtEpoch));
       } catch {

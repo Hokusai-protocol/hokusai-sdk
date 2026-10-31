@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseArgs } from 'node:util';
-import type { ArbiterSurvivalLabelV1, HorizonDays } from '@hokusai/core';
+import type { ArbiterSurvivalLabelV1, HorizonDays, IntegrationMode } from '@hokusai/core';
 import { extractCandidateFeatures } from './candidate-features.js';
 import { SCAN_CONTRACT, scanContractVersion } from './contract.js';
 import {
@@ -31,6 +31,7 @@ import {
   validateGithubRepo,
   validateHorizons,
   validateIntegrationBranch,
+  validateIntegrationMode,
   validateMaxPrs,
   validatePrNumber,
   validatePrUrl,
@@ -55,6 +56,7 @@ import {
   type SurvivalLabellerTarget,
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
+import { runCorpusCli } from './corpus/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
 import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
@@ -87,13 +89,15 @@ export interface CliRunResult {
 
 const USAGE = `usage: hokusai-scan <label|extract|scan|report> [options]
 
-label    --repo <path> --integration-branch <name> [--github-repo <owner/name>]
+label    --repo <path> --integration-branch <name> [--integration-mode promotion|direct]
+         [--github-repo <owner/name>]
          [--pr-url <url>] [--horizons 14,30,60] [--max-prs <n>] [--as-of <iso>]
          [--no-links] [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 extract  --repo <path> --pr <n> [--base-ref <ref>] [--config-path <path>]
          [--offline] [--token-env <NAME>] [--out <path|->] [--debug]
 scan     --repo <path> --integration-branch <name> --pr <n> [common options]
 report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
+         [--integration-mode promotion|direct]
          [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
          [--state-dir <path>] [--contribute [--dry-run]]
 
@@ -104,11 +108,27 @@ shadow-backfill  --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--horizon-days 30]
 shadow-report    --data-dir <path> [--window-days 30] [--horizon-days 30]
                  (shadow commands always exit 0 and print SHADOW_* lines)
+
+corpus-enumerate --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>]
+                 (HOK-3022 corpus; prs.jsonl in the cache holds raw titles/bodies and stays local)
+corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
+                 (S2 v1.1.0 rows per enumerated PR × 14/30/60 into <cache>/<repo>/s2.jsonl)
+corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
+                 (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
+corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
+                 (per repo × horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+                 (stratified calibration sample, evaluation slice excluded; HOK-3269)
+corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample <private dir>
+                 (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
+corpus-calibration-score --sample <private dir>
+                 (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
 `;
 
 const OPTION_SPEC = {
   'repo': { type: 'string' },
   'integration-branch': { type: 'string' },
+  'integration-mode': { type: 'string' },
   'github-repo': { type: 'string' },
   'pr': { type: 'string' },
   'pr-url': { type: 'string' },
@@ -169,6 +189,10 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
       });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
+    if (command.startsWith('corpus-')) {
+      const result = runCorpusCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd() });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
     if (command !== 'label' && command !== 'extract' && command !== 'scan') {
       throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);
     }
@@ -201,7 +225,8 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         repoDir,
         offline,
         asOf,
-        integrationBranch: validateIntegrationBranch(values['integration-branch'] as string | undefined),
+        integrationBranch: validateIntegrationBranch(values['integration-branch'] as string | undefined, validateIntegrationMode(values['integration-mode'] as string | undefined)),
+        integrationMode: validateIntegrationMode(values['integration-mode'] as string | undefined),
         githubRepo: validateGithubRepo(values['github-repo'] as string | undefined),
         prUrl: validatePrUrl(values['pr-url'] as string | undefined),
         horizons: validateHorizons(values.horizons as string | undefined),
@@ -221,7 +246,8 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         repoDir,
         offline,
         asOf,
-        integrationBranch: validateIntegrationBranch(values['integration-branch'] as string | undefined),
+        integrationBranch: validateIntegrationBranch(values['integration-branch'] as string | undefined, validateIntegrationMode(values['integration-mode'] as string | undefined)),
+        integrationMode: validateIntegrationMode(values['integration-mode'] as string | undefined),
         githubRepo: validateGithubRepo(values['github-repo'] as string | undefined),
         prNumber: validatePrNumber(values.pr as string | undefined),
         baseRef: values['base-ref'] as string | undefined,
@@ -304,16 +330,22 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     if (offline) reportDeps.deps.github = createOfflineGitHubClient();
     const repoMetadata = offline ? { defaultBranch: (values['integration-branch'] as string | undefined) ?? '', private: false } : await scanGithub.getRepo();
     const explicitBranch = values['integration-branch'] as string | undefined;
+    const explicitMode = values['integration-mode'] === undefined ? undefined : validateIntegrationMode(values['integration-mode'] as string);
     let integrationBranch: string;
-    if (explicitBranch) integrationBranch = validateIntegrationBranch(explicitBranch);
-    else {
+    let integrationMode: IntegrationMode;
+    if (explicitBranch) {
+      integrationMode = explicitMode ?? 'promotion';
+      integrationBranch = validateIntegrationBranch(explicitBranch, integrationMode);
+    } else {
       const log = reportDeps.deps.runGit(['log', '--first-parent', '-200', '--pretty=format:%s', repoMetadata.defaultBranch]);
       if (log.exitCode !== 0) throw new ScanInputError('cannot read the repository default branch history');
-      integrationBranch = resolveIntegrationBranch({
-        defaultBranch: repoMetadata.defaultBranch, recentFirstParentSubjects: log.stdout.split('\n'),
+      const resolved = resolveIntegrationBranch({
+        defaultBranch: repoMetadata.defaultBranch, recentFirstParentSubjects: log.stdout.split('\n'), explicitMode: explicitMode ?? null,
         headRefLookup: (number) => { const result = execArgvCommand('gh', ['pr', 'view', String(number), '--json', 'headRefName'], { cwd: repoDir, ...(context.token ? { env: { ...process.env, GH_TOKEN: context.token } } : {}) }); if (result.exitCode !== 0) return null; try { return (JSON.parse(result.stdout) as { headRefName?: string }).headRefName ?? null; } catch { return null; } },
         remoteBranchExists: (ref) => execArgvCommand('git', ['-C', repoDir, 'ls-remote', '--exit-code', '--heads', 'origin', ref]).exitCode === 0,
-      }).branch;
+      });
+      integrationBranch = resolved.branch;
+      integrationMode = resolved.mode;
     }
     if (temporaryRepo) {
       const fetched = execArgvCommand('git', ['-C', repoDir, 'fetch', '--no-tags', 'origin', integrationBranch], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
@@ -334,7 +366,7 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     catch (error) { if (error instanceof AttributionConfigError) throw new ScanInputError(error.message); throw error; }
     const stateDir = (values['state-dir'] as string | undefined) ?? (values['no-state'] === true ? undefined : join(repoDir, '.git', 'hokusai-scan', `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState: (() => void) | undefined;
-    const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch }, {
+    const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit, labeller: reportDeps.deps, github: scanGithub, now: () => asOf,
       onDiagnostic: (line) => io.writeStderr(`${line.startsWith('info:') || line.startsWith('warn:') || line.startsWith('error:') ? '' : 'info: '}${line}\n`),
     }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: '0.4.0', onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
@@ -430,6 +462,7 @@ interface LabelParams {
   offline: boolean;
   asOf: Date | undefined;
   integrationBranch: string;
+  integrationMode: IntegrationMode;
   githubRepo: GithubRepoRef | undefined;
   prUrl: string | undefined;
   horizons: HorizonDays[];
@@ -439,7 +472,7 @@ interface LabelParams {
 
 function buildLabellerWorld(
   context: CommandContext,
-  params: Pick<LabelParams, 'repoDir' | 'offline' | 'asOf' | 'integrationBranch' | 'githubRepo'>,
+  params: Pick<LabelParams, 'repoDir' | 'offline' | 'asOf' | 'integrationBranch' | 'githubRepo'> & { integrationMode?: IntegrationMode },
 ): { target: SurvivalLabellerTarget; deps: SurvivalLabellerDeps } {
   const diag = makeDiagnostics(context);
   const githubRepo = requireGithubRepo(context, params.repoDir, params.githubRepo);
@@ -447,6 +480,7 @@ function buildLabellerWorld(
     owner: githubRepo.owner,
     repo: githubRepo.repo,
     integrationBranch: params.integrationBranch,
+    integrationMode: params.integrationMode ?? 'promotion',
     repoDir: params.repoDir,
     ...(context.token !== undefined ? { token: context.token } : {}),
   };
@@ -545,6 +579,7 @@ function runExtract(context: CommandContext, params: ExtractParams): { output: s
 interface CombinedParams extends ExtractParams {
   asOf: Date | undefined;
   integrationBranch: string;
+  integrationMode: IntegrationMode;
   githubRepo: GithubRepoRef | undefined;
   horizons: HorizonDays[];
   maxPrs: number;

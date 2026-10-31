@@ -27,7 +27,7 @@ import {
 
 describe('task-cost versions', () => {
   it('pins contract and schema versions', () => {
-    expect(TASK_COST_CONTRACT_VERSION).toBe('1.0.0');
+    expect(TASK_COST_CONTRACT_VERSION).toBe('1.1.0');
     expect(TASK_COST_EVENT_SCHEMA_VERSION).toBe('task_cost_event/v1');
     expect(TASK_COST_SUMMARY_SCHEMA_VERSION).toBe('task_cost_summary/v1');
     expect(TASK_COST_LEDGER_SCHEMA_VERSION).toBe('task_cost_ledger/v1');

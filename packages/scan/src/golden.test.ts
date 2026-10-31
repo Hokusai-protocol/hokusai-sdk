@@ -22,6 +22,7 @@ import {
   sortMergedPrsForEmission,
 } from './serialize.js';
 import { execArgvCommand } from './shell-utils.js';
+import { liftV1_0GoldenLabels } from './golden-compat.js';
 import {
   GIT_OUTPUT_MAX_BUFFER,
   enumerateMergedPrs,
@@ -128,7 +129,7 @@ describe('golden parity with the pre-extraction labeller/extractor', () => {
       it('labeller output is byte-identical to the golden JSONL', () => {
         const inputs = readInputs(caseDir);
         const repoDir = restoreFixtureRepo(caseDir, inputs);
-        const expected = readFileSync(join(caseDir, 'survival-labels.expected.jsonl'), 'utf-8');
+        const expected = liftV1_0GoldenLabels(readFileSync(join(caseDir, 'survival-labels.expected.jsonl'), 'utf-8'));
         expect(labelAll(repoDir, inputs)).toBe(expected);
       });
 
@@ -179,7 +180,7 @@ describe('golden parity with the pre-extraction labeller/extractor', () => {
     const inputs = readInputs(caseDir);
     const repoDir = restoreFixtureRepo(caseDir, inputs);
     const later = labelAll(repoDir, inputs, '2026-06-01T00:00:00Z');
-    const golden = readFileSync(join(caseDir, 'survival-labels.expected.jsonl'), 'utf-8');
+    const golden = liftV1_0GoldenLabels(readFileSync(join(caseDir, 'survival-labels.expected.jsonl'), 'utf-8'));
     expect(later.replaceAll('2026-06-01T00:00:00.000Z', new Date(inputs.as_of).toISOString())).toBe(
       golden,
     );

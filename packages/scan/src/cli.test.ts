@@ -34,6 +34,7 @@ import {
   type CliIo,
 } from './cli-core.js';
 import { classifyUpstreamFailure } from './default-deps.js';
+import { liftV1_0GoldenLabels } from './golden-compat.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_ROOT = join(__dirname, '../../../fixtures/arbiter/scan');
@@ -179,7 +180,7 @@ describe('hokusai-scan exit codes (invalid input → 2)', () => {
     const { repoDir } = restoreFixture('case-01-simple-merge');
     const result = runCli(['label', '--repo', repoDir, '--integration-branch', 'main']);
     expect(result.exitCode).toBe(EXIT_INVALID_INPUT);
-    expect(result.stderr).toContain('error: integration branch main is rejected (v1.0.0 contract)');
+    expect(result.stderr).toContain('error: integration branch main requires --integration-mode direct');
   });
 
   it('rejects a malformed --as-of', () => {
@@ -246,10 +247,10 @@ describe('hokusai-scan upstream failures (exit 3)', () => {
 describe('hokusai-scan output routing', () => {
   it('writes to stdout with --out - (default) and matches the golden bytes', () => {
     const { repoDir, inputs } = restoreFixture('case-01-simple-merge');
-    const expected = readFileSync(
+    const expected = liftV1_0GoldenLabels(readFileSync(
       join(FIXTURES_ROOT, 'case-01-simple-merge', 'survival-labels.expected.jsonl'),
       'utf-8',
-    );
+    ));
     const result = runCli([
       'label', '--repo', repoDir, '--integration-branch', inputs.integration_branch,
       '--github-repo', inputs.github_repo, '--as-of', inputs.as_of, '--offline',
@@ -263,10 +264,10 @@ describe('hokusai-scan output routing', () => {
   it('writes to a file with --out <path>, leaving stdout empty', () => {
     const { repoDir, inputs } = restoreFixture('case-01-simple-merge');
     const outPath = join(tempDir('scan-cli-out-'), 'nested', 'result.jsonl');
-    const expected = readFileSync(
+    const expected = liftV1_0GoldenLabels(readFileSync(
       join(FIXTURES_ROOT, 'case-01-simple-merge', 'survival-labels.expected.jsonl'),
       'utf-8',
-    );
+    ));
     const result = runCli([
       'label', '--repo', repoDir, '--integration-branch', inputs.integration_branch,
       '--github-repo', inputs.github_repo, '--as-of', inputs.as_of, '--offline',
@@ -308,7 +309,7 @@ describe('hokusai-scan output routing', () => {
     expect(combined.scan_contract).toEqual({
       candidateFeatures: 'candidate_features/v1',
       labels: 'arbiter_survival_label/v1',
-      labellerVersion: '1.0.0',
+      labellerVersion: '1.4.0',
       normalizationVersion: '1.0.0',
     });
     expect(combined.candidate_features.schema_version).toBe('candidate_features/v1');
@@ -376,7 +377,7 @@ describe('scrubbed-environment CLI parity', () => {
         );
         expect(labelRun.status, `${caseName} label stderr: ${labelRun.stderr}`).toBe(0);
         expect(labelRun.stdout).toBe(
-          readFileSync(join(FIXTURES_ROOT, caseName, 'survival-labels.expected.jsonl'), 'utf-8'),
+          liftV1_0GoldenLabels(readFileSync(join(FIXTURES_ROOT, caseName, 'survival-labels.expected.jsonl'), 'utf-8')),
         );
         expectPrefixedStderr(labelRun.stderr);
 
@@ -426,10 +427,10 @@ describe('scrubbed-environment CLI parity', () => {
       expect(run.status, `action stderr: ${run.stderr}`).toBe(0);
       const written = readFileSync(join(runnerTemp, 'hokusai-scan-output.jsonl'), 'utf-8');
       expect(written).toBe(
-        readFileSync(
+        liftV1_0GoldenLabels(readFileSync(
           join(FIXTURES_ROOT, 'case-01-simple-merge', 'survival-labels.expected.jsonl'),
           'utf-8',
-        ),
+        )),
       );
       const outputs = readFileSync(outputFile, 'utf-8');
       expect(outputs).toContain('contract-version=candidate_features/v1:arbiter_survival_label/v1');
@@ -441,14 +442,14 @@ describe('scrubbed-environment CLI parity', () => {
 
 
 describe('report CLI mode', () => {
-  it('validates the frozen main branch guard before scanning', async () => {
+  it('validates the main branch guard before scanning', async () => {
     const { repoDir } = restoreFixture('case-01-simple-merge');
     const stderr: string[] = [];
     const result = await runScanCliAsync(['report', '--repo', repoDir, '--github-repo', 'org/repo', '--integration-branch', 'main', '--offline'], {
       writeStdout: () => {}, writeStderr: (text) => stderr.push(text), env: {},
     });
     expect(result.exitCode).toBe(2);
-    expect(stderr.join('')).toContain('main is rejected');
+    expect(stderr.join('')).toContain('main requires --integration-mode direct');
   });
 
   it('emits a valid empty report in offline mode from a local checkout', async () => {

@@ -41,8 +41,9 @@ them is weakened:
 Copy `.github/workflows/arbiter-shadow.yml` from hokusai-sdk into the repo's
 default branch and change two things:
 
-1. `INTEGRATION_BRANCH` — the branch PRs actually merge to (the labeller
-   rejects `main`; hokusai-sdk uses `auto/integration`).
+1. `INTEGRATION_BRANCH` — the branch PRs actually merge to (shadow mode
+   rejects `main`, which squash-promotion repos rewrite; hokusai-sdk uses
+   `auto/integration`).
 2. Outside hokusai-sdk, swap `uses: ./packages/scan/action` for the published
    Action: `Hokusai-protocol/hokusai-sdk/packages/scan/action@<release-tag>`.
 

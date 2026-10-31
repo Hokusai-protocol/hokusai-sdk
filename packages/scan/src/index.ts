@@ -201,4 +201,7 @@ export { runReportScan, type RunReportScanOptions, type ScanReportDeps, type Sca
 export { createOfflineScanGitHubClient, type ScanGitHubClient, type ScanPullRequest, type ScanRepository, type CheckConclusion } from './orchestrate/github.js';
 
 export { readScanState, writeScanState, scanConfigHash, type ScanStateHeader, type ScanStateRow, type ScanStateSnapshot, type ScanStateVersions } from './orchestrate/state.js';
+export { enumerateCorpusRepo, type CorpusEnumerateDeps, type CorpusEnumerateTarget, type CorpusEnumerationStats, type CorpusPrRecord, type GraphqlRunner, type LandedBy } from './corpus/enumerate.js';
+export { extractCorpusPrNumbers } from './corpus/pr-refs.js';
+export { parseCohortManifest, runnableRepos, RUNNABLE_STATUSES, type CohortManifest, type CohortRepo, type CohortStatus } from './corpus/manifest.js';
 export { buildContributionPayload, submitReport, ContributionPayloadError } from './report/contribute.js';

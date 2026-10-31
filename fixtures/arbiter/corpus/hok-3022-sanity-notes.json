@@ -1,0 +1,41 @@
+{
+  "issue": "HOK-3268",
+  "as_of": "2026-10-20",
+  "notes": [],
+  "convention_findings": [
+    {
+      "merge_convention": "squash",
+      "repos": [
+        "mattermost/mattermost",
+        "llvm/llvm-project"
+      ],
+      "finding": "Squash merging doesn't decide which proxies can fire; two repo practices do. (1) Revert culture: llvm reverts post-commit buildbot breakage first and asks later, so 2,417 of its 30-day corrective rows rest on reverts, against 15 for mattermost; P1+P2 alone already span 0.6% to 4.2%. (2) Where bugs are tracked: P3 and P4 need a fix that closes a GitHub bug issue, and mattermost and discourse close none (their trackers are off GitHub), so both get zero P3/P4 rows. Every squash repo is inside the 0.5% to 25% band. The spread is kept: it reflects process differences the model should see, not a labelling fault."
+    },
+    {
+      "merge_convention": "rollup",
+      "repos": [
+        "rust-lang/rust"
+      ],
+      "finding": "84% of PRs (12,689 of 15,184) land inside a rollup merge. git blame --first-parent attributes their lines to the rollup, which several PRs share, so they can never be SZZ originals. rust's P3 contribution covers only the 16% landed individually and is a lower bound; P1/P2/P4 are unaffected."
+    },
+    {
+      "merge_convention": "merge_commit",
+      "repos": [
+        "cockroachdb/cockroach"
+      ],
+      "finding": "36% of PRs (3,866 of 10,799) land in bors batches that share one merge commit, so, as with rust rollups, SZZ can't attribute lines to them. The cohort expected 'batched' and observed 'merge_commit'; treat cockroach as batched for SZZ coverage."
+    },
+    {
+      "merge_convention": "merge_bot_trailer",
+      "repos": [
+        "pytorch/pytorch"
+      ],
+      "finding": "The merge bot records revert reasons, and reverts support 2,604 of pytorch's 2,780 30-day corrective rows. 974 of its accepted reverts are classed internal_build (Meta-internal breakage); excluding that class at calibration takes the 60-day rate from 10.3% to 7.7%."
+    },
+    {
+      "merge_convention": "any",
+      "repos": [],
+      "finding": "SZZ contributes most where projects link fixes to GitHub bug issues (kibana, airflow, grafana, next.js, cockroach). 41% to 65% of SZZ links rest on 2 or fewer blamed lines; the SZZ≥3 column shows the rate if calibration (HOK-3269) sets that minimum."
+    }
+  ]
+}
