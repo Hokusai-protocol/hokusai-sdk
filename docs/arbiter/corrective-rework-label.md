@@ -124,6 +124,20 @@ The scorer evaluates five definition variants:
 - **No variant qualifies.** Then no `cr-0.2.0` is pinned. HOK-3020 decides whether to fix the pipeline or redefine the target. HOK-3028 §6 treats precision < 0.80 as "labels too noisy".
 - **Confidence tiers.** A proxy whose precision interval lies wholly at or above 0.90 becomes `high`. Every other admitted proxy is `medium`.
 
+### 3.5 Auditor checks
+
+The person's labels check the models, so a careless auditor, or one who pastes items into an LLM, would make the models look better validated than they are. Known-answer ("gold") items guard against that. This section was added on 2026-11-01, after the sample draw and before any labelling. It changes no plan parameter, sample item or estimate.
+
+- **Gold items.** PRs from public repositories outside the cohort, each with an answer settled from public evidence. Each was found by one agent and confirmed by a blind second one. Items are dropped if their answer is debatable. The answer key is private (this repository is public), and its SHA-256 is posted on HOK-3269 before labelling starts.
+- **Kinds.** Reverts for a defect, explicit repairs, repairs only findable in `related_prs`, non-defect reverts, planned follow-ups, links to bugs the PR didn't cause, and clean negatives.
+- **Screening.** Before hiring, a candidate labels 8 screening items, a paid test of about an hour. They pass with at least 75% of verdicts right and a rationale on every row that names specific evidence.
+- **Hidden items.** 10 other gold items are mixed into `sheet-h.csv` at positions keyed by the private seed. They look like sample rows. The scorer removes them before any estimate.
+- **Pass rule.** The audit is accepted if at least 80% of hidden verdicts are right. `unclear` and blank count as wrong, because gold items are chosen to be clear.
+  - A labeller who is right 90% of the time fails about 7% of the time.
+  - One who is right 60% of the time passes about 17% of the time.
+- **On failure.** Every result that uses the person's labels is void. Another auditor labels the subset. The same hidden items can be reused, because no auditor sees the answers.
+- **What gold items don't catch.** An LLM that gets the gold items right passes. A mid-audit call in which the auditor walks through two of their labels is the check for that.
+
 ## 4. Labelling guide
 
 For each row of the sheet, open the PR, every URL in `candidate_fixes`, and the PRs in `related_prs`.
@@ -204,8 +218,24 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
    ```
 
    This writes `evidence.jsonl` and the blank `sheet-h.csv`.
-3. **Send `sheet-h.csv` and §4 of this doc to the auditor.** They label it blind.
-4. **Run the model labellers.** This needs `ANTHROPIC_API_KEY` and costs about $25–40 in all. Responses are cached per item, so an interrupted run resumes free.
+3. **Hide the gold items** in the audit sheet (§3.5) before it goes out:
+
+   ```sh
+   node packages/scan/dist/cli.js corpus-calibration-gold \
+     --sample ~/.hokusai-private/hok-3269-sample \
+     --gold ~/.hokusai-private/hok-3269-gold/gold.json
+   ```
+
+   It refuses a sheet with labels in it, or a second run. stdout gives the gold set's SHA-256: post it on HOK-3269.
+4. **Screen candidate auditors.** Write the blank screening sheet once, send it with §1 and §4, and grade each returned copy:
+
+   ```sh
+   node packages/scan/dist/cli.js corpus-calibration-screen --gold ~/.hokusai-private/hok-3269-gold/gold.json --out ~/.hokusai-private/hok-3269-gold/screening.csv
+   node packages/scan/dist/cli.js corpus-calibration-screen --gold ~/.hokusai-private/hok-3269-gold/gold.json --sheet <returned copy>
+   ```
+
+5. **Send `sheet-h.csv` and §1 and §4 of this doc to the hired auditor.** They label it blind.
+6. **Run the model labellers.** This needs `ANTHROPIC_API_KEY` and costs about $25–40 in all. Responses are cached per item, so an interrupted run resumes free.
 
    ```sh
    node scripts/corpus/label-calibration.mjs --sample ~/.hokusai-private/hok-3269-sample --sheet a
@@ -213,7 +243,7 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
    ```
 
    `--limit 3` runs a cheap trial first.
-5. **Score** once `sheet-h.csv` is back:
+7. **Score** once `sheet-h.csv` is back:
 
    ```sh
    node packages/scan/dist/cli.js corpus-calibration-score --sample ~/.hokusai-private/hok-3269-sample
@@ -221,6 +251,7 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
 
    - Invalid labels exit 2 and list the item IDs.
    - Partial sheets still score, but the table is marked INCOMPLETE.
+   - With gold items present, stdout and the table give the audit check, and a failed check marks the person's results void.
    - Post `calibration-table.md` on HOK-3269. Keep `calibration-results.json` private, because it has repo names.
 
 ## 6. Results
@@ -239,3 +270,4 @@ _To be filled in from `calibration-table.md` once labelling is complete._
 - 2026-10-29: first draft.
 - 2026-10-29: labelling moves to two model labellers plus a paid human audit (53 items). Each item gets an evidence bundle with related PRs. Model labels stand in only if the person agrees with model A at κ ≥ 0.6. The defaults are kept and their rationale recorded: κ 0.6, precision floor 0.80 (HOK-3028's bar), 40 negatives, SZZ split at 3 lines.
 - 2026-10-29: plan 1.0.0 frozen, before the sample draw.
+- 2026-11-01: auditor checks added (§3.5): a screening test and 10 hidden known-answer items. This was done after the draw and before any labelling, and changes no plan parameter, sample item or estimate.

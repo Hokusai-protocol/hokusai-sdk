@@ -356,6 +356,45 @@ describe('corpus-calibration CLI', () => {
     expect(bad.exitCode).toBe(2);
     expect(bad.err).toContain('sheet-b: nope: not in the sample');
   });
+
+  it('hides gold rows in the audit sheet, scores them apart, and leaves the estimates unchanged', () => {
+    const dir = corpus();
+    expect(run('corpus-calibration-sample', dir, sampleArgs('private')).exitCode).toBe(0);
+    const p = join(dir, 'private');
+    const sample = JSON.parse(readFileSync(join(p, 'sample.json'), 'utf8')) as { items: SampleItem[] };
+    const audit = sample.items.filter((i) => i.audit);
+    writeFileSync(join(p, 'sheet-h.csv'), renderLabelSheet(audit));
+    const goldItem = (n: number, use: string, corrective: string) => ({ item_id: `00000000000${n}`, use, kind: corrective === 'yes' ? 'repair_ref' : 'negative', pr_url: url('z/gold', n), candidate_fixes: corrective === 'yes' ? [url('z/gold', n + 50)] : [], related_prs: [], expected: { corrective, exclusion_code: '', fix_url: '' }, why: 't' });
+    writeFileSync(join(dir, 'gold.json'), JSON.stringify({ procedure: 'hok-3269-gold', gold_version: 't', items: [goldItem(1, 'hidden', 'yes'), goldItem(2, 'hidden', 'no'), goldItem(3, 'screening', 'no')] }));
+
+    const inserted = run('corpus-calibration-gold', dir, ['--sample', 'private', '--gold', 'gold.json']);
+    expect(inserted.exitCode).toBe(0);
+    expect(JSON.parse(inserted.out)).toMatchObject({ hidden: 2, sheet_rows: audit.length + 2 });
+    expect(run('corpus-calibration-gold', dir, ['--sample', 'private', '--gold', 'gold.json']).exitCode).toBe(2);
+    expect(readFileSync(join(p, 'sheet-h.csv'), 'utf8')).not.toContain('000000000003');
+
+    const label = (i: SampleItem) => (i.proxies.length ? 'yes,test_gap,' : i.candidates.length ? 'no,,unrelated_edit' : 'no,,');
+    const sheet = (items: SampleItem[]) => ['item_id,pr_url,candidate_fixes,corrective,cause_code,exclusion_code,notes', ...items.map((i) => `${i.item_id},,,${label(i)},`)].join('\n');
+    writeFileSync(join(p, 'sheet-a.csv'), sheet(sample.items));
+    writeFileSync(join(p, 'sheet-b.csv'), sheet(sample.items.filter((i) => i.double)));
+    const h = parseCsv(readFileSync(join(p, 'sheet-h.csv'), 'utf8'));
+    const byId = new Map(audit.map((i) => [i.item_id, i]));
+    const filledH = h.map((r, n) => (n === 0 ? r : r[0] === '000000000001' ? [...r.slice(0, 4), 'yes', 'test_gap', '', ''] : r[0] === '000000000002' ? [...r.slice(0, 4), 'yes', 'test_gap', '', ''] : [...r.slice(0, 4), ...label(byId.get(r[0]!)!).split(','), '']));
+    writeFileSync(join(p, 'sheet-h.csv'), filledH.map((r) => r.join(',')).join('\n'));
+
+    const scored = run('corpus-calibration-score', dir, ['--sample', 'private']);
+    expect(scored.exitCode).toBe(0);
+    expect(JSON.parse(scored.out)).toMatchObject({ audit_unlabelled: 0, models_stand_in: true, audit_check: { correct: 1, items: 2, passed: false } });
+    const md = readFileSync(join(p, 'calibration-table.md'), 'utf8');
+    expect(md).toContain('**Audit rejected:** the person got 1 of 2');
+    expect(md).toContain('| cr-0.1.0: all admitted proxies (P1–P4) | 100.0%');
+
+    const screen = run('corpus-calibration-screen', dir, ['--gold', 'gold.json', '--out', 'screening.csv']);
+    expect(screen.exitCode).toBe(0);
+    expect(readFileSync(join(dir, 'screening.csv'), 'utf8')).toContain('000000000003');
+    writeFileSync(join(dir, 'screening-filled.csv'), readFileSync(join(dir, 'screening.csv'), 'utf8').replace(/,,,,\n$/, ',no,,,looked\n'));
+    expect(JSON.parse(run('corpus-calibration-screen', dir, ['--gold', 'gold.json', '--sheet', 'screening-filled.csv']).out)).toMatchObject({ correct: 1, passed: true });
+  });
 });
 
 describe('labelling guide', () => {

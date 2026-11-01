@@ -266,7 +266,7 @@ export function drawCalibrationSample(units: readonly PopulationUnit[], plan: Ca
 
 export const SHEET_COLUMNS = ['item_id', 'pr_url', 'candidate_fixes', 'related_prs', 'corrective', 'cause_code', 'exclusion_code', 'notes'] as const;
 
-const csvCell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+export const csvCell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
 export type SheetRow = Partial<Record<(typeof SHEET_COLUMNS)[number], string>>;
 
@@ -823,16 +823,19 @@ function renderEstimates(lines: string[], r: CalibrationResults) {
  * populations are shown: populations would identify repos, and the repo set
  * would narrow down which repos the evaluation slice holds.
  */
-export function renderCalibrationMarkdown(run: CalibrationRun): string {
+/** `auditCheck`: the auditor's score on hidden known-answer rows, when the sheet had them. */
+export function renderCalibrationMarkdown(run: CalibrationRun, auditCheck?: { correct: number; items: number; min_correct: number; passed: boolean }): string {
   const { plan, model, human } = run;
   const lines: string[] = [];
   const complete = model.unlabelled === 0 && human.unlabelled === 0;
   lines.push(`# HOK-3269 calibration results${complete ? '' : ' (INCOMPLETE)'}`, '');
+  if (auditCheck && !auditCheck.passed) lines.push(`**Audit rejected:** the person got ${auditCheck.correct} of ${auditCheck.items} known-answer items right (needs ${auditCheck.min_correct}). Every result below that uses the person's labels is void until another auditor relabels the subset.`, '');
   lines.push(`Horizon ${plan.horizon_days} days · plan ${plan.plan_version} · sampler ${CALIBRATION_SAMPLER_VERSION} · labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
   lines.push('', 'Estimates are reweighted by cell (repo × stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.');
 
   const k = human.agreement.corrective.kappa;
   lines.push('', '## Verdict', '');
+  if (auditCheck) lines.push(`- Audit check: the person got ${auditCheck.correct} of ${auditCheck.items} hidden known-answer items right (needs ${auditCheck.min_correct}); audit ${auditCheck.passed ? 'accepted' : '**rejected**'}.`);
   lines.push(`- Person vs model A on the verdict: κ = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? '**stand in** for the full sample' : '**do not** stand in; estimates come from the human audit alone'}.`);
   lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? 'none qualifies'}**`);
   lines.push(`- HOK-3028 §6 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
