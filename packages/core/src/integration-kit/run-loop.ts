@@ -9,7 +9,7 @@ import {
 } from '../client.js';
 import {
   buildHarnessOutcomeRow,
-  type HarnessOutcomeRowV1,
+  type HarnessOutcomeRowV2,
 } from '../contribution/index.js';
 import {
   InMemoryModelRegistry,
@@ -57,7 +57,7 @@ export interface RunHokusaiLoopResult {
   promptPreview: string;
   redactionCount: number;
   actualCostUsd: number | undefined;
-  row: HarnessOutcomeRowV1;
+  row: HarnessOutcomeRowV2;
   response: ContributionAcceptedResponse;
   fidelityTier: string | undefined;
 }
@@ -184,6 +184,9 @@ export async function runHokusaiLoop(
   log('[8/8] Submitting the contribution row');
   const row = buildHarnessOutcomeRow({
     inferenceLogId,
+    // The loop executes exactly the mapped recommendation, so nothing was
+    // overridden. A host that swaps models must report its own overrides.
+    routeOverrides: [],
     taskDescriptor,
     allowedModels,
     selectedModels: { coder: mapped.id, reviewer: mapped.id },

@@ -296,20 +296,28 @@ describe('parseTranscriptUsageTotals', () => {
 describe('locateSessionTranscript', () => {
   const dir = sessionTranscriptDir(CONFIG_DIR, '/repo');
 
-  it('returns the newest-mtime jsonl file', () => {
-    const fs = makeFs(
-      {
-        [`${dir}/a.jsonl`]: { content: '{}', mtimeMs: 100 },
-        [`${dir}/b.jsonl`]: { content: '{}', mtimeMs: 300 },
-        [`${dir}/c.txt`]: { content: 'x', mtimeMs: 999 },
-      },
-      { [dir]: ['a.jsonl', 'b.jsonl', 'c.txt'] },
-    );
-    expect(locateSessionTranscript({ dir, fs })).toBe(`${dir}/b.jsonl`);
+  const fs = makeFs(
+    {
+      [`${dir}/task-session.jsonl`]: { content: '{}', mtimeMs: 100 },
+      [`${dir}/current-session.jsonl`]: { content: '{}', mtimeMs: 300 },
+    },
+    { [dir]: ['task-session.jsonl', 'current-session.jsonl'] },
+  );
+
+  it("returns the named session's transcript, not the newest one (HOK-3364)", () => {
+    expect(locateSessionTranscript({ dir, sessionId: 'task-session', fs })).toBe(`${dir}/task-session.jsonl`);
   });
 
-  it('returns undefined when the directory is missing', () => {
-    expect(locateSessionTranscript({ dir, fs: makeFs({}) })).toBeUndefined();
+  it('returns undefined without a session id instead of guessing the newest file', () => {
+    expect(locateSessionTranscript({ dir, sessionId: undefined, fs })).toBeUndefined();
+  });
+
+  it('returns undefined when the session has no transcript', () => {
+    expect(locateSessionTranscript({ dir, sessionId: 'other-session', fs })).toBeUndefined();
+  });
+
+  it('rejects path-like session ids', () => {
+    expect(locateSessionTranscript({ dir, sessionId: '../current-session', fs })).toBeUndefined();
   });
 });
 
@@ -497,25 +505,27 @@ describe('resolveActualCostUsd (layered precedence)', () => {
     ).toBe(0.5);
   });
 
-  it('tier 4: transcript best-effort when the sidecar is unavailable', () => {
+  it("tier 4: the route session's own transcript when the sidecar is unavailable", () => {
     const dir = `${CONFIG_DIR}/projects/-repo`;
+    const usage = (input: number, output: number) =>
+      JSON.stringify({
+        timestamp: '2026-07-08T12:05:00.000Z',
+        message: { usage: { input_tokens: input, output_tokens: output } },
+      });
     const fs = makeFs(
       {
-        [`${dir}/session.jsonl`]: {
-          content: JSON.stringify({
-            timestamp: '2026-07-08T12:05:00.000Z',
-            message: { usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 } },
-          }),
-          mtimeMs: 500,
-        },
+        [`${dir}/task-session.jsonl`]: { content: usage(1_000_000, 1_000_000), mtimeMs: 500 },
+        // The session the report is run from: newer, and much more expensive.
+        [`${dir}/current-session.jsonl`]: { content: usage(9_000_000, 9_000_000), mtimeMs: 900 },
       },
-      { [dir]: ['session.jsonl'] },
+      { [dir]: ['task-session.jsonl', 'current-session.jsonl'] },
     );
     // No sidecar in fs; routeContext has no costBaselineUsd so tier 3 is skipped.
     expect(
       resolveActualCostUsd({
         model: 'claude-opus-4-8',
         routeContext: {
+          sessionId: 'task-session',
           baselineAt: '2026-07-08T12:00:00.000Z',
           projectDirKey: '-repo',
         },
@@ -523,6 +533,30 @@ describe('resolveActualCostUsd (layered precedence)', () => {
         fs,
       }),
     ).toBe(30);
+  });
+
+  it('tier 4 is skipped without the route session id: the current session is never priced (HOK-3364)', () => {
+    const dir = `${CONFIG_DIR}/projects/-repo`;
+    const fs = makeFs(
+      {
+        [`${dir}/current-session.jsonl`]: {
+          content: JSON.stringify({
+            timestamp: '2026-07-08T12:05:00.000Z',
+            message: { usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 } },
+          }),
+          mtimeMs: 900,
+        },
+      },
+      { [dir]: ['current-session.jsonl'] },
+    );
+    expect(
+      resolveActualCostUsd({
+        model: 'claude-opus-4-8',
+        routeContext: { baselineAt: '2026-07-08T12:00:00.000Z', projectDirKey: '-repo' },
+        env: ENV,
+        fs,
+      }),
+    ).toBeUndefined();
   });
 
   it('tier 5: omits when nothing is available', () => {
@@ -592,6 +626,7 @@ describe('end-to-end: diffed cost yields a training-eligible harness row', () =>
 
     const row = buildHarnessOutcomeRow({
       inferenceLogId: 'log-1',
+      routeOverrides: [],
       taskDescriptor: { task_type: 'feature' },
       allowedModels: ['claude-opus-4-8'],
       selectedModels: { coder: 'claude-opus-4-8', reviewer: 'claude-opus-4-8' },
@@ -621,6 +656,7 @@ describe('end-to-end: diffed cost yields a training-eligible harness row', () =>
 
     const row = buildHarnessOutcomeRow({
       inferenceLogId: 'log-1',
+      routeOverrides: [],
       taskDescriptor: { task_type: 'feature' },
       allowedModels: ['claude-opus-4-8'],
       selectedModels: { coder: 'claude-opus-4-8', reviewer: 'claude-opus-4-8' },

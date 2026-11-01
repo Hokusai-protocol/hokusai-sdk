@@ -5,6 +5,7 @@ import {
   executeRouteCommand,
   latestRouteCommand,
   previewOutcomeCommand,
+  routeForTaskCommand,
   privacyStatusCommand,
   recordOnboardingFunnelSignal,
   submitOutcomeCommand,
@@ -51,7 +52,9 @@ export interface CodexRouteInput {
 }
 
 export interface CodexOutcomeInput {
+  /** The route this outcome belongs to: its correlation id, or else its task id. One is required. */
   correlationId?: string;
+  taskId?: string;
   recommendedModel?: string;
   actualModel: string;
   recommendationAccepted: boolean;
@@ -95,6 +98,12 @@ function routeMetadata(
 export interface CodexOutcomePromptInput {
   event?: unknown;
   actualModel?: string;
+  /**
+   * The routed task this completion belongs to. Without it (or a correlation
+   * id) no route is offered: the prompt never guesses the newest route.
+   */
+  taskId?: string;
+  correlationId?: string;
 }
 
 function createClient(
@@ -219,6 +228,7 @@ export async function previewOutcomeWithCodex(
 ): Promise<HarnessCommandResult<PreviewOutcomeCommandValue>> {
   return previewOutcomeCommand({
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
     currentModelId: input.actualModel,
     input: {
       actualModel: input.actualModel,
@@ -252,6 +262,7 @@ export async function submitOutcomeWithCodex(
     outcomeOptIn: hasOutcomeOptIn(options.env),
     ...(input.approve === undefined ? {} : { approve: input.approve }),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
     ...(input.actualCostUsd === undefined
       ? {}
       : { actualCostUsd: input.actualCostUsd }),
@@ -301,8 +312,14 @@ export async function promptOutcomeContributionWithCodex(
   input: CodexOutcomePromptInput = {},
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<OutcomeContributionPrompt>> {
-  const latest = await latestRouteWithCodex(options);
-  const latestRoute = latest.ok
+  const latest =
+    input.taskId || input.correlationId
+      ? await routeForTaskCommand(createFsStore(resolveCodexConfigDir(options.env)), {
+          taskId: input.taskId,
+          correlationId: input.correlationId,
+        })
+      : undefined;
+  const latestRoute = latest?.ok
     ? {
         correlationId: latest.value.correlationId,
         taskId: latest.value.taskId,

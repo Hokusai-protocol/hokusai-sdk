@@ -97,10 +97,34 @@ a row missing either. A `partial` row is still `accepted: true`, so the tier is
 the only signal that a contribution counted. It is server-authoritative: read it,
 never compute it.
 
+## Routing outcomes: `inference_log_id` and overrides
+
+`technical_task_router_row/v3` and `harness_outcome_row/v2` share one
+routing-outcome block (HOK-3364), which is how Model 30 learns whether its
+recommendation was right:
+
+- `inference_log_id`: the inference that made the recommendation (the route's
+  `routeId`). Present iff Hokusai routed the task.
+- `overrides`: present iff `inference_log_id` is. Each entry is
+  `{ role, source: escalation | launchability | challenge | operator, from, to, reason }`,
+  chained per role and ending at the executed model. `[]` means the
+  recommendation was followed.
+- `selected_models`: the executed models.
+
+Rows never store a copy of the recommendation (`recommended_model`,
+`recommendation_accepted`, …); validation rejects one. Hokusai joins the
+recommendation from its inference log, and "accepted" is derived
+(`routeRecommendationFollowed(row, role)`). Builders take `inferenceLogId` and
+`routeOverrides` and have no default: a routed row without explicit
+`routeOverrides` throws, so a harness can never claim the recommendation was
+followed by omission. v1 harness rows and v1/v2 router rows stay accepted;
+new writers emit v2/v3. Golden rows: `routingOutcomeFixtures`.
+
 ## External observations
 
 Externally chosen runs should still use `submitContribution()`, but they should
-not fabricate an `inferenceLogId`. Build a `harness_outcome_row/v1` with the
+not fabricate an `inferenceLogId`. Build a `harness_outcome_row/v2` with no
+`inferenceLogId` and no `routeOverrides` (an unrouted row) and the
 observed task descriptor, candidate pool, selected model, budget, and cost, then
 read the server-assigned fidelity tier:
 

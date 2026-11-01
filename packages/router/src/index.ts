@@ -50,6 +50,7 @@ import {
   type ContributionAcceptedResponse,
   type HokusaiTaskInput,
   type ModelDefinition,
+  type RouteOverride,
   type RouteResponse,
   type RouteRoutingInput,
   type RoutingMode,
@@ -438,8 +439,21 @@ export function createRouter(options: RouterOptions = {}): Router {
     }
 
     const actualModel = input.model ?? routed.recommendedModel;
+    // The router knows the recommendation, so it states whether the caller
+    // followed it. A different model is the caller's override, never hidden.
+    const routeOverrides: RouteOverride[] =
+      actualModel === routed.recommendedModel
+        ? []
+        : (['coder', 'reviewer'] as const).map((role) => ({
+            role,
+            source: 'operator' as const,
+            from: routed.recommendedModel,
+            to: actualModel,
+            reason: 'caller_model',
+          }));
     const row = buildHarnessOutcomeRow({
       inferenceLogId: routed.inferenceLogId,
+      routeOverrides,
       taskDescriptor: describeTask(routed),
       allowedModels: routed.allowedModels,
       selectedModels: { coder: actualModel, reviewer: actualModel },

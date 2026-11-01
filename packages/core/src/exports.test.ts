@@ -109,6 +109,18 @@ describe('core public surface', () => {
     expect(core.PRIVACY_CLI_EXIT_CODES).toBeDefined();
   });
 
+  it('exposes the routing-outcome link (HOK-3364)', () => {
+    expect(core.TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3).toBe('technical_task_router_row/v3');
+    expect(core.HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2).toBe('harness_outcome_row/v2');
+    expect(core.buildTechnicalTaskRouterContributionRowV3).toBeDefined();
+    expect(core.routeRecommendationFollowed).toBeDefined();
+    expect(core.routingOutcomeErrors).toBeDefined();
+    expect(core.findRoutingDecision).toBeDefined();
+    expect(core.routeForTaskCommand).toBeDefined();
+    expect('findLatestRoutingDecision' in core).toBe(false);
+    expect(Object.keys(core.routingOutcomeFixtures)).toHaveLength(6);
+  });
+
   it('exposes the task-cost contract', () => {
     expect(core.TASK_COST_CONTRACT_VERSION).toBe('1.2.0');
     expect(core.QUEUE_LIFECYCLE_EVENT_SCHEMA_VERSION).toBe('queue_lifecycle_event/v1');

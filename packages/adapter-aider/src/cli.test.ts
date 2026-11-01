@@ -36,7 +36,7 @@ const HAPPY_RESULT: RunAiderLoopResult = {
   accounting: {},
   actualCostUsd: 0.12,
   row: {
-    schema_version: 'harness_outcome_row/v1',
+    schema_version: 'harness_outcome_row/v2',
     task_descriptor: { task_type: 'refactor' },
     allowed_models: ['claude-sonnet-4-6', 'gpt-5'],
     selected_models: {

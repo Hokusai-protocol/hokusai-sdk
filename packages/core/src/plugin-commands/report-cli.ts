@@ -14,7 +14,7 @@ import {
 import { CLI_EXIT_CODES } from './cli.js';
 import type { HarnessProfile } from './harness-profile.js';
 import type {
-  LatestRoutingDecision,
+  StoredRoutingDecision,
   PreviewReportOutcomeResult,
   ReportCliExitCodes,
   ReportOutcomeInputWithTaskId,
@@ -57,6 +57,7 @@ interface ParsedArgs {
   testFailures?: number;
   testStatus?: TestSummary['status'];
   tokenBucket?: CoarseBucket;
+  /** `--use-latest` was passed. It was removed (HOK-3364) and is rejected. */
   useLatest: boolean;
   wallClockSeconds?: number;
 }
@@ -74,9 +75,11 @@ type ReportCommandResult =
 
 export interface ReportCliDeps<TOptions extends SharedCommandOptions> {
   createClient?: (config: HokusaiPluginConfig) => HokusaiClient;
-  findLatestRoutingDecisionImpl?: (input: {
+  findRoutingDecisionImpl?: (input: {
     configDir: string;
-  }) => Promise<LatestRoutingDecision | undefined>;
+    correlationId?: string | undefined;
+    taskId?: string | undefined;
+  }) => Promise<StoredRoutingDecision | undefined>;
   loadConfig?: (input: {
     configPath?: string;
     env: NodeJS.ProcessEnv;
@@ -407,9 +410,11 @@ export function createRunReportCli<
 >(
   profile: HarnessProfile<TRouteInput, TBuilderOptions, TPreview, TOptions>,
   impls: {
-    findLatestRoutingDecision: (input: {
+    findRoutingDecision: (input: {
       configDir: string;
-    }) => Promise<LatestRoutingDecision | undefined>;
+      correlationId?: string | undefined;
+      taskId?: string | undefined;
+    }) => Promise<StoredRoutingDecision | undefined>;
     previewReportOutcome: (
       input: ReportOutcomeInputWithTaskId,
       options?: TOptions,
@@ -445,8 +450,16 @@ export function createRunReportCli<
       deps.previewReportOutcomeImpl ?? impls.previewReportOutcome;
     const reportTaskOutcomeImpl =
       deps.reportTaskOutcomeImpl ?? impls.reportTaskOutcome;
-    const findLatestRoutingDecisionImpl =
-      deps.findLatestRoutingDecisionImpl ?? impls.findLatestRoutingDecision;
+    const findRoutingDecisionImpl =
+      deps.findRoutingDecisionImpl ?? impls.findRoutingDecision;
+
+    if (parsed.useLatest) {
+      return toMessage(
+        parsed,
+        '--use-latest was removed: it attached the newest stored route, whatever task it was for. Pass --task-id or --correlation-id.',
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+      );
+    }
 
     let config: HokusaiPluginConfig;
     try {
@@ -496,13 +509,26 @@ export function createRunReportCli<
     const configDir = profile.resolveConfigPath(
       parsed.configPath ? { override: parsed.configPath } : undefined,
     ).dir;
-    let latest: LatestRoutingDecision | undefined;
-    if (
-      parsed.useLatest ||
-      (parsed.correlationId === undefined && pipedInput.correlationId === undefined)
-    ) {
+    // Correlation is exact or absent: the route recorded for this correlation
+    // id, else for this task id. Never the newest route of some other task.
+    const requestedCorrelationId = parsed.correlationId ?? pipedInput.correlationId;
+    const requestedTaskId = parsed.taskId ?? pipedInput.taskId;
+    if (requestedCorrelationId === undefined && requestedTaskId === undefined) {
+      return toMessage(
+        parsed,
+        'Name the task this outcome belongs to: pass --task-id or --correlation-id.',
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+        { fieldErrors: ['correlationId: Provide --correlation-id, or --task-id of a routed task.'] },
+      );
+    }
+    let latest: StoredRoutingDecision | undefined;
+    {
       try {
-        latest = await findLatestRoutingDecisionImpl({ configDir });
+        latest = await findRoutingDecisionImpl({
+          configDir,
+          ...(requestedCorrelationId !== undefined ? { correlationId: requestedCorrelationId } : {}),
+          ...(requestedTaskId !== undefined ? { taskId: requestedTaskId } : {}),
+        });
       } catch (error) {
         return toMessage(
           parsed,
@@ -520,26 +546,38 @@ export function createRunReportCli<
       parsed.preview = true;
     }
 
+    if (requestedCorrelationId === undefined && !latest) {
+      return toMessage(
+        parsed,
+        `No stored route for task ${requestedTaskId}. This outcome cannot be linked to a Hokusai recommendation; pass --correlation-id to report it as plain telemetry.`,
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+        { fieldErrors: ['correlationId: No route was recorded for this task id.'] },
+      );
+    }
+    if (latest && requestedTaskId !== undefined && latest.taskId !== requestedTaskId) {
+      return toMessage(
+        parsed,
+        `Correlation ${latest.correlationId} belongs to task ${latest.taskId}, not ${requestedTaskId}.`,
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+      );
+    }
     if (
-      (parsed.useLatest || parsed.correlationId === undefined) &&
-      pipedInput.correlationId === undefined &&
-      !latest
+      latest?.inferenceLogId !== undefined &&
+      parsed.inferenceLogId !== undefined &&
+      latest.inferenceLogId !== parsed.inferenceLogId
     ) {
       return toMessage(
         parsed,
-        'No local routing decision was found. Pass --correlation-id or route a task first.',
+        `The route for this task was made by inference ${latest.inferenceLogId}, not ${parsed.inferenceLogId}.`,
         REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
-        {
-          fieldErrors: ['correlationId: Provide --correlation-id or use --use-latest after routing a task.'],
-        },
       );
     }
 
     const stderrNotes: string[] = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
     const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
-    // When the recommendation was accepted, the actual model is the recommended
-    // one, so --use-latest can fill it from the stored decision. If it was not
+    // When the caller asserts --accepted, the actual model is the recommended
+    // one, so it can be filled from this task's stored decision. If it was not
     // accepted, leave it empty so validation forces the caller to state which
     // model they actually ran.
     const resolvedActualModel =
@@ -619,6 +657,9 @@ export function createRunReportCli<
         ? { notes: parsed.notes ?? pipedInput.notes }
         : {}),
       ...(resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {}),
+      ...(latest?.recommendedModelId
+        ? { routedRecommendedModelId: latest.recommendedModelId }
+        : {}),
       ...(latest?.routeContext ? { routeContext: latest.routeContext } : {}),
       ...(resolvedActualCostUsd !== undefined
         ? { actualCostUsd: resolvedActualCostUsd }

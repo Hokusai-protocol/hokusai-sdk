@@ -13,7 +13,7 @@ import {
   validateContributionRow,
   type ContributionAcceptedResponse,
   type ContributionRequest,
-  type HarnessOutcomeRowV1,
+  type HarnessOutcomeRowV2,
   type ModelDefinition,
   type RouteRequest,
   type RouteResponse,
@@ -127,7 +127,7 @@ export interface RunAiderLoopResult {
   accounting: AiderAccountingSummary;
   actualCostUsd: number | undefined;
   costOmittedReason?: string;
-  row: HarnessOutcomeRowV1;
+  row: HarnessOutcomeRowV2;
   response: ContributionAcceptedResponse;
   fidelityTier?: string;
 }
@@ -171,7 +171,7 @@ function selectDispatchModel(
  *   4. map the recommendation strictly (no silent substitution)
  *   5. spawn Aider with the mapped model
  *   6. parse token/cost lines and derive `actual_cost_usd` when eligible
- *   7. submit exactly one `harness_outcome_row/v1`
+ *   7. submit exactly one `harness_outcome_row/v2` (no overrides: Aider runs the recommendation)
  */
 export async function runAiderLoop(
   options: RunAiderLoopOptions,
@@ -286,6 +286,8 @@ export async function runAiderLoop(
 
   const row = buildHarnessOutcomeRow({
     inferenceLogId: routeId,
+    // Aider runs exactly the mapped recommendation: nothing was overridden.
+    routeOverrides: [],
     taskDescriptor: descriptor,
     allowedModels,
     selectedModels: { coder: mapped.id, reviewer: mapped.id },

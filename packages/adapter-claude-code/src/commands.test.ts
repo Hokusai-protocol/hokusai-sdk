@@ -17,7 +17,7 @@ import {
   declineRecommendation,
   displayHandoff,
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   getReportingStatus,
   listRoutingDecisions,
   listSubmissionAudit,
@@ -770,6 +770,7 @@ describe('reportTaskOutcome', () => {
         ...claudeCodeSuccessOutcomeFixture,
         routeContext: testRouteContext,
         inferenceLogId: testInferenceLogId,
+        routedRecommendedModelId: 'claude-3-7-sonnet',
       },
       {
         apiClient: client,
@@ -791,8 +792,9 @@ describe('reportTaskOutcome', () => {
           rowsAccepted: 1,
         },
         contributionRow: {
-          schema_version: 'harness_outcome_row/v1',
+          schema_version: 'harness_outcome_row/v2',
           inference_log_id: testInferenceLogId,
+          overrides: [],
           selected_models: {
             coder: 'claude-3-7-sonnet',
             reviewer: 'claude-3-7-sonnet',
@@ -908,6 +910,7 @@ describe('reportTaskOutcome', () => {
         ...claudeCodeSuccessOutcomeFixture,
         routeContext: testRouteContext,
         inferenceLogId: testInferenceLogId,
+        routedRecommendedModelId: 'claude-3-7-sonnet',
       },
       {
         apiClient: client,
@@ -955,6 +958,7 @@ describe('contribution row training-eligibility', () => {
       ...claudeCodeSuccessOutcomeFixture,
       routeContext: richRouteContext,
       inferenceLogId: 'inf-eligible',
+      routedRecommendedModelId: 'claude-3-7-sonnet',
       actualCostUsd: 0.32,
       wallClockSeconds: 120,
     });
@@ -991,6 +995,7 @@ describe('contribution row training-eligibility', () => {
       ...claudeCodeSuccessOutcomeFixture,
       routeContext: richRouteContext,
       inferenceLogId: 'inf-partial',
+      routedRecommendedModelId: 'claude-3-7-sonnet',
     });
 
     expect(result.ok).toBe(true);
@@ -1007,41 +1012,54 @@ describe('contribution row training-eligibility', () => {
   });
 });
 
-describe('findLatestRoutingDecision', () => {
-  it('returns undefined when there are no stored correlations', async () => {
-    const configDir = await createTempDir('hokusai-claude-latest-empty-');
+describe('contribution row overrides (HOK-3364)', () => {
+  const routeContext = {
+    taskDescriptor: { task_type: 'feature', complexity: 5 },
+    allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+    budgetUsd: 5,
+  };
 
-    await expect(
-      findLatestRoutingDecision({ configDir }),
-    ).resolves.toBeUndefined();
-  });
-
-  it('returns the only stored correlation', async () => {
-    const configDir = await createTempDir('hokusai-claude-latest-one-');
-    await mkdir(path.join(configDir, 'correlations'), { recursive: true });
-    await writeFile(
-      path.join(configDir, 'correlations', 'corr_1.json'),
-      JSON.stringify({
-        correlationId: 'corr_1',
-        packetHash: 'task-1',
-        createdAt: 100,
-        metadata: {
-          taskId: 'task-1',
-          originalCorrelationId: 'route:1',
-        },
-      }),
-      'utf8',
-    );
-
-    await expect(findLatestRoutingDecision({ configDir })).resolves.toEqual({
-      correlationId: 'route:1',
-      taskId: 'task-1',
-      createdAt: new Date(100).toISOString(),
+  it('states an operator override when a different model ran, and stores no recommendation copy', () => {
+    const result = previewReportOutcome({
+      taskId: 'task-override',
+      ...claudeCodeSuccessOutcomeFixture,
+      actualModel: 'claude-sonnet-4-6',
+      recommendationAccepted: false,
+      routeContext,
+      inferenceLogId: 'inf-override',
+      routedRecommendedModelId: 'claude-opus-4-8',
     });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const row = result.value.contributionRow;
+    expect(row?.overrides).toEqual([
+      { role: 'coder', source: 'operator', from: 'claude-opus-4-8', to: 'claude-sonnet-4-6', reason: 'recommendation_declined' },
+      { role: 'reviewer', source: 'operator', from: 'claude-opus-4-8', to: 'claude-sonnet-4-6', reason: 'recommendation_declined' },
+    ]);
+    expect(Object.keys(row ?? {}).filter((key) => /recommend/i.test(key))).toEqual([]);
   });
 
-  it('returns the most recent stored correlation', async () => {
-    const configDir = await createTempDir('hokusai-claude-latest-many-');
+  it('builds no row when the routed recommendation is unknown, rather than claiming it was followed', () => {
+    const result = previewReportOutcome({
+      taskId: 'task-unknown-recommendation',
+      ...claudeCodeSuccessOutcomeFixture,
+      routeContext,
+      inferenceLogId: 'inf-unknown',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.contributionRow).toBeUndefined();
+  });
+});
+
+describe('findRoutingDecision', () => {
+  async function seed(configDir: string): Promise<void> {
     await mkdir(path.join(configDir, 'correlations'), { recursive: true });
     await Promise.all([
       writeFile(
@@ -1052,6 +1070,12 @@ describe('findLatestRoutingDecision', () => {
           createdAt: 100,
           metadata: {
             taskId: 'task-1',
+            originalCorrelationId: 'route:1',
+            routeContext: JSON.stringify({
+              taskDescriptor: { task_type: 'feature' },
+              allowedModels: ['claude-sonnet-4-6'],
+              sessionId: 'session-a',
+            }),
           },
         }),
         'utf8',
@@ -1070,12 +1094,37 @@ describe('findLatestRoutingDecision', () => {
         'utf8',
       ),
     ]);
+  }
 
-    await expect(findLatestRoutingDecision({ configDir })).resolves.toEqual({
-      correlationId: 'route:2',
-      taskId: 'task-2',
-      createdAt: new Date(200).toISOString(),
+  it('returns undefined without a key: there is no "latest route" fallback', async () => {
+    const configDir = await createTempDir('hokusai-claude-route-nokey-');
+    await seed(configDir);
+
+    await expect(findRoutingDecision({ configDir })).resolves.toBeUndefined();
+  });
+
+  it('finds the route stored for a task id, not the newest route', async () => {
+    const configDir = await createTempDir('hokusai-claude-route-task-');
+    await seed(configDir);
+
+    await expect(findRoutingDecision({ configDir, taskId: 'task-1' })).resolves.toMatchObject({
+      correlationId: 'route:1',
+      taskId: 'task-1',
+      createdAt: new Date(100).toISOString(),
     });
+  });
+
+  it('finds a route by correlation id or session id, and nothing for an unknown task', async () => {
+    const configDir = await createTempDir('hokusai-claude-route-keys-');
+    await seed(configDir);
+
+    await expect(findRoutingDecision({ configDir, correlationId: 'route:2' })).resolves.toMatchObject({
+      taskId: 'task-2',
+    });
+    await expect(findRoutingDecision({ configDir, sessionId: 'session-a' })).resolves.toMatchObject({
+      taskId: 'task-1',
+    });
+    await expect(findRoutingDecision({ configDir, taskId: 'task-9' })).resolves.toBeUndefined();
   });
 });
 
@@ -1548,7 +1597,7 @@ describe('route/report smoke path', () => {
       value: {
         submitted: true,
         contributionRow: {
-          schema_version: 'harness_outcome_row/v1',
+          schema_version: 'harness_outcome_row/v2',
           inference_log_id: 'route-1',
         },
       },

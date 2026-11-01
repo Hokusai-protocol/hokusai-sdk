@@ -128,6 +128,28 @@ describe('createRouter', () => {
    * training and reward attribution entirely (docs/reference-pattern.md). An
    * outcome must land as a Model 30 contribution row or it earns nothing.
    */
+  it('records an override when the caller ran a different model (HOK-3364)', async () => {
+    const calls: Captured[] = [];
+    const route = createRouter({
+      client: createMockClient({ onCall: (call) => calls.push(call) }),
+    });
+
+    await route({
+      task: 'Fix a billing bug.',
+      availableModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      maxCostUsd: 1,
+    });
+    await route.reportOutcome({ status: 'succeeded', model: 'claude-opus-4-8', actualCostUsd: 0.9 });
+
+    const call = calls.find((entry) => new URL(entry.input).pathname.endsWith('/contributions'));
+    const row = (JSON.parse(String(call!.init.body)) as { rows: Array<Record<string, unknown>> }).rows[0]!;
+    expect(row.selected_models).toEqual({ coder: 'claude-opus-4-8', reviewer: 'claude-opus-4-8' });
+    expect(row.overrides).toEqual([
+      { role: 'coder', source: 'operator', from: 'claude-sonnet-4-6', to: 'claude-opus-4-8', reason: 'caller_model' },
+      { role: 'reviewer', source: 'operator', from: 'claude-sonnet-4-6', to: 'claude-opus-4-8', reason: 'caller_model' },
+    ]);
+  });
+
   it('submits a contribution row, not a legacy outcome', async () => {
     const calls: Captured[] = [];
     const route = createRouter({
@@ -158,9 +180,11 @@ describe('createRouter', () => {
       rows: Array<Record<string, unknown>>;
     };
     const row = body.rows[0]!;
-    expect(row.schema_version).toBe('harness_outcome_row/v1');
+    expect(row.schema_version).toBe('harness_outcome_row/v2');
     // The row is only attributable to its decision through inference_log_id.
     expect(row.inference_log_id).toBe(routed.routeId);
+    // The recommended model ran, so nothing was overridden.
+    expect(row.overrides).toEqual([]);
     expect(row.completion_result).toBe('success');
     expect(row.allowed_models).toEqual([
       'claude-sonnet-4-6',
@@ -217,8 +241,9 @@ describe('createRouter', () => {
     };
     const row = body.rows[0]!;
     expect(body.metadata.idempotency_key).toBe('external-1');
-    expect(row.schema_version).toBe('harness_outcome_row/v1');
+    expect(row.schema_version).toBe('harness_outcome_row/v2');
     expect(row).not.toHaveProperty('inference_log_id');
+    expect(row).not.toHaveProperty('overrides');
     expect(row.allowed_models).toEqual([
       'qwen-3-coder',
       'glm-5.2',

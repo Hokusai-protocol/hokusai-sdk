@@ -279,7 +279,7 @@ describe('submitOutcomeWithCodex', () => {
     });
 
     const routed = await routeTaskWithCodex(
-      { task: 'Fix the flaky test.' },
+      { task: 'Fix the flaky test.', taskId: 'task-3' },
       {
         env,
         transport: () =>
@@ -306,6 +306,7 @@ describe('submitOutcomeWithCodex', () => {
 
     const preview = await previewOutcomeWithCodex(
       {
+        taskId: 'task-3',
         actualModel: 'gpt-5-codex',
         recommendationAccepted: true,
         completionStatus: 'succeeded',
@@ -319,6 +320,7 @@ describe('submitOutcomeWithCodex', () => {
 
     const notApproved = await submitOutcomeWithCodex(
       {
+        taskId: 'task-3',
         actualModel: 'gpt-5-codex',
         recommendationAccepted: true,
         completionStatus: 'succeeded',
@@ -336,6 +338,7 @@ describe('submitOutcomeWithCodex', () => {
 
     const missingOptIn = await submitOutcomeWithCodex(
       {
+        taskId: 'task-3',
         actualModel: 'gpt-5-codex',
         recommendationAccepted: true,
         completionStatus: 'succeeded',
@@ -355,14 +358,14 @@ describe('submitOutcomeWithCodex', () => {
 });
 
 describe('promptOutcomeContributionWithCodex', () => {
-  it('builds a consent-gated report prompt from the latest route', async () => {
+  it("builds a consent-gated report prompt from this task's route", async () => {
     const env = await createEnv({
       HOKUSAI_API_KEY: 'hk_test',
       HOKUSAI_OUTCOME_OPT_IN: 'true',
     });
 
     const routed = await routeTaskWithCodex(
-      { task: 'Fix the flaky test.' },
+      { task: 'Fix the flaky test.', taskId: 'task-prompt' },
       {
         env,
         transport: () =>
@@ -392,6 +395,8 @@ describe('promptOutcomeContributionWithCodex', () => {
           status: 'success',
           transcript: 'All tests passed.',
         },
+        taskId: 'task-prompt',
+        actualModel: 'gpt-5-codex',
       },
       { env },
     );
@@ -404,7 +409,9 @@ describe('promptOutcomeContributionWithCodex', () => {
       shouldPrompt: true,
       status: 'ready',
       reportCommand:
-        '$hokusai-report --use-latest --recommended-model gpt-5-codex --actual-model gpt-5-codex --accepted --status succeeded --latency-bucket medium --cost-bucket medium --token-bucket medium --test-status passed',
+        '$hokusai-report --correlation-id ' +
+        (prompt.value.reportArgs?.[1] ?? '') +
+        ' --task-id task-prompt --recommended-model gpt-5-codex --actual-model gpt-5-codex --accepted --status succeeded --latency-bucket medium --cost-bucket medium --token-bucket medium --test-status passed',
     });
   });
 
@@ -413,7 +420,7 @@ describe('promptOutcomeContributionWithCodex', () => {
       HOKUSAI_API_KEY: 'hk_test',
     });
     await routeTaskWithCodex(
-      { task: 'Fix the flaky test.' },
+      { task: 'Fix the flaky test.', taskId: 'task-optin' },
       {
         env,
         transport: () =>
@@ -437,7 +444,7 @@ describe('promptOutcomeContributionWithCodex', () => {
     );
 
     const prompt = await promptOutcomeContributionWithCodex(
-      { event: { status: 'success' } },
+      { event: { status: 'success' }, taskId: 'task-optin' },
       { env },
     );
 

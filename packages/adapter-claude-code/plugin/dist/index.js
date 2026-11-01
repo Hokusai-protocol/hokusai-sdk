@@ -341,12 +341,12 @@ function effectiveRolePool(pools, role) {
 function classifyRoutingPools(pools) {
   const constrained = ROUTING_ROLES.map(
     (role) => effectiveRolePool(pools, role)
-  ).filter((pool) => pool !== void 0);
+  ).filter((pool2) => pool2 !== void 0);
   if (constrained.length === 0) {
     return "ranking";
   }
   const singletons = constrained.filter(
-    (pool) => normalizePool(pool).length < 2
+    (pool2) => normalizePool(pool2).length < 2
   );
   if (singletons.length === 0) {
     return "ranking";
@@ -355,8 +355,8 @@ function classifyRoutingPools(pools) {
 }
 function singletonRoles(pools) {
   return ROUTING_ROLES.filter((role) => {
-    const pool = effectiveRolePool(pools, role);
-    return pool !== void 0 && normalizePool(pool).length < 2;
+    const pool2 = effectiveRolePool(pools, role);
+    return pool2 !== void 0 && normalizePool(pool2).length < 2;
   });
 }
 function validateRoutingInput(routing, path4 = "routing") {
@@ -1097,39 +1097,39 @@ function mapRecommendation(recommendation, options) {
       filteredSuggestions()
     );
   }
-  const descriptor = options.registry.resolve(modelId2);
-  if (!descriptor) {
+  const descriptor2 = options.registry.resolve(modelId2);
+  if (!descriptor2) {
     throw new ModelMappingError(
       "UNKNOWN_MODEL",
       `Unsupported model recommendation: ${modelId2}.`,
       filteredSuggestions()
     );
   }
-  if (allowedProviders && !allowedProviders.includes(descriptor.provider)) {
+  if (allowedProviders && !allowedProviders.includes(descriptor2.provider)) {
     throw new ModelMappingError(
       "PROVIDER_NOT_ALLOWED",
-      `Model ${descriptor.id} uses provider ${descriptor.provider}, which is not supported by this harness.`,
-      filteredSuggestions(descriptor.id)
+      `Model ${descriptor2.id} uses provider ${descriptor2.provider}, which is not supported by this harness.`,
+      filteredSuggestions(descriptor2.id)
     );
   }
-  if (options.requireAvailable && descriptor.available === false) {
+  if (options.requireAvailable && descriptor2.available === false) {
     throw new ModelMappingError(
       "MODEL_UNAVAILABLE",
-      `Model ${descriptor.id} is currently unavailable in this harness.`,
-      filteredSuggestions(descriptor.id)
+      `Model ${descriptor2.id} is currently unavailable in this harness.`,
+      filteredSuggestions(descriptor2.id)
     );
   }
-  return descriptor;
+  return descriptor2;
 }
 function validateRecommendedModel(modelId2, options) {
   const registry = options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
   const normalizedModelId = modelId2.trim();
   const allowlistedIds = new Set(
     options.allowlist.map((entry) => registry.resolve(entry)).filter(
-      (descriptor2) => descriptor2 !== void 0 && descriptor2.provider === "anthropic"
-    ).map((descriptor2) => descriptor2.id)
+      (descriptor3) => descriptor3 !== void 0 && descriptor3.provider === "anthropic"
+    ).map((descriptor3) => descriptor3.id)
   );
-  const suggestions = registry.listAvailable().filter((descriptor2) => descriptor2.provider === "anthropic").filter((descriptor2) => allowlistedIds.has(descriptor2.id)).map((descriptor2) => descriptor2.id);
+  const suggestions = registry.listAvailable().filter((descriptor3) => descriptor3.provider === "anthropic").filter((descriptor3) => allowlistedIds.has(descriptor3.id)).map((descriptor3) => descriptor3.id);
   if (normalizedModelId.length === 0) {
     return {
       ok: false,
@@ -1137,34 +1137,34 @@ function validateRecommendedModel(modelId2, options) {
       suggestions
     };
   }
-  const descriptor = registry.resolve(normalizedModelId);
-  if (!descriptor) {
+  const descriptor2 = registry.resolve(normalizedModelId);
+  if (!descriptor2) {
     return {
       ok: false,
       reason: "unknown",
       suggestions
     };
   }
-  if (descriptor.provider !== "anthropic") {
+  if (descriptor2.provider !== "anthropic") {
     return {
       ok: false,
       reason: "not-anthropic",
-      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor.id)
+      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor2.id)
     };
   }
-  if (!allowlistedIds.has(descriptor.id)) {
+  if (!allowlistedIds.has(descriptor2.id)) {
     return {
       ok: false,
       reason: "not-in-allowlist",
-      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor.id)
+      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor2.id)
     };
   }
-  return normalizedModelId === descriptor.id ? {
+  return normalizedModelId === descriptor2.id ? {
     ok: true,
-    modelId: descriptor.id
+    modelId: descriptor2.id
   } : {
     ok: true,
-    modelId: descriptor.id,
+    modelId: descriptor2.id,
     mappedFrom: normalizedModelId
   };
 }
@@ -3071,12 +3071,12 @@ function summarizeAllowlist(config, registry) {
   const validModelIds = /* @__PURE__ */ new Set();
   const unknownEntries = [];
   for (const entry of config.modelAllowlist) {
-    const descriptor = resolvedRegistry.resolve(entry);
-    if (!descriptor || descriptor.provider !== "anthropic") {
+    const descriptor2 = resolvedRegistry.resolve(entry);
+    if (!descriptor2 || descriptor2.provider !== "anthropic") {
       unknownEntries.push(entry);
       continue;
     }
-    validModelIds.add(descriptor.id);
+    validModelIds.add(descriptor2.id);
   }
   return {
     validModelIds: [...validModelIds],
@@ -3182,8 +3182,8 @@ function normalizeAllowlist(value, options) {
     if (normalized.length === 0) {
       continue;
     }
-    const descriptor = options.registry?.resolve(normalized);
-    if (!descriptor) {
+    const descriptor2 = options.registry?.resolve(normalized);
+    if (!descriptor2) {
       if (options.strict) {
         options.fieldErrors.push({
           path: `modelAllowlist[${index}]`,
@@ -3194,7 +3194,7 @@ function normalizeAllowlist(value, options) {
       allowlist.push(normalized);
       continue;
     }
-    if (descriptor.provider !== "anthropic") {
+    if (descriptor2.provider !== "anthropic") {
       if (options.strict) {
         options.fieldErrors.push({
           path: `modelAllowlist[${index}]`,
@@ -3205,7 +3205,7 @@ function normalizeAllowlist(value, options) {
       allowlist.push(normalized);
       continue;
     }
-    allowlist.push(descriptor.id);
+    allowlist.push(descriptor2.id);
   }
   return allowlist.length > 0 ? allowlist : [...DEFAULT_ALLOWLIST];
 }
@@ -3699,7 +3699,7 @@ function buildOutcomePreviewLines(report) {
 function buildContributionPreviewLines(row) {
   return [
     "",
-    "Contribution row (harness_outcome_row/v1) that will be submitted:",
+    `Contribution row (${row.schema_version}) that will be submitted:`,
     JSON.stringify(row, null, 2)
   ];
 }
@@ -3716,9 +3716,25 @@ function buildReportContributionRow(input) {
       "No routing context with allowed models was found for this decision. Route a task with this plugin before reporting."
     );
   }
+  if (!input.recommendedModelId) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "The stored route has no recommended model, so the report cannot state whether the recommendation was followed."
+    );
+  }
+  const recommended = input.recommendedModelId;
+  const executed = input.report.actualModel;
+  const routeOverrides = executed === recommended ? [] : ["coder", "reviewer"].map((role) => ({
+    role,
+    source: "operator",
+    from: recommended,
+    to: executed,
+    reason: input.report.recommendationAccepted ? "model_changed" : "recommendation_declined"
+  }));
   try {
     const row = buildHarnessOutcomeRow({
       inferenceLogId: input.inferenceLogId,
+      routeOverrides,
       taskDescriptor: input.routeContext.taskDescriptor,
       allowedModels: input.routeContext.allowedModels,
       selectedModels: {
@@ -4158,18 +4174,22 @@ function createPreviewTaskPayload(profile17) {
     };
   };
 }
-async function findLatestRoutingDecision(input) {
+async function findRoutingDecision(input) {
   const store = new FsLocalStore(input.configDir);
-  const records = await store.listCorrelations();
-  const latest = records.reduce(
-    (currentLatest, record) => {
-      if (!currentLatest || record.createdAt > currentLatest.createdAt) {
-        return record;
-      }
-      return currentLatest;
-    },
-    void 0
-  );
+  let latest;
+  if (input.correlationId?.trim()) {
+    latest = (await findStoredCorrelationRecord(store, input.correlationId.trim())).record;
+  } else if (input.taskId?.trim() || input.sessionId?.trim()) {
+    const taskId = input.taskId?.trim();
+    const sessionId = input.sessionId?.trim();
+    const records = await store.listCorrelations();
+    latest = records.filter(
+      (record) => taskId ? record.metadata?.taskId === taskId : parseRouteContext(record.metadata?.routeContext)?.sessionId === sessionId
+    ).reduce(
+      (newest, record) => !newest || record.createdAt > newest.createdAt ? record : newest,
+      void 0
+    );
+  }
   if (!latest) {
     return void 0;
   }
@@ -4196,6 +4216,7 @@ function createPreviewReportOutcome(profile17) {
     const {
       taskId,
       inferenceLogId,
+      routedRecommendedModelId,
       routeContext,
       actualCostUsd,
       wallClockSeconds,
@@ -4218,6 +4239,7 @@ function createPreviewReportOutcome(profile17) {
       report,
       routeContext,
       inferenceLogId,
+      recommendedModelId: routedRecommendedModelId,
       harness: profile17.harness,
       observedAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
       ...actualCostUsd !== void 0 ? { actualCostUsd } : {},
@@ -4260,12 +4282,27 @@ function createReportTaskOutcome(profile17) {
       store,
       input.correlationId
     );
-    const routeContext = parseRouteContext(resolvedCorrelation.record?.metadata?.routeContext) ?? input.routeContext;
-    const inferenceLogId = input.inferenceLogId ?? resolvedCorrelation.record?.metadata?.inferenceLogId;
+    const storedMetadata = resolvedCorrelation.record?.metadata;
+    if (storedMetadata?.taskId && input.taskId && storedMetadata.taskId !== input.taskId) {
+      return fail(
+        "CORRELATION_MISMATCH",
+        `Correlation ${input.correlationId} belongs to task ${storedMetadata.taskId}, not ${input.taskId}.`
+      );
+    }
+    if (storedMetadata?.inferenceLogId && input.inferenceLogId && storedMetadata.inferenceLogId !== input.inferenceLogId) {
+      return fail(
+        "CORRELATION_MISMATCH",
+        `Correlation ${input.correlationId} was routed by inference ${storedMetadata.inferenceLogId}, not ${input.inferenceLogId}.`
+      );
+    }
+    const routeContext = parseRouteContext(storedMetadata?.routeContext) ?? input.routeContext;
+    const inferenceLogId = input.inferenceLogId ?? storedMetadata?.inferenceLogId;
+    const recommendedModelId = storedMetadata?.recommendedModelId ?? input.routedRecommendedModelId;
     const contributionRowResult = buildReportContributionRow({
       report: previewResult.value.report,
       routeContext,
       inferenceLogId,
+      recommendedModelId,
       harness: profile17.harness,
       observedAt,
       ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
@@ -8173,31 +8210,17 @@ function parseTranscriptUsageTotals(input) {
 }
 function locateSessionTranscript(input) {
   const fs = input.fs ?? nodeFs;
-  let names;
+  const sessionId = input.sessionId?.trim();
+  if (!sessionId || !/^[A-Za-z0-9._-]{1,200}$/.test(sessionId) || sessionId.startsWith(".")) {
+    return void 0;
+  }
+  const full = path.join(input.dir, `${sessionId}.jsonl`);
   try {
-    names = fs.readdirSync(input.dir);
+    fs.statSync(full);
   } catch {
     return void 0;
   }
-  let best;
-  let bestMtime = Number.NEGATIVE_INFINITY;
-  for (const name of names) {
-    if (!name.endsWith(".jsonl")) {
-      continue;
-    }
-    const full = path.join(input.dir, name);
-    let mtime;
-    try {
-      mtime = fs.statSync(full).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (mtime > bestMtime) {
-      bestMtime = mtime;
-      best = full;
-    }
-  }
-  return best;
+  return full;
 }
 function computeTranscriptCostUsd(input) {
   const totals = parseTranscriptUsageTotals({
@@ -8248,12 +8271,13 @@ function resolveActualCostUsd(input) {
     } catch {
     }
   }
-  if (routeContext?.baselineAt) {
+  if (routeContext?.baselineAt && routeContext.sessionId) {
     try {
       const configDir = claudeConfigDirFrom(input);
       const dir = routeContext.projectDirKey ? path.join(configDir, "projects", routeContext.projectDirKey) : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
       const transcriptPath = locateSessionTranscript({
         dir,
+        sessionId: routeContext.sessionId,
         ...input.fs ? { fs: input.fs } : {}
       });
       if (transcriptPath) {
@@ -13522,10 +13546,108 @@ var multiRoundReview = (() => {
   };
 })();
 
+// ../core/src/fixtures/routing-outcome.ts
+var descriptor = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7", "glm-5.3-flash"];
+function routerRow(routing, success) {
+  return {
+    schema_version: "technical_task_router_row/v3",
+    task_descriptor: descriptor,
+    allowed_models: pool,
+    available_models: { planner_models: pool, coder_models: pool, reviewer_models: pool },
+    budget_usd: 5,
+    actual_cost_usd: 2.29,
+    wall_clock_seconds: 1840,
+    success_under_budget: success,
+    completion_result: success ? "success" : "failure",
+    outcome_labels: {
+      budget_label: "under_budget",
+      cost_label: "medium",
+      time_label: "slow",
+      success_label: success ? "success" : "failure"
+    },
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool.length },
+    sparse_cell: { cell_id: "bugfix-typescript", descriptor_signature: "bugfix|typescript|backend", observed_count: 41, is_sparse: false },
+    observed_at: "2026-10-30T18:00:00.000Z",
+    harness: "wavemill",
+    ...routing
+  };
+}
+var followedRecommendationRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a70",
+    overrides: [],
+    selected_models: { planner: "claude-sonnet-4-6", coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" }
+  },
+  true
+);
+var escalationOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a71",
+    overrides: [
+      { role: "coder", source: "escalation", from: "claude-haiku-4-5", to: "glm-5.3-flash", reason: "stage_failed" }
+    ],
+    selected_models: { coder: "glm-5.3-flash", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var challengeOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a72",
+    overrides: [
+      { role: "coder", source: "challenge", from: "claude-opus-4-7", to: "claude-haiku-4-5", reason: "challenge_arm" }
+    ],
+    selected_models: { coder: "claude-haiku-4-5", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var operatorRerouteRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a73",
+    overrides: [
+      { role: "reviewer", source: "operator", from: "claude-haiku-4-5", to: "claude-opus-4-7", reason: "operator_reroute" }
+    ],
+    selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-opus-4-7" }
+  },
+  true
+);
+var unroutedTelemetryRoutingFixture = routerRow(
+  { selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" } },
+  true
+);
+
 // ../core/src/contribution/schema.ts
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3 = "technical_task_router_row/v3";
 var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
+var HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2 = "harness_outcome_row/v2";
+var ROUTE_ROLES = ["planner", "coder", "reviewer"];
+var ROUTE_OVERRIDE_SOURCES = ["escalation", "launchability", "challenge", "operator"];
+var RECOMMENDATION_COPY_KEYS = Object.freeze([
+  "recommended_model",
+  "recommended_models",
+  "recommended_model_id",
+  "recommendation",
+  "recommendation_accepted",
+  "recommendedmodel",
+  "recommendedmodels",
+  "recommendationaccepted"
+]);
 var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "schema_version",
   "task_descriptor",
@@ -13541,6 +13663,10 @@ var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "task_id",
   "observed_at",
   "harness_metadata"
+]);
+var HARNESS_OUTCOME_ROW_V2_FIELDS = Object.freeze([
+  ...HARNESS_OUTCOME_ROW_FIELDS,
+  "overrides"
 ]);
 var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
   "prompt",
@@ -13791,13 +13917,20 @@ function isTechnicalTaskRouterContributionRowV1(value) {
   return true;
 }
 function isTechnicalTaskRouterContributionRowV2(value) {
+  return isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2, []);
+}
+function isTechnicalTaskRouterContributionRowV3(value) {
+  return isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3, ["inference_log_id", "overrides"]) && routingOutcomeErrors(value).length === 0;
+}
+function isRichRouterRow(value, version, extraKeys) {
   if (!isPlainObject5(value)) {
     return false;
   }
-  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
+  if (value.schema_version !== version) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, [
+    ...extraKeys,
     "schema_version",
     "task_descriptor",
     "allowed_models",
@@ -13883,13 +14016,19 @@ function isHarnessOutcomeRowMetadata(value) {
   return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
 }
 function isHarnessOutcomeRowV1(value) {
+  return isHarnessRow(value, HARNESS_OUTCOME_ROW_SCHEMA_VERSION, HARNESS_OUTCOME_ROW_FIELDS);
+}
+function isHarnessOutcomeRowV2(value) {
+  return isHarnessRow(value, HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2, HARNESS_OUTCOME_ROW_V2_FIELDS) && routingOutcomeErrors(value).length === 0;
+}
+function isHarnessRow(value, version, fields) {
   if (!isPlainObject5(value)) {
     return false;
   }
-  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+  if (value.schema_version !== version) {
     return false;
   }
-  if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
+  if (!hasOnlyAllowedKeys(value, fields)) {
     return false;
   }
   if (!isPlainObject5(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
@@ -13933,9 +14072,109 @@ function isHarnessOutcomeRowV1(value) {
   }
   return true;
 }
+var RECOMMENDATION_COPY_KEY_SET = new Set(
+  RECOMMENDATION_COPY_KEYS.map((key) => key.replaceAll("_", ""))
+);
+var ROUTE_SLUG_PATTERN = /^[a-z][a-z0-9_.:-]{0,127}$/;
+function routingOutcomeErrors(row) {
+  if (!isPlainObject5(row)) {
+    return ["row must be an object"];
+  }
+  const errors = [];
+  const routed = row.inference_log_id !== void 0;
+  if (routed && (typeof row.inference_log_id !== "string" || row.inference_log_id.trim().length === 0)) {
+    errors.push("inference_log_id must be a non-empty string");
+  }
+  if (routed && row.overrides === void 0) {
+    errors.push("a routed row must list overrides ([] when the recommendation was followed)");
+  }
+  if (!routed && row.overrides !== void 0) {
+    errors.push("overrides require inference_log_id: an unrouted row has no recommendation to override");
+  }
+  if (row.overrides === void 0) {
+    return errors;
+  }
+  if (!Array.isArray(row.overrides)) {
+    return [...errors, "overrides must be an array"];
+  }
+  const selected = isPlainObject5(row.selected_models) ? row.selected_models : {};
+  const lastByRole = /* @__PURE__ */ new Map();
+  for (const [index, entry] of row.overrides.entries()) {
+    const label2 = `overrides[${index}]`;
+    if (!isPlainObject5(entry) || !hasOnlyAllowedKeys(entry, ["role", "source", "from", "to", "reason"])) {
+      errors.push(`${label2} must be an object with role, source, from, to and reason`);
+      continue;
+    }
+    if (!ROUTE_ROLES.includes(entry.role)) {
+      errors.push(`${label2}.role must be one of: ${ROUTE_ROLES.join(", ")}`);
+    }
+    if (!ROUTE_OVERRIDE_SOURCES.includes(entry.source)) {
+      errors.push(`${label2}.source must be one of: ${ROUTE_OVERRIDE_SOURCES.join(", ")}`);
+    }
+    for (const key of ["from", "to"]) {
+      const model = entry[key];
+      if (typeof model !== "string" || model.trim().length === 0) {
+        errors.push(`${label2}.${key} must be a non-empty model id`);
+      }
+    }
+    if (entry.from === entry.to) {
+      errors.push(`${label2} must change the model (from equals to)`);
+    }
+    if (typeof entry.reason !== "string" || !ROUTE_SLUG_PATTERN.test(entry.reason)) {
+      errors.push(`${label2}.reason must be a slug`);
+    }
+    const previous = lastByRole.get(String(entry.role));
+    if (previous && previous.to !== entry.from) {
+      errors.push(`${label2}.from must equal the previous ${String(entry.role)} override's to`);
+    }
+    lastByRole.set(String(entry.role), entry);
+  }
+  for (const [role, last] of lastByRole) {
+    if (selected[role] !== last.to) {
+      errors.push(`the last ${role} override must end at selected_models.${role}`);
+    }
+  }
+  return errors;
+}
+function findRecommendationCopy(value, path4 = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const found = findRecommendationCopy(item, [...path4, String(index)]);
+      if (found) return found;
+    }
+    return void 0;
+  }
+  if (!isPlainObject5(value)) {
+    return void 0;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (RECOMMENDATION_COPY_KEY_SET.has(key.toLowerCase().replaceAll("_", ""))) {
+      return [...path4, key].join(".");
+    }
+    const found = findRecommendationCopy(child, [...path4, key]);
+    if (found) return found;
+  }
+  return void 0;
+}
 function validateContributionRow(row) {
   assertNoForbiddenKeys2(row);
-  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
+  const copy = findRecommendationCopy(row);
+  if (copy) {
+    throw new ContributionValidationError(
+      "schema_validation_failed",
+      `Contribution rows must not store a recommendation copy (${copy}); Hokusai joins it from inference_log_id`
+    );
+  }
+  if (isPlainObject5(row) && (row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3 || row.schema_version === HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2)) {
+    const errors = routingOutcomeErrors(row);
+    if (errors.length > 0) {
+      throw new ContributionValidationError(
+        "schema_validation_failed",
+        `Invalid routing outcome: ${errors.join("; ")}`
+      );
+    }
+  }
+  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isTechnicalTaskRouterContributionRowV3(row) || isHarnessOutcomeRowV1(row) || isHarnessOutcomeRowV2(row) || isSubmitDataContributionRow(row)) {
     return row;
   }
   throw new ContributionValidationError(
@@ -13945,6 +14184,20 @@ function validateContributionRow(row) {
 }
 
 // ../core/src/contribution/builder.ts
+function routingOutcomeFields(projection) {
+  if (projection.inferenceLogId && projection.routeOverrides === void 0) {
+    throw new Error(
+      "routeOverrides is required for a routed task: pass [] if the recommendation was followed"
+    );
+  }
+  if (!projection.inferenceLogId && projection.routeOverrides !== void 0) {
+    throw new Error("routeOverrides requires inferenceLogId: an unrouted task has no recommendation");
+  }
+  return projection.inferenceLogId ? {
+    inference_log_id: projection.inferenceLogId,
+    overrides: (projection.routeOverrides ?? []).map((override) => ({ ...override }))
+  } : {};
+}
 function buildHarnessOutcomeRow(projection) {
   if (!projection.taskDescriptor || Object.keys(projection.taskDescriptor).length === 0) {
     throw new Error("taskDescriptor must be a non-empty object");
@@ -13960,7 +14213,7 @@ function buildHarnessOutcomeRow(projection) {
     ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
   };
   const row = {
-    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2,
     task_descriptor: { ...projection.taskDescriptor },
     allowed_models: [...projection.allowedModels],
     selected_models: { ...projection.selectedModels },
@@ -13969,7 +14222,7 @@ function buildHarnessOutcomeRow(projection) {
     ...projection.actualCostUsd !== void 0 ? { actual_cost_usd: projection.actualCostUsd } : {},
     ...projection.wallClockSeconds !== void 0 ? { wall_clock_seconds: projection.wallClockSeconds } : {},
     ...projection.successUnderBudget !== void 0 ? { success_under_budget: projection.successUnderBudget } : {},
-    ...projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {},
+    ...routingOutcomeFields(projection),
     ...projection.harness ? { harness: projection.harness } : {},
     ...projection.taskId ? { task_id: projection.taskId } : {},
     ...projection.observedAt ? { observed_at: projection.observedAt } : {},
@@ -14503,7 +14756,14 @@ function createRunReportCli(profile17, impls) {
     }));
     const previewReportOutcomeImpl = deps.previewReportOutcomeImpl ?? impls.previewReportOutcome;
     const reportTaskOutcomeImpl = deps.reportTaskOutcomeImpl ?? impls.reportTaskOutcome;
-    const findLatestRoutingDecisionImpl = deps.findLatestRoutingDecisionImpl ?? impls.findLatestRoutingDecision;
+    const findRoutingDecisionImpl = deps.findRoutingDecisionImpl ?? impls.findRoutingDecision;
+    if (parsed.useLatest) {
+      return toMessage2(
+        parsed,
+        "--use-latest was removed: it attached the newest stored route, whatever task it was for. Pass --task-id or --correlation-id.",
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
+      );
+    }
     let config;
     try {
       const configPath = toConfigFilePath2(profile17, parsed.configPath);
@@ -14546,10 +14806,24 @@ function createRunReportCli(profile17, impls) {
     const configDir = profile17.resolveConfigPath(
       parsed.configPath ? { override: parsed.configPath } : void 0
     ).dir;
+    const requestedCorrelationId = parsed.correlationId ?? pipedInput.correlationId;
+    const requestedTaskId = parsed.taskId ?? pipedInput.taskId;
+    if (requestedCorrelationId === void 0 && requestedTaskId === void 0) {
+      return toMessage2(
+        parsed,
+        "Name the task this outcome belongs to: pass --task-id or --correlation-id.",
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+        { fieldErrors: ["correlationId: Provide --correlation-id, or --task-id of a routed task."] }
+      );
+    }
     let latest;
-    if (parsed.useLatest || parsed.correlationId === void 0 && pipedInput.correlationId === void 0) {
+    {
       try {
-        latest = await findLatestRoutingDecisionImpl({ configDir });
+        latest = await findRoutingDecisionImpl({
+          configDir,
+          ...requestedCorrelationId !== void 0 ? { correlationId: requestedCorrelationId } : {},
+          ...requestedTaskId !== void 0 ? { taskId: requestedTaskId } : {}
+        });
       } catch (error) {
         return toMessage2(
           parsed,
@@ -14564,14 +14838,26 @@ function createRunReportCli(profile17, impls) {
     if (!parsed.send) {
       parsed.preview = true;
     }
-    if ((parsed.useLatest || parsed.correlationId === void 0) && pipedInput.correlationId === void 0 && !latest) {
+    if (requestedCorrelationId === void 0 && !latest) {
       return toMessage2(
         parsed,
-        "No local routing decision was found. Pass --correlation-id or route a task first.",
+        `No stored route for task ${requestedTaskId}. This outcome cannot be linked to a Hokusai recommendation; pass --correlation-id to report it as plain telemetry.`,
         REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
-        {
-          fieldErrors: ["correlationId: Provide --correlation-id or use --use-latest after routing a task."]
-        }
+        { fieldErrors: ["correlationId: No route was recorded for this task id."] }
+      );
+    }
+    if (latest && requestedTaskId !== void 0 && latest.taskId !== requestedTaskId) {
+      return toMessage2(
+        parsed,
+        `Correlation ${latest.correlationId} belongs to task ${latest.taskId}, not ${requestedTaskId}.`,
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
+      );
+    }
+    if (latest?.inferenceLogId !== void 0 && parsed.inferenceLogId !== void 0 && latest.inferenceLogId !== parsed.inferenceLogId) {
+      return toMessage2(
+        parsed,
+        `The route for this task was made by inference ${latest.inferenceLogId}, not ${parsed.inferenceLogId}.`,
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
       );
     }
     const stderrNotes = [];
@@ -14617,6 +14903,7 @@ function createRunReportCli(profile17, impls) {
       } : {},
       ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {},
       ...resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {},
+      ...latest?.recommendedModelId ? { routedRecommendedModelId: latest.recommendedModelId } : {},
       ...latest?.routeContext ? { routeContext: latest.routeContext } : {},
       ...resolvedActualCostUsd !== void 0 ? { actualCostUsd: resolvedActualCostUsd } : {},
       ...parsed.wallClockSeconds !== void 0 ? { wallClockSeconds: parsed.wallClockSeconds } : {}
@@ -14707,7 +14994,7 @@ function buildOutcomeContributionPrompt(input) {
       remediation: "Set HOKUSAI_OUTCOME_OPT_IN=true, then rerun the Hokusai report command."
     };
   }
-  const actualModel = input.actualModel ?? input.latestRoute.recommendedModelId;
+  const actualModel = input.actualModel;
   if (!actualModel) {
     return {
       shouldPrompt: true,
@@ -14717,13 +15004,16 @@ function buildOutcomeContributionPrompt(input) {
       remediation: "Run the report command with --actual-model set to the model that completed the task."
     };
   }
+  const recommended = input.latestRoute.recommendedModelId;
   const reportArgs = [
-    "--use-latest",
-    "--recommended-model",
-    input.latestRoute.recommendedModelId ?? actualModel,
+    "--correlation-id",
+    input.latestRoute.correlationId,
+    "--task-id",
+    input.latestRoute.taskId,
+    ...recommended ? ["--recommended-model", recommended] : [],
     "--actual-model",
     actualModel,
-    "--accepted",
+    recommended !== void 0 && recommended === actualModel ? "--accepted" : "--rejected",
     "--status",
     "succeeded",
     "--latency-bucket",
@@ -15496,7 +15786,7 @@ var runCli = createRunCli(claudeCodeHarnessProfile, {
 
 // src/report-cli.ts
 var runReportCli = createRunReportCli(claudeCodeHarnessProfile, {
-  findLatestRoutingDecision,
+  findRoutingDecision,
   previewReportOutcome,
   reportTaskOutcome
 });
@@ -15542,6 +15832,13 @@ async function defaultReadStdin2() {
   }
   return chunks.join("");
 }
+function eventSessionId(event17) {
+  if (!event17 || typeof event17 !== "object" || Array.isArray(event17)) {
+    return void 0;
+  }
+  const sessionId = event17.session_id;
+  return typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId.trim() : void 0;
+}
 function parseEvent(rawStdin, eventText) {
   const raw = rawStdin.trim();
   if (raw.length > 0) {
@@ -15582,14 +15879,13 @@ async function runOutcomePromptHookCli(argv, env, deps = {}) {
     ...input.configPath ? { store: new FilePluginConfigStore(input.configPath) } : {}
   }));
   try {
-    const [config, latestRoute, rawStdin] = await Promise.all([
+    const [config, rawStdin] = await Promise.all([
       loadConfigImpl(configPath === void 0 ? { env } : { configPath, env }),
-      (deps.findLatestRoutingDecisionImpl ?? findLatestRoutingDecision)({
-        configDir
-      }),
       (deps.readStdin ?? defaultReadStdin2)()
     ]);
     const event17 = parseEvent(rawStdin, parsed.eventText);
+    const sessionId = eventSessionId(event17);
+    const latestRoute = sessionId ? await (deps.findRoutingDecisionImpl ?? findRoutingDecision)({ configDir, sessionId }) : void 0;
     const actualModel = env.HOKUSAI_ACTUAL_MODEL;
     const prompt = buildOutcomeContributionPrompt({
       event: event17,
@@ -15883,7 +16179,7 @@ export {
   defaultPluginConfigPath,
   displayHandoff,
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   getClaudeCodeStateFilePath,
   getReportingStatus,
   listRoutingDecisions,

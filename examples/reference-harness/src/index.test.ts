@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ContributionValidationError,
-  isHarnessOutcomeRowV1,
+  isHarnessOutcomeRowV2,
 } from '@hokusai/core';
 import { FAKE_SECRET, createReferenceHarnessAdapter } from './harness/index.js';
 import { runHokusaiLoop } from './hokusai/index.js';
@@ -83,10 +83,10 @@ describe('runReferenceFlow', () => {
     );
   });
 
-  it('emits a row the core validator accepts as harness_outcome_row/v1', async () => {
+  it('emits a row the core validator accepts as harness_outcome_row/v2', async () => {
     const { trainingEligible } = await runReferenceFlow();
 
-    expect(isHarnessOutcomeRowV1(trainingEligible.row)).toBe(true);
+    expect(isHarnessOutcomeRowV2(trainingEligible.row)).toBe(true);
   });
 });
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": "harness_outcome_row/v1",
+  "schema_version": "harness_outcome_row/v2",
   "task_descriptor": {
     "task_type": "tests",
     "complexity": 5,
@@ -20,6 +20,7 @@
   "actual_cost_usd": 0.177,
   "wall_clock_seconds": 74.5,
   "inference_log_id": "73c19164-7194-48b1-a62e-7314bcf3ebd5",
+  "overrides": [],
   "harness": "reference-harness",
   "task_id": "ref-task-001",
   "observed_at": "2026-06-08T00:00:00.000Z",

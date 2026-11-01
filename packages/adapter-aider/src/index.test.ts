@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   InMemoryModelRegistry,
-  isHarnessOutcomeRowV1,
+  isHarnessOutcomeRowV2,
   validateContributionRow,
 } from '@hokusai/core';
 import {
@@ -134,7 +134,7 @@ describe('runAiderLoop', () => {
     expect(result.row.actual_cost_usd).toBe(0.21);
     expect(result.row.selected_models.coder).toBe('claude-sonnet-4-6');
     expect(result.row.allowed_models.length).toBeGreaterThan(1);
-    expect(isHarnessOutcomeRowV1(result.row)).toBe(true);
+    expect(isHarnessOutcomeRowV2(result.row)).toBe(true);
   });
 
   it('passes provider-prefixed model ids to Aider byte-for-byte', async () => {

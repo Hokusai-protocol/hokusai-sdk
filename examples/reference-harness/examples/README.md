@@ -3,7 +3,7 @@
 Fake, safe-to-publish examples of the payloads used in the Hokusai route/contribute loop.
 
 - `task-packet.example.json` is a valid `TaskPacket`.
-- `contribution-row.example.json` is a valid `harness_outcome_row/v1` — the canonical row submitted to `POST /api/v1/models/30/contributions`. It carries `inference_log_id`, a derived `task_descriptor`, `allowed_models`, `selected_models`, and both `budget_usd` and `actual_cost_usd`, which is what makes it `training_eligible`.
+- `contribution-row.example.json` is a valid `harness_outcome_row/v2` — the canonical row submitted to `POST /api/v1/models/30/contributions`. It carries `inference_log_id` with `overrides` (`[]`: the recommendation was followed), a derived `task_descriptor`, `allowed_models`, `selected_models`, and both `budget_usd` and `actual_cost_usd`, which is what makes it `training_eligible`.
 
 The reference harness test suite validates both with `validateTaskPacket` and `validateContributionRow` from `@hokusai/core`, and asserts they contain no credential-shaped strings.
 

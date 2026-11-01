@@ -160,6 +160,7 @@ export {
   createFsStore,
   executeRouteCommand,
   latestRouteCommand,
+  routeForTaskCommand,
   previewOutcomeCommand,
   privacyStatusCommand,
   submitOutcomeCommand,
@@ -458,6 +459,7 @@ export {
   wavemillOverriddenOutcomeFixture,
   wavemillSuccessOutcomeFixture,
   wavemillTaskPacketFixture,
+  routingOutcomeFixtures,
 } from './fixtures/index.js';
 export {
   queueLifecycleFixtures,

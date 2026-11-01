@@ -220,6 +220,7 @@ describe('submitOutcome', () => {
         taskId: 'task-1',
         originalCorrelationId: correlationId,
         inferenceLogId: 'inference-1',
+        recommendedModelId: 'gpt-5-codex',
         routeContext: JSON.stringify({
           taskDescriptor: { task_type: 'refactor', complexity: 2 },
           allowedModels: ['gpt-5-codex', 'gpt-5'],
@@ -274,8 +275,9 @@ describe('submitOutcome', () => {
 
     const request = submitContribution.mock.calls[0]![0];
     const row = request.rows[0]!;
-    expect(row.schema_version).toBe('harness_outcome_row/v1');
+    expect(row.schema_version).toBe('harness_outcome_row/v2');
     expect(row.inference_log_id).toBe('inference-1');
+    expect(row.overrides).toEqual([]);
     expect(row.completion_result).toBe('success');
     expect(row.allowed_models).toEqual(['gpt-5-codex', 'gpt-5']);
     expect(row.selected_models).toEqual({
