@@ -143,6 +143,12 @@ pure reducer:
   `TASK_COST_ADAPTER_CONTRACT_VERSION`, `PROVIDER_CONTRACT_VERSIONS`
 - **Enums and types:** the `TASK_COST_*` value lists, plus `TaskCostEventV1`,
   `TaskCostSummaryV1`, `TaskCostLedgerV1`, and `TaskCostAdapterV1`
+- **Attempt identity** (contract `1.1.0`, core ≥ 0.6.0): `task_attempt/v1`
+  records, `reduceTaskAttemptLog`, `taskAttemptFixtures`
+- **Queue, CI and repair lifecycle events** (contract `1.2.0`, core ≥ 0.7.0):
+  `queue_lifecycle_event/v1` (`QueueLifecycleEventV1`,
+  `validateQueueLifecycleEventV1`, `reduceQueueLifecycleLog`,
+  `queueLifecycleFixtures`, `QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA`)
 
 To measure a task rather than reduce events yourself, use
 [`@hokusai/costs`](https://www.npmjs.com/package/@hokusai/costs).

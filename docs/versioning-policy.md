@@ -67,7 +67,7 @@ Rules:
 The task-cost contract is exported from `@hokusai/core` and documented in
 [`packages/core/src/task-cost/README.md`](../packages/core/src/task-cost/README.md):
 
-- `TASK_COST_CONTRACT_VERSION = "1.1.0"` (SemVer for the contract as a whole:
+- `TASK_COST_CONTRACT_VERSION = "1.2.0"` (SemVer for the contract as a whole:
   schemas and reducer semantics)
 - `TASK_COST_EVENT_SCHEMA_VERSION = "task_cost_event/v1"`
 - `TASK_COST_SUMMARY_SCHEMA_VERSION = "task_cost_summary/v1"`
@@ -75,11 +75,15 @@ The task-cost contract is exported from `@hokusai/core` and documented in
 - `TASK_COST_ADAPTER_CONTRACT_VERSION = "task_cost_adapter/v1"`
 - `TASK_ATTEMPT_SCHEMA_VERSION = "task_attempt/v1"` (attempt identity; rules in
   [`attempt-identity.md`](../packages/core/src/task-cost/attempt-identity.md))
+- `QUEUE_LIFECYCLE_EVENT_SCHEMA_VERSION = "queue_lifecycle_event/v1"` (queue,
+  CI and repair lifecycle events; rules in
+  [`queue-lifecycle.md`](../packages/core/src/task-cost/queue-lifecycle.md))
 
 | Contract | First `@hokusai/core` | Notes |
 | --- | --- | --- |
 | task-cost `1.0.0` (`task_cost_*/v1`) | **0.5.0** (2026-10-15) | First release of the contract, validators, `aggregateTaskCost`, and `aggregateTaskCostByModel`. None of it exists in 0.4.0. |
 | task-cost `1.1.0` (+ `task_attempt/v1`) | **0.6.0** (2026-10-31) | Attempt identity: `task_attempt/v1` records, `reduceTaskAttemptLog`, `taskAttemptFixtures`, optional `run_id` / `stage_attempt_id` on events. Older readers ignore the new event fields (unknown fields are tolerated); events without them are unchanged. |
+| task-cost `1.2.0` (+ `queue_lifecycle_event/v1`) | **0.7.0** (unreleased) | Queue, CI and repair lifecycle events keyed on `task_attempt/v1`: `queue_lifecycle_event/v1` records, `reduceQueueLifecycleLog`, `queueLifecycleFixtures`. Purely additive: no existing record or reducer changes. |
 
 Rules:
 

@@ -460,8 +460,10 @@ export {
   wavemillTaskPacketFixture,
 } from './fixtures/index.js';
 export {
+  queueLifecycleFixtures,
   taskAttemptFixtures,
   taskCostFixtures,
+  type QueueLifecycleFixture,
   type TaskAttemptFixture,
   type TaskCostFixture,
 } from './fixtures/task-cost/index.js';
