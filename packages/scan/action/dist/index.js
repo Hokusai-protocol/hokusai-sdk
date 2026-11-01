@@ -6581,7 +6581,101 @@ var twoPrMergeCandidate = (() => {
   };
 })();
 
+// ../core/src/fixtures/routing-outcome.ts
+var descriptor = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7", "glm-5.3-flash"];
+function routerRow(routing, success) {
+  return {
+    schema_version: "technical_task_router_row/v3",
+    task_descriptor: descriptor,
+    allowed_models: pool,
+    available_models: { planner_models: pool, coder_models: pool, reviewer_models: pool },
+    budget_usd: 5,
+    actual_cost_usd: 2.29,
+    wall_clock_seconds: 1840,
+    success_under_budget: success,
+    completion_result: success ? "success" : "failure",
+    outcome_labels: {
+      budget_label: "under_budget",
+      cost_label: "medium",
+      time_label: "slow",
+      success_label: success ? "success" : "failure"
+    },
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool.length },
+    sparse_cell: { cell_id: "bugfix-typescript", descriptor_signature: "bugfix|typescript|backend", observed_count: 41, is_sparse: false },
+    observed_at: "2026-10-30T18:00:00.000Z",
+    harness: "wavemill",
+    ...routing
+  };
+}
+var followedRecommendationRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a70",
+    overrides: [],
+    selected_models: { planner: "claude-sonnet-4-6", coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" }
+  },
+  true
+);
+var escalationOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a71",
+    overrides: [
+      { role: "coder", source: "escalation", from: "claude-haiku-4-5", to: "glm-5.3-flash", reason: "stage_failed" }
+    ],
+    selected_models: { coder: "glm-5.3-flash", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var challengeOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a72",
+    overrides: [
+      { role: "coder", source: "challenge", from: "claude-opus-4-7", to: "claude-haiku-4-5", reason: "challenge_arm" }
+    ],
+    selected_models: { coder: "claude-haiku-4-5", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var operatorRerouteRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a73",
+    overrides: [
+      { role: "reviewer", source: "operator", from: "claude-haiku-4-5", to: "claude-opus-4-7", reason: "operator_reroute" }
+    ],
+    selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-opus-4-7" }
+  },
+  true
+);
+var unroutedTelemetryRoutingFixture = routerRow(
+  { selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" } },
+  true
+);
+
 // ../core/src/contribution/schema.ts
+var RECOMMENDATION_COPY_KEYS = Object.freeze([
+  "recommended_model",
+  "recommended_models",
+  "recommended_model_id",
+  "recommendation",
+  "recommendation_accepted",
+  "recommendedmodel",
+  "recommendedmodels",
+  "recommendationaccepted"
+]);
 var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "schema_version",
   "task_descriptor",
@@ -6598,6 +6692,13 @@ var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "observed_at",
   "harness_metadata"
 ]);
+var HARNESS_OUTCOME_ROW_V2_FIELDS = Object.freeze([
+  ...HARNESS_OUTCOME_ROW_FIELDS,
+  "overrides"
+]);
+var RECOMMENDATION_COPY_KEY_SET = new Set(
+  RECOMMENDATION_COPY_KEYS.map((key) => key.replaceAll("_", ""))
+);
 
 // ../core/src/plugin-commands/cli.ts
 var CLI_EXIT_CODES = {
@@ -7283,16 +7384,16 @@ function collectReviewEvidence(prNumber, repoDir) {
 }
 function deriveIntent(contract, diffStats) {
   if (!contract) return nullIntent();
-  const descriptor = deriveTaskDescriptor({
+  const descriptor2 = deriveTaskDescriptor({
     taskText: contract.taskText,
     repositorySignals: contract.repositorySignals
   });
   const intent = nullIntent();
-  intent.task_type = normalizeTaskType(contract.intent?.task_type ?? descriptor.task_type);
-  intent.language = normalizeLanguage(contract.intent?.language ?? descriptor.language);
+  intent.task_type = normalizeTaskType(contract.intent?.task_type ?? descriptor2.task_type);
+  intent.language = normalizeLanguage(contract.intent?.language ?? descriptor2.language);
   intent.domain = normalizeDomain(contract.intent?.domain);
-  intent.complexity = normalizeComplexityValue(contract.intent?.complexity ?? descriptor.complexity);
-  intent.repo_size_bucket = normalizeRepoSizeBucket(contract.intent?.repo_size_bucket ?? descriptor.repo_size_bucket);
+  intent.complexity = normalizeComplexityValue(contract.intent?.complexity ?? descriptor2.complexity);
+  intent.repo_size_bucket = normalizeRepoSizeBucket(contract.intent?.repo_size_bucket ?? descriptor2.repo_size_bucket);
   intent.files_touched_bucket = normalizeFilesTouchedBucket(
     contract.intent?.files_touched_bucket ?? bucketFilesTouched(diffStats?.filesTouched)
   );
