@@ -1,5 +1,9 @@
 # Task-cost contract (v1)
 
+> **1.2.0** adds queue, CI and repair lifecycle events
+> (`queue_lifecycle_event/v1`), keyed on attempt identity. See
+> [`queue-lifecycle.md`](./queue-lifecycle.md).
+>
 > **1.1.0** adds attempt identity (`task_attempt/v1`): which run and stage
 > attempt every record belongs to, and which writes may change it. See
 > [`attempt-identity.md`](./attempt-identity.md).
@@ -17,12 +21,13 @@ Everything is exported from `@hokusai/core`. Fixtures live in
 
 | Constant | Value | Versions |
 | --- | --- | --- |
-| `TASK_COST_CONTRACT_VERSION` | `1.1.0` | The contract as a whole (schemas + reducer semantics), SemVer |
+| `TASK_COST_CONTRACT_VERSION` | `1.2.0` | The contract as a whole (schemas + reducer semantics), SemVer |
 | `TASK_COST_EVENT_SCHEMA_VERSION` | `task_cost_event/v1` | `TaskCostEventV1` |
 | `TASK_COST_SUMMARY_SCHEMA_VERSION` | `task_cost_summary/v1` | `TaskCostSummaryV1` |
 | `TASK_COST_LEDGER_SCHEMA_VERSION` | `task_cost_ledger/v1` | `TaskCostLedgerV1` |
 | `TASK_COST_ADAPTER_CONTRACT_VERSION` | `task_cost_adapter/v1` | `TaskCostAdapterV1` |
 | `TASK_ATTEMPT_SCHEMA_VERSION` | `task_attempt/v1` | Attempt identity records ([`attempt-identity.md`](./attempt-identity.md)) |
+| `QUEUE_LIFECYCLE_EVENT_SCHEMA_VERSION` | `queue_lifecycle_event/v1` | Queue, CI and repair lifecycle events ([`queue-lifecycle.md`](./queue-lifecycle.md)) |
 | `PROVIDER_CONTRACT_VERSIONS` | `claude-code/1`, `codex/2`, `native/1`, `pi/1` | Each harness's parsing contract |
 
 `claude-code/1` mirrors Wavemill's existing value (HOK-2958). `codex/2`
@@ -52,6 +57,12 @@ oracle.
   `parent_id` / `retry_of` edges, and the control-vs-evidence write rules.
   Events may carry `run_id` and `stage_attempt_id` (optional, 1.1.0). See
   [`attempt-identity.md`](./attempt-identity.md).
+- **Queue lifecycle event** (`queue_lifecycle_event/v1`, 1.2.0): one
+  append-only fact about integration or repair (enqueue, candidate, check run,
+  ejection, rerun, rebase, repair commit, recovery decision, merge, dequeue,
+  abandon, review round), keyed on `TaskAttemptRef`. Repair cost stays in
+  cost events, linked by `cost_event_ids`. See
+  [`queue-lifecycle.md`](./queue-lifecycle.md).
 - **Adapter** (`TaskCostAdapterV1`): a synchronous interface
   (`describeCapabilities`, `pollLedger`, `summarizeTask`). Types only.
 
@@ -242,4 +253,6 @@ appears.
 See [`wavemill-parity.md`](./wavemill-parity.md) for the migration oracle.
 
 Attempt-identity fixtures (`taskAttemptFixtures`, 8 modules) are listed in
-[`attempt-identity.md`](./attempt-identity.md#fixtures).
+[`attempt-identity.md`](./attempt-identity.md#fixtures). Queue-lifecycle
+fixtures (`queueLifecycleFixtures`, 8 modules) are listed in
+[`queue-lifecycle.md`](./queue-lifecycle.md#fixtures).

@@ -8853,8 +8853,8 @@ function validateTaskCostSummaryV1(value) {
   requireEnum(record.join_confidence, TASK_COST_JOIN_CONFIDENCES, "summary.join_confidence");
   requireTimestamp(record.collected_at, "summary.collected_at");
   const eventCount = requireCount(record.event_count, "summary.event_count");
-  const eventIds = requireStringArray(record.event_ids, "summary.event_ids", requireId);
-  if (eventIds.length !== eventCount) fail2("summary.event_count must equal event_ids.length");
+  const eventIds2 = requireStringArray(record.event_ids, "summary.event_ids", requireId);
+  if (eventIds2.length !== eventCount) fail2("summary.event_count must equal event_ids.length");
   requireDiagnostics(record.diagnostics, "summary.diagnostics");
 }
 function validateTaskCostLedgerV1(value) {
@@ -9365,6 +9365,1349 @@ var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
             "$ref": "#/$defs/mintedId"
           }
         }
+      }
+    }
+  }
+);
+
+// ../core/src/task-cost/queue-lifecycle.ts
+var QUEUE_LIFECYCLE_EVENT_WRITE_CLASS = Object.freeze({
+  enqueued: "control",
+  candidate_prepared: "control",
+  check_run_completed: "evidence",
+  ejected: "control",
+  rerun_requested: "control",
+  rebase_performed: "evidence",
+  repair_commit_pushed: "evidence",
+  recovery_decision: "control",
+  merged: "control",
+  dequeued: "control",
+  abandoned: "control",
+  review_round_started: "control",
+  review_round_completed: "evidence"
+});
+var QUEUE_LIFECYCLE_EVENT_SCOPES = Object.freeze({
+  enqueued: ["pr"],
+  candidate_prepared: ["candidate"],
+  check_run_completed: ["pr", "candidate"],
+  ejected: ["pr"],
+  rerun_requested: ["pr", "candidate"],
+  rebase_performed: ["pr"],
+  repair_commit_pushed: ["pr"],
+  recovery_decision: ["pr", "candidate"],
+  merged: ["pr"],
+  dequeued: ["pr"],
+  abandoned: ["pr"],
+  review_round_started: ["pr"],
+  review_round_completed: ["pr"]
+});
+
+// ../core/src/task-cost/queue-lifecycle-schema.ts
+var QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "queue-lifecycle-event.v1.schema.json",
+    "title": "QueueLifecycleEventV1",
+    "description": "Queue, CI and repair lifecycle events for the task-cost contract (queue_lifecycle_event/v1, contract 1.2.0, HOK-3338 / MQ-1.2). Identity is task_attempt/v1: every event names its attempt (PR scope) or attempt_refs (candidate scope); event_id and candidate_id are minted idempotency keys. Control events (enqueued, candidate_prepared, ejected, rerun_requested, recovery_decision, merged, dequeued, abandoned, review_round_started) are accepted only for the current, unsettled run; evidence events (check_run_completed, rebase_performed, repair_commit_pushed, review_round_completed) are always accepted against their own attempt. Facts only: durations, failure classes and time-to-land are derived elsewhere. Absent means not reported; null is not used. Single-record shape only: cross-record rules are in reduceQueueLifecycleLog. Rules: packages/core/src/task-cost/queue-lifecycle.md. Readers ignore unknown fields.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/enqueued"
+      },
+      {
+        "$ref": "#/$defs/candidate_prepared"
+      },
+      {
+        "$ref": "#/$defs/check_run_completed"
+      },
+      {
+        "$ref": "#/$defs/ejected"
+      },
+      {
+        "$ref": "#/$defs/rerun_requested"
+      },
+      {
+        "$ref": "#/$defs/rebase_performed"
+      },
+      {
+        "$ref": "#/$defs/repair_commit_pushed"
+      },
+      {
+        "$ref": "#/$defs/recovery_decision"
+      },
+      {
+        "$ref": "#/$defs/merged"
+      },
+      {
+        "$ref": "#/$defs/dequeued"
+      },
+      {
+        "$ref": "#/$defs/abandoned"
+      },
+      {
+        "$ref": "#/$defs/review_round_started"
+      },
+      {
+        "$ref": "#/$defs/review_round_completed"
+      }
+    ],
+    "$defs": {
+      "schemaVersion": {
+        "const": "queue_lifecycle_event/v1"
+      },
+      "mintedId": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+        "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID. Minted, never a hash of anything."
+      },
+      "identifier": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      },
+      "slug": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "harness": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "model": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+      },
+      "version": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+      },
+      "checkKey": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+      },
+      "providerId": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+      },
+      "gitSha": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+      },
+      "positiveInt": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "probability": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "recoveryAction": {
+        "enum": [
+          "retry",
+          "rebase",
+          "fix",
+          "split",
+          "wait_for_predecessor",
+          "escalate"
+        ]
+      },
+      "propensitySource": {
+        "enum": [
+          "exact",
+          "deterministic",
+          "none"
+        ]
+      },
+      "attemptRef": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "run_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "stage_attempt_id": {
+            "$ref": "#/$defs/mintedId"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "description": "TaskAttemptRef from task_attempt/v1. Never a parallel run id."
+      },
+      "policy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/slug"
+          },
+          "version": {
+            "$ref": "#/$defs/version"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      },
+      "modelAttribution": {
+        "description": "Intended and observed models are separate. executed_model is present iff executed_model_evidence is not not_observed.",
+        "type": "object",
+        "properties": {
+          "harness": {
+            "$ref": "#/$defs/harness"
+          },
+          "intended_model": {
+            "$ref": "#/$defs/model"
+          },
+          "executed_model_evidence": {
+            "enum": [
+              "provider_response",
+              "harness_session",
+              "not_observed"
+            ]
+          },
+          "executed_model": {
+            "$ref": "#/$defs/model"
+          }
+        },
+        "required": [
+          "harness",
+          "executed_model_evidence"
+        ],
+        "if": {
+          "properties": {
+            "executed_model_evidence": {
+              "const": "not_observed"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "executed_model"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "executed_model"
+          ]
+        }
+      },
+      "actor": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/$defs/modelAttribution"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "agent"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "operator"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "description": "A human. Carries no identity.",
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "tend",
+                  "monitor"
+                ]
+              },
+              "component": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "github"
+              },
+              "app": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          }
+        ]
+      },
+      "anyModelField": {
+        "anyOf": [
+          {
+            "required": [
+              "harness"
+            ]
+          },
+          {
+            "required": [
+              "intended_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model_evidence"
+            ]
+          }
+        ]
+      },
+      "prScope": {
+        "description": "An event about one PR of one run.",
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "pr_number": {
+            "$ref": "#/$defs/positiveInt"
+          },
+          "head_sha": {
+            "$ref": "#/$defs/gitSha"
+          }
+        },
+        "required": [
+          "attempt",
+          "pr_number",
+          "head_sha"
+        ],
+        "not": {
+          "required": [
+            "attempt_refs"
+          ]
+        }
+      },
+      "candidateScope": {
+        "description": "An event about a merge candidate: one ref per run, predecessors first. A candidate is not a run.",
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/attemptRef"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "candidate_id",
+          "attempt_refs"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "attempt"
+              ]
+            },
+            {
+              "required": [
+                "pr_number"
+              ]
+            }
+          ]
+        }
+      },
+      "noCandidateLink": {
+        "not": {
+          "required": [
+            "candidate_id"
+          ]
+        }
+      },
+      "base": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "event_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "event_type": {
+            "enum": [
+              "enqueued",
+              "candidate_prepared",
+              "check_run_completed",
+              "ejected",
+              "rerun_requested",
+              "rebase_performed",
+              "repair_commit_pushed",
+              "recovery_decision",
+              "merged",
+              "dequeued",
+              "abandoned",
+              "review_round_started",
+              "review_round_completed"
+            ]
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "actor": {
+            "$ref": "#/$defs/actor"
+          }
+        },
+        "required": [
+          "schema_version",
+          "event_id",
+          "event_type",
+          "observed_at",
+          "actor"
+        ]
+      },
+      "enqueued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "enqueued"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "queue_depth": {
+                "$ref": "#/$defs/count"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run's PR entered the queue."
+      },
+      "candidate_prepared": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "candidate_prepared"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pr_number": {
+                      "$ref": "#/$defs/positiveInt"
+                    },
+                    "head_sha": {
+                      "$ref": "#/$defs/gitSha"
+                    }
+                  },
+                  "required": [
+                    "pr_number",
+                    "head_sha"
+                  ]
+                },
+                "minItems": 1
+              },
+              "candidate_sha": {
+                "$ref": "#/$defs/gitSha"
+              }
+            },
+            "required": [
+              "event_type",
+              "base_sha",
+              "entries"
+            ]
+          },
+          {
+            "$ref": "#/$defs/candidateScope"
+          }
+        ],
+        "description": "Control. The composition of a merge candidate; entries[i] is the PR of attempt_refs[i] (alignment is a validator rule)."
+      },
+      "check_run_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "check_run_completed"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "trigger": {
+                "enum": [
+                  "pull_request",
+                  "merge_group",
+                  "push",
+                  "other"
+                ]
+              },
+              "conclusion": {
+                "enum": [
+                  "success",
+                  "failure",
+                  "neutral",
+                  "cancelled",
+                  "skipped",
+                  "timed_out",
+                  "action_required",
+                  "stale",
+                  "startup_failure"
+                ]
+              },
+              "started_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              },
+              "completed_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt",
+              "head_sha",
+              "trigger",
+              "conclusion",
+              "completed_at"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Evidence. One completed check run attempt, verbatim from the provider."
+      },
+      "ejected": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "ejected"
+              },
+              "trigger": {
+                "enum": [
+                  "check_failed",
+                  "merge_conflict",
+                  "predecessor_ejected",
+                  "base_moved",
+                  "operator",
+                  "timeout",
+                  "policy",
+                  "unknown"
+                ]
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR left the queue or a candidate involuntarily. trigger is what the queue reported, not a failure class."
+      },
+      "rerun_requested": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rerun_requested"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Control. A check run attempt was re-run; the rerun is a later check_run_completed."
+      },
+      "rebase_performed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rebase_performed"
+              },
+              "previous_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "previous_base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "method": {
+                "enum": [
+                  "rebase",
+                  "merge"
+                ]
+              },
+              "had_conflicts": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "event_type",
+              "previous_head_sha",
+              "base_sha",
+              "method"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A head move onto a new base. Not a new attempt."
+      },
+      "repair_commit_pushed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "repair_commit_pushed"
+              },
+              "parent_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "commits_pushed": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              },
+              "cost_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/identifier"
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "parent_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A repair push; actor is the commit author."
+      },
+      "recovery_decision": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "recovery_decision"
+              },
+              "policy": {
+                "$ref": "#/$defs/policy"
+              },
+              "context": {
+                "type": "object",
+                "properties": {
+                  "as_of": {
+                    "$ref": "#/$defs/utcTimestamp"
+                  },
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "uniqueItems": true
+                  },
+                  "failing_check_keys": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/checkKey"
+                    }
+                  },
+                  "failure_class": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "$ref": "#/$defs/slug"
+                      },
+                      "labeler_version": {
+                        "$ref": "#/$defs/version"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "labeler_version"
+                    ]
+                  },
+                  "attempt_number": {
+                    "$ref": "#/$defs/positiveInt"
+                  },
+                  "base_moved_since_candidate": {
+                    "type": "boolean"
+                  },
+                  "queue_depth": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "properties": {
+                      "harness": {
+                        "$ref": "#/$defs/harness"
+                      },
+                      "executed_model": {
+                        "$ref": "#/$defs/model"
+                      },
+                      "task_type": {
+                        "$ref": "#/$defs/slug"
+                      }
+                    },
+                    "required": []
+                  },
+                  "flake_history": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "check_key": {
+                          "$ref": "#/$defs/checkKey"
+                        },
+                        "window_runs": {
+                          "$ref": "#/$defs/count"
+                        },
+                        "window_failures": {
+                          "$ref": "#/$defs/count"
+                        }
+                      },
+                      "required": [
+                        "check_key",
+                        "window_runs",
+                        "window_failures"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "as_of",
+                  "event_ids"
+                ],
+                "description": "Frozen decision-time snapshot. as_of <= observed_at and every event_id precedes the decision (validator and reducer rules)."
+              },
+              "available_actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/recoveryAction"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "chosen_action": {
+                "$ref": "#/$defs/recoveryAction"
+              },
+              "propensity_source": {
+                "$ref": "#/$defs/propensitySource"
+              },
+              "propensities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "$ref": "#/$defs/recoveryAction"
+                    },
+                    "probability": {
+                      "$ref": "#/$defs/probability"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "probability"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "event_type",
+              "policy",
+              "context",
+              "available_actions",
+              "chosen_action",
+              "propensity_source"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          },
+          {
+            "if": {
+              "properties": {
+                "propensity_source": {
+                  "const": "none"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "propensities"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "propensities"
+              ]
+            }
+          }
+        ],
+        "description": "Control. A self-contained recovery decision. propensities cover exactly available_actions and sum to 1 (validator rule); absent iff propensity_source is none."
+      },
+      "merged": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "merged"
+              },
+              "merge_commit_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "method": {
+                "enum": [
+                  "merge",
+                  "squash",
+                  "rebase"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "merge_commit_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR landed."
+      },
+      "dequeued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "dequeued"
+              },
+              "trigger": {
+                "enum": [
+                  "pr_closed",
+                  "head_changed",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Left the queue; the run may enqueue again."
+      },
+      "abandoned": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "abandoned"
+              },
+              "trigger": {
+                "enum": [
+                  "retry_budget_exhausted",
+                  "superseded",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run stops trying to land this PR."
+      },
+      "review_round_started": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_started"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage_attempt_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "harness": {
+                      "$ref": "#/$defs/harness"
+                    },
+                    "intended_model": {
+                      "$ref": "#/$defs/model"
+                    },
+                    "challenge": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "reviewer_key",
+                    "stage"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "executed_model"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "executed_model_evidence"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "minItems": 1
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "$ref": "#/$defs/policy"
+                  },
+                  "propensity_source": {
+                    "$ref": "#/$defs/propensitySource"
+                  },
+                  "propensity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "policy",
+                  "propensity_source"
+                ],
+                "if": {
+                  "properties": {
+                    "propensity_source": {
+                      "const": "none"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "propensity"
+                    ]
+                  }
+                },
+                "else": {
+                  "required": [
+                    "propensity"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "reviewers"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Which reviewers a round runs (intent) and the policy that chose them."
+      },
+      "review_round_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_completed"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "first_round_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/modelAttribution"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reviewer_key": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage_attempt_id": {
+                          "$ref": "#/$defs/mintedId"
+                        }
+                      },
+                      "required": [
+                        "reviewer_key",
+                        "stage"
+                      ]
+                    }
+                  ]
+                },
+                "minItems": 1
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "finding_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "blocking": {
+                      "type": "boolean"
+                    },
+                    "location": {
+                      "enum": [
+                        "first_round",
+                        "changed_since_first_round",
+                        "unchanged_since_first_round",
+                        "unknown"
+                      ]
+                    },
+                    "reflag_of": {
+                      "$ref": "#/$defs/mintedId"
+                    }
+                  },
+                  "required": [
+                    "finding_id",
+                    "reviewer_key",
+                    "blocking",
+                    "location"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "first_round_head_sha",
+              "reviewers",
+              "findings"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          },
+          {
+            "if": {
+              "properties": {
+                "round": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "round"
+              ]
+            },
+            "then": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "enum": [
+                          "first_round",
+                          "unknown"
+                        ]
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "reflag_of"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "not": {
+                          "const": "first_round"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Evidence. What a round's reviewers found; findings: [] is an observed clean round."
       }
     }
   }
@@ -11153,6 +12496,1052 @@ var twoPrMergeCandidate = (() => {
         { attempt_id: runB.id, evidence_kind: "check_run", latest_version: 1, write_ids: [checkB.write_id] }
       ],
       derived: []
+    }
+  };
+})();
+
+// ../core/src/fixtures/task-cost/queue/builders.ts
+function sha(n) {
+  return `c0de${n.toString(16).padStart(36, "0")}`;
+}
+var TEND = { kind: "tend", component: "merge-lane" };
+var WATCHDOG = { kind: "monitor", component: "ready-watchdog" };
+var GITHUB = { kind: "github", app: "merge-queue" };
+var ACTIONS = { kind: "github", app: "actions" };
+var OPERATOR = { kind: "operator" };
+function agent(executed, intended = executed, harness = "claude-code") {
+  return {
+    kind: "agent",
+    harness,
+    intended_model: intended,
+    executed_model_evidence: "provider_response",
+    executed_model: executed
+  };
+}
+function qe(input) {
+  const { t, ...rest } = input;
+  return { schema_version: "queue_lifecycle_event/v1", observed_at: at(t), ...rest };
+}
+function pr(attempt2, prNumber, headSha) {
+  return { attempt: attempt2, pr_number: prNumber, head_sha: headSha };
+}
+function decided(index, event17, decision2, reasons2) {
+  if (event17.schema_version !== "queue_lifecycle_event/v1") {
+    throw new TypeError(`stream entry ${index} is not a queue event`);
+  }
+  return {
+    index,
+    event_id: event17.event_id,
+    event_type: event17.event_type,
+    decision: decision2,
+    ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
+  };
+}
+function decisionsFor(stream, overrides = {}) {
+  const out = [];
+  for (const [index, entry] of stream.entries()) {
+    if (entry.schema_version !== "queue_lifecycle_event/v1") continue;
+    const [decision2, reasons2] = overrides[index] ?? ["accepted"];
+    out.push(decided(index, entry, decision2, reasons2));
+  }
+  return out;
+}
+function eventIds(...events17) {
+  return events17.map((event17) => event17.event_id);
+}
+
+// ../core/src/fixtures/task-cost/queue/fixtures.ts
+var BASE2 = sha(100);
+function candidateState(candidate, ejected = [], merged = []) {
+  const prepared = candidate;
+  return {
+    candidate_id: prepared.candidate_id,
+    base_sha: prepared.base_sha,
+    attempt_refs: prepared.attempt_refs,
+    entries: prepared.entries,
+    ejected_run_ids: ejected,
+    merged_run_ids: merged
+  };
+}
+var cleanMerge = (() => {
+  const run = attempt({ kind: "run", id: mint(1001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(1101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 101, sha(1)),
+    base_sha: BASE2,
+    queue_depth: 0
+  });
+  const candidate = qe({
+    event_id: mint(1102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 101, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const check = qe({
+    event_id: mint(1103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    head_sha: sha(2),
+    check_run_id: "5001",
+    check_key: "ci-test",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const merged = qe({
+    event_id: mint(1104),
+    event_type: "merged",
+    t: 95,
+    actor: GITHUB,
+    ...pr(runRef, 101, sha(1)),
+    merge_commit_sha: sha(2),
+    base_sha: BASE2,
+    candidate_id: mint(1201),
+    method: "merge"
+  });
+  const settled = outcome(mint(1301), runRef, "succeeded", 100);
+  const stream = [run, enqueued, candidate, check, merged, settled];
+  return {
+    name: "clean-merge",
+    description: "One PR is enqueued, prepared as a single-entry candidate, passes its merge_group check and merges. The run settles after the merge.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, check, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var flakeRerun = (() => {
+  const run = attempt({ kind: "run", id: mint(2001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const candidateId = mint(2201);
+  const scope = { candidate_id: candidateId, attempt_refs: [runRef] };
+  const enqueued = qe({
+    event_id: mint(2101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 102, sha(1)),
+    base_sha: BASE2
+  });
+  const candidate = qe({
+    event_id: mint(2102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    ...scope,
+    base_sha: BASE2,
+    entries: [{ pr_number: 102, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const unit = qe({
+    event_id: mint(2103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(25),
+    completed_at: at(80)
+  });
+  const e2eFailed = qe({
+    event_id: mint(2104),
+    event_type: "check_run_completed",
+    t: 121,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(25),
+    completed_at: at(120)
+  });
+  const decision2 = qe({
+    event_id: mint(2105),
+    event_type: "recovery_decision",
+    t: 125,
+    actor: TEND,
+    ...scope,
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(121),
+      event_ids: [e2eFailed.event_id],
+      failing_check_keys: ["ci-e2e"],
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 0,
+      flake_history: [{ check_key: "ci-e2e", window_runs: 20, window_failures: 3 }]
+    },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "retry",
+    propensity_source: "exact",
+    propensities: [
+      { action: "retry", probability: 0.8 },
+      { action: "rebase", probability: 0.2 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rerun = qe({
+    event_id: mint(2106),
+    event_type: "rerun_requested",
+    t: 126,
+    actor: TEND,
+    ...scope,
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    run_attempt: 1
+  });
+  const e2ePassed = qe({
+    event_id: mint(2107),
+    event_type: "check_run_completed",
+    t: 231,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6003",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 2,
+    conclusion: "success",
+    started_at: at(130),
+    completed_at: at(230)
+  });
+  const merged = qe({
+    event_id: mint(2108),
+    event_type: "merged",
+    t: 240,
+    actor: GITHUB,
+    ...pr(runRef, 102, sha(1)),
+    merge_commit_sha: sha(2),
+    candidate_id: candidateId
+  });
+  const settled = outcome(mint(2301), runRef, "succeeded", 250);
+  const stream = [run, enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged, settled];
+  return {
+    name: "flake-rerun",
+    description: "A merge_group e2e check fails on attempt 1. A randomized (exact-propensity) recovery decision chooses retry over rebase; the rerun is attempt 2 of the same check_key with a new check_run_id, passes, and the PR merges. Both attempts stay as facts.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var baseDriftRebase = (() => {
+  const run = attempt({ kind: "run", id: mint(3001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(3101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(3102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(3201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 103, head_sha: sha(1) }]
+  });
+  const ejected = qe({
+    event_id: mint(3103),
+    event_type: "ejected",
+    t: 60,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    trigger: "base_moved",
+    candidate_id: mint(3201)
+  });
+  const decision2 = qe({
+    event_id: mint(3104),
+    event_type: "recovery_decision",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: { as_of: at(60), event_ids: [ejected.event_id], attempt_number: 1, base_moved_since_candidate: true },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "rebase",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "rebase", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rebased = qe({
+    event_id: mint(3105),
+    event_type: "rebase_performed",
+    t: 70,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    previous_head_sha: sha(1),
+    previous_base_sha: BASE2,
+    base_sha: sha(101),
+    method: "rebase",
+    had_conflicts: false
+  });
+  const requeued = qe({
+    event_id: mint(3106),
+    event_type: "enqueued",
+    t: 75,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    base_sha: sha(101)
+  });
+  const second = qe({
+    event_id: mint(3107),
+    event_type: "candidate_prepared",
+    t: 80,
+    actor: TEND,
+    candidate_id: mint(3202),
+    attempt_refs: [runRef],
+    base_sha: sha(101),
+    entries: [{ pr_number: 103, head_sha: sha(3) }]
+  });
+  const check = qe({
+    event_id: mint(3108),
+    event_type: "check_run_completed",
+    t: 141,
+    actor: ACTIONS,
+    ...pr(runRef, 103, sha(3)),
+    check_run_id: "7001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(140)
+  });
+  const merged = qe({
+    event_id: mint(3109),
+    event_type: "merged",
+    t: 150,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    merge_commit_sha: sha(4),
+    base_sha: sha(101),
+    candidate_id: mint(3202),
+    method: "squash"
+  });
+  const settled = outcome(mint(3301), runRef, "succeeded", 160);
+  const stream = [run, enqueued, first, ejected, decision2, rebased, requeued, second, check, merged, settled];
+  return {
+    name: "base-drift-rebase",
+    description: "The base moves under a prepared candidate, so the PR is ejected (trigger base_moved). A deterministic decision rebases it; the head move is a rebase_performed evidence fact on the same run, not a new attempt. It re-enters in a new candidate on the new base and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, ejected, decision2, rebased, requeued, second, check, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var realFailureRepair = (() => {
+  const run = attempt({ kind: "run", id: mint(4001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(4101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(4102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(4201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(1) }]
+  });
+  const failed = qe({
+    event_id: mint(4103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(1)),
+    check_run_id: "8001",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const ejected = qe({
+    event_id: mint(4104),
+    event_type: "ejected",
+    t: 92,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    trigger: "check_failed",
+    candidate_id: mint(4201),
+    cause_event_ids: [failed.event_id]
+  });
+  const decision2 = qe({
+    event_id: mint(4105),
+    event_type: "recovery_decision",
+    t: 95,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(92),
+      event_ids: [failed.event_id, ejected.event_id],
+      failing_check_keys: ["ci-unit"],
+      failure_class: { label: "test-assertion", labeler_version: "mq-0.2.0" },
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 2,
+      provenance: { harness: "claude-code", executed_model: "claude-sonnet-5-5", task_type: "bugfix" },
+      flake_history: [{ check_key: "ci-unit", window_runs: 40, window_failures: 0 }]
+    },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "fix",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const repair = attempt({ kind: "stage_attempt", id: mint(4002), parent: run.id, stage: "repair", t: 100 });
+  const repairRef = ref2(run.id, repair.id);
+  const pushed = qe({
+    event_id: mint(4106),
+    event_type: "repair_commit_pushed",
+    t: 300,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(repairRef, 104, sha(5)),
+    parent_sha: sha(1),
+    commits_pushed: 1,
+    cause_event_ids: [decision2.event_id],
+    cost_event_ids: ["evt-repair-0001", "evt-repair-0002"]
+  });
+  const repairDone = outcome(mint(4301), repairRef, "succeeded", 301);
+  const requeued = qe({
+    event_id: mint(4107),
+    event_type: "enqueued",
+    t: 310,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    base_sha: BASE2
+  });
+  const second = qe({
+    event_id: mint(4108),
+    event_type: "candidate_prepared",
+    t: 320,
+    actor: TEND,
+    candidate_id: mint(4202),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(5) }]
+  });
+  const passed = qe({
+    event_id: mint(4109),
+    event_type: "check_run_completed",
+    t: 391,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(5)),
+    check_run_id: "8002",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(330),
+    completed_at: at(390)
+  });
+  const merged = qe({
+    event_id: mint(4110),
+    event_type: "merged",
+    t: 400,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    merge_commit_sha: sha(6),
+    candidate_id: mint(4202),
+    method: "squash"
+  });
+  const settled = outcome(mint(4302), runRef, "succeeded", 410);
+  const stream = [
+    run,
+    enqueued,
+    first,
+    failed,
+    ejected,
+    decision2,
+    repair,
+    pushed,
+    repairDone,
+    requeued,
+    second,
+    passed,
+    merged,
+    settled
+  ];
+  return {
+    name: "real-failure-repair",
+    description: "A unit check fails for real; the PR is ejected with the failed check as cause. A recovery decision snapshots only what preceded it and chooses fix. A repair stage attempt pushes a commit attributed to the agent with its provider-observed model and the cost events of the repair; the PR re-enters and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, failed, ejected, decision2, pushed, requeued, second, passed, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var cumulativePredecessorEjects = (() => {
+  const runA = attempt({ kind: "run", id: mint(5001), parent: TASK, t: 0 });
+  const runB = attempt({ kind: "run", id: mint(5002), parent: OTHER_TASK, task: OTHER_TASK, t: 1 });
+  const refA = ref2(runA.id);
+  const refB = ref2(runB.id, void 0, OTHER_TASK);
+  const enqA = qe({ event_id: mint(5101), event_type: "enqueued", t: 10, actor: TEND, ...pr(refA, 105, sha(1)), queue_depth: 0 });
+  const enqB = qe({ event_id: mint(5102), event_type: "enqueued", t: 11, actor: TEND, ...pr(refB, 106, sha(2)), queue_depth: 1 });
+  const c1 = mint(5201);
+  const cumulative = qe({
+    event_id: mint(5103),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 105, head_sha: sha(1) }, { pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(3)
+  });
+  const failed = qe({
+    event_id: mint(5104),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    head_sha: sha(3),
+    check_run_id: "9001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(90)
+  });
+  const ejectA = qe({
+    event_id: mint(5105),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refA, 105, sha(1)),
+    trigger: "check_failed",
+    candidate_id: c1,
+    cause_event_ids: [failed.event_id]
+  });
+  const ejectB = qe({
+    event_id: mint(5106),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    trigger: "predecessor_ejected",
+    candidate_id: c1,
+    cause_event_ids: [ejectA.event_id]
+  });
+  const wrongComposition = qe({
+    event_id: mint(5107),
+    event_type: "check_run_completed",
+    t: 95,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refB],
+    head_sha: sha(3),
+    check_run_id: "9002",
+    check_key: "ci-lint",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(94)
+  });
+  const c2 = mint(5202);
+  const alone = qe({
+    event_id: mint(5108),
+    event_type: "candidate_prepared",
+    t: 100,
+    actor: GITHUB,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(4)
+  });
+  const passed = qe({
+    event_id: mint(5109),
+    event_type: "check_run_completed",
+    t: 171,
+    actor: ACTIONS,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    head_sha: sha(4),
+    check_run_id: "9003",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(170)
+  });
+  const staleMerge = qe({
+    event_id: mint(5110),
+    event_type: "merged",
+    t: 175,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(3),
+    candidate_id: c1
+  });
+  const merged = qe({
+    event_id: mint(5111),
+    event_type: "merged",
+    t: 176,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(4),
+    candidate_id: c2
+  });
+  const settled = outcome(mint(5301), refB, "succeeded", 180);
+  const stream = [
+    runA,
+    runB,
+    enqA,
+    enqB,
+    cumulative,
+    failed,
+    ejectA,
+    ejectB,
+    wrongComposition,
+    alone,
+    passed,
+    staleMerge,
+    merged,
+    settled
+  ];
+  return {
+    name: "cumulative-candidate-predecessor-ejects",
+    description: "Two PRs from two tasks form one cumulative candidate (B is tested on top of A). The candidate check fails; A is ejected for the failure and B because its predecessor was ejected. B lands alone in a new candidate. A check naming a different composition under the old candidate id is rejected, as is a merge claimed under the candidate B was ejected from.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(wrongComposition)]: ["rejected", ["candidate_mismatch"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["ejected_from_candidate"]]
+      }),
+      accepted_event_ids: eventIds(enqA, enqB, cumulative, failed, ejectA, ejectB, alone, passed, merged),
+      candidates: [candidateState(cumulative, [runA.id, runB.id]), candidateState(alone, [], [runB.id])]
+    }
+  };
+})();
+var operatorManualCommit = (() => {
+  const run = attempt({ kind: "run", id: mint(6001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({ event_id: mint(6101), event_type: "enqueued", t: 10, actor: TEND, ...pr(runRef, 107, sha(1)) });
+  const failed = qe({
+    event_id: mint(6102),
+    event_type: "check_run_completed",
+    t: 61,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(1)),
+    check_run_id: "10001",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(60)
+  });
+  const dequeued = qe({
+    event_id: mint(6103),
+    event_type: "dequeued",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 107, sha(1)),
+    trigger: "policy"
+  });
+  const escalate = qe({
+    event_id: mint(6104),
+    event_type: "recovery_decision",
+    t: 65,
+    actor: WATCHDOG,
+    ...pr(runRef, 107, sha(1)),
+    policy: { name: "ready-watchdog", version: "3.2.0" },
+    context: { as_of: at(62), event_ids: [failed.event_id, dequeued.event_id], failing_check_keys: ["ci-typecheck"], attempt_number: 3 },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "escalate",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 0 },
+      { action: "escalate", probability: 1 }
+    ]
+  });
+  const manual = qe({
+    event_id: mint(6105),
+    event_type: "repair_commit_pushed",
+    t: 900,
+    actor: OPERATOR,
+    ...pr(runRef, 107, sha(7)),
+    parent_sha: sha(1),
+    commits_pushed: 2,
+    cause_event_ids: [escalate.event_id]
+  });
+  const requeued = qe({ event_id: mint(6106), event_type: "enqueued", t: 910, actor: OPERATOR, ...pr(runRef, 107, sha(7)) });
+  const passed = qe({
+    event_id: mint(6107),
+    event_type: "check_run_completed",
+    t: 961,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(7)),
+    check_run_id: "10002",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(960)
+  });
+  const merged = qe({
+    event_id: mint(6108),
+    event_type: "merged",
+    t: 970,
+    actor: TEND,
+    ...pr(runRef, 107, sha(7)),
+    merge_commit_sha: sha(8)
+  });
+  const settled = outcome(mint(6301), runRef, "succeeded", 980);
+  const stream = [run, enqueued, failed, dequeued, escalate, manual, requeued, passed, merged, settled];
+  return {
+    name: "operator-manual-commit",
+    description: "The watchdog escalates after a third failure. A human pushes the fix: the repair commit is attributed to the operator (no model, no stage attempt), so the agent is never credited with it. The PR then lands without a merge candidate.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, failed, dequeued, escalate, manual, requeued, passed, merged),
+      candidates: []
+    }
+  };
+})();
+var crashResumeDuplicate = (() => {
+  const run1 = attempt({ kind: "run", id: mint(7001), parent: TASK, t: 0 });
+  const ref1 = ref2(run1.id);
+  const enqueued = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 1
+  });
+  const candidate = qe({
+    event_id: mint(7102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(7201),
+    attempt_refs: [ref1],
+    base_sha: BASE2,
+    entries: [{ pr_number: 108, head_sha: sha(1) }]
+  });
+  const check = qe({
+    event_id: mint(7103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(80)
+  });
+  const replayEnqueued = { ...enqueued };
+  const replayCandidate = JSON.parse(JSON.stringify(candidate));
+  const reorderedCheck = Object.fromEntries(Object.entries(check).reverse());
+  const conflicting = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 85,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 0
+  });
+  const run2 = attempt({ kind: "run", id: mint(7002), parent: TASK, t: 100 });
+  const ref22 = ref2(run2.id);
+  const staleMerge = qe({
+    event_id: mint(7104),
+    event_type: "merged",
+    t: 110,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    merge_commit_sha: sha(2)
+  });
+  const lateCheck = qe({
+    event_id: mint(7105),
+    event_type: "check_run_completed",
+    t: 111,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11002",
+    check_key: "ci-lint",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(79)
+  });
+  const enqueued2 = qe({ event_id: mint(7106), event_type: "enqueued", t: 200, actor: TEND, ...pr(ref22, 108, sha(9)) });
+  const merged2 = qe({
+    event_id: mint(7107),
+    event_type: "merged",
+    t: 260,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    merge_commit_sha: sha(10)
+  });
+  const settled = outcome(mint(7301), ref22, "succeeded", 270);
+  const lateDequeue = qe({
+    event_id: mint(7108),
+    event_type: "dequeued",
+    t: 280,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    trigger: "pr_closed"
+  });
+  const stream = [
+    run1,
+    enqueued,
+    candidate,
+    check,
+    replayEnqueued,
+    replayCandidate,
+    reorderedCheck,
+    conflicting,
+    run2,
+    staleMerge,
+    lateCheck,
+    enqueued2,
+    merged2,
+    settled,
+    lateDequeue
+  ];
+  return {
+    name: "crash-resume-duplicate",
+    description: "After a crash the writer re-emits three events (one with reordered keys): each is a duplicate by event_id and changes nothing. A different fact under a reused event_id is rejected, never overwriting. After a relaunch, a control write from the old run is stale while its late check-run evidence is kept; once run 2 settles, a late dequeue is rejected.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(replayEnqueued)]: ["duplicate"],
+        [stream.indexOf(replayCandidate)]: ["duplicate"],
+        [stream.indexOf(reorderedCheck)]: ["duplicate"],
+        [stream.indexOf(conflicting)]: ["rejected", ["event_id_conflict"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["stale_run"]],
+        [stream.indexOf(lateDequeue)]: ["rejected", ["settled"]]
+      }),
+      accepted_event_ids: eventIds(enqueued, candidate, check, lateCheck, enqueued2, merged2),
+      candidates: [candidateState(candidate)]
+    }
+  };
+})();
+var multiRoundReview = (() => {
+  const run = attempt({ kind: "run", id: mint(8001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const reviewFlow = { kind: "monitor", component: "review-flow" };
+  const r1Correctness = attempt({ kind: "stage_attempt", id: mint(8002), parent: run.id, stage: "review", t: 10 });
+  const r1Security = attempt({ kind: "stage_attempt", id: mint(8003), parent: run.id, stage: "security-review", t: 10 });
+  const started1 = qe({
+    event_id: mint(8101),
+    event_type: "review_round_started",
+    t: 11,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    reviewers: [
+      { reviewer_key: "correctness", stage: "review", stage_attempt_id: r1Correctness.id, harness: "codex", intended_model: "gpt-5.5" },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        challenge: true
+      }
+    ],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "exact", propensity: 0.25 }
+  });
+  const f1 = mint(8401);
+  const f2 = mint(8402);
+  const completed1 = qe({
+    event_id: mint(8102),
+    event_type: "review_round_completed",
+    t: 200,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r1Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        executed_model_evidence: "not_observed"
+      }
+    ],
+    findings: [
+      { finding_id: f1, reviewer_key: "correctness", blocking: true, location: "first_round" },
+      { finding_id: f2, reviewer_key: "security", blocking: false, location: "first_round" }
+    ]
+  });
+  const fix1 = qe({
+    event_id: mint(8103),
+    event_type: "repair_commit_pushed",
+    t: 400,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(11)),
+    parent_sha: sha(1),
+    cause_event_ids: [completed1.event_id]
+  });
+  const r2Correctness = attempt({ kind: "stage_attempt", id: mint(8004), parent: run.id, stage: "review", t: 410 });
+  const started2 = qe({
+    event_id: mint(8104),
+    event_type: "review_round_started",
+    t: 411,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r2Correctness.id, harness: "codex", intended_model: "gpt-5.5" }],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "deterministic", propensity: 1 }
+  });
+  const completed2 = qe({
+    event_id: mint(8105),
+    event_type: "review_round_completed",
+    t: 600,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r2Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: [
+      { finding_id: mint(8403), reviewer_key: "correctness", blocking: true, location: "unchanged_since_first_round", reflag_of: f2 },
+      { finding_id: mint(8404), reviewer_key: "correctness", blocking: false, location: "unchanged_since_first_round" },
+      { finding_id: mint(8405), reviewer_key: "correctness", blocking: true, location: "changed_since_first_round" }
+    ]
+  });
+  const fix2 = qe({
+    event_id: mint(8106),
+    event_type: "repair_commit_pushed",
+    t: 800,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(12)),
+    parent_sha: sha(11),
+    cause_event_ids: [completed2.event_id]
+  });
+  const r3Correctness = attempt({ kind: "stage_attempt", id: mint(8005), parent: run.id, stage: "review", t: 810 });
+  const started3 = qe({
+    event_id: mint(8107),
+    event_type: "review_round_started",
+    t: 811,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r3Correctness.id, harness: "codex", intended_model: "gpt-5.5" }]
+  });
+  const completed3 = qe({
+    event_id: mint(8108),
+    event_type: "review_round_completed",
+    t: 950,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r3Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: []
+  });
+  const stream = [
+    run,
+    r1Correctness,
+    r1Security,
+    started1,
+    completed1,
+    fix1,
+    r2Correctness,
+    started2,
+    completed2,
+    fix2,
+    r3Correctness,
+    started3,
+    completed3
+  ];
+  return {
+    name: "multi-round-review",
+    description: "Three review rounds. Round 1 runs two reviewers chosen with an exact propensity; the challenge reviewer has no observed model, so none is recorded. Round 2 re-flags a round-1 finding and raises a new one on code round 1 already saw (unchanged_since_first_round), plus one on changed lines. Round 3 is an observed clean round (findings: []).",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(started1, completed1, fix1, started2, completed2, fix2, started3, completed3),
+      candidates: []
     }
   };
 })();
