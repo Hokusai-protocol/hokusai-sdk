@@ -1,0 +1,1307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "queue-lifecycle-event.v1.schema.json",
+  "title": "QueueLifecycleEventV1",
+  "description": "Queue, CI and repair lifecycle events for the task-cost contract (queue_lifecycle_event/v1, contract 1.2.0, HOK-3338 / MQ-1.2). Identity is task_attempt/v1: every event names its attempt (PR scope) or attempt_refs (candidate scope); event_id and candidate_id are minted idempotency keys. Control events (enqueued, candidate_prepared, ejected, rerun_requested, recovery_decision, merged, dequeued, abandoned, review_round_started) are accepted only for the current, unsettled run; evidence events (check_run_completed, rebase_performed, repair_commit_pushed, review_round_completed) are always accepted against their own attempt. Facts only: durations, failure classes and time-to-land are derived elsewhere. Absent means not reported; null is not used. Single-record shape only: cross-record rules are in reduceQueueLifecycleLog. Rules: packages/core/src/task-cost/queue-lifecycle.md. Readers ignore unknown fields.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/enqueued"
+    },
+    {
+      "$ref": "#/$defs/candidate_prepared"
+    },
+    {
+      "$ref": "#/$defs/check_run_completed"
+    },
+    {
+      "$ref": "#/$defs/ejected"
+    },
+    {
+      "$ref": "#/$defs/rerun_requested"
+    },
+    {
+      "$ref": "#/$defs/rebase_performed"
+    },
+    {
+      "$ref": "#/$defs/repair_commit_pushed"
+    },
+    {
+      "$ref": "#/$defs/recovery_decision"
+    },
+    {
+      "$ref": "#/$defs/merged"
+    },
+    {
+      "$ref": "#/$defs/dequeued"
+    },
+    {
+      "$ref": "#/$defs/abandoned"
+    },
+    {
+      "$ref": "#/$defs/review_round_started"
+    },
+    {
+      "$ref": "#/$defs/review_round_completed"
+    }
+  ],
+  "$defs": {
+    "schemaVersion": {
+      "const": "queue_lifecycle_event/v1"
+    },
+    "mintedId": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+      "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID. Minted, never a hash of anything."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "harness": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "model": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+    },
+    "checkKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+    },
+    "providerId": {
+      "type": "string",
+      "pattern": "^[0-9]{1,20}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+    },
+    "gitSha": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "positiveInt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "recoveryAction": {
+      "enum": [
+        "retry",
+        "rebase",
+        "fix",
+        "split",
+        "wait_for_predecessor",
+        "escalate"
+      ]
+    },
+    "propensitySource": {
+      "enum": [
+        "exact",
+        "deterministic",
+        "none"
+      ]
+    },
+    "attemptRef": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "run_id": {
+          "$ref": "#/$defs/mintedId"
+        },
+        "stage_attempt_id": {
+          "$ref": "#/$defs/mintedId"
+        }
+      },
+      "required": [
+        "task_id",
+        "run_id"
+      ],
+      "description": "TaskAttemptRef from task_attempt/v1. Never a parallel run id."
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/slug"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "modelAttribution": {
+      "description": "Intended and observed models are separate. executed_model is present iff executed_model_evidence is not not_observed.",
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/harness"
+        },
+        "intended_model": {
+          "$ref": "#/$defs/model"
+        },
+        "executed_model_evidence": {
+          "enum": [
+            "provider_response",
+            "harness_session",
+            "not_observed"
+          ]
+        },
+        "executed_model": {
+          "$ref": "#/$defs/model"
+        }
+      },
+      "required": [
+        "harness",
+        "executed_model_evidence"
+      ],
+      "if": {
+        "properties": {
+          "executed_model_evidence": {
+            "const": "not_observed"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "executed_model"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "executed_model"
+        ]
+      }
+    },
+    "actor": {
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/modelAttribution"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "agent"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "operator"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "A human. Carries no identity.",
+          "not": {
+            "$ref": "#/$defs/anyModelField"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "tend",
+                "monitor"
+              ]
+            },
+            "component": {
+              "$ref": "#/$defs/slug"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "not": {
+            "$ref": "#/$defs/anyModelField"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "github"
+            },
+            "app": {
+              "$ref": "#/$defs/slug"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "not": {
+            "$ref": "#/$defs/anyModelField"
+          }
+        }
+      ]
+    },
+    "anyModelField": {
+      "anyOf": [
+        {
+          "required": [
+            "harness"
+          ]
+        },
+        {
+          "required": [
+            "intended_model"
+          ]
+        },
+        {
+          "required": [
+            "executed_model"
+          ]
+        },
+        {
+          "required": [
+            "executed_model_evidence"
+          ]
+        }
+      ]
+    },
+    "prScope": {
+      "description": "An event about one PR of one run.",
+      "type": "object",
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/attemptRef"
+        },
+        "pr_number": {
+          "$ref": "#/$defs/positiveInt"
+        },
+        "head_sha": {
+          "$ref": "#/$defs/gitSha"
+        }
+      },
+      "required": [
+        "attempt",
+        "pr_number",
+        "head_sha"
+      ],
+      "not": {
+        "required": [
+          "attempt_refs"
+        ]
+      }
+    },
+    "candidateScope": {
+      "description": "An event about a merge candidate: one ref per run, predecessors first. A candidate is not a run.",
+      "type": "object",
+      "properties": {
+        "candidate_id": {
+          "$ref": "#/$defs/mintedId"
+        },
+        "attempt_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "candidate_id",
+        "attempt_refs"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "attempt"
+            ]
+          },
+          {
+            "required": [
+              "pr_number"
+            ]
+          }
+        ]
+      }
+    },
+    "noCandidateLink": {
+      "not": {
+        "required": [
+          "candidate_id"
+        ]
+      }
+    },
+    "base": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schemaVersion"
+        },
+        "event_id": {
+          "$ref": "#/$defs/mintedId"
+        },
+        "event_type": {
+          "enum": [
+            "enqueued",
+            "candidate_prepared",
+            "check_run_completed",
+            "ejected",
+            "rerun_requested",
+            "rebase_performed",
+            "repair_commit_pushed",
+            "recovery_decision",
+            "merged",
+            "dequeued",
+            "abandoned",
+            "review_round_started",
+            "review_round_completed"
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "actor": {
+          "$ref": "#/$defs/actor"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "observed_at",
+        "actor"
+      ]
+    },
+    "enqueued": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "enqueued"
+            },
+            "base_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "queue_depth": {
+              "$ref": "#/$defs/count"
+            }
+          },
+          "required": [
+            "event_type"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        }
+      ],
+      "description": "Control. The run's PR entered the queue."
+    },
+    "candidate_prepared": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "candidate_prepared"
+            },
+            "base_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pr_number": {
+                    "$ref": "#/$defs/positiveInt"
+                  },
+                  "head_sha": {
+                    "$ref": "#/$defs/gitSha"
+                  }
+                },
+                "required": [
+                  "pr_number",
+                  "head_sha"
+                ]
+              },
+              "minItems": 1
+            },
+            "candidate_sha": {
+              "$ref": "#/$defs/gitSha"
+            }
+          },
+          "required": [
+            "event_type",
+            "base_sha",
+            "entries"
+          ]
+        },
+        {
+          "$ref": "#/$defs/candidateScope"
+        }
+      ],
+      "description": "Control. The composition of a merge candidate; entries[i] is the PR of attempt_refs[i] (alignment is a validator rule)."
+    },
+    "check_run_completed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "check_run_completed"
+            },
+            "check_run_id": {
+              "$ref": "#/$defs/providerId"
+            },
+            "check_key": {
+              "$ref": "#/$defs/checkKey"
+            },
+            "run_attempt": {
+              "$ref": "#/$defs/positiveInt"
+            },
+            "head_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "trigger": {
+              "enum": [
+                "pull_request",
+                "merge_group",
+                "push",
+                "other"
+              ]
+            },
+            "conclusion": {
+              "enum": [
+                "success",
+                "failure",
+                "neutral",
+                "cancelled",
+                "skipped",
+                "timed_out",
+                "action_required",
+                "stale",
+                "startup_failure"
+              ]
+            },
+            "started_at": {
+              "$ref": "#/$defs/utcTimestamp"
+            },
+            "completed_at": {
+              "$ref": "#/$defs/utcTimestamp"
+            }
+          },
+          "required": [
+            "event_type",
+            "check_run_id",
+            "check_key",
+            "run_attempt",
+            "head_sha",
+            "trigger",
+            "conclusion",
+            "completed_at"
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/prScope"
+                },
+                {
+                  "$ref": "#/$defs/noCandidateLink"
+                }
+              ]
+            },
+            {
+              "$ref": "#/$defs/candidateScope"
+            }
+          ]
+        }
+      ],
+      "description": "Evidence. One completed check run attempt, verbatim from the provider."
+    },
+    "ejected": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "ejected"
+            },
+            "trigger": {
+              "enum": [
+                "check_failed",
+                "merge_conflict",
+                "predecessor_ejected",
+                "base_moved",
+                "operator",
+                "timeout",
+                "policy",
+                "unknown"
+              ]
+            },
+            "candidate_id": {
+              "$ref": "#/$defs/mintedId"
+            },
+            "cause_event_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "event_type",
+            "trigger"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        }
+      ],
+      "description": "Control. The PR left the queue or a candidate involuntarily. trigger is what the queue reported, not a failure class."
+    },
+    "rerun_requested": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "rerun_requested"
+            },
+            "check_run_id": {
+              "$ref": "#/$defs/providerId"
+            },
+            "check_key": {
+              "$ref": "#/$defs/checkKey"
+            },
+            "run_attempt": {
+              "$ref": "#/$defs/positiveInt"
+            }
+          },
+          "required": [
+            "event_type",
+            "check_run_id",
+            "check_key",
+            "run_attempt"
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/prScope"
+                },
+                {
+                  "$ref": "#/$defs/noCandidateLink"
+                }
+              ]
+            },
+            {
+              "$ref": "#/$defs/candidateScope"
+            }
+          ]
+        }
+      ],
+      "description": "Control. A check run attempt was re-run; the rerun is a later check_run_completed."
+    },
+    "rebase_performed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "rebase_performed"
+            },
+            "previous_head_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "previous_base_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "base_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "method": {
+              "enum": [
+                "rebase",
+                "merge"
+              ]
+            },
+            "had_conflicts": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "event_type",
+            "previous_head_sha",
+            "base_sha",
+            "method"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        }
+      ],
+      "description": "Evidence. A head move onto a new base. Not a new attempt."
+    },
+    "repair_commit_pushed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "repair_commit_pushed"
+            },
+            "parent_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "commits_pushed": {
+              "$ref": "#/$defs/positiveInt"
+            },
+            "cause_event_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "uniqueItems": true
+            },
+            "cost_event_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          "required": [
+            "event_type",
+            "parent_sha"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        }
+      ],
+      "description": "Evidence. A repair push; actor is the commit author."
+    },
+    "recovery_decision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "recovery_decision"
+            },
+            "policy": {
+              "$ref": "#/$defs/policy"
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "as_of": {
+                  "$ref": "#/$defs/utcTimestamp"
+                },
+                "event_ids": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/mintedId"
+                  },
+                  "uniqueItems": true
+                },
+                "failing_check_keys": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/checkKey"
+                  }
+                },
+                "failure_class": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "labeler_version": {
+                      "$ref": "#/$defs/version"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "labeler_version"
+                  ]
+                },
+                "attempt_number": {
+                  "$ref": "#/$defs/positiveInt"
+                },
+                "base_moved_since_candidate": {
+                  "type": "boolean"
+                },
+                "queue_depth": {
+                  "$ref": "#/$defs/count"
+                },
+                "provenance": {
+                  "type": "object",
+                  "properties": {
+                    "harness": {
+                      "$ref": "#/$defs/harness"
+                    },
+                    "executed_model": {
+                      "$ref": "#/$defs/model"
+                    },
+                    "task_type": {
+                      "$ref": "#/$defs/slug"
+                    }
+                  },
+                  "required": []
+                },
+                "flake_history": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "check_key": {
+                        "$ref": "#/$defs/checkKey"
+                      },
+                      "window_runs": {
+                        "$ref": "#/$defs/count"
+                      },
+                      "window_failures": {
+                        "$ref": "#/$defs/count"
+                      }
+                    },
+                    "required": [
+                      "check_key",
+                      "window_runs",
+                      "window_failures"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "as_of",
+                "event_ids"
+              ],
+              "description": "Frozen decision-time snapshot. as_of <= observed_at and every event_id precedes the decision (validator and reducer rules)."
+            },
+            "available_actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/recoveryAction"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "chosen_action": {
+              "$ref": "#/$defs/recoveryAction"
+            },
+            "propensity_source": {
+              "$ref": "#/$defs/propensitySource"
+            },
+            "propensities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "$ref": "#/$defs/recoveryAction"
+                  },
+                  "probability": {
+                    "$ref": "#/$defs/probability"
+                  }
+                },
+                "required": [
+                  "action",
+                  "probability"
+                ]
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "event_type",
+            "policy",
+            "context",
+            "available_actions",
+            "chosen_action",
+            "propensity_source"
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/prScope"
+                },
+                {
+                  "$ref": "#/$defs/noCandidateLink"
+                }
+              ]
+            },
+            {
+              "$ref": "#/$defs/candidateScope"
+            }
+          ]
+        },
+        {
+          "if": {
+            "properties": {
+              "propensity_source": {
+                "const": "none"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "propensities"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "propensities"
+            ]
+          }
+        }
+      ],
+      "description": "Control. A self-contained recovery decision. propensities cover exactly available_actions and sum to 1 (validator rule); absent iff propensity_source is none."
+    },
+    "merged": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "merged"
+            },
+            "merge_commit_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "base_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "candidate_id": {
+              "$ref": "#/$defs/mintedId"
+            },
+            "method": {
+              "enum": [
+                "merge",
+                "squash",
+                "rebase"
+              ]
+            }
+          },
+          "required": [
+            "event_type",
+            "merge_commit_sha"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        }
+      ],
+      "description": "Control. The PR landed."
+    },
+    "dequeued": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "dequeued"
+            },
+            "trigger": {
+              "enum": [
+                "pr_closed",
+                "head_changed",
+                "operator",
+                "policy",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "event_type",
+            "trigger"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        }
+      ],
+      "description": "Control. Left the queue; the run may enqueue again."
+    },
+    "abandoned": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "abandoned"
+            },
+            "trigger": {
+              "enum": [
+                "retry_budget_exhausted",
+                "superseded",
+                "operator",
+                "policy",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "event_type",
+            "trigger"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        }
+      ],
+      "description": "Control. The run stops trying to land this PR."
+    },
+    "review_round_started": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "review_round_started"
+            },
+            "round": {
+              "$ref": "#/$defs/positiveInt"
+            },
+            "reviewers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reviewer_key": {
+                    "$ref": "#/$defs/slug"
+                  },
+                  "stage": {
+                    "$ref": "#/$defs/slug"
+                  },
+                  "stage_attempt_id": {
+                    "$ref": "#/$defs/mintedId"
+                  },
+                  "harness": {
+                    "$ref": "#/$defs/harness"
+                  },
+                  "intended_model": {
+                    "$ref": "#/$defs/model"
+                  },
+                  "challenge": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "reviewer_key",
+                  "stage"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "executed_model"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "executed_model_evidence"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "minItems": 1
+            },
+            "selection": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "$ref": "#/$defs/policy"
+                },
+                "propensity_source": {
+                  "$ref": "#/$defs/propensitySource"
+                },
+                "propensity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "policy",
+                "propensity_source"
+              ],
+              "if": {
+                "properties": {
+                  "propensity_source": {
+                    "const": "none"
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "propensity"
+                  ]
+                }
+              },
+              "else": {
+                "required": [
+                  "propensity"
+                ]
+              }
+            }
+          },
+          "required": [
+            "event_type",
+            "round",
+            "reviewers"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        }
+      ],
+      "description": "Control. Which reviewers a round runs (intent) and the policy that chose them."
+    },
+    "review_round_completed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "const": "review_round_completed"
+            },
+            "round": {
+              "$ref": "#/$defs/positiveInt"
+            },
+            "first_round_head_sha": {
+              "$ref": "#/$defs/gitSha"
+            },
+            "reviewers": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/modelAttribution"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reviewer_key": {
+                        "$ref": "#/$defs/slug"
+                      },
+                      "stage": {
+                        "$ref": "#/$defs/slug"
+                      },
+                      "stage_attempt_id": {
+                        "$ref": "#/$defs/mintedId"
+                      }
+                    },
+                    "required": [
+                      "reviewer_key",
+                      "stage"
+                    ]
+                  }
+                ]
+              },
+              "minItems": 1
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "finding_id": {
+                    "$ref": "#/$defs/mintedId"
+                  },
+                  "reviewer_key": {
+                    "$ref": "#/$defs/slug"
+                  },
+                  "blocking": {
+                    "type": "boolean"
+                  },
+                  "location": {
+                    "enum": [
+                      "first_round",
+                      "changed_since_first_round",
+                      "unchanged_since_first_round",
+                      "unknown"
+                    ]
+                  },
+                  "reflag_of": {
+                    "$ref": "#/$defs/mintedId"
+                  }
+                },
+                "required": [
+                  "finding_id",
+                  "reviewer_key",
+                  "blocking",
+                  "location"
+                ]
+              }
+            }
+          },
+          "required": [
+            "event_type",
+            "round",
+            "first_round_head_sha",
+            "reviewers",
+            "findings"
+          ]
+        },
+        {
+          "$ref": "#/$defs/prScope"
+        },
+        {
+          "$ref": "#/$defs/noCandidateLink"
+        },
+        {
+          "if": {
+            "properties": {
+              "round": {
+                "const": 1
+              }
+            },
+            "required": [
+              "round"
+            ]
+          },
+          "then": {
+            "properties": {
+              "findings": {
+                "items": {
+                  "properties": {
+                    "location": {
+                      "enum": [
+                        "first_round",
+                        "unknown"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "reflag_of"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "findings": {
+                "items": {
+                  "properties": {
+                    "location": {
+                      "not": {
+                        "const": "first_round"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "description": "Evidence. What a round's reviewers found; findings: [] is an observed clean round."
+    }
+  }
+}

@@ -16,7 +16,7 @@
  */
 
 /** SemVer of the task-cost contract (schemas + reducer semantics). */
-export const TASK_COST_CONTRACT_VERSION = '1.1.0';
+export const TASK_COST_CONTRACT_VERSION = '1.2.0';
 
 export const TASK_COST_EVENT_SCHEMA_VERSION = 'task_cost_event/v1';
 export const TASK_COST_SUMMARY_SCHEMA_VERSION = 'task_cost_summary/v1';
@@ -28,6 +28,11 @@ export const TASK_COST_ADAPTER_CONTRACT_VERSION = 'task_cost_adapter/v1';
  * `attempt-identity.md`.
  */
 export const TASK_ATTEMPT_SCHEMA_VERSION = 'task_attempt/v1';
+/**
+ * Queue, CI and repair lifecycle events (HOK-3338 / MQ-1.2, contract 1.2.0).
+ * Identity is `task_attempt/v1`. See `queue-lifecycle.md`.
+ */
+export const QUEUE_LIFECYCLE_EVENT_SCHEMA_VERSION = 'queue_lifecycle_event/v1';
 
 /**
  * Provider parsing-contract versions per harness. `claude-code/1` mirrors

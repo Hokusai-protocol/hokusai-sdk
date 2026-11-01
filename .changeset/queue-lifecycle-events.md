@@ -1,0 +1,5 @@
+---
+'@hokusai/core': minor
+---
+
+Add queue, CI and repair lifecycle events to the task-cost contract (HOK-3338 / MQ-1.2, contract `1.2.0`, `queue_lifecycle_event/v1`). Thirteen append-only event types (enqueued, candidate_prepared, check_run_completed, ejected, rerun_requested, rebase_performed, repair_commit_pushed, recovery_decision, merged, dequeued, abandoned, review_round_started, review_round_completed). Each is keyed on a `task_attempt/v1` ref (or one ref per run for a merge candidate) and has a minted `event_id`. Control events follow HOK-3372's current-and-unsettled rule and evidence events are always kept. Intended and observed models stay separate, and every event names its actor. Recovery decisions carry a frozen context, policy version and exact/deterministic/none propensities. Facts only: no durations, failure classes or counts. Ships the JSON schema (`queue-lifecycle-event.v1.schema.json`, `QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA`), validators, the `reduceQueueLifecycleLog` reference reducer, eight golden fixtures (`queueLifecycleFixtures`), and the per-fact owning-writer mapping and Model Match review in `queue-lifecycle.md`. Purely additive.
