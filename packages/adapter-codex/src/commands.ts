@@ -97,7 +97,11 @@ async function loadRoutedTask(
   store: LocalStore | undefined,
   correlationId: string,
 ): Promise<
-  | { routeContext: RouteContextProjection | undefined; inferenceLogId?: string }
+  | {
+      routeContext: RouteContextProjection | undefined;
+      inferenceLogId?: string;
+      recommendedModelId?: string;
+    }
   | undefined
 > {
   if (!store) {
@@ -115,9 +119,11 @@ async function loadRoutedTask(
   }
 
   const inferenceLogId = record.metadata?.inferenceLogId;
+  const recommendedModelId = record.metadata?.recommendedModelId;
   return {
     routeContext: parseRouteContext(record.metadata?.routeContext),
     ...(inferenceLogId ? { inferenceLogId } : {}),
+    ...(recommendedModelId ? { recommendedModelId } : {}),
   };
 }
 
@@ -216,6 +222,7 @@ export async function submitOutcome(
     report,
     routeContext: routed?.routeContext,
     inferenceLogId: routed?.inferenceLogId,
+    recommendedModelId: routed?.recommendedModelId,
     harness: 'codex',
     observedAt: new Date(timestamp).toISOString(),
     ...(args.actualCostUsd !== undefined

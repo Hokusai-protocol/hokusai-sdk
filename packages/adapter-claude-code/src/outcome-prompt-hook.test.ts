@@ -12,7 +12,7 @@ describe('runOutcomePromptHookCli', () => {
   it('prints a report prompt for successful post-run events', async () => {
     const result = await runOutcomePromptHookCli(
       [],
-      {},
+      { HOKUSAI_ACTUAL_MODEL: 'claude-sonnet-4-6' },
       {
         loadConfig: () =>
           Promise.resolve({
@@ -22,10 +22,12 @@ describe('runOutcomePromptHookCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () => Promise.resolve(latestRoute),
+        findRoutingDecisionImpl: ({ sessionId }) =>
+          Promise.resolve(sessionId === 'session-a' ? latestRoute : undefined),
         readStdin: () =>
           Promise.resolve(
             JSON.stringify({
+              session_id: 'session-a',
               status: 'success',
               transcript: 'All tests passed.',
             }),
@@ -39,7 +41,7 @@ describe('runOutcomePromptHookCli', () => {
       'Looks like this task succeeded - contribute this outcome to improve routing?',
     );
     expect(result.stdout).toContain(
-      '/hokusai:report --use-latest --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6',
+      '/hokusai:report --correlation-id task-1:2026-07-07T12:00:00.000Z --task-id task-1 --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted',
     );
     expect(result.stdout).toContain('--test-status passed');
   });
@@ -57,8 +59,9 @@ describe('runOutcomePromptHookCli', () => {
             outcomeSubmissionEnabled: false,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () => Promise.resolve(latestRoute),
-        readStdin: () => Promise.resolve(JSON.stringify({ status: 'success' })),
+        findRoutingDecisionImpl: ({ sessionId }) =>
+          Promise.resolve(sessionId === 'session-a' ? latestRoute : undefined),
+        readStdin: () => Promise.resolve(JSON.stringify({ session_id: 'session-a', status: 'success' })),
       },
     );
 
@@ -80,7 +83,8 @@ describe('runOutcomePromptHookCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () => Promise.resolve(latestRoute),
+        findRoutingDecisionImpl: ({ sessionId }) =>
+          Promise.resolve(sessionId === 'session-a' ? latestRoute : undefined),
         readStdin: () => Promise.resolve(JSON.stringify({ status: 'failed' })),
       },
     );
@@ -90,5 +94,28 @@ describe('runOutcomePromptHookCli', () => {
       stdout: '',
       stderr: '',
     });
+  });
+
+  it("offers no route when the event's session has none: never another session's newest route", async () => {
+    const result = await runOutcomePromptHookCli(
+      [],
+      { HOKUSAI_ACTUAL_MODEL: 'claude-sonnet-4-6' },
+      {
+        loadConfig: () =>
+          Promise.resolve({
+            apiKey: 'hk_live_test',
+            apiBaseUrl: 'https://api.hokus.ai',
+            routingConsentEnabled: true,
+            outcomeSubmissionEnabled: true,
+            modelAllowlist: ['claude-sonnet-4-6'],
+          }),
+        findRoutingDecisionImpl: ({ sessionId }) =>
+          Promise.resolve(sessionId === 'session-a' ? latestRoute : undefined),
+        readStdin: () => Promise.resolve(JSON.stringify({ session_id: 'session-b', status: 'success' })),
+      },
+    );
+
+    expect(result.stdout).not.toContain('/hokusai:report');
+    expect(result.stdout).not.toContain('task-1');
   });
 });

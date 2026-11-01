@@ -103,11 +103,12 @@ Claude Code additionally derives cost automatically from its statusline sidecar 
 
 ### 7. Submit a contribution row
 
-This is the canonical submission path. `buildHarnessOutcomeRow()` from [`packages/core/src/contribution/builder.ts`](../packages/core/src/contribution/builder.ts) produces a `harness_outcome_row/v1`, and `HokusaiClient.submitContribution()` posts a one-row batch to `POST /api/v1/models/30/contributions` with an `Idempotency-Key`.
+This is the canonical submission path. `buildHarnessOutcomeRow()` from [`packages/core/src/contribution/builder.ts`](../packages/core/src/contribution/builder.ts) produces a `harness_outcome_row/v2` (with `inference_log_id` and `overrides`), and `HokusaiClient.submitContribution()` posts a one-row batch to `POST /api/v1/models/30/contributions` with an `Idempotency-Key`.
 
 ```ts
 const row = buildHarnessOutcomeRow({
   inferenceLogId,                    // <- from route. Do not drop this.
+  routeOverrides: [],                // <- [] only if you ran exactly the recommended model.
   taskDescriptor,
   allowedModels,
   selectedModels: { coder: mapped.id, reviewer: mapped.id },

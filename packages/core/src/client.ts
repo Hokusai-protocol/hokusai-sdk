@@ -46,7 +46,7 @@ import {
   type CorrelationRecord,
   type CorrelationStorage,
 } from './storage.js';
-import type { HarnessOutcomeRowV1 } from './contribution/index.js';
+import type { HarnessOutcomeRow } from './contribution/index.js';
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -136,7 +136,7 @@ export interface ContributionRequestMetadata {
  * builder.
  */
 export interface ContributionRequest {
-  rows: HarnessOutcomeRowV1[];
+  rows: HarnessOutcomeRow[];
   metadata: ContributionRequestMetadata;
 }
 

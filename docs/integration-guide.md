@@ -151,8 +151,8 @@ await route.reportExternalOutcome({
 });
 ```
 
-For harness code, build `harness_outcome_row/v1` directly with
-`buildHarnessOutcomeRow()` and omit `inferenceLogId`. Do not send these rows to
+For harness code, build `harness_outcome_row/v2` directly with
+`buildHarnessOutcomeRow()` and omit both `inferenceLogId` and `routeOverrides`. Do not send these rows to
 the legacy `/outcomes` endpoint. The contribution endpoint will accept or reject
 the row and assign the fidelity tier. Route-less observations improve coverage,
 but they are not route-attributed unless the backend explicitly classifies them

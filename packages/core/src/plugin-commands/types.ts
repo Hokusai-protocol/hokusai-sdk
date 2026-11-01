@@ -4,7 +4,7 @@ import type {
   ConsentSettings,
   ContributionAcceptedResponse,
   HarnessPayloadPreview,
-  HarnessOutcomeRowV1,
+  HarnessOutcomeRowV2,
   HarnessRecommendation,
   HandoffInstructions,
   HokusaiClient,
@@ -95,6 +95,11 @@ export interface ReportOutcomeInputWithTaskId extends OutcomeReportInput {
   taskId: string;
   /** Model 30 inference log id captured at route time (route.routeId). */
   inferenceLogId?: string;
+  /**
+   * The model Hokusai recommended, from the stored route for this task. Used
+   * only to state overrides (`from`); never copied into the row.
+   */
+  routedRecommendedModelId?: string;
   /** Redacted routing inputs persisted at route time. */
   routeContext?: RouteContextProjection;
   /** Optional measured cost of the run, when the harness provides it. */
@@ -126,7 +131,12 @@ export interface RouteContextProjection {
   projectDirKey?: string;
 }
 
-export interface LatestRoutingDecision {
+/**
+ * A routing decision stored at route time, found by an exact key (correlation
+ * id, task id or session id). Never "the newest route": an outcome links only
+ * to the route recorded for the same task.
+ */
+export interface StoredRoutingDecision {
   correlationId: string;
   taskId: string;
   createdAt: string;
@@ -140,7 +150,7 @@ export interface ReportOutcomeResult {
   response?: OutcomeResponse;
   submitted: boolean;
   /** The harness contribution row built for the canonical submission. */
-  contributionRow?: HarnessOutcomeRowV1;
+  contributionRow?: HarnessOutcomeRowV2;
   /** The Model 30 contribution acceptance response, when submitted. */
   contribution?: ContributionAcceptedResponse;
 }
@@ -154,7 +164,7 @@ export interface PreviewReportOutcomeResult {
   report: OutcomeReport;
   preview: OutcomeReportPreview;
   /** The harness contribution row that would be submitted, when derivable. */
-  contributionRow?: HarnessOutcomeRowV1;
+  contributionRow?: HarnessOutcomeRowV2;
 }
 
 export interface RoutingDecisionSummary {

@@ -130,7 +130,7 @@ To preview and optionally submit an anonymized outcome report for a prior routin
 Then send a report against a stored route:
 
 ```text
-/hokusai:report --use-latest --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
+/hokusai:report --task-id <routed-task-id> --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
 ```
 
 The report command previews the exact anonymized payload first, then only submits after explicit approval. `hokusai-report --send` requires outcome contribution to be enabled through `/hokusai:privacy reporting on` or `HOKUSAI_OUTCOME_OPT_IN=true`.

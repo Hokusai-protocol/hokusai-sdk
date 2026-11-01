@@ -7,20 +7,23 @@
 import type { HokusaiAvailableModels, HokusaiTaskDescriptor } from './descriptor-types.js';
 import {
   COST_BUCKET_THRESHOLDS_USD,
-  HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+  HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2,
+  TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3,
   TIME_BUCKET_THRESHOLDS_SECONDS,
   validateContributionRow,
   type CandidatePoolMetadata,
   type HarnessOutcomeRowMetadata,
-  type HarnessOutcomeRowV1,
+  type HarnessOutcomeRowV2,
   type OutcomeLabels,
+  type RouteOverride,
   type RoleAvailableModels,
   type SparseCellMetadata,
   type SubmitDataContributionRow,
   type TechnicalTaskRouterContributionRowV1,
   type TechnicalTaskRouterContributionRowV2,
+  type TechnicalTaskRouterContributionRowV3,
   type TechnicalTaskRouterSelectedModels,
 } from './schema.js';
 
@@ -282,8 +285,42 @@ export function buildSubmitDataContributionRow(
   return validateContributionRow(row) as SubmitDataContributionRow;
 }
 
-export interface HarnessOutcomeRowProjection {
+/**
+ * The routing-outcome inputs every row builder takes (HOK-3364). When the task
+ * was routed by Hokusai, pass its `inferenceLogId` **and** the overrides the
+ * harness applied (`[]` if it ran exactly what Hokusai recommended). There is
+ * no default: a builder never assumes the recommendation was followed.
+ */
+export interface RoutingOutcomeProjection {
   inferenceLogId?: string;
+  routeOverrides?: RouteOverride[];
+}
+
+function routingOutcomeFields(projection: RoutingOutcomeProjection): {
+  inference_log_id?: string;
+  overrides?: RouteOverride[];
+} {
+  if (projection.inferenceLogId && projection.routeOverrides === undefined) {
+    throw new Error(
+      'routeOverrides is required for a routed task: pass [] if the recommendation was followed',
+    );
+  }
+  if (!projection.inferenceLogId && projection.routeOverrides !== undefined) {
+    throw new Error('routeOverrides requires inferenceLogId: an unrouted task has no recommendation');
+  }
+  return projection.inferenceLogId
+    ? {
+        inference_log_id: projection.inferenceLogId,
+        overrides: (projection.routeOverrides ?? []).map((override) => ({ ...override })),
+      }
+    : {};
+}
+
+export interface RedactedEvalContributionProjectionV3
+  extends RedactedEvalContributionProjectionV2,
+    RoutingOutcomeProjection {}
+
+export interface HarnessOutcomeRowProjection extends RoutingOutcomeProjection {
   taskDescriptor: Partial<HokusaiTaskDescriptor>;
   allowedModels: string[];
   selectedModels: TechnicalTaskRouterSelectedModels;
@@ -300,7 +337,7 @@ export interface HarnessOutcomeRowProjection {
 
 export function buildHarnessOutcomeRow(
   projection: HarnessOutcomeRowProjection,
-): HarnessOutcomeRowV1 {
+): HarnessOutcomeRowV2 {
   if (
     !projection.taskDescriptor
     || Object.keys(projection.taskDescriptor).length === 0
@@ -321,8 +358,8 @@ export function buildHarnessOutcomeRow(
     ...(projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}),
   };
 
-  const row: HarnessOutcomeRowV1 = {
-    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
+  const row: HarnessOutcomeRowV2 = {
+    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2,
     task_descriptor: { ...projection.taskDescriptor },
     allowed_models: [...projection.allowedModels],
     selected_models: { ...projection.selectedModels },
@@ -337,7 +374,7 @@ export function buildHarnessOutcomeRow(
     ...(projection.successUnderBudget !== undefined
       ? { success_under_budget: projection.successUnderBudget }
       : {}),
-    ...(projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {}),
+    ...routingOutcomeFields(projection),
     ...(projection.harness ? { harness: projection.harness } : {}),
     ...(projection.taskId ? { task_id: projection.taskId } : {}),
     ...(projection.observedAt ? { observed_at: projection.observedAt } : {}),
@@ -346,7 +383,7 @@ export function buildHarnessOutcomeRow(
       : {}),
   };
 
-  return validateContributionRow(row) as HarnessOutcomeRowV1;
+  return validateContributionRow(row) as HarnessOutcomeRowV2;
 }
 
 export function buildTechnicalTaskRouterContributionRow(
@@ -411,4 +448,20 @@ export function buildTechnicalTaskRouterContributionRowV2(
   };
 
   return validateContributionRow(row) as TechnicalTaskRouterContributionRowV2;
+}
+
+/**
+ * Router row v3: v2 plus the routing-outcome block. New writers (Wavemill's
+ * export, HOK-3363) emit this; v1/v2 rows stay accepted.
+ */
+export function buildTechnicalTaskRouterContributionRowV3(
+  projection: RedactedEvalContributionProjectionV3,
+): TechnicalTaskRouterContributionRowV3 {
+  const row: TechnicalTaskRouterContributionRowV3 = {
+    ...buildTechnicalTaskRouterContributionRowV2(projection),
+    schema_version: TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3,
+    ...routingOutcomeFields(projection),
+  };
+
+  return validateContributionRow(row) as TechnicalTaskRouterContributionRowV3;
 }

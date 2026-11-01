@@ -1,6 +1,6 @@
 # `@hokusai/adapter-aider`
 
-A thin, vendor-neutral CLI wrapper that routes a coding task through Hokusai, launches [Aider](https://aider.chat) with the recommended model unchanged, parses the model/token/cost lines Aider prints, and submits one `harness_outcome_row/v1` contribution through the shared `@hokusai/core` integration path.
+A thin, vendor-neutral CLI wrapper that routes a coding task through Hokusai, launches [Aider](https://aider.chat) with the recommended model unchanged, parses the model/token/cost lines Aider prints, and submits one `harness_outcome_row/v2` contribution (with `overrides: []`, since the recommended model runs unchanged) through the shared `@hokusai/core` integration path.
 
 Aider is a good proof point precisely because it is not a Hokusai-native tool: it uses whatever model you point it at, over whatever OpenAI-compatible endpoint you configure. The wrapper does not touch model handoff, does not rewrite provider prefixes, and does not fabricate cost when Aider's output changes shape.
 
@@ -52,7 +52,7 @@ Hokusai picks the model. Aider uses **your** provider credentials to run it. The
 
 - The routing payload is redacted by `@hokusai/core` before transport.
 - The submitted contribution row carries metadata only: task descriptor labels, allowed and selected model ids, cost/timing/status, route id, harness name, and SDK version.
-- Source code, diffs, full prompts, Aider stdout/stderr, and API keys are **not** submitted. `harness_outcome_row/v1` explicitly forbids fields like `prompt`, `messages`, and `task_text`.
+- Source code, diffs, full prompts, Aider stdout/stderr, and API keys are **not** submitted. Contribution rows explicitly forbid fields like `prompt`, `messages`, and `task_text`.
 
 ## Telemetry degradation
 

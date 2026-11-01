@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ContributionRequest } from '../client.js';
 import {
-  isHarnessOutcomeRowV1,
+  isHarnessOutcomeRowV2,
   validateContributionRow,
 } from '../contribution/index.js';
 import type { ModelDefinition } from '../model-registry.js';
@@ -123,7 +123,7 @@ async function runLoop(
 }
 
 describe('runHokusaiLoop', () => {
-  it('builds a valid training-eligible harness_outcome_row/v1 from a minimal adapter', async () => {
+  it('builds a valid training-eligible harness_outcome_row/v2 from a minimal adapter', async () => {
     const { adapter } = createAdapter();
     let submittedRequest: ContributionRequest | undefined;
     const submitContribution = vi.fn((request: ContributionRequest) => {
@@ -148,7 +148,7 @@ describe('runHokusaiLoop', () => {
     expect(result.actualCostUsd).toBeCloseTo(0.177, 6);
     expect(result.row.actual_cost_usd).toBeCloseTo(0.177, 6);
     expect(result.row.budget_usd).toBe(0.5);
-    expect(isHarnessOutcomeRowV1(result.row)).toBe(true);
+    expect(isHarnessOutcomeRowV2(result.row)).toBe(true);
     expect(() => validateContributionRow(result.row)).not.toThrow();
     expect(submittedRequest?.rows).toHaveLength(1);
   });
@@ -242,7 +242,7 @@ describe('runHokusaiLoop', () => {
     expect(executeWithModel).toHaveBeenCalledTimes(1);
   });
 
-  it('can omit actual_cost_usd while still producing a valid harness_outcome_row/v1', async () => {
+  it('can omit actual_cost_usd while still producing a valid harness_outcome_row/v2', async () => {
     const { adapter } = createAdapter();
     let submittedRow: ContributionRequest['rows'][number] | undefined;
     const { client } = createClient({
@@ -261,7 +261,7 @@ describe('runHokusaiLoop', () => {
     expect(result.actualCostUsd).toBeUndefined();
     expect(result.row.actual_cost_usd).toBeUndefined();
     expect(submittedRow?.actual_cost_usd).toBeUndefined();
-    expect(isHarnessOutcomeRowV1(result.row)).toBe(true);
+    expect(isHarnessOutcomeRowV2(result.row)).toBe(true);
     expect(() => validateContributionRow(result.row)).not.toThrow();
   });
 });

@@ -33,3 +33,12 @@ export {
 } from './outcome-wavemill.js';
 export { wavemillTaskPacketFixture } from './wavemill.js';
 export * from './task-cost/index.js';
+export {
+  challengeOverrideRoutingFixture,
+  escalationOverrideRoutingFixture,
+  followedRecommendationHarnessRowFixture,
+  followedRecommendationRoutingFixture,
+  operatorRerouteRoutingFixture,
+  routingOutcomeFixtures,
+  unroutedTelemetryRoutingFixture,
+} from './routing-outcome.js';

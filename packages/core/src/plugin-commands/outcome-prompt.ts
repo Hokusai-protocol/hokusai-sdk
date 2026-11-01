@@ -1,4 +1,4 @@
-import type { LatestRoutingDecision } from './types.js';
+import type { StoredRoutingDecision } from './types.js';
 
 const COMPLETION_TERMS = [
   'task completed',
@@ -28,7 +28,8 @@ export interface OutcomePromptDetection {
 
 export interface BuildOutcomeContributionPromptInput {
   event?: unknown;
-  latestRoute?: LatestRoutingDecision;
+  /** The route stored for this task or session (exact match), if any. */
+  latestRoute?: StoredRoutingDecision;
   outcomeOptIn: boolean;
   reportCommand: string;
   actualModel?: string;
@@ -98,7 +99,8 @@ export function buildOutcomeContributionPrompt(
     };
   }
 
-  const actualModel = input.actualModel ?? input.latestRoute.recommendedModelId;
+  // The executed model is observed, never inferred from the recommendation.
+  const actualModel = input.actualModel;
   if (!actualModel) {
     return {
       shouldPrompt: true,
@@ -111,13 +113,16 @@ export function buildOutcomeContributionPrompt(
     };
   }
 
+  const recommended = input.latestRoute.recommendedModelId;
   const reportArgs = [
-    '--use-latest',
-    '--recommended-model',
-    input.latestRoute.recommendedModelId ?? actualModel,
+    '--correlation-id',
+    input.latestRoute.correlationId,
+    '--task-id',
+    input.latestRoute.taskId,
+    ...(recommended ? ['--recommended-model', recommended] : []),
     '--actual-model',
     actualModel,
-    '--accepted',
+    recommended !== undefined && recommended === actualModel ? '--accepted' : '--rejected',
     '--status',
     'succeeded',
     '--latency-bucket',

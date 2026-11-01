@@ -13,7 +13,71 @@ import type {
 
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = 'technical_task_router_row/v1';
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = 'technical_task_router_row/v2';
+export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3 = 'technical_task_router_row/v3';
 export const HARNESS_OUTCOME_ROW_SCHEMA_VERSION = 'harness_outcome_row/v1';
+export const HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2 = 'harness_outcome_row/v2';
+
+/** Roles a routing recommendation covers. */
+export const ROUTE_ROLES = ['planner', 'coder', 'reviewer'] as const;
+export type RouteRole = (typeof ROUTE_ROLES)[number];
+
+/**
+ * Who changed Hokusai's recommended model (the actor, per the task-cost
+ * contract's "actor on every event" rule). `escalation`: the harness escalated
+ * after a failure. `launchability`: the recommended model could not launch.
+ * `challenge`: a challenge program deliberately ran a different model.
+ * `operator`: a human chose.
+ */
+export const ROUTE_OVERRIDE_SOURCES = ['escalation', 'launchability', 'challenge', 'operator'] as const;
+export type RouteOverrideSource = (typeof ROUTE_OVERRIDE_SOURCES)[number];
+
+/**
+ * One change to the model Hokusai recommended for a role. Overrides for a role
+ * chain in order: the first `from` is the recommendation, each next `from` is
+ * the previous `to`, and the last `to` is the executed model in
+ * `selected_models`.
+ */
+export interface RouteOverride {
+  role: RouteRole;
+  source: RouteOverrideSource;
+  from: string;
+  to: string;
+  /** Slug, e.g. `budget_exhausted`, `provider_unavailable`. Never free text. */
+  reason: string;
+}
+
+/**
+ * The routing-outcome block shared by `technical_task_router_row/v3` and
+ * `harness_outcome_row/v2`:
+ *
+ * - `inference_log_id`: the Hokusai inference that made the recommendation.
+ *   Present iff Hokusai routed the task. Hokusai joins the recommendation
+ *   from its inference log, so rows never store a copy of it.
+ * - `overrides`: present iff `inference_log_id` is. `[]` means the
+ *   recommendation was followed for every role.
+ * - `selected_models`: the executed models.
+ *
+ * "Recommendation accepted" is derived (no override for that role), never
+ * stored. See `routeRecommendationFollowed`.
+ */
+export interface RoutingOutcomeBlock {
+  inference_log_id?: string;
+  overrides?: RouteOverride[];
+  selected_models: TechnicalTaskRouterSelectedModels;
+}
+
+/** Keys that would store a copy of the recommendation. Rejected in every row. */
+export const RECOMMENDATION_COPY_KEYS = Object.freeze([
+  'recommended_model',
+  'recommended_models',
+  'recommended_model_id',
+  'recommendation',
+  'recommendation_accepted',
+  'recommendedmodel',
+  'recommendedmodels',
+  'recommendationaccepted',
+] as const);
+
 export const HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   'schema_version',
   'task_descriptor',
@@ -29,6 +93,10 @@ export const HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   'task_id',
   'observed_at',
   'harness_metadata',
+] as const);
+export const HARNESS_OUTCOME_ROW_V2_FIELDS = Object.freeze([
+  ...HARNESS_OUTCOME_ROW_FIELDS,
+  'overrides',
 ] as const);
 export const COST_BUCKET_THRESHOLDS_USD = {
   lowUpperBound: 1,
@@ -144,6 +212,13 @@ export interface HarnessOutcomeRowMetadata {
   sdk_version?: string;
 }
 
+/** Router row v2 plus the routing-outcome block (HOK-3364). */
+export interface TechnicalTaskRouterContributionRowV3
+  extends Omit<TechnicalTaskRouterContributionRowV2, 'schema_version'>,
+    RoutingOutcomeBlock {
+  schema_version: typeof TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3;
+}
+
 export interface HarnessOutcomeRowV1 {
   schema_version: typeof HARNESS_OUTCOME_ROW_SCHEMA_VERSION;
   task_descriptor: Partial<HokusaiTaskDescriptor>;
@@ -161,11 +236,23 @@ export interface HarnessOutcomeRowV1 {
   harness_metadata?: HarnessOutcomeRowMetadata;
 }
 
+/** Harness row v1 plus the routing-outcome block (HOK-3364). */
+export interface HarnessOutcomeRowV2
+  extends Omit<HarnessOutcomeRowV1, 'schema_version'>,
+    RoutingOutcomeBlock {
+  schema_version: typeof HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2;
+}
+
+/** Any accepted harness row version. New writers emit v2. */
+export type HarnessOutcomeRow = HarnessOutcomeRowV1 | HarnessOutcomeRowV2;
+
 export type ContributionRow =
   | SubmitDataContributionRow
   | TechnicalTaskRouterContributionRowV1
   | TechnicalTaskRouterContributionRowV2
-  | HarnessOutcomeRowV1;
+  | TechnicalTaskRouterContributionRowV3
+  | HarnessOutcomeRowV1
+  | HarnessOutcomeRowV2;
 
 type ContributionScalar = string | number | boolean | null;
 
@@ -497,15 +584,29 @@ function isTechnicalTaskRouterContributionRowV1(value: unknown): value is Techni
 export function isTechnicalTaskRouterContributionRowV2(
   value: unknown,
 ): value is TechnicalTaskRouterContributionRowV2 {
+  return isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2, []);
+}
+
+export function isTechnicalTaskRouterContributionRowV3(
+  value: unknown,
+): value is TechnicalTaskRouterContributionRowV3 {
+  return (
+    isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3, ['inference_log_id', 'overrides'])
+    && routingOutcomeErrors(value).length === 0
+  );
+}
+
+function isRichRouterRow(value: unknown, version: string, extraKeys: readonly string[]): boolean {
   if (!isPlainObject(value)) {
     return false;
   }
 
-  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
+  if (value.schema_version !== version) {
     return false;
   }
 
   if (!hasOnlyAllowedKeys(value, [
+    ...extraKeys,
     'schema_version',
     'task_descriptor',
     'allowed_models',
@@ -619,15 +720,26 @@ function isHarnessOutcomeRowMetadata(value: unknown): value is HarnessOutcomeRow
 }
 
 export function isHarnessOutcomeRowV1(value: unknown): value is HarnessOutcomeRowV1 {
+  return isHarnessRow(value, HARNESS_OUTCOME_ROW_SCHEMA_VERSION, HARNESS_OUTCOME_ROW_FIELDS);
+}
+
+export function isHarnessOutcomeRowV2(value: unknown): value is HarnessOutcomeRowV2 {
+  return (
+    isHarnessRow(value, HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2, HARNESS_OUTCOME_ROW_V2_FIELDS)
+    && routingOutcomeErrors(value).length === 0
+  );
+}
+
+function isHarnessRow(value: unknown, version: string, fields: readonly string[]): boolean {
   if (!isPlainObject(value)) {
     return false;
   }
 
-  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+  if (value.schema_version !== version) {
     return false;
   }
 
-  if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
+  if (!hasOnlyAllowedKeys(value, fields)) {
     return false;
   }
 
@@ -687,13 +799,142 @@ export function isHarnessOutcomeRowV1(value: unknown): value is HarnessOutcomeRo
   return true;
 }
 
+const RECOMMENDATION_COPY_KEY_SET = new Set<string>(
+  RECOMMENDATION_COPY_KEYS.map((key) => key.replaceAll('_', '')),
+);
+const ROUTE_SLUG_PATTERN = /^[a-z][a-z0-9_.:-]{0,127}$/;
+
+/**
+ * Why a row's routing-outcome block is invalid; `[]` when it is valid. Applies
+ * the HOK-3364 rules: `overrides` present iff `inference_log_id` is; each
+ * override well-formed; per role, overrides chain and end at the executed
+ * model in `selected_models`.
+ */
+export function routingOutcomeErrors(row: unknown): string[] {
+  if (!isPlainObject(row)) {
+    return ['row must be an object'];
+  }
+  const errors: string[] = [];
+  const routed = row.inference_log_id !== undefined;
+  if (routed && (typeof row.inference_log_id !== 'string' || row.inference_log_id.trim().length === 0)) {
+    errors.push('inference_log_id must be a non-empty string');
+  }
+  if (routed && row.overrides === undefined) {
+    errors.push('a routed row must list overrides ([] when the recommendation was followed)');
+  }
+  if (!routed && row.overrides !== undefined) {
+    errors.push('overrides require inference_log_id: an unrouted row has no recommendation to override');
+  }
+  if (row.overrides === undefined) {
+    return errors;
+  }
+  if (!Array.isArray(row.overrides)) {
+    return [...errors, 'overrides must be an array'];
+  }
+  const selected = isPlainObject(row.selected_models) ? row.selected_models : {};
+  const lastByRole = new Map<string, Record<string, unknown>>();
+  for (const [index, entry] of row.overrides.entries()) {
+    const label = `overrides[${index}]`;
+    if (!isPlainObject(entry) || !hasOnlyAllowedKeys(entry, ['role', 'source', 'from', 'to', 'reason'])) {
+      errors.push(`${label} must be an object with role, source, from, to and reason`);
+      continue;
+    }
+    if (!(ROUTE_ROLES as readonly unknown[]).includes(entry.role)) {
+      errors.push(`${label}.role must be one of: ${ROUTE_ROLES.join(', ')}`);
+    }
+    if (!(ROUTE_OVERRIDE_SOURCES as readonly unknown[]).includes(entry.source)) {
+      errors.push(`${label}.source must be one of: ${ROUTE_OVERRIDE_SOURCES.join(', ')}`);
+    }
+    for (const key of ['from', 'to'] as const) {
+      const model = entry[key];
+      if (typeof model !== 'string' || model.trim().length === 0) {
+        errors.push(`${label}.${key} must be a non-empty model id`);
+      }
+    }
+    if (entry.from === entry.to) {
+      errors.push(`${label} must change the model (from equals to)`);
+    }
+    if (typeof entry.reason !== 'string' || !ROUTE_SLUG_PATTERN.test(entry.reason)) {
+      errors.push(`${label}.reason must be a slug`);
+    }
+    const previous = lastByRole.get(String(entry.role));
+    if (previous && previous.to !== entry.from) {
+      errors.push(`${label}.from must equal the previous ${String(entry.role)} override's to`);
+    }
+    lastByRole.set(String(entry.role), entry);
+  }
+  for (const [role, last] of lastByRole) {
+    if (selected[role] !== last.to) {
+      errors.push(`the last ${role} override must end at selected_models.${role}`);
+    }
+  }
+  return errors;
+}
+
+/**
+ * Whether the recommendation was followed for `role`: `undefined` for an
+ * unrouted row (there was no recommendation), else true iff no override names
+ * the role. Derived, never stored.
+ */
+export function routeRecommendationFollowed(row: RoutingOutcomeBlock, role: RouteRole): boolean | undefined {
+  if (row.inference_log_id === undefined) {
+    return undefined;
+  }
+  return !(row.overrides ?? []).some((override) => override.role === role);
+}
+
+function findRecommendationCopy(value: unknown, path: string[] = []): string | undefined {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const found = findRecommendationCopy(item, [...path, String(index)]);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (RECOMMENDATION_COPY_KEY_SET.has(key.toLowerCase().replaceAll('_', ''))) {
+      return [...path, key].join('.');
+    }
+    const found = findRecommendationCopy(child, [...path, key]);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function validateContributionRow(row: unknown): ContributionRow {
   assertNoForbiddenKeys(row);
+
+  const copy = findRecommendationCopy(row);
+  if (copy) {
+    throw new ContributionValidationError(
+      'schema_validation_failed',
+      `Contribution rows must not store a recommendation copy (${copy}); Hokusai joins it from inference_log_id`,
+    );
+  }
+
+  if (
+    isPlainObject(row)
+    && (row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3
+      || row.schema_version === HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2)
+  ) {
+    const errors = routingOutcomeErrors(row);
+    if (errors.length > 0) {
+      throw new ContributionValidationError(
+        'schema_validation_failed',
+        `Invalid routing outcome: ${errors.join('; ')}`,
+      );
+    }
+  }
 
   if (
     isTechnicalTaskRouterContributionRowV1(row)
     || isTechnicalTaskRouterContributionRowV2(row)
+    || isTechnicalTaskRouterContributionRowV3(row)
     || isHarnessOutcomeRowV1(row)
+    || isHarnessOutcomeRowV2(row)
     || isSubmitDataContributionRow(row)
   ) {
     return row;

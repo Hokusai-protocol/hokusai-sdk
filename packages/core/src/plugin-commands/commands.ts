@@ -31,7 +31,7 @@ import {
   type ContributionAcceptedResponse,
   type CostBaselineSnapshot,
   type ContributionRequest,
-  type HarnessOutcomeRowV1,
+  type HarnessOutcomeRowV2,
   type HarnessRecommendation,
   type ModelRegistry,
   type OutcomeReport,
@@ -39,6 +39,7 @@ import {
   type PayloadHashRecord,
   type RedactionConfig,
   type RetentionPolicy,
+  type RouteOverride,
   type RouteResponse,
   type SubmissionAuditEntry,
   type TaskPacket,
@@ -57,7 +58,7 @@ import type {
   DeclineRecommendationInput,
   DeclineRecommendationResult,
   DoctorResult,
-  LatestRoutingDecision,
+  StoredRoutingDecision,
   PayloadPreviewResult,
   PreviewReportOutcomeResult,
   PrivacyResultWarnings,
@@ -512,10 +513,10 @@ function buildOutcomePreviewLines(report: OutcomeReport): string[] {
   return lines;
 }
 
-function buildContributionPreviewLines(row: HarnessOutcomeRowV1): string[] {
+function buildContributionPreviewLines(row: HarnessOutcomeRowV2): string[] {
   return [
     '',
-    'Contribution row (harness_outcome_row/v1) that will be submitted:',
+    `Contribution row (${row.schema_version}) that will be submitted:`,
     JSON.stringify(row, null, 2),
   ];
 }
@@ -530,12 +531,14 @@ export function buildReportContributionRow(input: {
   report: OutcomeReport;
   routeContext: RouteContextProjection | undefined;
   inferenceLogId: string | undefined;
+  /** The model the stored route recommended; the `from` of any override. */
+  recommendedModelId: string | undefined;
   actualCostUsd?: number | undefined;
   wallClockSeconds?: number | undefined;
   taskId?: string | undefined;
   harness: string;
   observedAt: string;
-}): AdapterResult<HarnessOutcomeRowV1> {
+}): AdapterResult<HarnessOutcomeRowV2> {
   if (!input.inferenceLogId) {
     return fail(
       'CONTRIBUTION_UNAVAILABLE',
@@ -550,9 +553,33 @@ export function buildReportContributionRow(input: {
     );
   }
 
+  // The plugin knows the recommendation locally, so it can say whether the run
+  // followed it. Without it, it cannot, and a routed row must not claim so.
+  if (!input.recommendedModelId) {
+    return fail(
+      'CONTRIBUTION_UNAVAILABLE',
+      'The stored route has no recommended model, so the report cannot state whether the recommendation was followed.',
+    );
+  }
+  const recommended = input.recommendedModelId;
+  const executed = input.report.actualModel;
+  const routeOverrides: RouteOverride[] =
+    executed === recommended
+      ? []
+      : (['coder', 'reviewer'] as const).map((role) => ({
+          role,
+          source: 'operator' as const,
+          from: recommended,
+          to: executed,
+          reason: input.report.recommendationAccepted
+            ? 'model_changed'
+            : 'recommendation_declined',
+        }));
+
   try {
     const row = buildHarnessOutcomeRow({
       inferenceLogId: input.inferenceLogId,
+      routeOverrides,
       taskDescriptor: input.routeContext.taskDescriptor,
       allowedModels: input.routeContext.allowedModels,
       selectedModels: {
@@ -1160,21 +1187,39 @@ export function createPreviewTaskPayload<
   };
 }
 
-export async function findLatestRoutingDecision(input: {
+/**
+ * Find the routing decision stored for exactly this outcome: by correlation
+ * id, else by task id, else by the session the route was recorded in. With no
+ * key, or no match, returns `undefined`. There is no "latest route" fallback:
+ * linking an outcome to another task's route fabricates a training row
+ * (HOK-3364). When several routes match a task or session (a relaunch), the
+ * newest of *those* wins.
+ */
+export async function findRoutingDecision(input: {
   configDir: string;
-}): Promise<LatestRoutingDecision | undefined> {
+  correlationId?: string | undefined;
+  taskId?: string | undefined;
+  sessionId?: string | undefined;
+}): Promise<StoredRoutingDecision | undefined> {
   const store = new FsLocalStore(input.configDir);
-  const records = await store.listCorrelations();
-  const latest = records.reduce<(typeof records)[number] | undefined>(
-    (currentLatest, record) => {
-      if (!currentLatest || record.createdAt > currentLatest.createdAt) {
-        return record;
-      }
-
-      return currentLatest;
-    },
-    undefined,
-  );
+  let latest: Awaited<ReturnType<FsLocalStore['getCorrelation']>>;
+  if (input.correlationId?.trim()) {
+    latest = (await findStoredCorrelationRecord(store, input.correlationId.trim())).record;
+  } else if (input.taskId?.trim() || input.sessionId?.trim()) {
+    const taskId = input.taskId?.trim();
+    const sessionId = input.sessionId?.trim();
+    const records = await store.listCorrelations();
+    latest = records
+      .filter((record) =>
+        taskId
+          ? record.metadata?.taskId === taskId
+          : parseRouteContext(record.metadata?.routeContext)?.sessionId === sessionId,
+      )
+      .reduce<(typeof records)[number] | undefined>(
+        (newest, record) => (!newest || record.createdAt > newest.createdAt ? record : newest),
+        undefined,
+      );
+  }
 
   if (!latest) {
     return undefined;
@@ -1219,6 +1264,7 @@ export function createPreviewReportOutcome<
     const {
       taskId,
       inferenceLogId,
+      routedRecommendedModelId,
       routeContext,
       actualCostUsd,
       wallClockSeconds,
@@ -1249,6 +1295,7 @@ export function createPreviewReportOutcome<
       report,
       routeContext,
       inferenceLogId,
+      recommendedModelId: routedRecommendedModelId,
       harness: profile.harness,
       observedAt: (options?.clock ?? (() => new Date()))().toISOString(),
       ...(actualCostUsd !== undefined ? { actualCostUsd } : {}),
@@ -1311,12 +1358,30 @@ export function createReportTaskOutcome<
       store,
       input.correlationId,
     );
+    const storedMetadata = resolvedCorrelation.record?.metadata;
+    // Correlation is exact: a caller-supplied task or inference id that
+    // contradicts the stored route is an error, never silently merged.
+    if (storedMetadata?.taskId && input.taskId && storedMetadata.taskId !== input.taskId) {
+      return fail(
+        'CORRELATION_MISMATCH',
+        `Correlation ${input.correlationId} belongs to task ${storedMetadata.taskId}, not ${input.taskId}.`,
+      );
+    }
+    if (
+      storedMetadata?.inferenceLogId &&
+      input.inferenceLogId &&
+      storedMetadata.inferenceLogId !== input.inferenceLogId
+    ) {
+      return fail(
+        'CORRELATION_MISMATCH',
+        `Correlation ${input.correlationId} was routed by inference ${storedMetadata.inferenceLogId}, not ${input.inferenceLogId}.`,
+      );
+    }
     const routeContext =
-      parseRouteContext(resolvedCorrelation.record?.metadata?.routeContext) ??
-      input.routeContext;
-    const inferenceLogId =
-      input.inferenceLogId ??
-      resolvedCorrelation.record?.metadata?.inferenceLogId;
+      parseRouteContext(storedMetadata?.routeContext) ?? input.routeContext;
+    const inferenceLogId = input.inferenceLogId ?? storedMetadata?.inferenceLogId;
+    const recommendedModelId =
+      storedMetadata?.recommendedModelId ?? input.routedRecommendedModelId;
 
     // Build the canonical contribution row before any network call so a missing
     // routing context fails fast with a clear message.
@@ -1324,6 +1389,7 @@ export function createReportTaskOutcome<
       report: previewResult.value.report,
       routeContext,
       inferenceLogId,
+      recommendedModelId,
       harness: profile.harness,
       observedAt,
       ...(input.actualCostUsd !== undefined
@@ -1337,7 +1403,7 @@ export function createReportTaskOutcome<
 
     let response: OutcomeResponse | undefined;
     let contribution: ContributionAcceptedResponse | undefined;
-    let contributionRow: HarnessOutcomeRowV1 | undefined = contributionRowResult.ok
+    let contributionRow: HarnessOutcomeRowV2 | undefined = contributionRowResult.ok
       ? contributionRowResult.value
       : undefined;
 
