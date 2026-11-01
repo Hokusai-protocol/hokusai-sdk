@@ -3113,12 +3113,12 @@ function invariant(report) {
     );
   if (report.prs.length !== report.coverage.prs_enumerated || report.coverage.attribution.agent.identified_agent + report.coverage.attribution.agent.identified_human_signal + report.coverage.attribution.agent.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.harness.identified + report.coverage.attribution.harness.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.exact_model.identified + report.coverage.attribution.exact_model.unknown !== report.coverage.prs_enumerated)
     add("coverage_sum_mismatch", "coverage");
-  report.prs.forEach((pr, i) => {
-    if (pr.prediction && !report.model_provenance)
+  report.prs.forEach((pr2, i) => {
+    if (pr2.prediction && !report.model_provenance)
       add("prediction_without_provenance", `prs[${i}].prediction`);
-    if (pr.labels.length !== report.scan.horizons_days.length || new Set(pr.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
+    if (pr2.labels.length !== report.scan.horizons_days.length || new Set(pr2.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr2.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
       add("labels_horizon_mismatch", `prs[${i}].labels`);
-    pr.labels.forEach((l, j) => {
+    pr2.labels.forEach((l, j) => {
       if (!report.scan.horizons_days.includes(l.horizon_days))
         add("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
       if (l.outcome.report_outcome !== deriveReportOutcome(l.outcome))
@@ -4277,8 +4277,8 @@ function validateTaskCostSummaryV1(value) {
   requireEnum(record.join_confidence, TASK_COST_JOIN_CONFIDENCES, "summary.join_confidence");
   requireTimestamp(record.collected_at, "summary.collected_at");
   const eventCount = requireCount(record.event_count, "summary.event_count");
-  const eventIds = requireStringArray(record.event_ids, "summary.event_ids", requireId);
-  if (eventIds.length !== eventCount) fail("summary.event_count must equal event_ids.length");
+  const eventIds2 = requireStringArray(record.event_ids, "summary.event_ids", requireId);
+  if (eventIds2.length !== eventCount) fail("summary.event_count must equal event_ids.length");
   requireDiagnostics(record.diagnostics, "summary.diagnostics");
 }
 function validateTaskCostLedgerV1(value) {
@@ -4789,6 +4789,1349 @@ var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
             "$ref": "#/$defs/mintedId"
           }
         }
+      }
+    }
+  }
+);
+
+// ../core/src/task-cost/queue-lifecycle.ts
+var QUEUE_LIFECYCLE_EVENT_WRITE_CLASS = Object.freeze({
+  enqueued: "control",
+  candidate_prepared: "control",
+  check_run_completed: "evidence",
+  ejected: "control",
+  rerun_requested: "control",
+  rebase_performed: "evidence",
+  repair_commit_pushed: "evidence",
+  recovery_decision: "control",
+  merged: "control",
+  dequeued: "control",
+  abandoned: "control",
+  review_round_started: "control",
+  review_round_completed: "evidence"
+});
+var QUEUE_LIFECYCLE_EVENT_SCOPES = Object.freeze({
+  enqueued: ["pr"],
+  candidate_prepared: ["candidate"],
+  check_run_completed: ["pr", "candidate"],
+  ejected: ["pr"],
+  rerun_requested: ["pr", "candidate"],
+  rebase_performed: ["pr"],
+  repair_commit_pushed: ["pr"],
+  recovery_decision: ["pr", "candidate"],
+  merged: ["pr"],
+  dequeued: ["pr"],
+  abandoned: ["pr"],
+  review_round_started: ["pr"],
+  review_round_completed: ["pr"]
+});
+
+// ../core/src/task-cost/queue-lifecycle-schema.ts
+var QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "queue-lifecycle-event.v1.schema.json",
+    "title": "QueueLifecycleEventV1",
+    "description": "Queue, CI and repair lifecycle events for the task-cost contract (queue_lifecycle_event/v1, contract 1.2.0, HOK-3338 / MQ-1.2). Identity is task_attempt/v1: every event names its attempt (PR scope) or attempt_refs (candidate scope); event_id and candidate_id are minted idempotency keys. Control events (enqueued, candidate_prepared, ejected, rerun_requested, recovery_decision, merged, dequeued, abandoned, review_round_started) are accepted only for the current, unsettled run; evidence events (check_run_completed, rebase_performed, repair_commit_pushed, review_round_completed) are always accepted against their own attempt. Facts only: durations, failure classes and time-to-land are derived elsewhere. Absent means not reported; null is not used. Single-record shape only: cross-record rules are in reduceQueueLifecycleLog. Rules: packages/core/src/task-cost/queue-lifecycle.md. Readers ignore unknown fields.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/enqueued"
+      },
+      {
+        "$ref": "#/$defs/candidate_prepared"
+      },
+      {
+        "$ref": "#/$defs/check_run_completed"
+      },
+      {
+        "$ref": "#/$defs/ejected"
+      },
+      {
+        "$ref": "#/$defs/rerun_requested"
+      },
+      {
+        "$ref": "#/$defs/rebase_performed"
+      },
+      {
+        "$ref": "#/$defs/repair_commit_pushed"
+      },
+      {
+        "$ref": "#/$defs/recovery_decision"
+      },
+      {
+        "$ref": "#/$defs/merged"
+      },
+      {
+        "$ref": "#/$defs/dequeued"
+      },
+      {
+        "$ref": "#/$defs/abandoned"
+      },
+      {
+        "$ref": "#/$defs/review_round_started"
+      },
+      {
+        "$ref": "#/$defs/review_round_completed"
+      }
+    ],
+    "$defs": {
+      "schemaVersion": {
+        "const": "queue_lifecycle_event/v1"
+      },
+      "mintedId": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+        "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID. Minted, never a hash of anything."
+      },
+      "identifier": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      },
+      "slug": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "harness": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "model": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+      },
+      "version": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+      },
+      "checkKey": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+      },
+      "providerId": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+      },
+      "gitSha": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+      },
+      "positiveInt": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "probability": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "recoveryAction": {
+        "enum": [
+          "retry",
+          "rebase",
+          "fix",
+          "split",
+          "wait_for_predecessor",
+          "escalate"
+        ]
+      },
+      "propensitySource": {
+        "enum": [
+          "exact",
+          "deterministic",
+          "none"
+        ]
+      },
+      "attemptRef": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "run_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "stage_attempt_id": {
+            "$ref": "#/$defs/mintedId"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "description": "TaskAttemptRef from task_attempt/v1. Never a parallel run id."
+      },
+      "policy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/slug"
+          },
+          "version": {
+            "$ref": "#/$defs/version"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      },
+      "modelAttribution": {
+        "description": "Intended and observed models are separate. executed_model is present iff executed_model_evidence is not not_observed.",
+        "type": "object",
+        "properties": {
+          "harness": {
+            "$ref": "#/$defs/harness"
+          },
+          "intended_model": {
+            "$ref": "#/$defs/model"
+          },
+          "executed_model_evidence": {
+            "enum": [
+              "provider_response",
+              "harness_session",
+              "not_observed"
+            ]
+          },
+          "executed_model": {
+            "$ref": "#/$defs/model"
+          }
+        },
+        "required": [
+          "harness",
+          "executed_model_evidence"
+        ],
+        "if": {
+          "properties": {
+            "executed_model_evidence": {
+              "const": "not_observed"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "executed_model"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "executed_model"
+          ]
+        }
+      },
+      "actor": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/$defs/modelAttribution"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "agent"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "operator"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "description": "A human. Carries no identity.",
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "tend",
+                  "monitor"
+                ]
+              },
+              "component": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "github"
+              },
+              "app": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          }
+        ]
+      },
+      "anyModelField": {
+        "anyOf": [
+          {
+            "required": [
+              "harness"
+            ]
+          },
+          {
+            "required": [
+              "intended_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model_evidence"
+            ]
+          }
+        ]
+      },
+      "prScope": {
+        "description": "An event about one PR of one run.",
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "pr_number": {
+            "$ref": "#/$defs/positiveInt"
+          },
+          "head_sha": {
+            "$ref": "#/$defs/gitSha"
+          }
+        },
+        "required": [
+          "attempt",
+          "pr_number",
+          "head_sha"
+        ],
+        "not": {
+          "required": [
+            "attempt_refs"
+          ]
+        }
+      },
+      "candidateScope": {
+        "description": "An event about a merge candidate: one ref per run, predecessors first. A candidate is not a run.",
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/attemptRef"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "candidate_id",
+          "attempt_refs"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "attempt"
+              ]
+            },
+            {
+              "required": [
+                "pr_number"
+              ]
+            }
+          ]
+        }
+      },
+      "noCandidateLink": {
+        "not": {
+          "required": [
+            "candidate_id"
+          ]
+        }
+      },
+      "base": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "event_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "event_type": {
+            "enum": [
+              "enqueued",
+              "candidate_prepared",
+              "check_run_completed",
+              "ejected",
+              "rerun_requested",
+              "rebase_performed",
+              "repair_commit_pushed",
+              "recovery_decision",
+              "merged",
+              "dequeued",
+              "abandoned",
+              "review_round_started",
+              "review_round_completed"
+            ]
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "actor": {
+            "$ref": "#/$defs/actor"
+          }
+        },
+        "required": [
+          "schema_version",
+          "event_id",
+          "event_type",
+          "observed_at",
+          "actor"
+        ]
+      },
+      "enqueued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "enqueued"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "queue_depth": {
+                "$ref": "#/$defs/count"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run's PR entered the queue."
+      },
+      "candidate_prepared": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "candidate_prepared"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pr_number": {
+                      "$ref": "#/$defs/positiveInt"
+                    },
+                    "head_sha": {
+                      "$ref": "#/$defs/gitSha"
+                    }
+                  },
+                  "required": [
+                    "pr_number",
+                    "head_sha"
+                  ]
+                },
+                "minItems": 1
+              },
+              "candidate_sha": {
+                "$ref": "#/$defs/gitSha"
+              }
+            },
+            "required": [
+              "event_type",
+              "base_sha",
+              "entries"
+            ]
+          },
+          {
+            "$ref": "#/$defs/candidateScope"
+          }
+        ],
+        "description": "Control. The composition of a merge candidate; entries[i] is the PR of attempt_refs[i] (alignment is a validator rule)."
+      },
+      "check_run_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "check_run_completed"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "trigger": {
+                "enum": [
+                  "pull_request",
+                  "merge_group",
+                  "push",
+                  "other"
+                ]
+              },
+              "conclusion": {
+                "enum": [
+                  "success",
+                  "failure",
+                  "neutral",
+                  "cancelled",
+                  "skipped",
+                  "timed_out",
+                  "action_required",
+                  "stale",
+                  "startup_failure"
+                ]
+              },
+              "started_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              },
+              "completed_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt",
+              "head_sha",
+              "trigger",
+              "conclusion",
+              "completed_at"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Evidence. One completed check run attempt, verbatim from the provider."
+      },
+      "ejected": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "ejected"
+              },
+              "trigger": {
+                "enum": [
+                  "check_failed",
+                  "merge_conflict",
+                  "predecessor_ejected",
+                  "base_moved",
+                  "operator",
+                  "timeout",
+                  "policy",
+                  "unknown"
+                ]
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR left the queue or a candidate involuntarily. trigger is what the queue reported, not a failure class."
+      },
+      "rerun_requested": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rerun_requested"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Control. A check run attempt was re-run; the rerun is a later check_run_completed."
+      },
+      "rebase_performed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rebase_performed"
+              },
+              "previous_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "previous_base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "method": {
+                "enum": [
+                  "rebase",
+                  "merge"
+                ]
+              },
+              "had_conflicts": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "event_type",
+              "previous_head_sha",
+              "base_sha",
+              "method"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A head move onto a new base. Not a new attempt."
+      },
+      "repair_commit_pushed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "repair_commit_pushed"
+              },
+              "parent_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "commits_pushed": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              },
+              "cost_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/identifier"
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "parent_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A repair push; actor is the commit author."
+      },
+      "recovery_decision": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "recovery_decision"
+              },
+              "policy": {
+                "$ref": "#/$defs/policy"
+              },
+              "context": {
+                "type": "object",
+                "properties": {
+                  "as_of": {
+                    "$ref": "#/$defs/utcTimestamp"
+                  },
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "uniqueItems": true
+                  },
+                  "failing_check_keys": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/checkKey"
+                    }
+                  },
+                  "failure_class": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "$ref": "#/$defs/slug"
+                      },
+                      "labeler_version": {
+                        "$ref": "#/$defs/version"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "labeler_version"
+                    ]
+                  },
+                  "attempt_number": {
+                    "$ref": "#/$defs/positiveInt"
+                  },
+                  "base_moved_since_candidate": {
+                    "type": "boolean"
+                  },
+                  "queue_depth": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "properties": {
+                      "harness": {
+                        "$ref": "#/$defs/harness"
+                      },
+                      "executed_model": {
+                        "$ref": "#/$defs/model"
+                      },
+                      "task_type": {
+                        "$ref": "#/$defs/slug"
+                      }
+                    },
+                    "required": []
+                  },
+                  "flake_history": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "check_key": {
+                          "$ref": "#/$defs/checkKey"
+                        },
+                        "window_runs": {
+                          "$ref": "#/$defs/count"
+                        },
+                        "window_failures": {
+                          "$ref": "#/$defs/count"
+                        }
+                      },
+                      "required": [
+                        "check_key",
+                        "window_runs",
+                        "window_failures"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "as_of",
+                  "event_ids"
+                ],
+                "description": "Frozen decision-time snapshot. as_of <= observed_at and every event_id precedes the decision (validator and reducer rules)."
+              },
+              "available_actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/recoveryAction"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "chosen_action": {
+                "$ref": "#/$defs/recoveryAction"
+              },
+              "propensity_source": {
+                "$ref": "#/$defs/propensitySource"
+              },
+              "propensities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "$ref": "#/$defs/recoveryAction"
+                    },
+                    "probability": {
+                      "$ref": "#/$defs/probability"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "probability"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "event_type",
+              "policy",
+              "context",
+              "available_actions",
+              "chosen_action",
+              "propensity_source"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          },
+          {
+            "if": {
+              "properties": {
+                "propensity_source": {
+                  "const": "none"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "propensities"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "propensities"
+              ]
+            }
+          }
+        ],
+        "description": "Control. A self-contained recovery decision. propensities cover exactly available_actions and sum to 1 (validator rule); absent iff propensity_source is none."
+      },
+      "merged": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "merged"
+              },
+              "merge_commit_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "method": {
+                "enum": [
+                  "merge",
+                  "squash",
+                  "rebase"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "merge_commit_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR landed."
+      },
+      "dequeued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "dequeued"
+              },
+              "trigger": {
+                "enum": [
+                  "pr_closed",
+                  "head_changed",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Left the queue; the run may enqueue again."
+      },
+      "abandoned": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "abandoned"
+              },
+              "trigger": {
+                "enum": [
+                  "retry_budget_exhausted",
+                  "superseded",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run stops trying to land this PR."
+      },
+      "review_round_started": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_started"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage_attempt_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "harness": {
+                      "$ref": "#/$defs/harness"
+                    },
+                    "intended_model": {
+                      "$ref": "#/$defs/model"
+                    },
+                    "challenge": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "reviewer_key",
+                    "stage"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "executed_model"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "executed_model_evidence"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "minItems": 1
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "$ref": "#/$defs/policy"
+                  },
+                  "propensity_source": {
+                    "$ref": "#/$defs/propensitySource"
+                  },
+                  "propensity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "policy",
+                  "propensity_source"
+                ],
+                "if": {
+                  "properties": {
+                    "propensity_source": {
+                      "const": "none"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "propensity"
+                    ]
+                  }
+                },
+                "else": {
+                  "required": [
+                    "propensity"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "reviewers"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Which reviewers a round runs (intent) and the policy that chose them."
+      },
+      "review_round_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_completed"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "first_round_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/modelAttribution"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reviewer_key": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage_attempt_id": {
+                          "$ref": "#/$defs/mintedId"
+                        }
+                      },
+                      "required": [
+                        "reviewer_key",
+                        "stage"
+                      ]
+                    }
+                  ]
+                },
+                "minItems": 1
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "finding_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "blocking": {
+                      "type": "boolean"
+                    },
+                    "location": {
+                      "enum": [
+                        "first_round",
+                        "changed_since_first_round",
+                        "unchanged_since_first_round",
+                        "unknown"
+                      ]
+                    },
+                    "reflag_of": {
+                      "$ref": "#/$defs/mintedId"
+                    }
+                  },
+                  "required": [
+                    "finding_id",
+                    "reviewer_key",
+                    "blocking",
+                    "location"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "first_round_head_sha",
+              "reviewers",
+              "findings"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          },
+          {
+            "if": {
+              "properties": {
+                "round": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "round"
+              ]
+            },
+            "then": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "enum": [
+                          "first_round",
+                          "unknown"
+                        ]
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "reflag_of"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "not": {
+                          "const": "first_round"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Evidence. What a round's reviewers found; findings: [] is an observed clean round."
       }
     }
   }
@@ -6581,6 +7924,1052 @@ var twoPrMergeCandidate = (() => {
   };
 })();
 
+// ../core/src/fixtures/task-cost/queue/builders.ts
+function sha(n) {
+  return `c0de${n.toString(16).padStart(36, "0")}`;
+}
+var TEND = { kind: "tend", component: "merge-lane" };
+var WATCHDOG = { kind: "monitor", component: "ready-watchdog" };
+var GITHUB = { kind: "github", app: "merge-queue" };
+var ACTIONS = { kind: "github", app: "actions" };
+var OPERATOR = { kind: "operator" };
+function agent(executed, intended = executed, harness = "claude-code") {
+  return {
+    kind: "agent",
+    harness,
+    intended_model: intended,
+    executed_model_evidence: "provider_response",
+    executed_model: executed
+  };
+}
+function qe(input) {
+  const { t, ...rest } = input;
+  return { schema_version: "queue_lifecycle_event/v1", observed_at: at(t), ...rest };
+}
+function pr(attempt2, prNumber, headSha) {
+  return { attempt: attempt2, pr_number: prNumber, head_sha: headSha };
+}
+function decided(index, event17, decision2, reasons2) {
+  if (event17.schema_version !== "queue_lifecycle_event/v1") {
+    throw new TypeError(`stream entry ${index} is not a queue event`);
+  }
+  return {
+    index,
+    event_id: event17.event_id,
+    event_type: event17.event_type,
+    decision: decision2,
+    ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
+  };
+}
+function decisionsFor(stream, overrides = {}) {
+  const out = [];
+  for (const [index, entry] of stream.entries()) {
+    if (entry.schema_version !== "queue_lifecycle_event/v1") continue;
+    const [decision2, reasons2] = overrides[index] ?? ["accepted"];
+    out.push(decided(index, entry, decision2, reasons2));
+  }
+  return out;
+}
+function eventIds(...events17) {
+  return events17.map((event17) => event17.event_id);
+}
+
+// ../core/src/fixtures/task-cost/queue/fixtures.ts
+var BASE2 = sha(100);
+function candidateState(candidate, ejected = [], merged = []) {
+  const prepared = candidate;
+  return {
+    candidate_id: prepared.candidate_id,
+    base_sha: prepared.base_sha,
+    attempt_refs: prepared.attempt_refs,
+    entries: prepared.entries,
+    ejected_run_ids: ejected,
+    merged_run_ids: merged
+  };
+}
+var cleanMerge = (() => {
+  const run = attempt({ kind: "run", id: mint(1001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(1101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 101, sha(1)),
+    base_sha: BASE2,
+    queue_depth: 0
+  });
+  const candidate = qe({
+    event_id: mint(1102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 101, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const check = qe({
+    event_id: mint(1103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    head_sha: sha(2),
+    check_run_id: "5001",
+    check_key: "ci-test",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const merged = qe({
+    event_id: mint(1104),
+    event_type: "merged",
+    t: 95,
+    actor: GITHUB,
+    ...pr(runRef, 101, sha(1)),
+    merge_commit_sha: sha(2),
+    base_sha: BASE2,
+    candidate_id: mint(1201),
+    method: "merge"
+  });
+  const settled = outcome(mint(1301), runRef, "succeeded", 100);
+  const stream = [run, enqueued, candidate, check, merged, settled];
+  return {
+    name: "clean-merge",
+    description: "One PR is enqueued, prepared as a single-entry candidate, passes its merge_group check and merges. The run settles after the merge.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, check, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var flakeRerun = (() => {
+  const run = attempt({ kind: "run", id: mint(2001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const candidateId = mint(2201);
+  const scope = { candidate_id: candidateId, attempt_refs: [runRef] };
+  const enqueued = qe({
+    event_id: mint(2101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 102, sha(1)),
+    base_sha: BASE2
+  });
+  const candidate = qe({
+    event_id: mint(2102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    ...scope,
+    base_sha: BASE2,
+    entries: [{ pr_number: 102, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const unit = qe({
+    event_id: mint(2103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(25),
+    completed_at: at(80)
+  });
+  const e2eFailed = qe({
+    event_id: mint(2104),
+    event_type: "check_run_completed",
+    t: 121,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(25),
+    completed_at: at(120)
+  });
+  const decision2 = qe({
+    event_id: mint(2105),
+    event_type: "recovery_decision",
+    t: 125,
+    actor: TEND,
+    ...scope,
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(121),
+      event_ids: [e2eFailed.event_id],
+      failing_check_keys: ["ci-e2e"],
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 0,
+      flake_history: [{ check_key: "ci-e2e", window_runs: 20, window_failures: 3 }]
+    },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "retry",
+    propensity_source: "exact",
+    propensities: [
+      { action: "retry", probability: 0.8 },
+      { action: "rebase", probability: 0.2 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rerun = qe({
+    event_id: mint(2106),
+    event_type: "rerun_requested",
+    t: 126,
+    actor: TEND,
+    ...scope,
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    run_attempt: 1
+  });
+  const e2ePassed = qe({
+    event_id: mint(2107),
+    event_type: "check_run_completed",
+    t: 231,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6003",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 2,
+    conclusion: "success",
+    started_at: at(130),
+    completed_at: at(230)
+  });
+  const merged = qe({
+    event_id: mint(2108),
+    event_type: "merged",
+    t: 240,
+    actor: GITHUB,
+    ...pr(runRef, 102, sha(1)),
+    merge_commit_sha: sha(2),
+    candidate_id: candidateId
+  });
+  const settled = outcome(mint(2301), runRef, "succeeded", 250);
+  const stream = [run, enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged, settled];
+  return {
+    name: "flake-rerun",
+    description: "A merge_group e2e check fails on attempt 1. A randomized (exact-propensity) recovery decision chooses retry over rebase; the rerun is attempt 2 of the same check_key with a new check_run_id, passes, and the PR merges. Both attempts stay as facts.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var baseDriftRebase = (() => {
+  const run = attempt({ kind: "run", id: mint(3001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(3101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(3102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(3201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 103, head_sha: sha(1) }]
+  });
+  const ejected = qe({
+    event_id: mint(3103),
+    event_type: "ejected",
+    t: 60,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    trigger: "base_moved",
+    candidate_id: mint(3201)
+  });
+  const decision2 = qe({
+    event_id: mint(3104),
+    event_type: "recovery_decision",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: { as_of: at(60), event_ids: [ejected.event_id], attempt_number: 1, base_moved_since_candidate: true },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "rebase",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "rebase", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rebased = qe({
+    event_id: mint(3105),
+    event_type: "rebase_performed",
+    t: 70,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    previous_head_sha: sha(1),
+    previous_base_sha: BASE2,
+    base_sha: sha(101),
+    method: "rebase",
+    had_conflicts: false
+  });
+  const requeued = qe({
+    event_id: mint(3106),
+    event_type: "enqueued",
+    t: 75,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    base_sha: sha(101)
+  });
+  const second = qe({
+    event_id: mint(3107),
+    event_type: "candidate_prepared",
+    t: 80,
+    actor: TEND,
+    candidate_id: mint(3202),
+    attempt_refs: [runRef],
+    base_sha: sha(101),
+    entries: [{ pr_number: 103, head_sha: sha(3) }]
+  });
+  const check = qe({
+    event_id: mint(3108),
+    event_type: "check_run_completed",
+    t: 141,
+    actor: ACTIONS,
+    ...pr(runRef, 103, sha(3)),
+    check_run_id: "7001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(140)
+  });
+  const merged = qe({
+    event_id: mint(3109),
+    event_type: "merged",
+    t: 150,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    merge_commit_sha: sha(4),
+    base_sha: sha(101),
+    candidate_id: mint(3202),
+    method: "squash"
+  });
+  const settled = outcome(mint(3301), runRef, "succeeded", 160);
+  const stream = [run, enqueued, first, ejected, decision2, rebased, requeued, second, check, merged, settled];
+  return {
+    name: "base-drift-rebase",
+    description: "The base moves under a prepared candidate, so the PR is ejected (trigger base_moved). A deterministic decision rebases it; the head move is a rebase_performed evidence fact on the same run, not a new attempt. It re-enters in a new candidate on the new base and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, ejected, decision2, rebased, requeued, second, check, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var realFailureRepair = (() => {
+  const run = attempt({ kind: "run", id: mint(4001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(4101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(4102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(4201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(1) }]
+  });
+  const failed = qe({
+    event_id: mint(4103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(1)),
+    check_run_id: "8001",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const ejected = qe({
+    event_id: mint(4104),
+    event_type: "ejected",
+    t: 92,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    trigger: "check_failed",
+    candidate_id: mint(4201),
+    cause_event_ids: [failed.event_id]
+  });
+  const decision2 = qe({
+    event_id: mint(4105),
+    event_type: "recovery_decision",
+    t: 95,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(92),
+      event_ids: [failed.event_id, ejected.event_id],
+      failing_check_keys: ["ci-unit"],
+      failure_class: { label: "test-assertion", labeler_version: "mq-0.2.0" },
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 2,
+      provenance: { harness: "claude-code", executed_model: "claude-sonnet-5-5", task_type: "bugfix" },
+      flake_history: [{ check_key: "ci-unit", window_runs: 40, window_failures: 0 }]
+    },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "fix",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const repair = attempt({ kind: "stage_attempt", id: mint(4002), parent: run.id, stage: "repair", t: 100 });
+  const repairRef = ref2(run.id, repair.id);
+  const pushed = qe({
+    event_id: mint(4106),
+    event_type: "repair_commit_pushed",
+    t: 300,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(repairRef, 104, sha(5)),
+    parent_sha: sha(1),
+    commits_pushed: 1,
+    cause_event_ids: [decision2.event_id],
+    cost_event_ids: ["evt-repair-0001", "evt-repair-0002"]
+  });
+  const repairDone = outcome(mint(4301), repairRef, "succeeded", 301);
+  const requeued = qe({
+    event_id: mint(4107),
+    event_type: "enqueued",
+    t: 310,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    base_sha: BASE2
+  });
+  const second = qe({
+    event_id: mint(4108),
+    event_type: "candidate_prepared",
+    t: 320,
+    actor: TEND,
+    candidate_id: mint(4202),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(5) }]
+  });
+  const passed = qe({
+    event_id: mint(4109),
+    event_type: "check_run_completed",
+    t: 391,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(5)),
+    check_run_id: "8002",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(330),
+    completed_at: at(390)
+  });
+  const merged = qe({
+    event_id: mint(4110),
+    event_type: "merged",
+    t: 400,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    merge_commit_sha: sha(6),
+    candidate_id: mint(4202),
+    method: "squash"
+  });
+  const settled = outcome(mint(4302), runRef, "succeeded", 410);
+  const stream = [
+    run,
+    enqueued,
+    first,
+    failed,
+    ejected,
+    decision2,
+    repair,
+    pushed,
+    repairDone,
+    requeued,
+    second,
+    passed,
+    merged,
+    settled
+  ];
+  return {
+    name: "real-failure-repair",
+    description: "A unit check fails for real; the PR is ejected with the failed check as cause. A recovery decision snapshots only what preceded it and chooses fix. A repair stage attempt pushes a commit attributed to the agent with its provider-observed model and the cost events of the repair; the PR re-enters and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, failed, ejected, decision2, pushed, requeued, second, passed, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var cumulativePredecessorEjects = (() => {
+  const runA = attempt({ kind: "run", id: mint(5001), parent: TASK, t: 0 });
+  const runB = attempt({ kind: "run", id: mint(5002), parent: OTHER_TASK, task: OTHER_TASK, t: 1 });
+  const refA = ref2(runA.id);
+  const refB = ref2(runB.id, void 0, OTHER_TASK);
+  const enqA = qe({ event_id: mint(5101), event_type: "enqueued", t: 10, actor: TEND, ...pr(refA, 105, sha(1)), queue_depth: 0 });
+  const enqB = qe({ event_id: mint(5102), event_type: "enqueued", t: 11, actor: TEND, ...pr(refB, 106, sha(2)), queue_depth: 1 });
+  const c1 = mint(5201);
+  const cumulative = qe({
+    event_id: mint(5103),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 105, head_sha: sha(1) }, { pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(3)
+  });
+  const failed = qe({
+    event_id: mint(5104),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    head_sha: sha(3),
+    check_run_id: "9001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(90)
+  });
+  const ejectA = qe({
+    event_id: mint(5105),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refA, 105, sha(1)),
+    trigger: "check_failed",
+    candidate_id: c1,
+    cause_event_ids: [failed.event_id]
+  });
+  const ejectB = qe({
+    event_id: mint(5106),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    trigger: "predecessor_ejected",
+    candidate_id: c1,
+    cause_event_ids: [ejectA.event_id]
+  });
+  const wrongComposition = qe({
+    event_id: mint(5107),
+    event_type: "check_run_completed",
+    t: 95,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refB],
+    head_sha: sha(3),
+    check_run_id: "9002",
+    check_key: "ci-lint",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(94)
+  });
+  const c2 = mint(5202);
+  const alone = qe({
+    event_id: mint(5108),
+    event_type: "candidate_prepared",
+    t: 100,
+    actor: GITHUB,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(4)
+  });
+  const passed = qe({
+    event_id: mint(5109),
+    event_type: "check_run_completed",
+    t: 171,
+    actor: ACTIONS,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    head_sha: sha(4),
+    check_run_id: "9003",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(170)
+  });
+  const staleMerge = qe({
+    event_id: mint(5110),
+    event_type: "merged",
+    t: 175,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(3),
+    candidate_id: c1
+  });
+  const merged = qe({
+    event_id: mint(5111),
+    event_type: "merged",
+    t: 176,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(4),
+    candidate_id: c2
+  });
+  const settled = outcome(mint(5301), refB, "succeeded", 180);
+  const stream = [
+    runA,
+    runB,
+    enqA,
+    enqB,
+    cumulative,
+    failed,
+    ejectA,
+    ejectB,
+    wrongComposition,
+    alone,
+    passed,
+    staleMerge,
+    merged,
+    settled
+  ];
+  return {
+    name: "cumulative-candidate-predecessor-ejects",
+    description: "Two PRs from two tasks form one cumulative candidate (B is tested on top of A). The candidate check fails; A is ejected for the failure and B because its predecessor was ejected. B lands alone in a new candidate. A check naming a different composition under the old candidate id is rejected, as is a merge claimed under the candidate B was ejected from.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(wrongComposition)]: ["rejected", ["candidate_mismatch"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["ejected_from_candidate"]]
+      }),
+      accepted_event_ids: eventIds(enqA, enqB, cumulative, failed, ejectA, ejectB, alone, passed, merged),
+      candidates: [candidateState(cumulative, [runA.id, runB.id]), candidateState(alone, [], [runB.id])]
+    }
+  };
+})();
+var operatorManualCommit = (() => {
+  const run = attempt({ kind: "run", id: mint(6001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({ event_id: mint(6101), event_type: "enqueued", t: 10, actor: TEND, ...pr(runRef, 107, sha(1)) });
+  const failed = qe({
+    event_id: mint(6102),
+    event_type: "check_run_completed",
+    t: 61,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(1)),
+    check_run_id: "10001",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(60)
+  });
+  const dequeued = qe({
+    event_id: mint(6103),
+    event_type: "dequeued",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 107, sha(1)),
+    trigger: "policy"
+  });
+  const escalate = qe({
+    event_id: mint(6104),
+    event_type: "recovery_decision",
+    t: 65,
+    actor: WATCHDOG,
+    ...pr(runRef, 107, sha(1)),
+    policy: { name: "ready-watchdog", version: "3.2.0" },
+    context: { as_of: at(62), event_ids: [failed.event_id, dequeued.event_id], failing_check_keys: ["ci-typecheck"], attempt_number: 3 },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "escalate",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 0 },
+      { action: "escalate", probability: 1 }
+    ]
+  });
+  const manual = qe({
+    event_id: mint(6105),
+    event_type: "repair_commit_pushed",
+    t: 900,
+    actor: OPERATOR,
+    ...pr(runRef, 107, sha(7)),
+    parent_sha: sha(1),
+    commits_pushed: 2,
+    cause_event_ids: [escalate.event_id]
+  });
+  const requeued = qe({ event_id: mint(6106), event_type: "enqueued", t: 910, actor: OPERATOR, ...pr(runRef, 107, sha(7)) });
+  const passed = qe({
+    event_id: mint(6107),
+    event_type: "check_run_completed",
+    t: 961,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(7)),
+    check_run_id: "10002",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(960)
+  });
+  const merged = qe({
+    event_id: mint(6108),
+    event_type: "merged",
+    t: 970,
+    actor: TEND,
+    ...pr(runRef, 107, sha(7)),
+    merge_commit_sha: sha(8)
+  });
+  const settled = outcome(mint(6301), runRef, "succeeded", 980);
+  const stream = [run, enqueued, failed, dequeued, escalate, manual, requeued, passed, merged, settled];
+  return {
+    name: "operator-manual-commit",
+    description: "The watchdog escalates after a third failure. A human pushes the fix: the repair commit is attributed to the operator (no model, no stage attempt), so the agent is never credited with it. The PR then lands without a merge candidate.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, failed, dequeued, escalate, manual, requeued, passed, merged),
+      candidates: []
+    }
+  };
+})();
+var crashResumeDuplicate = (() => {
+  const run1 = attempt({ kind: "run", id: mint(7001), parent: TASK, t: 0 });
+  const ref1 = ref2(run1.id);
+  const enqueued = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 1
+  });
+  const candidate = qe({
+    event_id: mint(7102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(7201),
+    attempt_refs: [ref1],
+    base_sha: BASE2,
+    entries: [{ pr_number: 108, head_sha: sha(1) }]
+  });
+  const check = qe({
+    event_id: mint(7103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(80)
+  });
+  const replayEnqueued = { ...enqueued };
+  const replayCandidate = JSON.parse(JSON.stringify(candidate));
+  const reorderedCheck = Object.fromEntries(Object.entries(check).reverse());
+  const conflicting = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 85,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 0
+  });
+  const run2 = attempt({ kind: "run", id: mint(7002), parent: TASK, t: 100 });
+  const ref22 = ref2(run2.id);
+  const staleMerge = qe({
+    event_id: mint(7104),
+    event_type: "merged",
+    t: 110,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    merge_commit_sha: sha(2)
+  });
+  const lateCheck = qe({
+    event_id: mint(7105),
+    event_type: "check_run_completed",
+    t: 111,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11002",
+    check_key: "ci-lint",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(79)
+  });
+  const enqueued2 = qe({ event_id: mint(7106), event_type: "enqueued", t: 200, actor: TEND, ...pr(ref22, 108, sha(9)) });
+  const merged2 = qe({
+    event_id: mint(7107),
+    event_type: "merged",
+    t: 260,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    merge_commit_sha: sha(10)
+  });
+  const settled = outcome(mint(7301), ref22, "succeeded", 270);
+  const lateDequeue = qe({
+    event_id: mint(7108),
+    event_type: "dequeued",
+    t: 280,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    trigger: "pr_closed"
+  });
+  const stream = [
+    run1,
+    enqueued,
+    candidate,
+    check,
+    replayEnqueued,
+    replayCandidate,
+    reorderedCheck,
+    conflicting,
+    run2,
+    staleMerge,
+    lateCheck,
+    enqueued2,
+    merged2,
+    settled,
+    lateDequeue
+  ];
+  return {
+    name: "crash-resume-duplicate",
+    description: "After a crash the writer re-emits three events (one with reordered keys): each is a duplicate by event_id and changes nothing. A different fact under a reused event_id is rejected, never overwriting. After a relaunch, a control write from the old run is stale while its late check-run evidence is kept; once run 2 settles, a late dequeue is rejected.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(replayEnqueued)]: ["duplicate"],
+        [stream.indexOf(replayCandidate)]: ["duplicate"],
+        [stream.indexOf(reorderedCheck)]: ["duplicate"],
+        [stream.indexOf(conflicting)]: ["rejected", ["event_id_conflict"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["stale_run"]],
+        [stream.indexOf(lateDequeue)]: ["rejected", ["settled"]]
+      }),
+      accepted_event_ids: eventIds(enqueued, candidate, check, lateCheck, enqueued2, merged2),
+      candidates: [candidateState(candidate)]
+    }
+  };
+})();
+var multiRoundReview = (() => {
+  const run = attempt({ kind: "run", id: mint(8001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const reviewFlow = { kind: "monitor", component: "review-flow" };
+  const r1Correctness = attempt({ kind: "stage_attempt", id: mint(8002), parent: run.id, stage: "review", t: 10 });
+  const r1Security = attempt({ kind: "stage_attempt", id: mint(8003), parent: run.id, stage: "security-review", t: 10 });
+  const started1 = qe({
+    event_id: mint(8101),
+    event_type: "review_round_started",
+    t: 11,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    reviewers: [
+      { reviewer_key: "correctness", stage: "review", stage_attempt_id: r1Correctness.id, harness: "codex", intended_model: "gpt-5.5" },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        challenge: true
+      }
+    ],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "exact", propensity: 0.25 }
+  });
+  const f1 = mint(8401);
+  const f2 = mint(8402);
+  const completed1 = qe({
+    event_id: mint(8102),
+    event_type: "review_round_completed",
+    t: 200,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r1Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        executed_model_evidence: "not_observed"
+      }
+    ],
+    findings: [
+      { finding_id: f1, reviewer_key: "correctness", blocking: true, location: "first_round" },
+      { finding_id: f2, reviewer_key: "security", blocking: false, location: "first_round" }
+    ]
+  });
+  const fix1 = qe({
+    event_id: mint(8103),
+    event_type: "repair_commit_pushed",
+    t: 400,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(11)),
+    parent_sha: sha(1),
+    cause_event_ids: [completed1.event_id]
+  });
+  const r2Correctness = attempt({ kind: "stage_attempt", id: mint(8004), parent: run.id, stage: "review", t: 410 });
+  const started2 = qe({
+    event_id: mint(8104),
+    event_type: "review_round_started",
+    t: 411,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r2Correctness.id, harness: "codex", intended_model: "gpt-5.5" }],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "deterministic", propensity: 1 }
+  });
+  const completed2 = qe({
+    event_id: mint(8105),
+    event_type: "review_round_completed",
+    t: 600,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r2Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: [
+      { finding_id: mint(8403), reviewer_key: "correctness", blocking: true, location: "unchanged_since_first_round", reflag_of: f2 },
+      { finding_id: mint(8404), reviewer_key: "correctness", blocking: false, location: "unchanged_since_first_round" },
+      { finding_id: mint(8405), reviewer_key: "correctness", blocking: true, location: "changed_since_first_round" }
+    ]
+  });
+  const fix2 = qe({
+    event_id: mint(8106),
+    event_type: "repair_commit_pushed",
+    t: 800,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(12)),
+    parent_sha: sha(11),
+    cause_event_ids: [completed2.event_id]
+  });
+  const r3Correctness = attempt({ kind: "stage_attempt", id: mint(8005), parent: run.id, stage: "review", t: 810 });
+  const started3 = qe({
+    event_id: mint(8107),
+    event_type: "review_round_started",
+    t: 811,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r3Correctness.id, harness: "codex", intended_model: "gpt-5.5" }]
+  });
+  const completed3 = qe({
+    event_id: mint(8108),
+    event_type: "review_round_completed",
+    t: 950,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r3Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: []
+  });
+  const stream = [
+    run,
+    r1Correctness,
+    r1Security,
+    started1,
+    completed1,
+    fix1,
+    r2Correctness,
+    started2,
+    completed2,
+    fix2,
+    r3Correctness,
+    started3,
+    completed3
+  ];
+  return {
+    name: "multi-round-review",
+    description: "Three review rounds. Round 1 runs two reviewers chosen with an exact propensity; the challenge reviewer has no observed model, so none is recorded. Round 2 re-flags a round-1 finding and raises a new one on code round 1 already saw (unchanged_since_first_round), plus one on changed lines. Round 3 is an observed clean round (findings: []).",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(started1, completed1, fix1, started2, completed2, fix2, started3, completed3),
+      candidates: []
+    }
+  };
+})();
+
 // ../core/src/contribution/schema.ts
 var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "schema_version",
@@ -7484,19 +9873,19 @@ function enumerateMergedPrs(target, deps, options = {}) {
   const refs = [];
   for (const line of result.stdout.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const [sha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
+    const [sha2, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
     const subject = subjectParts.join("	").trim();
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
     const mergedAtEpoch = Number(epochText);
-    if (!sha || parents.length === 0 || !Number.isFinite(mergedAtEpoch)) continue;
+    if (!sha2 || parents.length === 0 || !Number.isFinite(mergedAtEpoch)) continue;
     const prNumber = extractPrNumber(subject);
     if (prNumber === null) continue;
     refs.push({
       prNumber,
       prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${prNumber}`,
-      mergeSha: sha,
+      mergeSha: sha2,
       parentSha: parents[0],
-      headSha: parents.length >= 2 ? parents[1] : sha,
+      headSha: parents.length >= 2 ? parents[1] : sha2,
       mergedAtEpoch,
       subject
     });
@@ -7533,17 +9922,17 @@ function resolveMergedPr(target, deps, prUrl, options = {}) {
     };
   }
   const info = deps.runGit(["log", "-1", "--pretty=format:%H%x09%P%x09%ct%x09%s", metadata.mergeCommitSha]);
-  const [sha, parentsText = "", epochText = "", ...subjectParts] = info.stdout.split("	");
+  const [sha2, parentsText = "", epochText = "", ...subjectParts] = info.stdout.split("	");
   const parents = parentsText.trim().split(/\s+/).filter(Boolean);
-  if (info.exitCode !== 0 || !sha || parents.length === 0) {
+  if (info.exitCode !== 0 || !sha2 || parents.length === 0) {
     return { prUrl, reason: "inaccessible_history", detail: "cannot read merge commit" };
   }
   return {
     prNumber: metadata.number,
     prUrl,
-    mergeSha: sha,
+    mergeSha: sha2,
     parentSha: parents[0],
-    headSha: metadata.headSha ?? (parents.length >= 2 ? parents[1] : sha),
+    headSha: metadata.headSha ?? (parents.length >= 2 ? parents[1] : sha2),
     mergedAtEpoch: Number(epochText),
     subject: subjectParts.join("	").trim() || metadata.title
   };
@@ -7609,8 +9998,8 @@ function countCoveredLines(range, covered) {
   return count;
 }
 var WHITESPACE_DIFF_ARGS = ["-U0", "-w", "--ignore-blank-lines", "--find-renames", "--no-color"];
-function buildSubstrate(deps, pr) {
-  const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr.parentSha, pr.mergeSha]);
+function buildSubstrate(deps, pr2) {
+  const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr2.parentSha, pr2.mergeSha]);
   if (result.exitCode !== 0) return null;
   const files = [];
   for (const entry of parseZeroContextDiff(result.stdout)) {
@@ -7626,8 +10015,8 @@ function buildSubstrate(deps, pr) {
     for (const hunk of file.hunks) {
       lineRanges.push({
         path: file.path,
-        old: hunk.old ? { start: hunk.old.start, end: hunk.old.end, sha: pr.parentSha } : null,
-        new: hunk.new ? { start: hunk.new.start, end: hunk.new.end, sha: pr.mergeSha } : null
+        old: hunk.old ? { start: hunk.old.start, end: hunk.old.end, sha: pr2.parentSha } : null,
+        new: hunk.new ? { start: hunk.new.start, end: hunk.new.end, sha: pr2.mergeSha } : null
       });
       totalLines += hunk.new ? rangeLineCount(hunk.new) : hunk.old ? rangeLineCount(hunk.old) : 0;
     }
@@ -7635,12 +10024,12 @@ function buildSubstrate(deps, pr) {
   return { files, lineRanges, totalLines };
 }
 var LS_TREE_CHUNK = 400;
-function blobsAt(deps, sha, paths) {
+function blobsAt(deps, sha2, paths) {
   const out = new Map(paths.map((path4) => [path4, null]));
   const unique2 = [...new Set(paths)];
   for (let i = 0; i < unique2.length; i += LS_TREE_CHUNK) {
     const chunk = unique2.slice(i, i + LS_TREE_CHUNK);
-    const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha, "--", ...chunk]);
+    const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha2, "--", ...chunk]);
     if (result.exitCode !== 0) continue;
     for (const entry of result.stdout.split("\0")) {
       const tab = entry.indexOf("	");
@@ -7652,7 +10041,7 @@ function blobsAt(deps, sha, paths) {
   }
   return out;
 }
-function forwardFate(deps, pr, substrate, terminalSha) {
+function forwardFate(deps, pr2, substrate, terminalSha) {
   const toFate = (stdout) => {
     const fate = /* @__PURE__ */ new Map();
     for (const entry of parseNameStatusOutput(stdout)) {
@@ -7667,7 +10056,7 @@ function forwardFate(deps, pr, substrate, terminalSha) {
       "diff",
       "--name-status",
       "--no-renames",
-      pr.mergeSha,
+      pr2.mergeSha,
       terminalSha,
       "--",
       ...paths
@@ -7676,12 +10065,12 @@ function forwardFate(deps, pr, substrate, terminalSha) {
     const fate = toFate(scoped.stdout);
     if (![...fate.values()].some((entry) => entry.status === "D")) return fate;
   }
-  const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr.mergeSha, terminalSha]);
+  const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr2.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
   return toFate(nameStatus.stdout);
 }
-function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
-  const fate = forwardFate(deps, pr, substrate, terminalSha);
+function analyseForward(deps, pr2, substrate, terminalSha, baseBlobs) {
+  const fate = forwardFate(deps, pr2, substrate, terminalSha);
   if (!fate) return null;
   const substratePathspec = /* @__PURE__ */ new Set();
   for (const file of substrate.files) {
@@ -7692,7 +10081,7 @@ function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
   const unified = deps.runGit([
     "diff",
     ...WHITESPACE_DIFF_ARGS,
-    pr.mergeSha,
+    pr2.mergeSha,
     terminalSha,
     "--",
     ...[...substratePathspec].sort()
@@ -7781,14 +10170,14 @@ function classifyCommitActor(commit) {
   }
   return author;
 }
-function attributeUndoers(deps, pr, terminalSha, touchedPaths, extraVotes) {
+function attributeUndoers(deps, pr2, terminalSha, touchedPaths, extraVotes) {
   const votes = new Set(extraVotes);
   if (touchedPaths.length > 0) {
     const result = deps.runGit([
       "log",
       "--no-merges",
       "--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e",
-      `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`,
+      `${pr2.landedSha ?? pr2.mergeSha}..${terminalSha}`,
       "--",
       ...touchedPaths
     ]);
@@ -7855,9 +10244,9 @@ var REASON_CODE_ORDER = [
   "substantial_rewrite",
   "no_evidence"
 ];
-function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
+function missingLabel(pr2, target, deps, horizon2, reason, options = {}) {
   return buildArbiterSurvivalLabel({
-    prUrl: pr.prUrl,
+    prUrl: pr2.prUrl,
     horizon_days: horizon2,
     label_provenance: "harvested",
     line_ranges: options.lineRanges ?? [],
@@ -7872,9 +10261,9 @@ function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
     envelope: {
       labeller_version: SURVIVAL_LABELLER_VERSION,
       normalization_version: SURVIVAL_NORMALIZATION_VERSION,
-      pr_head_sha: pr.headSha,
-      merge_sha: pr.mergeSha,
-      horizon_terminal_sha: options.terminalSha ?? pr.mergeSha,
+      pr_head_sha: pr2.headSha,
+      merge_sha: pr2.mergeSha,
+      horizon_terminal_sha: options.terminalSha ?? pr2.mergeSha,
       integration_branch: target.integrationBranch,
       integration_mode: target.integrationMode ?? "promotion",
       computed_at: deps.now().toISOString()
@@ -7888,11 +10277,11 @@ function buildHorizonTerminalIndex(deps, branch) {
   const prefixMin = [];
   let min = Number.POSITIVE_INFINITY;
   for (const line of result.stdout.split("\n")) {
-    const [sha, ct] = line.split(" ");
+    const [sha2, ct] = line.split(" ");
     const epoch = Number(ct);
-    if (!sha || !Number.isFinite(epoch)) continue;
+    if (!sha2 || !Number.isFinite(epoch)) continue;
     min = Math.min(min, epoch);
-    shas.push(sha);
+    shas.push(sha2);
     prefixMin.push(min);
   }
   return { shas, prefixMin };
@@ -7921,68 +10310,68 @@ function resolveHorizonTerminal(deps, target, cutoffEpoch, index) {
   if (result.exitCode !== 0) return null;
   return result.stdout.trim() || null;
 }
-function labelMergedPr(target, deps, pr, options = {}) {
+function labelMergedPr(target, deps, pr2, options = {}) {
   assertIntegrationBranch(target);
   const horizons = options.horizons ?? HORIZONS;
   const nowEpoch = Math.floor(deps.now().getTime() / 1e3);
-  const substrate = buildSubstrate(deps, pr);
+  const substrate = buildSubstrate(deps, pr2);
   let base = null;
   const baseBlobs = () => base ??= {
-    parent: blobsAt(deps, pr.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
-    merge: blobsAt(deps, pr.mergeSha, substrate?.files.map((file) => file.path) ?? [])
+    parent: blobsAt(deps, pr2.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
+    merge: blobsAt(deps, pr2.mergeSha, substrate?.files.map((file) => file.path) ?? [])
   };
   let crossReferences = null;
   const linkedReferencesAt = (cutoffEpoch) => {
     if (options.includeLinkedReferences === false) return false;
     if (crossReferences === null) {
       try {
-        crossReferences = deps.github.listCrossReferences(pr.prNumber);
+        crossReferences = deps.github.listCrossReferences(pr2.prNumber);
       } catch (error) {
-        deps.onDiagnostic?.(`cross-reference lookup failed for #${pr.prNumber}: ${String(error)}`);
+        deps.onDiagnostic?.(`cross-reference lookup failed for #${pr2.prNumber}: ${String(error)}`);
         crossReferences = [];
       }
     }
     return crossReferences.some(
-      (ref3) => ref3.createdAtEpoch > pr.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target)
+      (ref3) => ref3.createdAtEpoch > pr2.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target)
     );
   };
-  const issueKeys = extractIssueKeys(pr.subject);
+  const issueKeys = extractIssueKeys(pr2.subject);
   const redispatchAt = (cutoffEpoch) => {
     if (issueKeys.size === 0 || !options.allMergedPrs) return false;
     const index = redispatchIndex(options.allMergedPrs);
     return [...issueKeys].some(
       (key) => (index.get(key) ?? []).some(
-        (other) => other.mergeSha !== pr.mergeSha && other.epoch > pr.mergedAtEpoch && other.epoch <= cutoffEpoch
+        (other) => other.mergeSha !== pr2.mergeSha && other.epoch > pr2.mergedAtEpoch && other.epoch <= cutoffEpoch
       )
     );
   };
   const labels = [];
   for (const horizon2 of horizons) {
-    const cutoffEpoch = pr.mergedAtEpoch + horizon2 * DAY_SECONDS;
+    const cutoffEpoch = pr2.mergedAtEpoch + horizon2 * DAY_SECONDS;
     if (cutoffEpoch > nowEpoch) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "missing_horizon", {
+      labels.push(missingLabel(pr2, target, deps, horizon2, "missing_horizon", {
         lineRanges: substrate?.lineRanges
       }));
       continue;
     }
     if (!substrate) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history"));
+      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history"));
       continue;
     }
     if (substrate.totalLines === 0) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "insufficient_line_range_substrate"));
+      labels.push(missingLabel(pr2, target, deps, horizon2, "insufficient_line_range_substrate"));
       continue;
     }
     const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch, options.horizonTerminalIndex);
     if (!terminalSha) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
+      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history", {
         lineRanges: substrate.lineRanges
       }));
       continue;
     }
-    const analysis = analyseForward(deps, pr, substrate, terminalSha, baseBlobs);
+    const analysis = analyseForward(deps, pr2, substrate, terminalSha, baseBlobs);
     if (!analysis) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
+      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history", {
         terminalSha,
         lineRanges: substrate.lineRanges
       }));
@@ -7996,7 +10385,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
     const survived = !(analysis.reverted || followup);
     const undoneBy = analysis.rangeFollowup || analysis.reverted || preMergeHumanEdit ? attributeUndoers(
       deps,
-      pr,
+      pr2,
       terminalSha,
       analysis.rangeFollowup || analysis.reverted ? analysis.touchedPaths : [],
       preMergeHumanEdit ? ["human"] : []
@@ -8012,7 +10401,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
     }
     if (codes.size === 0) codes.add("no_evidence");
     labels.push(buildArbiterSurvivalLabel({
-      prUrl: pr.prUrl,
+      prUrl: pr2.prUrl,
       horizon_days: horizon2,
       label_provenance: "harvested",
       line_ranges: substrate.lineRanges,
@@ -8027,8 +10416,8 @@ function labelMergedPr(target, deps, pr, options = {}) {
       envelope: {
         labeller_version: SURVIVAL_LABELLER_VERSION,
         normalization_version: SURVIVAL_NORMALIZATION_VERSION,
-        pr_head_sha: pr.headSha,
-        merge_sha: pr.mergeSha,
+        pr_head_sha: pr2.headSha,
+        merge_sha: pr2.mergeSha,
         horizon_terminal_sha: terminalSha,
         integration_branch: target.integrationBranch,
         integration_mode: target.integrationMode ?? "promotion",
@@ -8212,9 +10601,9 @@ function createDefaultScanGitHubClient(target) {
       }
       return messages;
     },
-    async getCheckConclusion(sha) {
+    async getCheckConclusion(sha2) {
       await Promise.resolve();
-      const checks = parse(api(`repos/${target.owner}/${target.repo}/commits/${sha}/check-runs?per_page=100`));
+      const checks = parse(api(`repos/${target.owner}/${target.repo}/commits/${sha2}/check-runs?per_page=100`));
       const conclusions = (checks?.check_runs ?? []).map((check) => check.conclusion).filter((x) => typeof x === "string");
       if (!conclusions.length) return "none";
       if (conclusions.some((x) => x === "failure" || x === "timed_out" || x === "action_required")) return "failure";
@@ -8437,9 +10826,9 @@ import { join as join4 } from "node:path";
 
 // src/shadow/discover.ts
 var EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-function isAncestor(runGit3, sha, ref3) {
+function isAncestor(runGit3, sha2, ref3) {
   try {
-    const result = runGit3(["merge-base", "--is-ancestor", sha, ref3]);
+    const result = runGit3(["merge-base", "--is-ancestor", sha2, ref3]);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -9551,15 +11940,15 @@ function bootstrap(rows, estimator, relevant, seed, resamples) {
 function scoreCalibration(input) {
   const { plan, items, sheetA, sheetB, seed } = input;
   const resamples = input.resamples ?? 2e3;
-  const decided = (id2) => {
+  const decided2 = (id2) => {
     const l = sheetA.get(id2);
     return l && l.verdict !== "unclear" ? l : null;
   };
   const decidedPerCell = /* @__PURE__ */ new Map();
-  for (const item of items) if (decided(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
+  for (const item of items) if (decided2(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
   const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
   const rows = items.flatMap((item) => {
-    const label2 = decided(item.item_id);
+    const label2 = decided2(item.item_id);
     const key = `${item.repo}\0${item.stratum}`;
     return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
   });
@@ -9617,7 +12006,7 @@ function scoreCalibration(input) {
   });
   const rejected = items.filter((i) => i.stratum === "rejected");
   const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
-  const rejDecided = rejected.filter((i) => decided(i.item_id)).length;
+  const rejDecided = rejected.filter((i) => decided2(i.item_id)).length;
   const by_code = {};
   for (const item of rejected) {
     const label2 = sheetA.get(item.item_id);
@@ -9759,37 +12148,37 @@ function cap(diff) {
   return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
 [diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
 }
-function change(runGit3, url, from, to, pr) {
+function change(runGit3, url, from, to, pr2) {
   const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
   return {
     url,
-    title: pr?.title ?? null,
-    body: pr?.body ?? null,
-    merged_at: pr?.merged_at ?? null,
+    title: pr2?.title ?? null,
+    body: pr2?.body ?? null,
+    merged_at: pr2?.merged_at ?? null,
     files,
     ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
   };
 }
 function buildItemEvidence(item, context, runGit3) {
-  const pr = context.prs.get(item.pr_url);
-  if (!pr) throw new Error(`${item.item_id}: original not in the enumeration cache`);
-  const original = change(runGit3, pr.pr_url, pr.base_sha, pr.merge_sha, pr);
+  const pr2 = context.prs.get(item.pr_url);
+  if (!pr2) throw new Error(`${item.item_id}: original not in the enumeration cache`);
+  const original = change(runGit3, pr2.pr_url, pr2.base_sha, pr2.merge_sha, pr2);
   const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
   const fixes = fixUrls.map((url) => {
     const fixPr = context.prs.get(url);
     if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
-    const sha = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
-    if (!sha) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
-    return change(runGit3, url, `${sha}^`, sha, void 0);
+    const sha2 = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
+    if (!sha2) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
+    return change(runGit3, url, `${sha2}^`, sha2, void 0);
   });
   const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
-  const since = new Date(pr.merged_at);
+  const since = new Date(pr2.merged_at);
   const until = new Date(since.getTime() + context.horizonDays * 864e5);
   const related = [];
   if (searched.length) {
     const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
-    const seen = /* @__PURE__ */ new Set([pr.pr_url, ...fixUrls]);
-    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
+    const seen = /* @__PURE__ */ new Set([pr2.pr_url, ...fixUrls]);
+    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr2.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
     for (const r of later) {
       if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
       seen.add(r.pr_url);
@@ -9844,32 +12233,32 @@ function diffHeaderPath(line) {
 }
 function buildLandingIndex(runGit3, branch, originals) {
   const owners = /* @__PURE__ */ new Map();
-  const own = (sha, pr) => {
-    const set = owners.get(sha) ?? /* @__PURE__ */ new Set();
-    set.add(pr);
-    owners.set(sha, set);
+  const own = (sha2, pr2) => {
+    const set = owners.get(sha2) ?? /* @__PURE__ */ new Set();
+    set.add(pr2);
+    owners.set(sha2, set);
   };
-  const rebased = originals.filter((pr) => pr.member_commits > 1);
+  const rebased = originals.filter((pr2) => pr2.member_commits > 1);
   let position = null;
   let order = [];
   if (rebased.length) {
     const result = runGit3(["rev-list", "--first-parent", "--reverse", branch]);
     if (result.exitCode !== 0) throw new Error(`szz: cannot list ${branch}: ${result.stderr.trim()}`);
     order = result.stdout.split("\n").filter(Boolean);
-    position = new Map(order.map((sha, i) => [sha, i]));
+    position = new Map(order.map((sha2, i) => [sha2, i]));
   }
-  for (const pr of originals) {
-    if (pr.landed_sha && pr.landed_sha !== pr.merge_sha) continue;
-    own(pr.merge_sha, pr);
-    for (const sha of pr.relanded_merge_shas ?? []) own(sha, pr);
-    if (pr.member_commits > 1 && position) {
-      const from = position.get(pr.base_sha);
-      const to = position.get(pr.merge_sha);
-      if (from !== void 0 && to !== void 0) for (let i = from + 1; i < to; i++) own(order[i], pr);
+  for (const pr2 of originals) {
+    if (pr2.landed_sha && pr2.landed_sha !== pr2.merge_sha) continue;
+    own(pr2.merge_sha, pr2);
+    for (const sha2 of pr2.relanded_merge_shas ?? []) own(sha2, pr2);
+    if (pr2.member_commits > 1 && position) {
+      const from = position.get(pr2.base_sha);
+      const to = position.get(pr2.merge_sha);
+      if (from !== void 0 && to !== void 0) for (let i = from + 1; i < to; i++) own(order[i], pr2);
     }
   }
   const out = /* @__PURE__ */ new Map();
-  for (const [sha, set] of owners) if (set.size === 1) out.set(sha, [...set][0]);
+  for (const [sha2, set] of owners) if (set.size === 1) out.set(sha2, [...set][0]);
   return out;
 }
 function blameFix(runGit3, fix, landing, sinceEpoch) {
@@ -9926,19 +12315,19 @@ function blameFix(runGit3, fix, landing, sinceEpoch) {
       path4
     ]);
     if (result.exitCode !== 0) throw new Error(`szz: cannot blame ${path4} at ${fix.parentSha}: ${result.stderr.trim()}`);
-    let sha = null;
+    let sha2 = null;
     let boundary = false;
     for (const line of result.stdout.split("\n")) {
       const header = line.match(/^([0-9a-f]{40}) \d+ \d+(?: \d+)?$/);
       if (header) {
-        sha = header[1];
+        sha2 = header[1];
         boundary = false;
       } else if (line === "boundary") {
         boundary = true;
       } else if (line.startsWith("	")) {
-        const original = sha && !boundary ? landing.get(sha) : void 0;
+        const original = sha2 && !boundary ? landing.get(sha2) : void 0;
         if (original && line.slice(1).trim()) blamed.set(original, (blamed.get(original) ?? 0) + 1);
-        sha = null;
+        sha2 = null;
       }
     }
   }
@@ -9967,31 +12356,31 @@ function readRevertCommits(runGit3, branch, from, until) {
   if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
   const out = [];
   for (const entry of result.stdout.split("")) {
-    const [sha = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+    const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
     const epoch = Number.parseInt(epochText, 10);
-    if (!/^[0-9a-f]{40}$/.test(sha) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
-    out.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
+    if (!/^[0-9a-f]{40}$/.test(sha2) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
+    out.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
   }
   return out;
 }
 function collectFixEvents(fixPrs, revertCommits) {
   const events17 = [];
   const bySha = /* @__PURE__ */ new Map();
-  for (const pr of fixPrs) {
+  for (const pr2 of fixPrs) {
     const event17 = {
-      pr,
-      sha: pr.landed_sha ?? pr.merge_sha,
-      parentSha: pr.base_sha,
-      epoch: Math.floor(Date.parse(pr.merged_at) / 1e3),
-      title: pr.title,
-      body: pr.body ?? "",
-      labels: pr.labels,
-      closingIssues: pr.closing_issues,
-      authorLogin: pr.author_login
+      pr: pr2,
+      sha: pr2.landed_sha ?? pr2.merge_sha,
+      parentSha: pr2.base_sha,
+      epoch: Math.floor(Date.parse(pr2.merged_at) / 1e3),
+      title: pr2.title,
+      body: pr2.body ?? "",
+      labels: pr2.labels,
+      closingIssues: pr2.closing_issues,
+      authorLogin: pr2.author_login
     };
     events17.push(event17);
-    bySha.set(pr.merge_sha, event17);
-    if (pr.landed_sha) bySha.set(pr.landed_sha, event17);
+    bySha.set(pr2.merge_sha, event17);
+    if (pr2.landed_sha) bySha.set(pr2.landed_sha, event17);
   }
   for (const commit of revertCommits) {
     const landed = bySha.get(commit.sha);
@@ -10036,13 +12425,13 @@ var OriginalIndex = class {
   byNumber = /* @__PURE__ */ new Map();
   byPrefix = /* @__PURE__ */ new Map();
   constructor(originals) {
-    for (const pr of originals) {
-      this.byNumber.set(pr.pr_number, pr);
-      for (const sha of /* @__PURE__ */ new Set([pr.merge_sha, pr.landed_sha, pr.head_sha, ...pr.relanded_merge_shas ?? []])) {
-        if (!sha) continue;
-        const bucket = this.byPrefix.get(sha.slice(0, 7)) ?? [];
-        bucket.push({ sha, pr });
-        this.byPrefix.set(sha.slice(0, 7), bucket);
+    for (const pr2 of originals) {
+      this.byNumber.set(pr2.pr_number, pr2);
+      for (const sha2 of /* @__PURE__ */ new Set([pr2.merge_sha, pr2.landed_sha, pr2.head_sha, ...pr2.relanded_merge_shas ?? []])) {
+        if (!sha2) continue;
+        const bucket = this.byPrefix.get(sha2.slice(0, 7)) ?? [];
+        bucket.push({ sha: sha2, pr: pr2 });
+        this.byPrefix.set(sha2.slice(0, 7), bucket);
       }
     }
   }
@@ -10258,8 +12647,8 @@ function dedupeEvidence(items) {
     return true;
   });
 }
-function originalRef(pr) {
-  return { pr_url: pr.pr_url, merge_sha: pr.merge_sha, merged_at: utc(Date.parse(pr.merged_at)) };
+function originalRef(pr2) {
+  return { pr_url: pr2.pr_url, merge_sha: pr2.merge_sha, merged_at: utc(Date.parse(pr2.merged_at)) };
 }
 function fixRef(event17) {
   return { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha, merged_at: utc(event17.epoch * 1e3) };
@@ -10311,11 +12700,11 @@ function changedFiles(runGit3, from, to) {
   for (let i = 0; i + 1 < parts.length; i += 2) out.push({ status: parts[i].charAt(0), path: parts[i + 1] });
   return out;
 }
-function existingPaths(runGit3, sha, paths) {
+function existingPaths(runGit3, sha2, paths) {
   const out = [];
   for (let i = 0; i < paths.length; i += 200) {
-    const result = runGit3(["ls-tree", "-r", "--name-only", "-z", sha, "--", ...paths.slice(i, i + 200)]);
-    if (result.exitCode !== 0) throw new Error(`corrective: cannot list ${sha}: ${result.stderr.trim()}`);
+    const result = runGit3(["ls-tree", "-r", "--name-only", "-z", sha2, "--", ...paths.slice(i, i + 200)]);
+    if (result.exitCode !== 0) throw new Error(`corrective: cannot list ${sha2}: ${result.stderr.trim()}`);
     out.push(...result.stdout.split("\0").filter(Boolean));
   }
   return out;
@@ -10438,7 +12827,7 @@ function correctiveCorpusRepo(input, deps) {
     ...blame ? { blame } : {},
     envelope
   });
-  const byUrl = new Map(input.originals.map((pr) => [pr.pr_url, pr]));
+  const byUrl = new Map(input.originals.map((pr2) => [pr2.pr_url, pr2]));
   const repairPairs = [];
   const failedPairs = [];
   const accepted2 = candidates.filter((c) => c.status === "accepted");
@@ -10536,17 +12925,17 @@ function enumerateCorpusRepo(target, deps) {
   const commits = readFirstParent(target, deps.runGit);
   const rollups = readRollupMembers(target, deps.runGit, commits);
   const apiPrs = fetchMergedPrs(target, deps);
-  const byNumber = new Map(apiPrs.map((pr) => [pr.number, pr]));
+  const byNumber = new Map(apiPrs.map((pr2) => [pr2.number, pr2]));
   const byMergeSha = /* @__PURE__ */ new Map();
-  for (const pr of apiPrs) {
-    if (!pr.mergeCommit) continue;
-    const list = byMergeSha.get(pr.mergeCommit.oid) ?? [];
-    list.push(pr);
-    byMergeSha.set(pr.mergeCommit.oid, list);
+  for (const pr2 of apiPrs) {
+    if (!pr2.mergeCommit) continue;
+    const list = byMergeSha.get(pr2.mergeCommit.oid) ?? [];
+    list.push(pr2);
+    byMergeSha.set(pr2.mergeCommit.oid, list);
   }
   const named = [...commits.flatMap((c) => c.prNumbers), ...[...rollups.values()].flat().map((m) => m.prNumber)];
   const missing = [...new Set(named)].filter((n) => !byNumber.has(n));
-  for (const pr of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr.number, pr);
+  for (const pr2 of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr2.number, pr2);
   const records = [];
   const mapped = /* @__PURE__ */ new Set();
   const used = /* @__PURE__ */ new Set();
@@ -10555,79 +12944,79 @@ function enumerateCorpusRepo(target, deps) {
   let rollupPrs = 0;
   let rollupUnresolved = 0;
   const recordByNumber = /* @__PURE__ */ new Map();
-  const toRecord = (pr, landing, fields) => ({
+  const toRecord = (pr2, landing, fields) => ({
     repo: target.repo,
-    pr_number: pr.number,
-    pr_url: pr.url,
-    merged_at: pr.mergedAt ?? new Date(landing.epoch * 1e3).toISOString(),
-    base_ref: pr.baseRefName,
-    head_sha: pr.headRefOid,
+    pr_number: pr2.number,
+    pr_url: pr2.url,
+    merged_at: pr2.mergedAt ?? new Date(landing.epoch * 1e3).toISOString(),
+    base_ref: pr2.baseRefName,
+    head_sha: pr2.headRefOid,
     ...fields,
     landed_sha: landing.sha,
     relanded_merge_shas: [],
-    author_login: pr.author?.login ?? null,
-    author_type: pr.author?.__typename ?? null,
-    labels: pr.labels.nodes.map((label2) => label2.name),
-    closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
-    title: pr.title,
-    body: pr.body ?? ""
+    author_login: pr2.author?.login ?? null,
+    author_type: pr2.author?.__typename ?? null,
+    labels: pr2.labels.nodes.map((label2) => label2.name),
+    closing_issues: pr2.closingIssuesReferences.nodes.map((issue) => issue.number),
+    title: pr2.title,
+    body: pr2.body ?? ""
   });
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i];
     const viaSha = byMergeSha.get(commit.sha) ?? [];
-    const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr) => !!pr);
-    const candidates = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()];
+    const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr2) => !!pr2);
+    const candidates = [...new Map([...viaSha, ...viaRef].map((pr2) => [pr2.number, pr2])).values()];
     const rollupMembers = rollups.get(commit.sha);
     if (rollupMembers) {
       mapped.add(commit.sha);
-      for (const pr of candidates) used.add(pr.number);
+      for (const pr2 of candidates) used.add(pr2.number);
       rollupPrs++;
       for (const member of rollupMembers) {
-        const pr = byNumber.get(member.prNumber);
-        if (!pr || used.has(pr.number)) {
+        const pr2 = byNumber.get(member.prNumber);
+        if (!pr2 || used.has(pr2.number)) {
           rollupUnresolved++;
           continue;
         }
-        used.add(pr.number);
-        const record = toRecord(pr, commit, { merge_sha: member.sha, base_sha: member.parentSha, member_commits: 1, landed_by: "rollup", batched: false });
+        used.add(pr2.number);
+        const record = toRecord(pr2, commit, { merge_sha: member.sha, base_sha: member.parentSha, member_commits: 1, landed_by: "rollup", batched: false });
         records.push(record);
-        recordByNumber.set(pr.number, record);
+        recordByNumber.set(pr2.number, record);
       }
       continue;
     }
-    const prs = candidates.filter((pr) => !used.has(pr.number));
+    const prs = candidates.filter((pr2) => !used.has(pr2.number));
     if (prs.length === 0) {
-      const relanded = candidates.filter((pr) => recordByNumber.has(pr.number));
+      const relanded = candidates.filter((pr2) => recordByNumber.has(pr2.number));
       if (relanded.length) {
         mapped.add(commit.sha);
         relandedCommits++;
-        for (const pr of relanded) recordByNumber.get(pr.number).relanded_merge_shas.push(commit.sha);
+        for (const pr2 of relanded) recordByNumber.get(pr2.number).relanded_merge_shas.push(commit.sha);
       }
       continue;
     }
     mapped.add(commit.sha);
     const batched = prs.length > 1;
     if (batched) batchedCommits++;
-    for (const pr of prs) {
-      used.add(pr.number);
+    for (const pr2 of prs) {
+      used.add(pr2.number);
       let first = i;
       const isMergeCommit = commit.parents.length > 1;
-      if (!batched && !isMergeCommit && viaSha.includes(pr) && pr.commits.totalCount > 1) {
-        for (let k = 1; k < pr.commits.totalCount && first - 1 >= 0 && !mapped.has(commits[first - 1].sha) && commits[first - 1].prNumbers.length === 0; k++) {
+      if (!batched && !isMergeCommit && viaSha.includes(pr2) && pr2.commits.totalCount > 1) {
+        for (let k = 1; k < pr2.commits.totalCount && first - 1 >= 0 && !mapped.has(commits[first - 1].sha) && commits[first - 1].prNumbers.length === 0; k++) {
           first--;
           mapped.add(commits[first].sha);
         }
       }
       const members = i - first + 1;
-      const record = toRecord(pr, commit, {
+      const record = toRecord(pr2, commit, {
         merge_sha: commit.sha,
         base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA2,
         member_commits: members,
-        landed_by: !viaSha.includes(pr) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
+        landed_by: !viaSha.includes(pr2) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
         batched
       });
       records.push(record);
-      recordByNumber.set(pr.number, record);
+      recordByNumber.set(pr2.number, record);
     }
   }
   const defaultNames = new Set(target.defaultBranchNames);
@@ -10653,8 +13042,8 @@ function enumerateCorpusRepo(target, deps) {
     rollup_prs: rollupPrs,
     rollup_member_prs: records.filter((r) => r.landed_by === "rollup").length,
     rollup_members_unresolved: rollupUnresolved,
-    api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
-    api_prs_not_on_branch_default_base: apiPrs.filter((pr) => !used.has(pr.number) && pr.baseRefName !== null && defaultNames.has(pr.baseRefName)).length,
+    api_prs_not_on_branch: apiPrs.filter((pr2) => !used.has(pr2.number)).length,
+    api_prs_not_on_branch_default_base: apiPrs.filter((pr2) => !used.has(pr2.number) && pr2.baseRefName !== null && defaultNames.has(pr2.baseRefName)).length,
     unmapped_sample: unmapped.slice(0, 20).map((c) => c.sha)
   };
   records.sort((a, b) => a.merged_at.localeCompare(b.merged_at) || a.pr_number - b.pr_number);
@@ -10695,12 +13084,12 @@ function readFirstParent(target, runGit3) {
     ]);
     if (result.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target.branch}: ${result.stderr.trim()}`);
     for (const entry of result.stdout.split("")) {
-      const [sha = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
-      if (!/^[0-9a-f]{40}$/.test(sha) || seen.has(sha)) continue;
+      const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+      if (!/^[0-9a-f]{40}$/.test(sha2) || seen.has(sha2)) continue;
       const epoch = Number.parseInt(epochText, 10);
       if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
-      seen.add(sha);
-      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
+      seen.add(sha2);
+      commits.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
     }
   }
   return commits;
@@ -10720,10 +13109,10 @@ function readRollupMembers(target, runGit3, commits) {
   if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
   const bySha = /* @__PURE__ */ new Map();
   for (const entry of result.stdout.split("")) {
-    const [sha = "", parents = "", subject = ""] = entry.replace(/^\n/, "").split("");
+    const [sha2 = "", parents = "", subject = ""] = entry.replace(/^\n/, "").split("");
     const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
     const parentSha = parents.trim().split(/\s+/)[0];
-    if (/^[0-9a-f]{40}$/.test(sha) && parentSha && Number.isInteger(prNumber)) bySha.set(sha, { sha, parentSha, prNumber });
+    if (/^[0-9a-f]{40}$/.test(sha2) && parentSha && Number.isInteger(prNumber)) bySha.set(sha2, { sha: sha2, parentSha, prNumber });
   }
   for (const commit of commits) {
     const chain = [];
@@ -10742,7 +13131,7 @@ function fetchMergedPrs(target, deps) {
     const cacheKey = `merged:${range}`;
     const cached = deps.cache?.get(cacheKey);
     if (cached) {
-      for (const pr of cached) out.set(pr.number, pr);
+      for (const pr2 of cached) out.set(pr2.number, pr2);
       continue;
     }
     const count = deps.graphql(COUNT_QUERY, { q }).search.issueCount;
@@ -10761,7 +13150,7 @@ function fetchMergedPrs(target, deps) {
     }
     deps.cache?.set(cacheKey, slice);
     deps.onDiagnostic?.(`info: ${target.repo} ${range}: ${slice.length} merged PRs`);
-    for (const pr of slice) out.set(pr.number, pr);
+    for (const pr2 of slice) out.set(pr2.number, pr2);
   }
   return [...out.values()];
 }
@@ -10775,7 +13164,7 @@ function fetchPrsByNumber(repo, numbers, deps) {
     if (!prs) {
       const fields = batch.map((n) => `pr${n}: pullRequest(number:${n}){ ${PR_FIELDS} }`).join("\n");
       const data = deps.graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
-      prs = Object.values(data.repository).filter((pr) => pr !== null);
+      prs = Object.values(data.repository).filter((pr2) => pr2 !== null);
       deps.cache?.set(cacheKey, prs);
     }
     out.push(...prs);
@@ -10839,13 +13228,13 @@ function labelCorpusRepo(input, deps) {
   const horizonTerminalIndex = buildHorizonTerminalIndex(labellerDeps, input.branch) ?? void 0;
   const rows = [];
   const failed = [];
-  for (const [i, pr] of all.entries()) {
+  for (const [i, pr2] of all.entries()) {
     if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.owner}/${input.repo}: labelled ${i}/${all.length} PRs`);
     try {
-      rows.push(...labelMergedPr(target, labellerDeps, pr, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
+      rows.push(...labelMergedPr(target, labellerDeps, pr2, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
     } catch (error) {
-      failed.push(pr.prNumber);
-      deps.onDiagnostic?.(`error: failed to label ${pr.prUrl}: ${String(error).slice(0, 200)}`);
+      failed.push(pr2.prNumber);
+      deps.onDiagnostic?.(`error: failed to label ${pr2.prUrl}: ${String(error).slice(0, 200)}`);
     }
   }
   return { rows, failed };
@@ -11135,9 +13524,9 @@ function parseGraphqlResponse(stdout) {
   }
 }
 function createGhPullsForCommit(repo, sleep, log) {
-  return (sha) => {
+  return (sha2) => {
     for (let attempt2 = 0; ; attempt2++) {
-      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
+      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha2}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
       if (result.exitCode === 0) return JSON.parse(result.stdout || "[]");
       if (RATE_LIMITED.test(result.stderr) && attempt2 < 48) {
         const wait = secondsUntilReset();
@@ -11417,7 +13806,7 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
       }
       log(`info: ${entry.repo}: loading cross-references and S2 rows`);
       const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
-      const closing = [...originals, ...laterPrs].flatMap((pr) => pr.closing_issues);
+      const closing = [...originals, ...laterPrs].flatMap((pr2) => pr2.closing_issues);
       log(`info: ${entry.repo}: fetching labels for ${new Set(closing).size} closed issues`);
       const issues = prefetchIssueMeta(entry.repo, closing, graphql, cache);
       const s2Rows = readGzipJsonlMembers(s2Path);
@@ -11661,7 +14050,7 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
       const records = [...readJsonl2(join7(repoDir, "prs.jsonl")), ...existsSync4(join7(repoDir, "fix-prs.jsonl")) ? readJsonl2(join7(repoDir, "fix-prs.jsonl")) : []];
       const prs = new Map(records.map((r) => [r.pr_url, r]));
       const bySha = /* @__PURE__ */ new Map();
-      for (const r of records) for (const sha of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha)) bySha.set(sha, r);
+      for (const r of records) for (const sha2 of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha2)) bySha.set(sha2, r);
       const gitDir = join7(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       for (const item of sample.items.filter((i) => i.repo === repo)) evidence3.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
@@ -11795,13 +14184,13 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
   const report = structuredClone(draft);
   report.policy = structuredClone(policy);
   const executed = report.prs.filter(
-    (pr) => pr.attribution.exact_model.evidence === "first_party_executed"
+    (pr2) => pr2.attribution.exact_model.evidence === "first_party_executed"
   );
   const executedRate = executed.length / Math.max(1, report.coverage.prs_enumerated);
   const exact = report.coverage.attribution.exact_model.rate >= policy.min_exact_model_coverage && executedRate >= policy.min_exact_model_coverage;
   const harness = report.coverage.attribution.harness.rate >= policy.min_harness_coverage;
   const comparablePriced = executed.filter(
-    (pr) => pr.cost?.actual_usd !== null && pr.cost?.actual_usd !== void 0
+    (pr2) => pr2.cost?.actual_usd !== null && pr2.cost?.actual_usd !== void 0
   ).length;
   const priced = Math.min(
     report.cost?.actual.prs_priced ?? 0,
@@ -11908,14 +14297,14 @@ function makeCell(k, n) {
 function ratioCell(ratio3, n, ci2) {
   return { basis: "descriptive", n, value: ratio3, ci: ci2 ? { low: ci2.low, high: ci2.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
-function labelAt(pr, horizon2) {
-  return pr.labels.find((label2) => label2.horizon_days === horizon2);
+function labelAt(pr2, horizon2) {
+  return pr2.labels.find((label2) => label2.horizon_days === horizon2);
 }
-function bucketFor(pr, feature, cuts) {
-  if (feature === "tests_changed") return pr.features.tests_changed === null ? null : pr.features.tests_changed ? "true" : "false";
-  if (feature === "files_touched_bucket") return pr.features.files_touched_bucket;
-  if (pr.features.loc_touched === null || !cuts) return null;
-  return quartileOf(pr.features.loc_touched, cuts);
+function bucketFor(pr2, feature, cuts) {
+  if (feature === "tests_changed") return pr2.features.tests_changed === null ? null : pr2.features.tests_changed ? "true" : "false";
+  if (feature === "files_touched_bucket") return pr2.features.files_touched_bucket;
+  if (pr2.features.loc_touched === null || !cuts) return null;
+  return quartileOf(pr2.features.loc_touched, cuts);
 }
 var reworked = (label2) => ["followup", "substantially_rewritten", "reverted"].includes(label2.outcome.report_outcome ?? "");
 function buildAggregates(prs, horizons) {
@@ -11924,21 +14313,21 @@ function buildAggregates(prs, horizons) {
   const models = [];
   const harnesses = [];
   for (const h of [...horizons].sort((a, b) => a - b)) {
-    const labelled = prs.flatMap((pr) => {
-      const l = labelAt(pr, h);
-      return l?.outcome.report_outcome ? [{ pr, l }] : [];
+    const labelled = prs.flatMap((pr2) => {
+      const l = labelAt(pr2, h);
+      return l?.outcome.report_outcome ? [{ pr: pr2, l }] : [];
     });
     for (const outcome2 of OUTCOMES) {
       const selected = labelled.filter(({ l }) => l.outcome.report_outcome === outcome2);
       survival.push({ horizon_days: h, outcome: outcome2, cell: makeCell(selected.length, labelled.length) });
     }
     for (const feature of Object.keys(REPORT_FEATURE_BUCKETS)) {
-      const locValues = feature === "loc_touched" ? labelled.map(({ pr }) => pr.features.loc_touched).filter((v) => v !== null).sort((a, b) => a - b) : [];
+      const locValues = feature === "loc_touched" ? labelled.map(({ pr: pr2 }) => pr2.features.loc_touched).filter((v) => v !== null).sort((a, b) => a - b) : [];
       const cuts = nearestRankQuartiles(locValues);
       const buckets = REPORT_FEATURE_BUCKETS[feature];
       for (const bucket of buckets) {
-        const group = labelled.filter(({ pr }) => bucketFor(pr, feature, cuts) === bucket);
-        const outside = labelled.filter(({ pr }) => bucketFor(pr, feature, cuts) !== null && bucketFor(pr, feature, cuts) !== bucket);
+        const group = labelled.filter(({ pr: pr2 }) => bucketFor(pr2, feature, cuts) === bucket);
+        const outside = labelled.filter(({ pr: pr2 }) => bucketFor(pr2, feature, cuts) !== null && bucketFor(pr2, feature, cuts) !== bucket);
         const ki = group.filter(({ l }) => reworked(l)).length;
         const ko = outside.filter(({ l }) => reworked(l)).length;
         const ciRate = wilsonInterval(ki, group.length);
@@ -11949,14 +14338,14 @@ function buildAggregates(prs, horizons) {
         }
       }
     }
-    const modelIds = [...new Set(labelled.map(({ pr }) => pr.attribution.exact_model.id).filter((v) => !!v))].sort();
+    const modelIds = [...new Set(labelled.map(({ pr: pr2 }) => pr2.attribution.exact_model.id).filter((v) => !!v))].sort();
     for (const id2 of modelIds) {
-      const group = labelled.filter(({ pr }) => pr.attribution.exact_model.id === id2);
+      const group = labelled.filter(({ pr: pr2 }) => pr2.attribution.exact_model.id === id2);
       models.push({ horizon_days: h, model_id: id2, cell: makeCell(group.filter(({ l }) => l.outcome.survived === true).length, group.length) });
     }
-    const harnessIds = [...new Set(labelled.map(({ pr }) => pr.attribution.harness.id).filter((v) => !!v))].sort();
+    const harnessIds = [...new Set(labelled.map(({ pr: pr2 }) => pr2.attribution.harness.id).filter((v) => !!v))].sort();
     for (const id2 of harnessIds) {
-      const group = labelled.filter(({ pr }) => pr.attribution.harness.id === id2);
+      const group = labelled.filter(({ pr: pr2 }) => pr2.attribution.harness.id === id2);
       harnesses.push({ horizon_days: h, harness_id: id2, cell: makeCell(group.filter(({ l }) => l.outcome.survived === true).length, group.length) });
     }
   }
@@ -11970,17 +14359,17 @@ function buildAggregates(prs, horizons) {
 }
 function buildCoverage(prs, horizons) {
   const missingByHorizon = [...horizons].sort((a, b) => a - b).map((h) => {
-    const labels = prs.map((pr) => labelAt(pr, h)).filter((label2) => !!label2);
+    const labels = prs.map((pr2) => labelAt(pr2, h)).filter((label2) => !!label2);
     const missing = /* @__PURE__ */ new Map();
     for (const label2 of labels) if (!label2.outcome.report_outcome) for (const reason of label2.outcome.reason_codes) missing.set(reason, (missing.get(reason) ?? 0) + 1);
     return { horizon_days: h, labelled: labels.filter((label2) => !!label2.outcome.report_outcome).length, missing: [...missing.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([reason, count]) => ({ reason, count })) };
   });
-  const identifiedAgent = prs.filter((pr) => pr.attribution.agent.status === "agent").length;
-  const identifiedHarness = prs.filter((pr) => !!pr.attribution.harness.id).length;
-  const identifiedModel = prs.filter((pr) => !!pr.attribution.exact_model.id).length;
+  const identifiedAgent = prs.filter((pr2) => pr2.attribution.agent.status === "agent").length;
+  const identifiedHarness = prs.filter((pr2) => !!pr2.attribution.harness.id).length;
+  const identifiedModel = prs.filter((pr2) => !!pr2.attribution.exact_model.id).length;
   const methods2 = [];
   const tallies = /* @__PURE__ */ new Map();
-  for (const pr of prs) for (const [dimension2, values] of [["agent", pr.attribution.agent.methods], ["harness", pr.attribution.harness.methods], ["exact_model", pr.attribution.exact_model.methods]]) for (const method of values) {
+  for (const pr2 of prs) for (const [dimension2, values] of [["agent", pr2.attribution.agent.methods], ["harness", pr2.attribution.harness.methods], ["exact_model", pr2.attribution.exact_model.methods]]) for (const method of values) {
     const key = `${dimension2}	${method}`;
     tallies.set(key, (tallies.get(key) ?? 0) + 1);
   }
@@ -11991,7 +14380,7 @@ function buildCoverage(prs, horizons) {
   return {
     basis: "descriptive",
     prs_enumerated: prs.length,
-    prs_eligible: prs.filter((pr) => pr.labels.some((label2) => !!label2.outcome.report_outcome)).length,
+    prs_eligible: prs.filter((pr2) => pr2.labels.some((label2) => !!label2.outcome.report_outcome)).length,
     labels_by_horizon: missingByHorizon,
     attribution: {
       agent: { identified_agent: identifiedAgent, identified_human_signal: 0, unknown: prs.length - identifiedAgent, rate: prs.length ? Math.round(identifiedAgent / prs.length * 1e4) / 1e4 : 0 },
@@ -12086,45 +14475,45 @@ function resolveAttributionConfig(input = {}) {
 }
 var unique = (values) => [...new Set(values)];
 var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some((signature) => value.toLowerCase().startsWith(signature));
-function attributePullRequest(pr, config = {}) {
-  const metadata = extractMetadataBlock(pr.body);
+function attributePullRequest(pr2, config = {}) {
+  const metadata = extractMetadataBlock(pr2.body);
   const agentMethods = [];
   const harnessMethods = [];
   const modelMethods = [];
   let identifiedAgent = false;
   const routeRole = typeof metadata?.["executedroute"] === "string" ? metadata["executedroute"].toLowerCase() : "";
   const metadataHead = typeof metadata?.["headsha"] === "string" ? metadata["headsha"].toLowerCase() : null;
-  const routeVerified = routeRole === "coder" && recognizedModel(typeof metadata?.["model"] === "string" ? metadata["model"] : null) && (!metadataHead || metadataHead === pr.headSha.toLowerCase());
+  const routeVerified = routeRole === "coder" && recognizedModel(typeof metadata?.["model"] === "string" ? metadata["model"] : null) && (!metadataHead || metadataHead === pr2.headSha.toLowerCase());
   if (routeVerified) {
     identifiedAgent = true;
     agentMethods.push("first_party_route_metadata");
     harnessMethods.push("first_party_route_metadata");
     modelMethods.push("first_party_route_metadata");
   }
-  const login = (pr.authorLogin ?? "").toLowerCase();
+  const login = (pr2.authorLogin ?? "").toLowerCase();
   const configuredBot = [...config.botLogins ?? [], ...config.extraBotLogins ?? []].some((value) => value.toLowerCase() === login);
-  const botAuthor = configuredBot || /\[bot\]$/i.test(pr.authorLogin ?? "") || (pr.authorType ?? "").toLowerCase() === "bot";
+  const botAuthor = configuredBot || /\[bot\]$/i.test(pr2.authorLogin ?? "") || (pr2.authorType ?? "").toLowerCase() === "bot";
   if (botAuthor) {
     identifiedAgent = true;
     agentMethods.push(configuredBot ? "owner_config" : "bot_author");
   }
-  if (pr.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
+  if (pr2.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
     identifiedAgent = true;
     agentMethods.push("co_authored_by_trailer");
   }
-  const configuredPrefix = config.branchPrefixes?.find((value) => pr.headRef.startsWith(value));
-  const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr.headRef.startsWith(value));
-  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr.headRef);
+  const configuredPrefix = config.branchPrefixes?.find((value) => pr2.headRef.startsWith(value));
+  const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr2.headRef.startsWith(value));
+  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr2.headRef);
   if (configuredPrefix || ownerPrefix || builtInPrefix) {
     identifiedAgent = true;
     agentMethods.push(ownerPrefix ? "owner_config" : "branch_prefix");
   }
-  const matchedLabel = pr.labels.find((label2) => config.labels?.[label2] !== void 0);
+  const matchedLabel = pr2.labels.find((label2) => config.labels?.[label2] !== void 0);
   if (matchedLabel) {
     identifiedAgent = true;
     agentMethods.push("pr_label");
   }
-  const signatureMatches = pr.commitMessages.join("\n").match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
+  const signatureMatches = pr2.commitMessages.join("\n").match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
   const signatureModels = [...new Set(signatureMatches.map((value) => value.toLowerCase()))];
   if (signatureModels.length) {
     identifiedAgent = true;
@@ -12132,7 +14521,7 @@ function attributePullRequest(pr, config = {}) {
   }
   const metadataHarness = typeof metadata?.["harness"] === "string" ? metadata["harness"].toLowerCase() : null;
   const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
-  const prefixHarness = builtInPrefix ? pr.headRef.split("/")[0]?.toLowerCase() ?? null : null;
+  const prefixHarness = builtInPrefix ? pr2.headRef.split("/")[0]?.toLowerCase() ?? null : null;
   const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value) => !!value);
   const harnessIds = [...new Set(harnessEvidence.filter((value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)))];
   const harness = harnessIds.length === 1 ? harnessIds[0] : null;
@@ -12173,14 +14562,14 @@ function enumerateWindow(options) {
   const merges = [];
   for (const line of result.stdout.split("\n")) {
     if (!line.trim()) continue;
-    const [sha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
-    if (!sha || !/^[0-9a-f]{40}$/.test(sha)) continue;
+    const [sha2, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
+    if (!sha2 || !/^[0-9a-f]{40}$/.test(sha2)) continue;
     const epoch = Number.parseInt(epochText, 10);
     if (!Number.isFinite(epoch) || epoch < cutoff || epoch > end) continue;
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
     const parentSha = parents[0] ?? EMPTY_TREE_SHA3;
     const subject = subjectParts.join("	");
-    merges.push({ mergeSha: sha, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha });
+    merges.push({ mergeSha: sha2, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha2 });
   }
   const cap2 = Math.max(0, Math.floor(maxPrs));
   return { merges: cap2 < merges.length ? merges.slice(-cap2) : merges, cursorReset: reset };
@@ -12298,7 +14687,7 @@ async function runReportScan(target, deps, options) {
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 864e5);
   const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
-  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
+  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha2) => isAncestor(deps.runGit, sha2, target.integrationBranch)) : null;
   if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
   const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
   let merges = enumerated.merges;
@@ -12353,14 +14742,14 @@ async function runReportScan(target, deps, options) {
           deps.onDiagnostic?.(`warn: GitHub could not find PR #${merge.prNumber}; skipped`);
           continue;
         }
-        const pr = apiPr ?? { number: merge.prNumber, title: "", body: null, authorLogin: null, authorType: null, headRef: "", headSha: merge.headSha, labels: [], mergedAt: new Date(merge.mergedAtEpoch * 1e3).toISOString() };
-        const commits = deps.github.offline ? deps.runGit(["log", "--format=%B", `${merge.parentSha}..${merge.mergeSha}`]).stdout.split("\n\n").filter(Boolean) : await deps.github.listPullCommits(pr.number);
-        attribution = toReportAttribution(attributePullRequest({ ...pr, commitMessages: commits }, config));
-        mergedAt = pr.mergedAt;
+        const pr2 = apiPr ?? { number: merge.prNumber, title: "", body: null, authorLogin: null, authorType: null, headRef: "", headSha: merge.headSha, labels: [], mergedAt: new Date(merge.mergedAtEpoch * 1e3).toISOString() };
+        const commits = deps.github.offline ? deps.runGit(["log", "--format=%B", `${merge.parentSha}..${merge.mergeSha}`]).stdout.split("\n\n").filter(Boolean) : await deps.github.listPullCommits(pr2.number);
+        attribution = toReportAttribution(attributePullRequest({ ...pr2, commitMessages: commits }, config));
+        mergedAt = pr2.mergedAt;
         if (deps.extract) {
-          features = deps.extract({ ...merge, prNumber: merge.prNumber }, { taskText: `${pr.title}
+          features = deps.extract({ ...merge, prNumber: merge.prNumber }, { taskText: `${pr2.title}
 
-${pr.body ?? ""}` });
+${pr2.body ?? ""}` });
         } else {
           const checkoutParent = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
           const checkoutDir = path3.join(checkoutParent, "checkout");
@@ -12372,20 +14761,20 @@ ${pr.body ?? ""}` });
             }
             features = extractCandidateFeatures({
               checkoutDir,
-              prNumber: pr.number,
+              prNumber: pr2.number,
               baseRef: merge.parentSha,
               offline: true,
               staticFeatures: options.staticAnalysis === "off" ? NULL_STATIC_FEATURES : void 0,
-              contract: { taskText: `${pr.title}
+              contract: { taskText: `${pr2.title}
 
-${pr.body ?? ""}` }
+${pr2.body ?? ""}` }
             });
           } finally {
             deps.runGit(["worktree", "remove", "--force", checkoutDir]);
             fs3.rmSync(checkoutParent, { recursive: true, force: true });
           }
         }
-        await deps.github.getCheckConclusion(pr.headSha);
+        await deps.github.getCheckConclusion(pr2.headSha);
       }
       const ref3 = refBySha.get(merge.mergeSha);
       const labelCache = previous?.labels_by_horizon ?? {};
@@ -12445,7 +14834,7 @@ ${pr.body ?? ""}` }
     else save();
   }
   const rows = [...reportRows.values()];
-  const dates = rows.map((pr) => pr.merged_at).sort();
+  const dates = rows.map((pr2) => pr2.merged_at).sort();
   return buildReportDraft({
     owner: target.owner,
     repo: target.repo,
@@ -12954,16 +15343,16 @@ function collectLabels(context, params, prFilter) {
     if (prFilter) prs = prs.filter(prFilter);
   }
   const labels = [];
-  for (const pr of prs) {
+  for (const pr2 of prs) {
     try {
-      labels.push(...labelMergedPr(target, deps, pr, {
+      labels.push(...labelMergedPr(target, deps, pr2, {
         horizons: params.horizons,
         allMergedPrs,
         ...params.includeLinkedReferences === void 0 ? {} : { includeLinkedReferences: params.includeLinkedReferences }
       }));
     } catch (error) {
       if (error instanceof ScanUpstreamError) throw error;
-      diag.error(`failed to label ${pr.prUrl}: ${String(error)}`);
+      diag.error(`failed to label ${pr2.prUrl}: ${String(error)}`);
     }
   }
   const summary = summarizeLabels(`${target.owner}/${target.repo}`, labels);
@@ -12995,7 +15384,7 @@ function runCombinedScan(context, params) {
   const labels = collectLabels(
     context,
     { ...params, prUrl: void 0 },
-    (pr) => pr.prNumber === params.prNumber
+    (pr2) => pr2.prNumber === params.prNumber
   );
   if (labels.length === 0) {
     throw new ScanInputError(
