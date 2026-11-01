@@ -1,0 +1,161 @@
+{
+  "schema_version": "arbiter_shadow_report/v1",
+  "generated_at": "2026-11-01T10:25:04.381Z",
+  "window_days": 30,
+  "horizon_days": 30,
+  "malformed_lines": {
+    "scores": 0,
+    "outcomes": 0
+  },
+  "repos": [
+    {
+      "repo": "Hokusai-protocol/hokusai-sdk",
+      "n_scored": 12,
+      "n_matured": 0,
+      "n_unlabelled": 0,
+      "n_flagged": 3,
+      "would_flag_rate": 0.25,
+      "precision": null,
+      "false_positive_rate": null,
+      "base_survival_rate": null,
+      "scorer_id": "baseline-v0",
+      "scorer_version": "0.1.0",
+      "scorer_mixed": false,
+      "threshold_sweep": [
+        {
+          "threshold": 0.05,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.1,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.15,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.2,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.25,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.3,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.35,
+          "would_flag_count": 0,
+          "would_flag_rate": 0,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.4,
+          "would_flag_count": 1,
+          "would_flag_rate": 0.0833,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.45,
+          "would_flag_count": 2,
+          "would_flag_rate": 0.1667,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.5,
+          "would_flag_count": 3,
+          "would_flag_rate": 0.25,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.55,
+          "would_flag_count": 4,
+          "would_flag_rate": 0.3333,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.6,
+          "would_flag_count": 5,
+          "would_flag_rate": 0.4167,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.65,
+          "would_flag_count": 7,
+          "would_flag_rate": 0.5833,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.7,
+          "would_flag_count": 10,
+          "would_flag_rate": 0.8333,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.75,
+          "would_flag_count": 11,
+          "would_flag_rate": 0.9167,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.8,
+          "would_flag_count": 11,
+          "would_flag_rate": 0.9167,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.85,
+          "would_flag_count": 12,
+          "would_flag_rate": 1,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.9,
+          "would_flag_count": 12,
+          "would_flag_rate": 1,
+          "precision": null,
+          "false_positive_rate": null
+        },
+        {
+          "threshold": 0.95,
+          "would_flag_count": 12,
+          "would_flag_rate": 1,
+          "precision": null,
+          "false_positive_rate": null
+        }
+      ]
+    }
+  ]
+}
