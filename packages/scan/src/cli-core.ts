@@ -123,6 +123,10 @@ corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-calibration-gold --sample <private dir> --gold <gold.json>
+                 (mix hidden known-answer rows into the blank human-audit sheet; HOK-3269)
+corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <filled sheet>)
+                 (write or grade the auditor screening test; HOK-3269)
 `;
 
 const OPTION_SPEC = {

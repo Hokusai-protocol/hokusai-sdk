@@ -63,6 +63,7 @@ import {
   classifyCalibrationRepo,
   drawCalibrationSample,
   parseCalibrationPlan,
+  parseCsv,
   parseLabelSheet,
   renderCalibrationMarkdown,
   renderLabelSheet,
@@ -73,6 +74,7 @@ import {
   type SampleItem,
 } from './calibration.js';
 import { buildItemEvidence, type ItemEvidence } from './calibration-evidence.js';
+import { GOLD_PASS_SHARE, insertGoldRows, parseGoldSet, renderGoldSheet, scoreGold, splitGoldRows, type GoldResult } from './calibration-gold.js';
 import { correctiveCorpusRepo, summarizeCorrective } from './corrective.js';
 import { prefetchIssueMeta } from './corrective-szz.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
@@ -104,6 +106,8 @@ const OPTIONS = {
   'exclude-slice': { type: 'string' },
   seed: { type: 'string' },
   sample: { type: 'string' },
+  gold: { type: 'string' },
+  sheet: { type: 'string' },
 } as const;
 
 export const CORPUS_COMMANDS = [
@@ -114,6 +118,8 @@ export const CORPUS_COMMANDS = [
   'corpus-calibration-sample',
   'corpus-calibration-evidence',
   'corpus-calibration-score',
+  'corpus-calibration-gold',
+  'corpus-calibration-screen',
 ] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
@@ -272,7 +278,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(', ')}\n`);
     return { exitCode: 2 };
   }
-  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string };
+  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string; gold?: string; sheet?: string };
   let values: Values;
   let entries: CohortRepo[];
   let manifestBytes: Buffer;
@@ -289,6 +295,20 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
       return { exitCode: 2 };
     }
     return runCalibrationScore(resolve(io.cwd, values.sample), io);
+  }
+  if (command === 'corpus-calibration-gold') {
+    if (!values.sample || !values.gold) {
+      io.writeStderr('error: corpus-calibration-gold needs --sample <dir> and --gold <gold.json>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationGold(resolve(io.cwd, values.sample), resolve(io.cwd, values.gold), io);
+  }
+  if (command === 'corpus-calibration-screen') {
+    if (!values.gold || !!values.out === !!values.sheet) {
+      io.writeStderr('error: corpus-calibration-screen needs --gold <gold.json> and either --out <blank sheet> or --sheet <filled sheet>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationScreen(resolve(io.cwd, values.gold), values.out ? resolve(io.cwd, values.out) : undefined, values.sheet ? resolve(io.cwd, values.sheet) : undefined, io);
   }
   try {
     if (!values.manifest || !values['cache-dir']) throw new Error('--manifest and --cache-dir are required');
@@ -734,6 +754,20 @@ function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: nu
     io.writeStderr(`error: ${(error as Error).message}\n`);
     return { exitCode: 2 };
   }
+  // Hidden known-answer rows (corpus-calibration-gold) only decide whether the audit is accepted.
+  let auditCheck: GoldResult | undefined;
+  const goldPath = join(sampleDir, 'gold.json');
+  if (existsSync(goldPath)) {
+    try {
+      const hidden = parseGoldSet(JSON.parse(readFileSync(goldPath, 'utf8'))).items.filter((g) => g.use === 'hidden');
+      const split = splitGoldRows(sheets.h, new Set(hidden.map((g) => g.item_id)));
+      auditCheck = scoreGold(split.gold, hidden, GOLD_PASS_SHARE.hidden);
+      sheets.h = split.rest;
+    } catch (error) {
+      io.writeStderr(`error: gold.json: ${(error as Error).message}\n`);
+      return { exitCode: 2 };
+    }
+  }
   const subset = (keep: (i: SampleItem) => boolean) => new Map(sample.items.filter(keep).map((i) => [i.item_id, i]));
   const a = parseLabelSheet(sheets.a, subset(() => true));
   const b = parseLabelSheet(sheets.b, subset((i) => i.double));
@@ -744,12 +778,53 @@ function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: nu
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync(join(sampleDir, 'calibration-results.json'), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}\n`, { mode: 0o600 });
-  writeFileSync(join(sampleDir, 'calibration-table.md'), renderCalibrationMarkdown(run), { mode: 0o600 });
+  writeFileSync(join(sampleDir, 'calibration-results.json'), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run, ...(auditCheck && { audit_check: auditCheck }) }, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(join(sampleDir, 'calibration-table.md'), renderCalibrationMarkdown(run, auditCheck), { mode: 0o600 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join(sampleDir, 'calibration-table.md') })}\n`,
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, ...(auditCheck && { audit_check: { correct: auditCheck.correct, items: auditCheck.items, passed: auditCheck.passed } }), table: join(sampleDir, 'calibration-table.md') })}\n`,
   );
   return { exitCode: 0 };
+}
+
+function runCalibrationGold(sampleDir: string, goldPath: string, io: CorpusCliIO): { exitCode: number } {
+  try {
+    const sample = JSON.parse(readFileSync(join(sampleDir, 'sample.json'), 'utf8')) as SampleFile;
+    if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const goldBytes = readFileSync(goldPath);
+    const hidden = parseGoldSet(JSON.parse(goldBytes.toString('utf8'))).items.filter((g) => g.use === 'hidden');
+    if (!hidden.length) throw new Error('the gold set has no hidden items');
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item ID`);
+    const sheetPath = join(sampleDir, 'sheet-h.csv');
+    const sheet = insertGoldRows(readFileSync(sheetPath, 'utf8'), hidden, sample.seed);
+    // wx: a second run fails here, before the sheet is touched.
+    writeFileSync(join(sampleDir, 'gold.json'), goldBytes, { mode: 0o600, flag: 'wx' });
+    writeFileSync(sheetPath, sheet, { mode: 0o600 });
+    io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash('sha256').update(goldBytes).digest('hex') })}\n`);
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+}
+
+/** Writes the blank screening sheet (`out`), or grades a candidate's filled one (`sheet`). */
+function runCalibrationScreen(goldPath: string, out: string | undefined, sheetPath: string | undefined, io: CorpusCliIO): { exitCode: number } {
+  try {
+    const screening = parseGoldSet(JSON.parse(readFileSync(goldPath, 'utf8'))).items.filter((g) => g.use === 'screening');
+    if (!screening.length) throw new Error('the gold set has no screening items');
+    if (out) {
+      writeFileSync(out, renderGoldSheet(screening), { flag: 'wx' });
+      io.writeStdout(`${JSON.stringify({ screening: screening.length, sheet: out })}\n`);
+    } else {
+      io.writeStdout(`${JSON.stringify(scoreGold(readFileSync(sheetPath!, 'utf8'), screening, GOLD_PASS_SHARE.screening), null, 2)}\n`);
+    }
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
 }
 
 function runCalibrationEvidence(cacheRoot: string, sampleDir: string, io: CorpusCliIO, log: (line: string) => void): { exitCode: number } {
