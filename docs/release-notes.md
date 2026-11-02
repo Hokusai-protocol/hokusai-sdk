@@ -18,6 +18,31 @@ git push origin v0.x.y
 
 ## Releases
 
+### 0.7.0 — 2026-11-02
+
+**Requires:** queue lifecycle events (`queue_lifecycle_event/v1` records,
+`QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA`, `reduceQueueLifecycleLog`,
+`queueLifecycleFixtures`) need **`@hokusai/core` ≥ 0.7.0** (task-cost contract
+`1.2.0`). Purely additive: existing records and reducers are unchanged. See the
+[version-to-contract table](versioning-policy.md#task-cost-contract-versions).
+
+- **Queue, CI and repair lifecycle events (HOK-3338).** Thirteen append-only
+  event types keyed on `task_attempt/v1`, each naming its actor, with intended
+  and observed models kept separate. Recovery decisions carry a frozen context,
+  policy version and propensities. Facts only: no durations, failure classes or
+  counts. Ships the JSON schema, validators, reference reducer and eight golden
+  fixtures.
+- **One routing-outcome link on every contribution row (HOK-3364).**
+  `technical_task_router_row/v3` and `harness_outcome_row/v2` share one block:
+  `inference_log_id` iff Hokusai routed the task, and `overrides` (chained per
+  role, `[]` = followed) iff `inference_log_id` is present. Rows never store a
+  recommendation copy. v1 harness rows and v1/v2 router rows stay accepted.
+- **Breaking for direct callers:** `findLatestRoutingDecision` is replaced by
+  `findRoutingDecision({ correlationId | taskId | sessionId })` with no "newest
+  route" fallback; `hokusai-report --use-latest` is removed;
+  `locateSessionTranscript` now takes a `sessionId`; `buildHarnessOutcomeRow`
+  returns `harness_outcome_row/v2`.
+
 ### 0.6.0 — 2026-10-31
 
 **Requires:** attempt identity (`task_attempt/v1` records, the

@@ -83,7 +83,7 @@ The task-cost contract is exported from `@hokusai/core` and documented in
 | --- | --- | --- |
 | task-cost `1.0.0` (`task_cost_*/v1`) | **0.5.0** (2026-10-15) | First release of the contract, validators, `aggregateTaskCost`, and `aggregateTaskCostByModel`. None of it exists in 0.4.0. |
 | task-cost `1.1.0` (+ `task_attempt/v1`) | **0.6.0** (2026-10-31) | Attempt identity: `task_attempt/v1` records, `reduceTaskAttemptLog`, `taskAttemptFixtures`, optional `run_id` / `stage_attempt_id` on events. Older readers ignore the new event fields (unknown fields are tolerated); events without them are unchanged. |
-| task-cost `1.2.0` (+ `queue_lifecycle_event/v1`) | **0.7.0** (unreleased) | Queue, CI and repair lifecycle events keyed on `task_attempt/v1`: `queue_lifecycle_event/v1` records, `reduceQueueLifecycleLog`, `queueLifecycleFixtures`. Purely additive: no existing record or reducer changes. |
+| task-cost `1.2.0` (+ `queue_lifecycle_event/v1`) | **0.7.0** (2026-11-02) | Queue, CI and repair lifecycle events keyed on `task_attempt/v1`: `queue_lifecycle_event/v1` records, `reduceQueueLifecycleLog`, `queueLifecycleFixtures`. Purely additive: no existing record or reducer changes. |
 
 Rules:
 

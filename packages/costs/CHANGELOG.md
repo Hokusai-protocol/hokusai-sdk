@@ -1,5 +1,15 @@
 # @hokusai/costs
 
+## 0.7.0
+
+Released 2026-11-02.
+
+### Patch Changes
+
+- Updated dependencies [aa05c98]
+- Updated dependencies [219ffc5]
+  - @hokusai/core@0.7.0
+
 ## 0.6.0
 
 Released 2026-10-31.
