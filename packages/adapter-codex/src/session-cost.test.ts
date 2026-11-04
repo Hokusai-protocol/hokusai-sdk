@@ -37,6 +37,71 @@ const spikeMeta = {
   progressToken: 1,
 };
 
+/**
+ * `tools/call` `_meta` captured from the interactive clients (HOK-3420). Ids
+ * are as captured; `workspaces` keys (local paths) are replaced with a
+ * sentinel. The parser must never surface them.
+ */
+const WORKSPACE_SENTINEL = '/Users/SENTINEL_USER/SENTINEL_REPO';
+
+/** Codex TUI, codex-cli 0.166.0 (rollout `originator: "codex-tui"`). */
+const tuiMeta = {
+  callId: 'exec-50d20dc3-4df0-471a-97da-d878d9e32d3a',
+  'x-codex-turn-metadata': {
+    session_id: '01a1a7c6-88e3-7e71-bdae-038c94948516',
+    thread_id: '01a1a7c6-88e3-7e71-bdae-038c94948516',
+    reasoning_effort: 'medium',
+    turn_id: '01a1a7c6-93bc-7c71-8f8c-07087525a7d3',
+    model: 'gpt-6.1-sol',
+    thread_source: 'user',
+    turn_trigger: 'user',
+    sandbox: 'seatbelt',
+    sandbox_mode: 'workspace-write',
+    auto_review_enabled: false,
+    node_repl_auto_review_required: true,
+    node_repl_disabled: false,
+    workspaces: { [WORKSPACE_SENTINEL]: {} },
+    turn_started_at_unix_ms: 1793816171467,
+    codex_version: '0.166.0',
+    user_input_requested_during_turn: true,
+  },
+  threadId: '01a1a7c6-88e3-7e71-bdae-038c94948516',
+  sessionId: '01a1a7c6-88e3-7e71-bdae-038c94948516',
+  windowId: '01a1a7c6-88e3-7e71-bdae-038c94948516:0',
+  itemId: 'ctc_014c08840682c805016aeb7672950c87d2841c16a91f82e196',
+  progressToken: 1,
+};
+
+/** Codex VS Code extension, 0.164.0-alpha.11.1 (rollout `originator: "codex_vscode"`). */
+const vscodeMeta = {
+  callId: 'exec-f03ead35-6021-448e-a024-fff106864c2a',
+  'x-codex-turn-metadata': {
+    session_id: '01a1a7c8-bfff-7363-8e64-d5248607db7d',
+    thread_id: '01a1a7c8-bfff-7363-8e64-d5248607db7d',
+    workspace_kind: 'project',
+    turn_id: '01a1a7c8-d761-7a33-8ec9-435e1ed5f866',
+    source: 'codex',
+    thread_source: 'user',
+    turn_trigger: 'composer',
+    sandbox: 'seatbelt',
+    sandbox_mode: 'workspace-write',
+    auto_review_enabled: true,
+    node_repl_auto_review_required: true,
+    node_repl_disabled: false,
+    workspaces: { [WORKSPACE_SENTINEL]: {} },
+    turn_started_at_unix_ms: 1793816319888,
+    client_type: 'extension',
+    model: 'gpt-6.1-sol',
+    reasoning_effort: 'medium',
+    codex_version: '0.164.0-alpha.11.1',
+  },
+  threadId: '01a1a7c8-bfff-7363-8e64-d5248607db7d',
+  sessionId: '01a1a7c8-bfff-7363-8e64-d5248607db7d',
+  windowId: '01a1a7c8-bfff-7363-8e64-d5248607db7d:0',
+  itemId: 'ctc_00082493dfdf8a89016aeb7707af3c87d1a3f932cb99b6262d',
+  progressToken: 1,
+};
+
 function tokenCount(timestamp: string, last: Record<string, number>, total: Record<string, number>): string {
   return JSON.stringify({
     timestamp,
@@ -88,6 +153,17 @@ describe('codexCallSessionFromMeta', () => {
       turnStartedAt: '2026-11-04T13:43:10.000Z',
       model: 'gpt-6.1-sol',
     });
+  });
+
+  it.each([
+    ['Codex TUI (0.166.0)', tuiMeta, '01a1a7c6-88e3-7e71-bdae-038c94948516', '01a1a7c6-93bc-7c71-8f8c-07087525a7d3', '2026-11-04T18:16:11.467Z'],
+    ['VS Code extension (0.164.0-alpha.11.1)', vscodeMeta, '01a1a7c8-bfff-7363-8e64-d5248607db7d', '01a1a7c8-d761-7a33-8ec9-435e1ed5f866', '2026-11-04T18:18:39.888Z'],
+  ])('reads the session from the %s _meta (HOK-3420)', (_client, meta, sessionId, turnId, turnStartedAt) => {
+    const session = codexCallSessionFromMeta(meta);
+    expect(session).toEqual({ sessionId, turnId, turnStartedAt, model: 'gpt-6.1-sol' });
+    // `workspaces` carries local paths; nothing from it is ever kept.
+    expect(JSON.stringify(session)).not.toMatch(/sentinel/i);
+    expect(JSON.stringify(codexSessionBaseline(session, 'x'))).not.toMatch(/sentinel/i);
   });
 
   it('falls back to _meta.sessionId, then threadId', () => {
