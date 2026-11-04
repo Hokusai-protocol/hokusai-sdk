@@ -9,11 +9,13 @@ import {
   type CoarseBucket,
   type CompletionStatus,
   type HokusaiPluginConfig,
+  type StageCostInput,
   type TestSummary,
 } from '../index.js';
 import { CLI_EXIT_CODES } from './cli.js';
 import type { HarnessProfile } from './harness-profile.js';
 import type {
+  MeasureStage,
   StoredRoutingDecision,
   PreviewReportOutcomeResult,
   ReportCliExitCodes,
@@ -75,6 +77,10 @@ type ReportCommandResult =
 
 export interface ReportCliDeps<TOptions extends SharedCommandOptions> {
   createClient?: (config: HokusaiPluginConfig) => HokusaiClient;
+  /** Overrides the adapter's stage measurer (tests). */
+  measureStageImpl?: MeasureStage;
+  /** Clock for the measurement window's end (tests). */
+  now?: () => Date;
   findRoutingDecisionImpl?: (input: {
     configDir: string;
     correlationId?: string | undefined;
@@ -423,6 +429,11 @@ export function createRunReportCli<
       input: ReportOutcomeInputWithTaskId,
       options?: TOptions,
     ) => Promise<ReportCommandResult>;
+    /**
+     * Measures the route's own session with `@hokusai/costs` (HOK-3412). The
+     * adapter supplies it so core never parses provider session files.
+     */
+    measureStage?: MeasureStage;
   },
 ) {
   return async function runReportCli(
@@ -591,7 +602,33 @@ export function createRunReportCli<
     //  transcript usage priced by the resolved model, 5. omitted (partial row).
     // Tiers 3/4 engage only when the stored routeContext carries a cost/time
     // baseline, so they never touch the filesystem for a bare report.
-    const resolvedActualCostUsd = resolveActualCostUsd({
+    const resolvedTaskId =
+      parsed.taskId ??
+      pipedInput.taskId ??
+      latest?.taskId ??
+      parsed.correlationId ??
+      pipedInput.correlationId ??
+      'outcome-report';
+    // Measure the route's own session (tokens per model, priced by the shared
+    // engine). Its total, when it resolved, is the reported cost unless the
+    // caller passed one, so `actual_cost_usd` and `task_cost` agree.
+    let stageCost: StageCostInput | undefined;
+    try {
+      stageCost = await (deps.measureStageImpl ?? impls.measureStage)?.({
+        taskId: resolvedTaskId,
+        executedModel: resolvedActualModel,
+        routeContext: latest?.routeContext,
+        endedAt: (deps.now ?? (() => new Date()))().toISOString(),
+        env,
+      });
+    } catch {
+      stageCost = undefined;
+    }
+    const measuredTotalUsd = stageCost?.summaries[0]?.total_cost_usd ?? undefined;
+    const resolvedActualCostUsd =
+      parsed.actualCostUsd === undefined && measuredTotalUsd !== undefined && measuredTotalUsd !== null
+        ? measuredTotalUsd
+        : resolveActualCostUsd({
       model: resolvedActualModel,
       env,
       ...(parsed.actualCostUsd !== undefined
@@ -602,13 +639,7 @@ export function createRunReportCli<
       ...(latest?.routeContext ? { routeContext: latest.routeContext } : {}),
     });
     const reportInput: ReportOutcomeInputWithTaskId = {
-      taskId:
-        parsed.taskId ??
-        pipedInput.taskId ??
-        latest?.taskId ??
-        parsed.correlationId ??
-        pipedInput.correlationId ??
-        'outcome-report',
+      taskId: resolvedTaskId,
       correlationId:
         parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? '',
       recommendedModel:
@@ -661,6 +692,7 @@ export function createRunReportCli<
         ? { routedRecommendedModelId: latest.recommendedModelId }
         : {}),
       ...(latest?.routeContext ? { routeContext: latest.routeContext } : {}),
+      ...(stageCost ? { stageCost } : {}),
       ...(resolvedActualCostUsd !== undefined
         ? { actualCostUsd: resolvedActualCostUsd }
         : {}),

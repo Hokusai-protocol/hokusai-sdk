@@ -97,25 +97,38 @@ const actualCostUsd = computeActualCostUsd({
 });
 ```
 
-Prompt-cache tokens are billed at 1.25x (writes) and 0.1x (reads) the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs. For an unknown model the function returns `undefined` rather than a fabricated figure, and the row degrades to telemetry.
+Prompt-cache tokens are billed at the model's own cached rate (OpenAI) or at 1.25x (writes) and 0.1x (reads) the input rate (Anthropic). Folding them into `inputTokens` overstates cost on cache-heavy runs. For an unknown model the function returns `undefined` rather than a fabricated figure, and the row degrades to telemetry.
 
-Claude Code additionally derives cost automatically from its statusline sidecar or session transcript via [`packages/core/src/session-usage.ts`](../packages/core/src/session-usage.ts). Other harnesses read cost from whichever surface their runtime already exposes — OpenHands' `RouterLLM` plus LLM/conversation metrics report per-turn tokens (and typically a cost), and Pi and most custom loops carry token counts from the underlying provider — and pass those counts through `computeActualCostUsd()` to populate `actual_cost_usd`.
+Record those token counts on a `@hokusai/costs` tracker (`measureTask` / `createTaskCostTracker`) and return its report as `HostExecutionResult.cost`. That report becomes the row's per-stage `task_cost`, priced by the shared engine, and its total is the reported `actual_cost_usd`. OpenHands' `RouterLLM` and LLM/conversation metrics report per-turn tokens, and Pi and most custom loops carry token counts from the underlying provider. Without a report the stage is sent with an explicit `coverage: 'unavailable'` summary, and the loop prices the host's token counts with `computeActualCostUsd()`.
+
+The Claude Code and Codex plugins measure the route's own session automatically: the transcript named by `CLAUDE_CODE_SESSION_ID`, or the Codex rollout named in the MCP call's `_meta`. They read it with `@hokusai/costs`, through the `MeasureStage` hook in [`packages/core/src/plugin-commands`](../packages/core/src/plugin-commands).
 
 ### 7. Submit a contribution row
 
-This is the canonical submission path. `buildHarnessOutcomeRow()` from [`packages/core/src/contribution/builder.ts`](../packages/core/src/contribution/builder.ts) produces a `harness_outcome_row/v2` (with `inference_log_id` and `overrides`), and `HokusaiClient.submitContribution()` posts a one-row batch to `POST /api/v1/models/30/contributions` with an `Idempotency-Key`.
+This is the canonical submission path. `buildTechnicalTaskRouterRowV4()` from [`packages/core/src/contribution/builder.ts`](../packages/core/src/contribution/builder.ts) produces a `technical_task_router_row/v4`. The row carries `inference_log_id`, `overrides`, and one `stage_executions` entry per stage, each with its executed model and `task_cost`. `HokusaiClient.submitContribution()` posts it as a one-row batch to `POST /api/v1/models/30/contributions` with an `Idempotency-Key`.
 
 ```ts
-const row = buildHarnessOutcomeRow({
+const row = buildTechnicalTaskRouterRowV4({
+  taskId: task.id,
   inferenceLogId,                    // <- from route. Do not drop this.
   routeOverrides: [],                // <- [] only if you ran exactly the recommended model.
   taskDescriptor,
   allowedModels,
   selectedModels: { coder: mapped.id, reviewer: mapped.id },
-  completionResult: execution.completionResult,
+  observedSuccess: execution.completionResult === 'success',
+  budgetCompliant: actualCostUsd !== undefined && actualCostUsd <= budgetUsd,
   budgetUsd,
-  actualCostUsd,
   wallClockSeconds: execution.wallClockSeconds,
+  observedAt,
+  stageExecutions: [
+    {
+      stage: 'coding',
+      executedModel: mapped.id,
+      modelEvidence: 'provider_response',
+      harness: 'my-harness',
+      cost: execution.cost,          // <- the @hokusai/costs report for this stage
+    },
+  ],
 });
 
 const response = await client.submitContribution({
@@ -150,7 +163,7 @@ The classification is **server-authoritative**. Read it; never compute it client
 | `HokusaiDispatchBuilder`, shared redaction, and payload hashing live in [`packages/core/src/client.ts`](../packages/core/src/client.ts) and [`packages/core/src/anonymization.ts`](../packages/core/src/anonymization.ts).                                   | The route command UX, CLI parsing, and consent/error messaging live in [`packages/adapter-claude-code/src/cli.ts`](../packages/adapter-claude-code/src/cli.ts) and [`packages/adapter-claude-code/plugin/commands/route.md`](../packages/adapter-claude-code/plugin/commands/route.md). |
 | `HokusaiClient.route()` and `HokusaiClient.submitContribution()` own request validation and transport in [`packages/core/src/client.ts`](../packages/core/src/client.ts).                                                                                         | Claude's report preview/send flow is wired in [`packages/adapter-claude-code/src/report-cli.ts`](../packages/adapter-claude-code/src/report-cli.ts) and [`packages/adapter-claude-code/plugin/commands/report.md`](../packages/adapter-claude-code/plugin/commands/report.md).          |
 | `mapRecommendation()`, `validateRecommendedModel()`, and `ANTHROPIC_MODELS` define shared model resolution rules in [`packages/core/src/model-registry.ts`](../packages/core/src/model-registry.ts).                                                         | Claude Code chooses Anthropic-only surfaced models and doctor UX in [`packages/adapter-claude-code/src/index.ts`](../packages/adapter-claude-code/src/index.ts) and [`packages/adapter-claude-code/src/doctor-command.ts`](../packages/adapter-claude-code/src/doctor-command.ts).      |
-| `deriveTaskDescriptor()`, `buildHarnessOutcomeRow()`, `computeActualCostUsd()`, and the conformance suite are reusable core contracts in [`packages/core/src/task-descriptor.ts`](../packages/core/src/task-descriptor.ts), [`packages/core/src/contribution/`](../packages/core/src/contribution/), and [`packages/core/src/conformance.ts`](../packages/core/src/conformance.ts). | Claude Code-specific slash commands and install surface live under [`packages/adapter-claude-code/plugin/`](../packages/adapter-claude-code/plugin/).                                                                                                                                   |
+| `deriveTaskDescriptor()`, `buildTechnicalTaskRouterRowV4()`, `computeActualCostUsd()`, and the conformance suite are reusable core contracts in [`packages/core/src/task-descriptor.ts`](../packages/core/src/task-descriptor.ts), [`packages/core/src/contribution/`](../packages/core/src/contribution/), and [`packages/core/src/conformance.ts`](../packages/core/src/conformance.ts). | Claude Code-specific slash commands and install surface live under [`packages/adapter-claude-code/plugin/`](../packages/adapter-claude-code/plugin/).                                                                                                                                   |
 
 ## Example payloads
 

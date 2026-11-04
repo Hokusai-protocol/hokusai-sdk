@@ -77,6 +77,12 @@ export type { HandoffInstructions } from '@hokusai/core';
 export { REPORT_CLI_EXIT_CODES, type ReportCliExitCode } from './report-cli.js';
 export { runReportCli } from './report-cli.js';
 export {
+  createClaudeCodeStageMeasurer,
+  locateRouteTranscript,
+  measureClaudeCodeStage,
+  type ClaudeCodeStageMeasurerOptions,
+} from './stage-cost.js';
+export {
   runOutcomePromptHookCli,
   type OutcomePromptHookCliRunResult,
 } from './outcome-prompt-hook.js';

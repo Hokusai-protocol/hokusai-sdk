@@ -792,7 +792,7 @@ describe('reportTaskOutcome', () => {
           rowsAccepted: 1,
         },
         contributionRow: {
-          schema_version: 'harness_outcome_row/v2',
+          schema_version: 'technical_task_router_row/v4',
           inference_log_id: testInferenceLogId,
           overrides: [],
           selected_models: {
@@ -1597,7 +1597,7 @@ describe('route/report smoke path', () => {
       value: {
         submitted: true,
         contributionRow: {
-          schema_version: 'harness_outcome_row/v2',
+          schema_version: 'technical_task_router_row/v4',
           inference_log_id: 'route-1',
         },
       },

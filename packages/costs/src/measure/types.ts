@@ -79,6 +79,12 @@ export interface TaskUsageRecord {
   isSubagent?: boolean;
   /** Marks this record as superseding a prior event (retry semantics). */
   replayOfEventId?: string;
+  /**
+   * The usage spans several provider requests (a session or task total), so
+   * it cannot be priced per request: a long-context tier never applies.
+   * Default `false`: an event is one request.
+   */
+  aggregate?: boolean;
 }
 
 export type RecordResult =

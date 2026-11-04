@@ -121,6 +121,18 @@ describe('core public surface', () => {
     expect(Object.keys(core.routingOutcomeFixtures)).toHaveLength(6);
   });
 
+  it('exposes router row v4 stage facts (HOK-3412)', () => {
+    expect(core.TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4).toBe('technical_task_router_row/v4');
+    expect(core.TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS).toContain('stage_executions');
+    expect(core.STAGE_EXECUTION_STAGES).toContain('ci-fix');
+    expect(core.MODEL_EVIDENCE_KINDS).toContain('session_telemetry');
+    expect(core.buildTechnicalTaskRouterRowV4).toBeTypeOf('function');
+    expect(core.isTechnicalTaskRouterContributionRowV4).toBeTypeOf('function');
+    expect(core.stageExecutionErrors).toBeTypeOf('function');
+    expect(core.unavailableTaskCostSummary).toBeTypeOf('function');
+    expect(core.defaultProviderContractVersion).toBeTypeOf('function');
+  });
+
   it('exposes the task-cost contract', () => {
     expect(core.TASK_COST_CONTRACT_VERSION).toBe('1.2.0');
     expect(core.QUEUE_LIFECYCLE_EVENT_SCHEMA_VERSION).toBe('queue_lifecycle_event/v1');

@@ -410,15 +410,19 @@ export {
   GOOGLE_MODEL_PRICING,
   MODEL_PRICING,
   MODEL_PRICING_AS_OF,
+  OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
   OPENAI_MODEL_PRICING,
+  OPENAI_MODEL_PRICING_AS_OF,
   computeActualCostUsd,
   normalizeModelId,
   resolveModelPrice,
+  type LongContextPrice,
   type ModelPrice,
   type TokenCostInput,
 } from './pricing.js';
 export {
   DEFAULT_SIDECAR_FRESHNESS_MS,
+  CLAUDE_CODE_SESSION_ID_ENV,
   captureCostBaseline,
   computeTranscriptCostUsd,
   encodeProjectDirKey,
@@ -460,6 +464,10 @@ export {
   wavemillSuccessOutcomeFixture,
   wavemillTaskPacketFixture,
   routingOutcomeFixtures,
+  CONTRIBUTION_V4_CHALLENGE_PAIR_ID,
+  contributionV4Fixtures,
+  contributionV4StageSources,
+  type ContributionV4FixtureName,
 } from './fixtures/index.js';
 export {
   queueLifecycleFixtures,

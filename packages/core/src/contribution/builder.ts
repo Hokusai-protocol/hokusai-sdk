@@ -11,21 +11,30 @@ import {
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2,
   TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3,
+  TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4,
   TIME_BUCKET_THRESHOLDS_SECONDS,
   validateContributionRow,
   type CandidatePoolMetadata,
   type HarnessOutcomeRowMetadata,
   type HarnessOutcomeRowV2,
+  type ModelEvidence,
   type OutcomeLabels,
   type RouteOverride,
+  type RouteRole,
   type RoleAvailableModels,
   type SparseCellMetadata,
+  type StageExecution,
+  type StageExecutionStage,
   type SubmitDataContributionRow,
   type TechnicalTaskRouterContributionRowV1,
   type TechnicalTaskRouterContributionRowV2,
   type TechnicalTaskRouterContributionRowV3,
+  type TechnicalTaskRouterContributionRowV4,
   type TechnicalTaskRouterSelectedModels,
 } from './schema.js';
+import { TASK_COST_HARNESSES, type TaskCostHarness } from '../task-cost/enums.js';
+import type { TaskCostSummaryV1 } from '../task-cost/summary.js';
+import { unavailableTaskCostSummary } from '../task-cost/unavailable.js';
 
 type InputScalar = string | number | boolean | null;
 
@@ -464,4 +473,130 @@ export function buildTechnicalTaskRouterContributionRowV3(
   };
 
   return validateContributionRow(row) as TechnicalTaskRouterContributionRowV3;
+}
+
+/**
+ * A stage's measured cost. Structural, so a `@hokusai/costs` `TaskCostReport`
+ * (from `measureTask` or `tracker.summary()`) satisfies it directly: core never
+ * imports `@hokusai/costs`.
+ */
+export interface StageCostInput {
+  summaries: readonly TaskCostSummaryV1[];
+}
+
+export interface StageExecutionProjection {
+  stage: StageExecutionStage;
+  executedModel: string;
+  modelEvidence: ModelEvidence;
+  /** Harness slug that ran the stage. */
+  harness: string;
+  /**
+   * The report over this stage's sessions. One summary per stage: a report that
+   * spans several harnesses must be split into one stage per harness. An empty
+   * report becomes an `unavailable` summary, so every stage carries a cost.
+   */
+  cost: StageCostInput;
+  /** Sessions the stage used; recorded on an unavailable summary. */
+  sessionIds?: readonly string[];
+}
+
+export interface RedactedEvalContributionProjectionV4 extends RedactedEvalContributionProjectionV3 {
+  /** Required on v4: every stage's `task_cost` is keyed on it. */
+  taskId: string;
+  /** One entry per stage that ran, in run order. */
+  stageExecutions: readonly StageExecutionProjection[];
+  comparisonGroup?: { id: string; roleVaried: RouteRole };
+  /** Version of the SDK writing the row (`SDK_VERSION`). */
+  sdkVersion?: string;
+}
+
+function toTaskCostHarness(harness: string): TaskCostHarness {
+  return (TASK_COST_HARNESSES as readonly string[]).includes(harness)
+    ? (harness as TaskCostHarness)
+    : 'unknown';
+}
+
+function stageTaskCost(
+  stage: StageExecutionProjection,
+  taskId: string,
+  collectedAt: string,
+): TaskCostSummaryV1 {
+  const { summaries } = stage.cost;
+  if (summaries.length > 1) {
+    throw new Error(
+      `stage ${stage.stage} spans ${String(summaries.length)} task-cost summaries; split it into one stage per harness`,
+    );
+  }
+  const [summary] = summaries;
+  if (summary) {
+    return structuredClone(summary);
+  }
+  return unavailableTaskCostSummary({
+    taskId,
+    harness: toTaskCostHarness(stage.harness),
+    collectedAt,
+    ...(stage.sessionIds ? { sessionIds: stage.sessionIds } : {}),
+  });
+}
+
+/** Sum of every stage's resolved total, or `undefined` unless all resolved. */
+function sumStageTotals(stages: readonly StageExecution[]): number | undefined {
+  let sum = 0;
+  for (const stage of stages) {
+    const total = stage.task_cost.total_cost_usd;
+    if (total === null) return undefined;
+    sum += total;
+  }
+  return Math.round(sum * 1e9) / 1e9;
+}
+
+/**
+ * Router row v4: v3 plus per-stage execution and token facts (HOK-3412). Pass
+ * each stage's `measureTask` / tracker report as its `cost`; this builder does
+ * all token handling, so a harness never writes its own.
+ *
+ * When `actualCostUsd` is omitted and every stage's cost resolved, it is set to
+ * their sum (so `outcome_labels.cost_label` is known). It stays
+ * contributor-reported evidence: Hokusai reprices from the stages.
+ */
+export function buildTechnicalTaskRouterRowV4(
+  projection: RedactedEvalContributionProjectionV4,
+): TechnicalTaskRouterContributionRowV4 {
+  if (!projection.taskId) {
+    throw new Error('taskId is required for a v4 row');
+  }
+  if (projection.stageExecutions.length === 0) {
+    throw new Error('stageExecutions must list at least one stage');
+  }
+
+  const stageExecutions: StageExecution[] = projection.stageExecutions.map((stage) => ({
+    stage: stage.stage,
+    executed_model: stage.executedModel,
+    model_evidence: stage.modelEvidence,
+    harness: stage.harness,
+    task_cost: stageTaskCost(stage, projection.taskId, projection.observedAt),
+  }));
+
+  const actualCostUsd =
+    projection.actualCostUsd !== undefined ? projection.actualCostUsd : sumStageTotals(stageExecutions);
+
+  const row: TechnicalTaskRouterContributionRowV4 = {
+    ...buildTechnicalTaskRouterContributionRowV3({
+      ...projection,
+      ...(actualCostUsd !== undefined ? { actualCostUsd } : {}),
+    }),
+    schema_version: TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4,
+    stage_executions: stageExecutions,
+    ...(projection.comparisonGroup
+      ? {
+          comparison_group: {
+            id: projection.comparisonGroup.id,
+            role_varied: projection.comparisonGroup.roleVaried,
+          },
+        }
+      : {}),
+    ...(projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}),
+  };
+
+  return validateContributionRow(row) as TechnicalTaskRouterContributionRowV4;
 }

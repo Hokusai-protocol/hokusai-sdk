@@ -34,6 +34,17 @@ export {
 export { wavemillTaskPacketFixture } from './wavemill.js';
 export * from './task-cost/index.js';
 export {
+  CONTRIBUTION_V4_CHALLENGE_PAIR_ID,
+  challengeChallengerV4Fixture,
+  challengePrimaryV4Fixture,
+  ciFixRepairV4Fixture,
+  contributionV4Fixtures,
+  contributionV4StageSources,
+  mixedHarnessV4Fixture,
+  singleHarnessV4Fixture,
+  type ContributionV4FixtureName,
+} from './contribution-v4.js';
+export {
   challengeOverrideRoutingFixture,
   escalationOverrideRoutingFixture,
   followedRecommendationHarnessRowFixture,

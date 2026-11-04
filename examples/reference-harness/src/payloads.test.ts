@@ -3,9 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2,
+  TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4,
   TASK_PACKET_SCHEMA_VERSION,
-  isHarnessOutcomeRowV2,
+  isTechnicalTaskRouterContributionRowV4,
   validateContributionRow,
   validateTaskPacket,
 } from '@hokusai/core';
@@ -47,10 +47,10 @@ describe('published example payloads', () => {
   it('validates the contribution row example against the core schema', async () => {
     const row = await readJsonFixture('contribution-row.example.json');
 
-    expect(isHarnessOutcomeRowV2(row)).toBe(true);
+    expect(isTechnicalTaskRouterContributionRowV4(row)).toBe(true);
     expect(() => validateContributionRow(row)).not.toThrow();
     expect((row as { schema_version?: string }).schema_version).toBe(
-      HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2,
+      TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4,
     );
   });
 

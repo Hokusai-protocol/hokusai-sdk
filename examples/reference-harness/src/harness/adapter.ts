@@ -7,7 +7,8 @@
  *
  *   1. collectTaskContext  — where does a task come from in your harness?
  *   2. discoverRunnableModels — which models can you actually run?
- *   3. executeWithModel       — run the task; return token usage
+ *   3. executeWithModel       — run the task; return token usage and its
+ *                               `@hokusai/costs` report (the row's task_cost)
  *   4. previewRedactedPayload — show the operator what will be sent
  *
  * @module harness/adapter
@@ -21,6 +22,7 @@ import type {
   HokusaiDispatchPayload,
   ModelDefinition,
 } from '@hokusai/core';
+import { createTaskCostTracker } from '@hokusai/costs';
 import { FAKE_EXECUTION, FAKE_TASK_CONTEXT } from './fake-data.js';
 
 /**
@@ -63,6 +65,8 @@ export type ReferenceHarnessAdapter = HostAdapter;
 export interface ReferenceHarnessAdapterOptions {
   /** Override the execution result to demonstrate a different fidelity tier. */
   execution?: Partial<HarnessExecutionResult>;
+  /** Clock for the cost tracker (deterministic examples and tests). */
+  now?: () => Date;
 }
 
 export function createReferenceHarnessAdapter(
@@ -81,15 +85,41 @@ export function createReferenceHarnessAdapter(
       return REFERENCE_MODELS;
     },
 
-    // TODO(fork): run the task and return real token usage. The layered
-    // capture in `session-usage.ts` reads a Claude Code-specific statusline
-    // and session transcript, which Pi and OpenHands do not expose. Read
-    // tokens from whichever surface your runtime already has — OpenHands'
-    // RouterLLM/LLM conversation metrics, Pi's provider response, or your
-    // custom loop's usage counters — and let `computeActualCostUsd` price
-    // them.
-    executeWithModel() {
-      return Promise.resolve({ ...FAKE_EXECUTION, ...options.execution });
+    // TODO(fork): run the task and return real token usage. Read tokens from
+    // whichever surface your runtime already has — OpenHands' RouterLLM/LLM
+    // conversation metrics, Pi's provider response, or your custom loop's
+    // usage counters — and record each call on a `@hokusai/costs` tracker.
+    // Its report becomes the contribution row's `task_cost`: you never write
+    // token or pricing handling yourself (HOK-3412).
+    executeWithModel({ task, model }) {
+      const execution = { ...FAKE_EXECUTION, ...options.execution };
+      if (execution.cost !== undefined) {
+        return Promise.resolve(execution);
+      }
+      const tracker = createTaskCostTracker({
+        taskId: task.id,
+        harness: 'native',
+        ...(options.now ? { now: options.now } : {}),
+      });
+      tracker.recordUsage({
+        model: model.id,
+        usage: {
+          inputTokens: execution.inputTokens,
+          outputTokens: execution.outputTokens,
+          ...(execution.cacheReadTokens !== undefined
+            ? { cacheReadTokens: execution.cacheReadTokens }
+            : {}),
+          ...(execution.cacheCreationTokens !== undefined
+            ? { cacheWriteTokens: execution.cacheCreationTokens }
+            : {}),
+        },
+      });
+      return Promise.resolve({
+        ...execution,
+        cost: tracker.summary(),
+        // The provider's response named the model that ran.
+        modelEvidence: 'provider_response',
+      });
     },
 
     // TODO(fork): render this however your harness surfaces confirmations.

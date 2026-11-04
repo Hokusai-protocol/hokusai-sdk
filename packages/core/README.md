@@ -33,9 +33,11 @@ import {
   HokusaiDispatchBuilder,
   InMemoryModelRegistry,
   ANTHROPIC_MODELS,
-  buildHarnessOutcomeRow,
+  SDK_VERSION,
+  buildTechnicalTaskRouterRowV4,
   deriveTaskDescriptor,
 } from '@hokusai/core';
+import { measureTask } from '@hokusai/costs';
 
 const client = new HokusaiClient({ apiKey: process.env.HOKUSAI_API_KEY });
 const registry = new InMemoryModelRegistry(ANTHROPIC_MODELS);
@@ -61,23 +63,36 @@ const payload = await builder.prepareDispatch(
 );
 const decision = await client.route(payload);
 
-// 2. Run the model yourself. Hokusai never calls a model.
-
-// 3. Contribute the outcome, attributed to the decision it came from.
-const row = buildHarnessOutcomeRow({
-  inferenceLogId: decision.routeId, // without this the row is unattributable
-  taskDescriptor: deriveTaskDescriptor({ taskText: task.prompt }),
-  allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
-  selectedModels: {
-    coder: decision.recommendation.model,
-    reviewer: decision.recommendation.model,
-  },
-  completionResult: 'success',
-  budgetUsd: 1,
-  actualCostUsd: 0.42,
+// 2. Run the model yourself, measuring it. Hokusai never calls a model.
+const model = decision.recommendation.model;
+const { cost } = await measureTask({ taskId: task.id }, async (tracker) => {
+  const response = await runYourModel(model, task); // your code
+  tracker.recordUsage({ model, usage: response.usage }); // tokens, per call
 });
 
-const response = await client.submitContribution({ rows: [row] });
+// 3. Contribute the outcome, attributed to the decision it came from.
+const row = buildTechnicalTaskRouterRowV4({
+  taskId: task.id,
+  inferenceLogId: decision.routeId, // without this the row is unattributable
+  routeOverrides: [], // the recommendation was run as given
+  taskDescriptor: deriveTaskDescriptor({ taskText: task.prompt }),
+  allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+  selectedModels: { coder: model, reviewer: model },
+  observedSuccess: true,
+  budgetCompliant: (cost.totalUsd ?? Infinity) <= 1,
+  budgetUsd: 1,
+  observedAt: new Date().toISOString(),
+  sdkVersion: SDK_VERSION,
+  // One entry per stage that ran; each stage's cost is its @hokusai/costs report.
+  stageExecutions: [
+    { stage: 'coding', executedModel: model, modelEvidence: 'provider_response', harness: 'my-harness', cost },
+  ],
+});
+
+const response = await client.submitContribution({
+  rows: [row],
+  metadata: { idempotency_key: task.id },
+});
 response.rowFidelityTiers; // ['training_eligible']
 ```
 
@@ -106,7 +121,8 @@ recommendation was right:
 - `inference_log_id`: the inference that made the recommendation (the route's
   `routeId`). Present iff Hokusai routed the task.
 - `overrides`: present iff `inference_log_id` is. Each entry is
-  `{ role, source: escalation | launchability | challenge | operator, from, to, reason }`,
+  `{ role, source: escalation | launchability | challenge | operator | observed, from, to, reason }`
+  (`observed`: the harness's session record shows another model ran),
   chained per role and ending at the executed model. `[]` means the
   recommendation was followed.
 - `selected_models`: the executed models.
@@ -117,26 +133,71 @@ recommendation from its inference log, and "accepted" is derived
 (`routeRecommendationFollowed(row, role)`). Builders take `inferenceLogId` and
 `routeOverrides` and have no default: a routed row without explicit
 `routeOverrides` throws, so a harness can never claim the recommendation was
-followed by omission. v1 harness rows and v1/v2 router rows stay accepted;
-new writers emit v2/v3. Golden rows: `routingOutcomeFixtures`.
+followed by omission. v1/v2 harness rows and v1–v3 router rows stay accepted;
+new writers emit router v4 (below). Golden rows: `routingOutcomeFixtures`.
+
+## Per-stage execution facts: `technical_task_router_row/v4`
+
+v4 (HOK-3412) is v3 plus the facts Model 30 trains on per role:
+
+- `stage_executions[]`: one entry per stage that ran, in run order. `stage` is
+  `planning | coding | review` (mapped to `planner | coder | reviewer`) or a repair
+  stage: `ci-fix | conflict-resolution | ready-remediation`. Each entry has the
+  `executed_model`, `model_evidence` (`provider_response | session_telemetry |
+  requested_only`), the `harness` slug, and a `task_cost`: the
+  `task_cost_summary/v1` over that stage's sessions, with tokens per model and
+  coverage, pricing source and join confidence.
+- `task_cost` is **required**. Pass each stage's `@hokusai/costs` report
+  (`measureTask` / `tracker.summary()`) as its `cost`, and
+  `buildTechnicalTaskRouterRowV4` does all the token handling. An empty report
+  becomes an explicit `coverage: 'unavailable'` summary
+  (`unavailableTaskCostSummary`). A report that spans several harnesses
+  must be split into one stage per harness.
+- The last entry for each base stage must name the matching `selected_models`
+  role. Repair stages are not tied to a role.
+- `comparison_group` (optional): `{ id, role_varied }` for runs of the same task
+  on different routes. `id` is the minted `pair_id` of the task-attempt
+  contract.
+- `integration` is reserved for HOK-3343; only `{}` is accepted.
+- `sdk_version` (optional): the SDK that wrote the row.
+- `actual_cost_usd` is **contributor-reported evidence**. Hokusai reprices the
+  row from `stage_executions[].task_cost`. When you omit it and every stage's
+  cost resolved, the builder fills in their sum.
+
+Privacy: each `task_cost` also passes the task-cost contract's stricter
+forbidden-key list (paths, repo, branch, credentials, identity), so a row holds
+model ids, opaque session and event ids and token counts — never prompts or
+paths.
+
+The Claude Code and Codex plugins measure the route's own session.
+`createRunReportCli` and `submitOutcomeCommand` take a `MeasureStage`, and the
+adapters supply one built on `@hokusai/costs`, so core never parses provider
+session files. Golden rows: `contributionV4Fixtures`, with
+`contributionV4StageSources` naming each stage's task-cost fixture. The
+field contract for non-TypeScript writers is exported by `pnpm export:schemas`.
 
 ## External observations
 
 Externally chosen runs should still use `submitContribution()`, but they should
-not fabricate an `inferenceLogId`. Build a `harness_outcome_row/v2` with no
-`inferenceLogId` and no `routeOverrides` (an unrouted row) and the
-observed task descriptor, candidate pool, selected model, budget, and cost, then
-read the server-assigned fidelity tier:
+not fabricate an `inferenceLogId`. Build a v4 row with no `inferenceLogId` and
+no `routeOverrides` (an unrouted row) and the observed task descriptor,
+candidate pool, selected model, budget and measured stage cost, then read the
+server-assigned fidelity tier:
 
 ```ts
-const row = buildHarnessOutcomeRow({
-  taskDescriptor: { task_type: 'feature', language: 'typescript' },
+const row = buildTechnicalTaskRouterRowV4({
+  taskId: 'external-run-123',
+  taskDescriptor: deriveTaskDescriptor({ taskText }),
   allowedModels: ['qwen-3-coder', 'glm-5.2', 'gemini-2.5-pro'],
   selectedModels: { coder: 'qwen-3-coder', reviewer: 'qwen-3-coder' },
-  completionResult: 'success',
+  observedSuccess: true,
+  budgetCompliant: true,
   budgetUsd: 0.5,
-  actualCostUsd: 0.12,
+  observedAt: new Date().toISOString(),
   harness: 'custom-harness',
+  stageExecutions: [
+    { stage: 'coding', executedModel: 'qwen-3-coder', modelEvidence: 'requested_only', harness: 'custom-harness', cost },
+  ],
 });
 
 const response = await client.submitContribution({
@@ -241,9 +302,13 @@ Known stripped prefixes are `openrouter/`, `litellm/`, `openai/`, `anthropic/`,
 `moonshotai/`, `qwen/`, `x-ai/`, and `z-ai/`. Unknown prefixes are preserved on
 purpose so unrelated vendor ids cannot accidentally collide with a priced model.
 
-Anthropic prompt-cache multipliers are the only cache rates built into the
-fallback. Non-Anthropic callers should omit cache token counts unless they know
-the same pricing applies.
+OpenAI rows carry their own cached-input rates and a long-context tier (more
+than 272K input tokens), taken from the pricing page (Standard tier,
+`OPENAI_MODEL_PRICING_AS_OF`). The long-context tier applies only when
+`computeActualCostUsd` is told the counts are one request (`requestScoped`).
+Anthropic uses the prompt-cache multipliers. Cache tokens with no rate in the
+table (Gemini, OpenAI pro models, TTL-dependent gpt-6 / gpt-5.6 cache writes)
+leave the cost `undefined`, never guessed.
 
 ## What leaves your process
 

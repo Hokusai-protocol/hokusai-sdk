@@ -7,9 +7,9 @@ This repository is intentionally split between reusable contracts and harness ad
 0. Only measuring per-task cost? Start (and possibly stop) with
    `@hokusai/costs`: `measureTask` wraps one run and returns a typed cost
    report, entirely offline, with no Hokusai account or API key. Routing and
-   contribution are separate, optional steps you can add later — the measured
-   `cost.totalUsd` bridges into `route.reportOutcome({ actualCostUsd })` when
-   you do (pass a `null` total as _absent_, never as `0`). See
+   contribution are separate, optional steps you can add later. When you add
+   them, pass the whole report as `route.reportOutcome({ cost })`: it becomes
+   the contribution row's `task_cost`, and its total is the reported cost. See
    [packages/costs/README.md](../packages/costs/README.md).
 1. Depend on `@hokusai/core` for the shared `HokusaiClient`, payload types, validation helpers, and typed error classes.
 2. Choose an adapter package when a harness needs opinionated command or manifest metadata.
@@ -151,8 +151,9 @@ await route.reportExternalOutcome({
 });
 ```
 
-For harness code, build `harness_outcome_row/v2` directly with
-`buildHarnessOutcomeRow()` and omit both `inferenceLogId` and `routeOverrides`. Do not send these rows to
+For harness code, build `technical_task_router_row/v4` directly with
+`buildTechnicalTaskRouterRowV4()` and omit both `inferenceLogId` and `routeOverrides`. Each stage's `cost`
+is its `@hokusai/costs` report. Do not send these rows to
 the legacy `/outcomes` endpoint. The contribution endpoint will accept or reject
 the row and assign the fidelity tier. Route-less observations improve coverage,
 but they are not route-attributed unless the backend explicitly classifies them

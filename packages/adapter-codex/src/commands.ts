@@ -19,6 +19,7 @@ import {
   type HokusaiDispatchPayload,
   type HokusaiValidationSuccess,
   type LocalStore,
+  type MeasureStage,
   type OutcomeReportInput,
   type RouteContextProjection,
   type RouteResponse,
@@ -85,6 +86,9 @@ export interface SubmitOutcomeArgs {
   /** What the run cost. Without it the contribution is telemetry, not training data. */
   actualCostUsd?: number | undefined;
   wallClockSeconds?: number | undefined;
+  /** Measures the routed Codex session so the row carries a measured `task_cost`. */
+  measureStage?: MeasureStage | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
 }
 
 /**
@@ -99,6 +103,7 @@ async function loadRoutedTask(
 ): Promise<
   | {
       routeContext: RouteContextProjection | undefined;
+      taskId: string;
       inferenceLogId?: string;
       recommendedModelId?: string;
     }
@@ -122,6 +127,7 @@ async function loadRoutedTask(
   const recommendedModelId = record.metadata?.recommendedModelId;
   return {
     routeContext: parseRouteContext(record.metadata?.routeContext),
+    taskId: record.metadata?.taskId ?? record.packetHash,
     ...(inferenceLogId ? { inferenceLogId } : {}),
     ...(recommendedModelId ? { recommendedModelId } : {}),
   };
@@ -218,13 +224,32 @@ export async function submitOutcome(
   // and reward attribution entirely, so an outcome that does not become a
   // contribution row earns nothing. Build the row before the network call: a
   // route we cannot attribute should fail loudly, not submit something useless.
+  const observedAt = new Date(timestamp).toISOString();
+  let stageCost: Awaited<ReturnType<MeasureStage>>;
+  try {
+    stageCost = routed
+      ? await args.measureStage?.({
+          taskId: routed.taskId,
+          executedModel: report.actualModel,
+          routeContext: routed.routeContext,
+          endedAt: observedAt,
+          env: args.env,
+        })
+      : undefined;
+  } catch {
+    stageCost = undefined;
+  }
   const rowResult = buildReportContributionRow({
     report,
     routeContext: routed?.routeContext,
     inferenceLogId: routed?.inferenceLogId,
     recommendedModelId: routed?.recommendedModelId,
     harness: 'codex',
-    observedAt: new Date(timestamp).toISOString(),
+    observedAt,
+    taskId: routed?.taskId,
+    stageCost,
+    // The rollout records the model that ran; the agent's report may not.
+    executedModelFromSession: true,
     ...(args.actualCostUsd !== undefined
       ? { actualCostUsd: args.actualCostUsd }
       : {}),

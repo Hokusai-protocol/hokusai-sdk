@@ -8,8 +8,9 @@ import {
   type ContributionRequest,
 } from '../client.js';
 import {
-  buildHarnessOutcomeRow,
-  type HarnessOutcomeRowV2,
+  buildTechnicalTaskRouterRowV4,
+  type HokusaiTaskDescriptor,
+  type TechnicalTaskRouterContributionRowV4,
 } from '../contribution/index.js';
 import {
   InMemoryModelRegistry,
@@ -57,7 +58,7 @@ export interface RunHokusaiLoopResult {
   promptPreview: string;
   redactionCount: number;
   actualCostUsd: number | undefined;
-  row: HarnessOutcomeRowV2;
+  row: TechnicalTaskRouterContributionRowV4;
   response: ContributionAcceptedResponse;
   fidelityTier: string | undefined;
 }
@@ -161,10 +162,16 @@ export async function runHokusaiLoop(
   );
 
   log('[7/8] Deriving actual_cost_usd from token usage');
+  // The host's `@hokusai/costs` report is the stage's task_cost; its total, when
+  // it resolved, is the reported cost. Otherwise price the host's token counts.
+  const stageCost =
+    options.reportCost === false ? { summaries: [] } : (execution.cost ?? { summaries: [] });
+  const measuredTotalUsd = stageCost.summaries[0]?.total_cost_usd ?? null;
   const actualCostUsd =
     options.reportCost === false
       ? undefined
-      : computeActualCostUsd({
+      : (measuredTotalUsd ??
+        computeActualCostUsd({
           model: mapped.id,
           inputTokens: execution.inputTokens,
           outputTokens: execution.outputTokens,
@@ -174,32 +181,52 @@ export async function runHokusaiLoop(
           ...(execution.cacheReadTokens !== undefined
             ? { cacheReadTokens: execution.cacheReadTokens }
             : {}),
-        });
+        }));
   log(
     actualCostUsd === undefined
       ? '        actual_cost_usd: (omitted)'
       : `        actual_cost_usd: $${actualCostUsd.toFixed(6)}`,
   );
+  log(
+    stageCost.summaries.length > 0
+      ? '        task_cost: measured by the host (@hokusai/costs)'
+      : '        task_cost: unavailable (the host returned no cost report)',
+  );
 
   log('[8/8] Submitting the contribution row');
-  const row = buildHarnessOutcomeRow({
+  const harness = options.harnessName ?? 'native';
+  const row = buildTechnicalTaskRouterRowV4({
+    taskId: context.task.id,
     inferenceLogId,
     // The loop executes exactly the mapped recommendation, so nothing was
     // overridden. A host that swaps models must report its own overrides.
     routeOverrides: [],
-    taskDescriptor,
+    taskDescriptor: taskDescriptor as unknown as HokusaiTaskDescriptor,
     allowedModels,
     selectedModels: { coder: mapped.id, reviewer: mapped.id },
-    completionResult: execution.completionResult,
+    observedSuccess: execution.completionResult === 'success',
+    // Only claimed when both the budget and the cost are known.
+    budgetCompliant:
+      options.budgetUsd !== undefined &&
+      actualCostUsd !== undefined &&
+      actualCostUsd <= options.budgetUsd,
     ...(options.budgetUsd !== undefined
       ? { budgetUsd: options.budgetUsd }
       : {}),
     ...(actualCostUsd !== undefined ? { actualCostUsd } : {}),
     wallClockSeconds: execution.wallClockSeconds,
-    ...(options.harnessName ? { harness: options.harnessName } : {}),
+    harness,
     ...(options.sdkVersion ? { sdkVersion: options.sdkVersion } : {}),
-    taskId: context.task.id,
     observedAt,
+    stageExecutions: [
+      {
+        stage: 'coding',
+        executedModel: mapped.id,
+        modelEvidence: execution.modelEvidence ?? 'requested_only',
+        harness,
+        cost: stageCost,
+      },
+    ],
   });
 
   const response = await options.client.submitContribution({

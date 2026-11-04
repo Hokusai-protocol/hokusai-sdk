@@ -143,6 +143,50 @@ describe('captureCostBaseline', () => {
     });
   });
 
+  it('takes the session id from CLAUDE_CODE_SESSION_ID when no sidecar exists', () => {
+    expect(
+      captureCostBaseline({
+        cwd: '/repo',
+        nowIso,
+        env: { ...ENV, CLAUDE_CODE_SESSION_ID: 'sess-env' },
+        fs: makeFs({}),
+      }),
+    ).toEqual({ baselineAt: nowIso, projectDirKey: '-repo', sessionId: 'sess-env' });
+  });
+
+  it("does not adopt another session's sidecar cost", () => {
+    const fs = makeFs({
+      [sessionCostSidecarPath(CONFIG_DIR)]: {
+        content: JSON.stringify({ session_id: 'sess-other', cost_usd: 3, updated_at: '2026-07-08T11:59:00.000Z' }),
+      },
+    });
+    expect(
+      captureCostBaseline({ cwd: '/repo', nowIso, env: { ...ENV, CLAUDE_CODE_SESSION_ID: 'sess-env' }, fs }),
+    ).toEqual({ baselineAt: nowIso, projectDirKey: '-repo', sessionId: 'sess-env' });
+  });
+
+  it('adopts the sidecar cost when it belongs to the env session', () => {
+    const fs = makeFs({
+      [sessionCostSidecarPath(CONFIG_DIR)]: {
+        content: JSON.stringify({ session_id: 'sess-env', cost_usd: 0.25, updated_at: '2026-07-08T11:59:00.000Z' }),
+      },
+    });
+    expect(
+      captureCostBaseline({ cwd: '/repo', nowIso, env: { ...ENV, CLAUDE_CODE_SESSION_ID: 'sess-env' }, fs }),
+    ).toEqual({ baselineAt: nowIso, projectDirKey: '-repo', costBaselineUsd: 0.25, sessionId: 'sess-env' });
+  });
+
+  it('ignores an unsafe CLAUDE_CODE_SESSION_ID', () => {
+    expect(
+      captureCostBaseline({
+        cwd: '/repo',
+        nowIso,
+        env: { ...ENV, CLAUDE_CODE_SESSION_ID: '../../etc/passwd' },
+        fs: makeFs({}),
+      }),
+    ).toEqual({ baselineAt: nowIso, projectDirKey: '-repo' });
+  });
+
   it('records only baselineAt/projectDirKey when no sidecar exists', () => {
     expect(
       captureCostBaseline({ cwd: '/repo', nowIso, env: ENV, fs: makeFs({}) }),

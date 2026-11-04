@@ -271,3 +271,63 @@ describe('computeActualCostUsd', () => {
     expect(MODEL_PRICING_AS_OF).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
+
+describe('OpenAI price table (pricing page, 2026-11-04)', () => {
+  it('prices the HOK-3412 spike session on gpt-6.1-sol at the per-model cached rate', () => {
+    // 12,634 uncached input + 26,624 cached + 118 output; cached is 0.05x input.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-6.1-sol',
+        inputTokens: 12_634,
+        cacheReadTokens: 26_624,
+        outputTokens: 118,
+        requestScoped: true,
+      }),
+    ).toBe(0.02911);
+    // 12634 * 2 + 26624 * 0.1 + 118 * 10 = 29,110.4 micro-USD before rounding.
+  });
+
+  it('uses per-model cached rates, not a shared multiplier', () => {
+    const cached = (model: string) => computeActualCostUsd({ model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 });
+    expect(cached('gpt-6.1-sol')).toBe(0.1); // 0.05x of $2
+    expect(cached('gpt-5')).toBe(0.125); // 0.1x
+    expect(cached('gpt-4.1')).toBe(0.5); // 0.25x
+    expect(cached('gpt-4o')).toBe(1.25); // 0.5x
+  });
+
+  it('applies the long-context tier above 272K input tokens, per request only', () => {
+    const at = (inputTokens: number, requestScoped: boolean) =>
+      computeActualCostUsd({ model: 'gpt-6.1-sol', inputTokens, outputTokens: 0, requestScoped });
+    expect(at(272_000, true)).toBe(0.544); // standard: $2 / MTok
+    expect(at(272_001, true)).toBe(1.088004); // long: $4 / MTok
+    // An aggregate cannot be split into requests: standard rates.
+    expect(at(272_001, false)).toBe(0.544002);
+  });
+
+  it('counts cached tokens toward the long-context threshold', () => {
+    expect(
+      computeActualCostUsd({ model: 'gpt-6.1-sol', inputTokens: 72_001, cacheReadTokens: 200_000, outputTokens: 0, requestScoped: true }),
+    ).toBe(0.328004); // 72,001 * $4 + 200,000 * $0.20
+  });
+
+  it('leaves usage unpriced when the table has no rate for it', () => {
+    // TTL-dependent cache writes (gpt-6 / gpt-5.6).
+    expect(computeActualCostUsd({ model: 'gpt-6.1-sol', inputTokens: 1, outputTokens: 1, cacheCreationTokens: 10 })).toBeUndefined();
+    // No cached-input rate on pro models.
+    expect(computeActualCostUsd({ model: 'gpt-5.5-pro', inputTokens: 1, outputTokens: 1, cacheReadTokens: 10 })).toBeUndefined();
+    // Not on the pricing page.
+    expect(computeActualCostUsd({ model: 'codex-auto-review', inputTokens: 1, outputTokens: 1 })).toBeUndefined();
+  });
+
+  it('keeps the legacy multipliers for rows the page no longer lists', () => {
+    expect(
+      computeActualCostUsd({ model: 'gpt-5-codex', inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 }),
+    ).toBe(0.125);
+  });
+
+  it('prices the newly listed models', () => {
+    for (const model of ['gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2', 'gpt-5.1', 'gpt-5-nano', 'o3-pro']) {
+      expect(computeActualCostUsd({ model, inputTokens: 1000, outputTokens: 1000 }), model).toBeGreaterThan(0);
+    }
+  });
+});

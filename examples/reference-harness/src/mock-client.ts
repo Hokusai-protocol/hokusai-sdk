@@ -17,7 +17,6 @@ import {
   validateContributionRow,
   type ContributionAcceptedResponse,
   type ContributionRequest,
-  type HarnessOutcomeRow,
   type RouteRequest,
   type RouteResponse,
 } from '@hokusai/core';
@@ -34,7 +33,7 @@ export interface MockHokusaiClient {
  * success-under-budget is computable, which needs both a numeric budget and a
  * numeric actual cost.
  */
-function classifyRow(row: HarnessOutcomeRow): string {
+function classifyRow(row: ContributionRequest['rows'][number]): string {
   const hasModels =
     Array.isArray(row.allowed_models) &&
     row.allowed_models.length > 0 &&

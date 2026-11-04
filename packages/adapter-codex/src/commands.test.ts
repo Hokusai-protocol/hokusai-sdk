@@ -6,6 +6,7 @@ import {
   InMemoryLocalStore,
   InMemoryModelRegistry,
   type ConsentConfig,
+  type ContributionRequest,
   type FetchTransport,
   type ModelDefinition,
 } from '@hokusai/core';
@@ -232,7 +233,7 @@ describe('submitOutcome', () => {
 
   it('submits a contribution row, not a legacy outcome', async () => {
     const submitContribution = vi.fn(
-      (request: { rows: Array<Record<string, unknown>> }) => {
+      (request: ContributionRequest) => {
         void request;
         return Promise.resolve({
           accepted: true,
@@ -275,8 +276,21 @@ describe('submitOutcome', () => {
 
     const request = submitContribution.mock.calls[0]![0];
     const row = request.rows[0]!;
-    expect(row.schema_version).toBe('harness_outcome_row/v2');
+    expect(row.schema_version).toBe('technical_task_router_row/v4');
     expect(row.inference_log_id).toBe('inference-1');
+    // No measurer was supplied: one coding stage, reported unmeasured.
+    if (row.schema_version !== 'technical_task_router_row/v4') throw new Error('expected a v4 row');
+    expect(row.stage_executions).toHaveLength(1);
+    expect(row.stage_executions[0]).toMatchObject({
+      stage: 'coding',
+      executed_model: 'gpt-5-codex',
+      model_evidence: 'requested_only',
+      harness: 'codex',
+      task_cost: { harness: 'codex', coverage: 'unavailable', event_count: 0 },
+    });
+    // Cost known and within the route's $1 budget.
+    expect(row.success_under_budget).toBe(true);
+    expect(row.outcome_labels.budget_label).toBe('under_budget');
     expect(row.overrides).toEqual([]);
     expect(row.completion_result).toBe('success');
     expect(row.allowed_models).toEqual(['gpt-5-codex', 'gpt-5']);

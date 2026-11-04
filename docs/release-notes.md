@@ -18,6 +18,37 @@ git push origin v0.x.y
 
 ## Releases
 
+### 0.8.0 — unreleased
+
+**Requires:** `technical_task_router_row/v4` rows need a server that accepts
+them (HOK-3413). Writers switch to v4 in this release; pin **`@hokusai/core` ≥
+0.8.0** to build them. The task-cost contract is unchanged (`1.2.0`).
+
+- **Per-stage execution and token facts (HOK-3412).**
+  `technical_task_router_row/v4` adds `stage_executions[]`: one entry per stage
+  that ran, with its executed model, model evidence, harness and a required
+  `task_cost` summary over that stage's sessions. It also adds an optional
+  `comparison_group` and `sdk_version`, and reserves `integration`.
+  `actual_cost_usd` is contributor-reported evidence: Hokusai reprices from
+  `task_cost`.
+- **Every writer emits v4,** each stage measured with `@hokusai/costs`: the
+  Claude Code and Codex plugins (from the route's own session), aider, the
+  integration kit (`HostExecutionResult.cost`) and `@hokusai/router`
+  (`reportOutcome({ cost })`).
+- **OpenAI price table (Standard tier, 2026-11-04).** Adds the gpt-6.x,
+  gpt-5.6, gpt-5.4, gpt-5.3-codex, gpt-5.2 and gpt-5.1 families plus the pro and
+  nano rows, each with its own cached-input rate. Requests above 272K input
+  tokens use the long-context rates; the engine treats each delta event as one
+  request (`aggregate: true` opts out). Codex responses on a non-Standard
+  service tier are left unpriced (`unpriced_service_tier`).
+  `MODEL_PRICING_AS_OF` moves to `2026-11-04`. `codex-auto-review` is not on
+  the page and stays unpriced.
+- **Behavior changes:** Claude Code takes its session from
+  `CLAUDE_CODE_SESSION_ID` before the statusline sidecar. Plugin token counts no
+  longer double-count streamed transcript lines. On Codex, the rollout's model
+  is the executed model. `success_under_budget` is `true` only when both the
+  budget and the cost are known.
+
 ### 0.7.0 — 2026-11-02
 
 **Requires:** queue lifecycle events (`queue_lifecycle_event/v1` records,

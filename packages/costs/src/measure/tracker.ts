@@ -292,6 +292,7 @@ export function createTrackerWithInternals(
       ...(projected.isSubagent !== undefined
         ? { isSubagent: projected.isSubagent }
         : {}),
+      ...(projected.aggregate === true ? { aggregate: true } : {}),
     };
     return ingestInto(kind, harness, providerContract, input, eventId);
   }

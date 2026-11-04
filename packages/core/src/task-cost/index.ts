@@ -92,6 +92,12 @@ export {
 } from './aggregate.js';
 
 export {
+  defaultProviderContractVersion,
+  unavailableTaskCostSummary,
+  type UnavailableTaskCostSummaryInput,
+} from './unavailable.js';
+
+export {
   TASK_ATTEMPT_ARM_ROLES,
   TASK_ATTEMPT_CONTROL_ACTIONS,
   TASK_ATTEMPT_EVIDENCE_KINDS,
