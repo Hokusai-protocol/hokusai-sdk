@@ -150,6 +150,7 @@ export const USAGE_RECORD_ALLOWED_KEYS = [
   'usageKind',
   'isSubagent',
   'replayOfEventId',
+  'aggregate',
 ] as const satisfies ReadonlyArray<keyof TaskUsageRecord>;
 
 const FRIENDLY_ALLOWED_KEYS = [
@@ -174,6 +175,7 @@ const FRIENDLY_ALLOWED_KEYS = [
   'estimatedCostUsd',
   'pricingSource',
   'priceTable',
+  'aggregate',
 ] as const;
 
 const PREBUILT_ALLOWED_KEYS = [

@@ -83,6 +83,11 @@ export interface EventPricingRequest {
   estimatedCostUsd?: number | null;
   pricingSource?: 'local_estimate' | 'openrouter_api';
   priceTable?: TaskCostPriceTable;
+  /**
+   * The usage is one provider request, so the built-in table's long-context
+   * tier applies when the prompt exceeds its threshold. Default `false`.
+   */
+  requestScoped?: boolean;
 }
 
 export interface ResolvedEventPricing {
@@ -227,6 +232,7 @@ function priceWithBuiltInTable(
   inputTokens: number,
   outputTokens: number,
   ctx: EventPricingContext,
+  requestScoped: boolean,
 ): EstimateResolution {
   const price = resolveModelPrice(model);
   if (price === undefined) {
@@ -243,10 +249,11 @@ function priceWithBuiltInTable(
     outputTokens,
     cacheCreationTokens: usage.cache_write_tokens ?? 0,
     cacheReadTokens: usage.cache_read_tokens ?? 0,
+    requestScoped,
   });
   if (estimated === undefined) {
-    // The model is priced but this usage is not (non-Anthropic cache tokens,
-    // whose cache rates the table does not represent).
+    // The model is priced but this usage is not: cache tokens with no rate
+    // in the table (Gemini, OpenAI pro models, TTL-dependent cache writes).
     return {
       estimated: null,
       pricingSource: 'none',
@@ -315,6 +322,7 @@ function resolveEstimate(
     inputTokens,
     outputTokens,
     ctx,
+    req.requestScoped === true,
   );
 }
 

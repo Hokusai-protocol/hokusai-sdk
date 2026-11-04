@@ -42,6 +42,12 @@ export interface CodexUsageObservation {
   cumulative: Partial<TaskCostTokenUsage> | null;
   /** A present usage field was malformed and nulled. */
   usageInvalid: boolean;
+  /**
+   * The thread's service tier when the response was made
+   * (`thread_settings_applied.thread_settings.service_tier`), or `null` when
+   * the rollout never stated one. `"default"` is the Standard tier.
+   */
+  serviceTier: string | null;
 }
 
 export interface CodexParsedSession {
@@ -89,6 +95,7 @@ export function parseCodexRollout(
   };
   let currentTurnId: string | null = null;
   let currentModel = 'unknown';
+  let currentServiceTier: string | null = null;
 
   for (const entry of parseJsonlObjects(content, diagnostics, parseOptions)) {
     const payload = asRecord(entry.payload);
@@ -103,6 +110,14 @@ export function parseCodexRollout(
     if (entry.type === 'turn_context') {
       currentTurnId = idOrNull(payload?.turn_id);
       currentModel = modelOrNull(payload?.model) ?? currentModel;
+      continue;
+    }
+
+    if (entry.type === 'event_msg' && payload?.type === 'thread_settings_applied') {
+      const tier = asRecord(payload.thread_settings)?.service_tier;
+      if (typeof tier === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(tier)) {
+        currentServiceTier = tier;
+      }
       continue;
     }
 
@@ -126,6 +141,7 @@ export function parseCodexRollout(
       delta: null,
       cumulative: null,
       usageInvalid: false,
+      serviceTier: currentServiceTier,
     };
     const timestamp = timestampOrNull(entry.timestamp);
     if (timestamp !== null) {

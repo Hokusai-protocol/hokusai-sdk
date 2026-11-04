@@ -69,6 +69,12 @@ export const TASK_COST_SOURCE_DIAGNOSTIC_CODES = [
   'cumulative_counter_reset',
   /** Codex: `(cached + cache_write) > input` on a normalized event; `input_tokens` clamped to 0. */
   'codex_cache_exceeds_input',
+  /**
+   * Codex: a response ran on a service tier the built-in table does not
+   * price (only Standard, `service_tier: "default"`, is priced); it was
+   * left unpriced instead of billed at Standard rates.
+   */
+  'unpriced_service_tier',
   /** An event-source record was not a usable record shape. */
   'invalid_record',
   /** A file or directory could not be read. */

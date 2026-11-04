@@ -33,6 +33,9 @@ export function measureAiderStage(input: {
           ...(outputTokens !== undefined ? { outputTokens } : {}),
         },
         occurredAt: input.observedAt,
+        // Aider's counts are summed over every message in the run, so no
+        // per-request (long-context) tier can be applied to them.
+        aggregate: true,
       });
     }
     return tracker.summary();

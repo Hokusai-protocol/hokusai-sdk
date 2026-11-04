@@ -302,9 +302,13 @@ Known stripped prefixes are `openrouter/`, `litellm/`, `openai/`, `anthropic/`,
 `moonshotai/`, `qwen/`, `x-ai/`, and `z-ai/`. Unknown prefixes are preserved on
 purpose so unrelated vendor ids cannot accidentally collide with a priced model.
 
-Anthropic prompt-cache multipliers are the only cache rates built into the
-fallback. Non-Anthropic callers should omit cache token counts unless they know
-the same pricing applies.
+OpenAI rows carry their own cached-input rates and a long-context tier (more
+than 272K input tokens), taken from the pricing page (Standard tier,
+`OPENAI_MODEL_PRICING_AS_OF`). The long-context tier applies only when
+`computeActualCostUsd` is told the counts are one request (`requestScoped`).
+Anthropic uses the prompt-cache multipliers. Cache tokens with no rate in the
+table (Gemini, OpenAI pro models, TTL-dependent gpt-6 / gpt-5.6 cache writes)
+leave the cost `undefined`, never guessed.
 
 ## What leaves your process
 

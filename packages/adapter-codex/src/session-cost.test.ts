@@ -238,6 +238,9 @@ describe('route → submit with a Codex session (end to end)', () => {
     );
     expect(stage?.task_cost.session_ids).toEqual([SESSION]);
     expect(stage?.task_cost.usage.output_tokens).toBe(118);
+    // gpt-6.1-sol is priced (2026-11-04 table): the stage and the row carry dollars.
+    expect(stage?.task_cost.total_cost_usd).toBe(0.02911);
+    expect(row.actual_cost_usd).toBe(0.02911);
     expect(row.sdk_version).toMatch(/^\d+\.\d+\.\d+/);
   });
 });

@@ -177,11 +177,24 @@ These figures are **estimates, not invoices**:
   known models whose usage was unpriceable (see the cache-token note below).
   The priced subtotal stays visible in `estimatedUsd`/`actualUsd` as a lower
   bound.
-- Cache tokens: Anthropic and OpenAI models bill cache writes at 1.25× and
-  reads at 0.1× the input rate. Reported cache tokens on other models (e.g.
-  Gemini) are unpriceable from the built-in table — the event stays unpriced
+- Cache tokens: OpenAI models use their own cached-input rate from the
+  pricing page (the ratio to input varies by model: 0.05× for `gpt-6.1-sol`,
+  0.5× for `gpt-4o`). Anthropic models, and OpenAI rows the current page no
+  longer lists, bill cache writes at 1.25× and reads at 0.1× the input rate.
+  Cache tokens with no rate are unpriceable, and the event stays unpriced
   (`no_pricing_data`) unless an override sets `cacheWriteMultiplier` /
-  `cacheReadMultiplier`.
+  `cacheReadMultiplier`. That covers Gemini, OpenAI pro models, and gpt-6 /
+  gpt-5.6 cache writes, whose rate depends on a cache TTL the usage does not
+  record.
+- Long context: OpenAI bills a request with more than 272K input tokens
+  (cached included) at its long-context rates. The engine applies them per
+  event, treating each `delta` event as one provider request. Pass
+  `aggregate: true` on a `recordUsage` record that sums several requests (a
+  session total); it, and any `cumulative` snapshot, is billed at the
+  standard rates.
+- Codex service tier: only Standard (`service_tier: "default"`) is in the
+  table. A response on another tier (Fast, Flex) is left unpriced with an
+  `unpriced_service_tier` diagnostic rather than billed at Standard rates.
 - `pricing.revision` is the latest price revision used and
   `pricing.revisions` lists all of them; more than one implies a
   `stale_pricing_revision` diagnostic.

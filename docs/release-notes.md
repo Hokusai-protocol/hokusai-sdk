@@ -35,6 +35,14 @@ them (HOK-3413). Writers switch to v4 in this release; pin **`@hokusai/core` ≥
   Claude Code and Codex plugins (from the route's own session), aider, the
   integration kit (`HostExecutionResult.cost`) and `@hokusai/router`
   (`reportOutcome({ cost })`).
+- **OpenAI price table (Standard tier, 2026-11-04).** Adds the gpt-6.x,
+  gpt-5.6, gpt-5.4, gpt-5.3-codex, gpt-5.2 and gpt-5.1 families plus the pro and
+  nano rows, each with its own cached-input rate. Requests above 272K input
+  tokens use the long-context rates; the engine treats each delta event as one
+  request (`aggregate: true` opts out). Codex responses on a non-Standard
+  service tier are left unpriced (`unpriced_service_tier`).
+  `MODEL_PRICING_AS_OF` moves to `2026-11-04`. `codex-auto-review` is not on
+  the page and stays unpriced.
 - **Behavior changes:** Claude Code takes its session from
   `CLAUDE_CODE_SESSION_ID` before the statusline sidecar. Plugin token counts no
   longer double-count streamed transcript lines. On Codex, the rollout's model

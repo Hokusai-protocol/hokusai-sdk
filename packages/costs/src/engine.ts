@@ -95,6 +95,12 @@ export interface IngestUsageInput {
   estimatedCostUsd?: number | null;
   pricingSource?: 'local_estimate' | 'openrouter_api';
   priceTable?: TaskCostPriceTable;
+  /**
+   * The usage spans several provider requests (a session or task total), so
+   * it cannot be priced per request: a long-context tier never applies.
+   * Default `false`: an event is one request.
+   */
+  aggregate?: boolean;
 }
 
 export type IngestResult =
@@ -238,6 +244,9 @@ export function createTaskCostEngine(
         observedModel,
         usage: normalized.usage,
         harness: input.harness,
+        // A delta event is one provider request (a cumulative snapshot or a
+        // declared aggregate is not), so a long-context tier may apply.
+        requestScoped: (input.usageKind ?? 'delta') === 'delta' && input.aggregate !== true,
         ...(input.actualCostUsd !== undefined
           ? { actualCostUsd: input.actualCostUsd }
           : {}),

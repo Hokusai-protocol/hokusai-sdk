@@ -97,7 +97,7 @@ const actualCostUsd = computeActualCostUsd({
 });
 ```
 
-Prompt-cache tokens are billed at 1.25x (writes) and 0.1x (reads) the input rate; folding them into `inputTokens` overstates cost on cache-heavy runs. For an unknown model the function returns `undefined` rather than a fabricated figure, and the row degrades to telemetry.
+Prompt-cache tokens are billed at the model's own cached rate (OpenAI) or at 1.25x (writes) and 0.1x (reads) the input rate (Anthropic). Folding them into `inputTokens` overstates cost on cache-heavy runs. For an unknown model the function returns `undefined` rather than a fabricated figure, and the row degrades to telemetry.
 
 Record those token counts on a `@hokusai/costs` tracker (`measureTask` / `createTaskCostTracker`) and return its report as `HostExecutionResult.cost`. That report becomes the row's per-stage `task_cost`, priced by the shared engine, and its total is the reported `actual_cost_usd`. OpenHands' `RouterLLM` and LLM/conversation metrics report per-turn tokens, and Pi and most custom loops carry token counts from the underlying provider. Without a report the stage is sent with an explicit `coverage: 'unavailable'` summary, and the loop prices the host's token counts with `computeActualCostUsd()`.
 

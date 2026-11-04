@@ -410,10 +410,13 @@ export {
   GOOGLE_MODEL_PRICING,
   MODEL_PRICING,
   MODEL_PRICING_AS_OF,
+  OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
   OPENAI_MODEL_PRICING,
+  OPENAI_MODEL_PRICING_AS_OF,
   computeActualCostUsd,
   normalizeModelId,
   resolveModelPrice,
+  type LongContextPrice,
   type ModelPrice,
   type TokenCostInput,
 } from './pricing.js';
