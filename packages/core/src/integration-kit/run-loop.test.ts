@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ContributionRequest } from '../client.js';
 import {
-  isHarnessOutcomeRowV2,
+  isTechnicalTaskRouterContributionRowV4,
   validateContributionRow,
 } from '../contribution/index.js';
+import { claudeCodeSimpleFixture } from '../fixtures/task-cost/claude-code-simple.js';
+import type { TaskCostSummaryV1 } from '../task-cost/summary.js';
 import type { ModelDefinition } from '../model-registry.js';
 import type { RouteResponse } from '../schemas.js';
 import type { HostAdapter } from './host-adapter.js';
@@ -123,7 +125,7 @@ async function runLoop(
 }
 
 describe('runHokusaiLoop', () => {
-  it('builds a valid training-eligible harness_outcome_row/v2 from a minimal adapter', async () => {
+  it('builds a valid technical_task_router_row/v4 from a minimal adapter', async () => {
     const { adapter } = createAdapter();
     let submittedRequest: ContributionRequest | undefined;
     const submitContribution = vi.fn((request: ContributionRequest) => {
@@ -148,7 +150,15 @@ describe('runHokusaiLoop', () => {
     expect(result.actualCostUsd).toBeCloseTo(0.177, 6);
     expect(result.row.actual_cost_usd).toBeCloseTo(0.177, 6);
     expect(result.row.budget_usd).toBe(0.5);
-    expect(isHarnessOutcomeRowV2(result.row)).toBe(true);
+    expect(isTechnicalTaskRouterContributionRowV4(result.row)).toBe(true);
+    // No cost report from the host: one coding stage, reported unmeasured.
+    expect(result.row.stage_executions).toHaveLength(1);
+    expect(result.row.stage_executions[0]).toMatchObject({
+      stage: 'coding',
+      executed_model: 'claude-sonnet-4-6',
+      model_evidence: 'requested_only',
+      task_cost: { task_id: 'integration-kit-task-1', coverage: 'unavailable' },
+    });
     expect(() => validateContributionRow(result.row)).not.toThrow();
     expect(submittedRequest?.rows).toHaveLength(1);
   });
@@ -242,7 +252,7 @@ describe('runHokusaiLoop', () => {
     expect(executeWithModel).toHaveBeenCalledTimes(1);
   });
 
-  it('can omit actual_cost_usd while still producing a valid harness_outcome_row/v2', async () => {
+  it('can omit actual_cost_usd while still producing a valid v4 row', async () => {
     const { adapter } = createAdapter();
     let submittedRow: ContributionRequest['rows'][number] | undefined;
     const { client } = createClient({
@@ -261,7 +271,36 @@ describe('runHokusaiLoop', () => {
     expect(result.actualCostUsd).toBeUndefined();
     expect(result.row.actual_cost_usd).toBeUndefined();
     expect(submittedRow?.actual_cost_usd).toBeUndefined();
-    expect(isHarnessOutcomeRowV2(result.row)).toBe(true);
+    expect(isTechnicalTaskRouterContributionRowV4(result.row)).toBe(true);
     expect(() => validateContributionRow(result.row)).not.toThrow();
+  });
+
+  it("uses the host's @hokusai/costs report as task_cost and its total as the cost", async () => {
+    const { adapter, executeWithModel } = createAdapter();
+    const measured: TaskCostSummaryV1 = {
+      ...structuredClone(claudeCodeSimpleFixture.expectedSummaries[0] as TaskCostSummaryV1),
+      task_id: 'integration-kit-task-1',
+    };
+    executeWithModel.mockResolvedValueOnce({
+      completionResult: 'success',
+      inputTokens: 4500,
+      outputTokens: 2300,
+      wallClockSeconds: 42,
+      cost: { summaries: [measured] },
+      modelEvidence: 'provider_response',
+    });
+    const { client } = createClient({
+      submitContribution: vi.fn(() =>
+        Promise.resolve({ accepted: true, rowsAccepted: 1 }),
+      ),
+    });
+
+    const result = await runLoop(adapter, client);
+
+    expect(result.row.stage_executions[0]?.task_cost).toEqual(measured);
+    expect(result.row.stage_executions[0]?.model_evidence).toBe('provider_response');
+    expect(result.actualCostUsd).toBe(measured.total_cost_usd);
+    expect(result.row.actual_cost_usd).toBe(measured.total_cost_usd);
+    expect(result.row.success_under_budget).toBe(true);
   });
 });

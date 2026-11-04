@@ -26,6 +26,7 @@ import {
 import { previewWavemillTaskPacket } from './task-packet.js';
 
 export * from './fixtures.js';
+export * from './contribution.js';
 export * from './outcome.js';
 export * from './task-packet.js';
 

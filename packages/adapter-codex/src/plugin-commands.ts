@@ -13,6 +13,7 @@ import {
   type HarnessCommandResult,
   type OutcomeContributionPrompt,
   type LatestRouteCommandValue,
+  type MeasureStage,
   type PreviewOutcomeCommandValue,
   type PrivacyStatusCommandValue,
   type RouteCommandValue,
@@ -27,12 +28,21 @@ import {
   resolveCodexConfigDir,
 } from './config.js';
 import { createAllowlistedOpenAiRegistry } from './registry.js';
+import {
+  codexSessionBaseline,
+  measureCodexStage,
+  type CodexCallSession,
+} from './session-cost.js';
 
 export interface CodexPluginCommandOptions {
   client?: HokusaiClient | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   clock?: (() => Date) | undefined;
   transport?: FetchTransport | undefined;
+  /** The calling Codex session, read from the MCP call's `_meta`. */
+  session?: CodexCallSession | undefined;
+  /** Overrides the Codex session measurer (tests). */
+  measureStage?: MeasureStage | undefined;
 }
 
 export interface CodexRouteInput {
@@ -185,6 +195,10 @@ export async function routeTaskWithCodex(
     taskId: createTaskId(input.taskId, options.clock),
     taskText: input.task,
     ...(routeMetadata(input) ? { metadata: routeMetadata(input) } : {}),
+    sessionBaseline: codexSessionBaseline(
+      options.session,
+      (options.clock ?? (() => new Date()))().toISOString(),
+    ),
     store,
     profile,
     ...(options.clock ? { clock: options.clock } : {}),
@@ -269,6 +283,10 @@ export async function submitOutcomeWithCodex(
     ...(input.wallClockSeconds === undefined
       ? {}
       : { wallClockSeconds: input.wallClockSeconds }),
+    measureStage: options.measureStage ?? measureCodexStage,
+    // The rollout records the model that ran; the agent's report may not.
+    executedModelFromSession: true,
+    env: options.env,
     currentModelId: input.actualModel,
     input: {
       actualModel: input.actualModel,

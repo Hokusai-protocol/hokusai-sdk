@@ -10,10 +10,13 @@ import type {
   HokusaiAvailableModels,
   HokusaiTaskDescriptor,
 } from './descriptor-types.js';
+import type { TaskCostSummaryV1 } from '../task-cost/summary.js';
+import { MINTED_ID_PATTERN, validateTaskCostSummaryV1 } from '../task-cost/validators.js';
 
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = 'technical_task_router_row/v1';
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = 'technical_task_router_row/v2';
 export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3 = 'technical_task_router_row/v3';
+export const TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4 = 'technical_task_router_row/v4';
 export const HARNESS_OUTCOME_ROW_SCHEMA_VERSION = 'harness_outcome_row/v1';
 export const HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2 = 'harness_outcome_row/v2';
 
@@ -26,9 +29,16 @@ export type RouteRole = (typeof ROUTE_ROLES)[number];
  * contract's "actor on every event" rule). `escalation`: the harness escalated
  * after a failure. `launchability`: the recommended model could not launch.
  * `challenge`: a challenge program deliberately ran a different model.
- * `operator`: a human chose.
+ * `operator`: a human chose. `observed`: the harness's own session record
+ * shows a different model ran, and nothing says who changed it (HOK-3412).
  */
-export const ROUTE_OVERRIDE_SOURCES = ['escalation', 'launchability', 'challenge', 'operator'] as const;
+export const ROUTE_OVERRIDE_SOURCES = [
+  'escalation',
+  'launchability',
+  'challenge',
+  'operator',
+  'observed',
+] as const;
 export type RouteOverrideSource = (typeof ROUTE_OVERRIDE_SOURCES)[number];
 
 /**
@@ -219,6 +229,136 @@ export interface TechnicalTaskRouterContributionRowV3
   schema_version: typeof TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3;
 }
 
+/**
+ * Stages a v4 row reports. The base stages map onto routing roles
+ * (`STAGE_TO_ROLE`); repair stages have no role and are not checked against
+ * `selected_models`.
+ */
+export const STAGE_EXECUTION_BASE_STAGES = ['planning', 'coding', 'review'] as const;
+export const STAGE_EXECUTION_REPAIR_STAGES = [
+  'ci-fix',
+  'conflict-resolution',
+  'ready-remediation',
+] as const;
+export const STAGE_EXECUTION_STAGES = [
+  ...STAGE_EXECUTION_BASE_STAGES,
+  ...STAGE_EXECUTION_REPAIR_STAGES,
+] as const;
+export type StageExecutionBaseStage = (typeof STAGE_EXECUTION_BASE_STAGES)[number];
+export type StageExecutionStage = (typeof STAGE_EXECUTION_STAGES)[number];
+
+export const STAGE_TO_ROLE: Readonly<Record<StageExecutionBaseStage, RouteRole>> = Object.freeze({
+  planning: 'planner',
+  coding: 'coder',
+  review: 'reviewer',
+});
+
+/**
+ * How the harness knows which model ran a stage. `provider_response`: the
+ * provider's response named it. `session_telemetry`: the harness's session
+ * record (transcript / rollout) named it. `requested_only`: only the model the
+ * harness asked for is known.
+ */
+export const MODEL_EVIDENCE_KINDS = [
+  'provider_response',
+  'session_telemetry',
+  'requested_only',
+] as const;
+export type ModelEvidence = (typeof MODEL_EVIDENCE_KINDS)[number];
+
+/** One stage that ran, with its executed model and token facts. */
+export interface StageExecution {
+  stage: StageExecutionStage;
+  executed_model: string;
+  model_evidence: ModelEvidence;
+  /** Harness slug that ran the stage, e.g. `claude-code`, `codex`, `native`. */
+  harness: string;
+  /**
+   * Task-cost summary over this stage's sessions. Always present: a stage that
+   * ran unmeasured carries a summary with `coverage: 'unavailable'`.
+   */
+  task_cost: TaskCostSummaryV1;
+}
+
+/**
+ * Runs of the same task on different routes. `id` is the minted `pair_id` of
+ * the task-attempt contract (HOK-3372); `role_varied` is the role whose model
+ * differs between the arms.
+ */
+export interface ComparisonGroup {
+  id: string;
+  role_varied: RouteRole;
+}
+
+/**
+ * Router row v3 plus per-stage execution facts (HOK-3412).
+ *
+ * `actual_cost_usd` is **contributor-reported evidence**: Hokusai reprices the
+ * row from `stage_executions[].task_cost` and never trusts it as the cost.
+ */
+export interface TechnicalTaskRouterContributionRowV4
+  extends Omit<TechnicalTaskRouterContributionRowV3, 'schema_version'> {
+  schema_version: typeof TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4;
+  /** One entry per stage that ran, in run order. Non-empty. */
+  stage_executions: StageExecution[];
+  comparison_group?: ComparisonGroup;
+  /** Reserved for integration outcomes (HOK-3343). Only `{}` is accepted. */
+  integration?: Record<string, never>;
+  /** Version of the Hokusai SDK that wrote the row, e.g. `0.8.0`. */
+  sdk_version?: string;
+}
+
+const RICH_ROUTER_ROW_FIELDS = [
+  'schema_version',
+  'task_descriptor',
+  'allowed_models',
+  'selected_models',
+  'available_models',
+  'budget_usd',
+  'actual_cost_usd',
+  'wall_clock_seconds',
+  'success_under_budget',
+  'completion_result',
+  'outcome_labels',
+  'candidate_pool',
+  'sparse_cell',
+  'scorer_ref',
+  'observed_at',
+  'task_id',
+  'harness',
+] as const;
+
+/** Legacy keys still tolerated on rich router rows (v2+). Not part of the v4 export. */
+const RICH_ROUTER_ROW_LEGACY_FIELDS = [
+  'candidate_pools',
+  'current_candidate_pools',
+  'audit_metadata',
+  'scenario',
+  'scenarios',
+] as const;
+
+const ROUTER_ROW_V3_EXTRA_FIELDS = ['inference_log_id', 'overrides'] as const;
+const ROUTER_ROW_V4_EXTRA_FIELDS = [
+  ...ROUTER_ROW_V3_EXTRA_FIELDS,
+  'stage_executions',
+  'comparison_group',
+  'integration',
+  'sdk_version',
+] as const;
+
+/** Every top-level field a `technical_task_router_row/v4` may carry. */
+export const TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
+  ...RICH_ROUTER_ROW_FIELDS,
+  ...ROUTER_ROW_V4_EXTRA_FIELDS,
+] as const);
+export const STAGE_EXECUTION_FIELDS = Object.freeze([
+  'stage',
+  'executed_model',
+  'model_evidence',
+  'harness',
+  'task_cost',
+] as const);
+
 export interface HarnessOutcomeRowV1 {
   schema_version: typeof HARNESS_OUTCOME_ROW_SCHEMA_VERSION;
   task_descriptor: Partial<HokusaiTaskDescriptor>;
@@ -251,6 +391,7 @@ export type ContributionRow =
   | TechnicalTaskRouterContributionRowV1
   | TechnicalTaskRouterContributionRowV2
   | TechnicalTaskRouterContributionRowV3
+  | TechnicalTaskRouterContributionRowV4
   | HarnessOutcomeRowV1
   | HarnessOutcomeRowV2;
 
@@ -265,6 +406,9 @@ export class ContributionValidationError extends Error {
     this.code = code;
   }
 }
+
+/** Keys rejected anywhere in a contribution row (compared lower-cased). */
+export const CONTRIBUTION_FORBIDDEN_KEYS: readonly string[] = Object.freeze([...FORBIDDEN_KEYS]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -591,8 +735,18 @@ export function isTechnicalTaskRouterContributionRowV3(
   value: unknown,
 ): value is TechnicalTaskRouterContributionRowV3 {
   return (
-    isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3, ['inference_log_id', 'overrides'])
+    isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3, ROUTER_ROW_V3_EXTRA_FIELDS)
     && routingOutcomeErrors(value).length === 0
+  );
+}
+
+export function isTechnicalTaskRouterContributionRowV4(
+  value: unknown,
+): value is TechnicalTaskRouterContributionRowV4 {
+  return (
+    isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4, ROUTER_ROW_V4_EXTRA_FIELDS)
+    && routingOutcomeErrors(value).length === 0
+    && stageExecutionErrors(value).length === 0
   );
 }
 
@@ -607,28 +761,8 @@ function isRichRouterRow(value: unknown, version: string, extraKeys: readonly st
 
   if (!hasOnlyAllowedKeys(value, [
     ...extraKeys,
-    'schema_version',
-    'task_descriptor',
-    'allowed_models',
-    'selected_models',
-    'available_models',
-    'budget_usd',
-    'actual_cost_usd',
-    'wall_clock_seconds',
-    'success_under_budget',
-    'completion_result',
-    'outcome_labels',
-    'candidate_pool',
-    'sparse_cell',
-    'scorer_ref',
-    'observed_at',
-    'task_id',
-    'harness',
-    'candidate_pools',
-    'current_candidate_pools',
-    'audit_metadata',
-    'scenario',
-    'scenarios',
+    ...RICH_ROUTER_ROW_FIELDS,
+    ...RICH_ROUTER_ROW_LEGACY_FIELDS,
   ])) {
     return false;
   }
@@ -883,6 +1017,110 @@ export function routeRecommendationFollowed(row: RoutingOutcomeBlock, role: Rout
   return !(row.overrides ?? []).some((override) => override.role === role);
 }
 
+const HARNESS_SLUG_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
+const SDK_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
+
+function isBaseStage(stage: unknown): stage is StageExecutionBaseStage {
+  return (STAGE_EXECUTION_BASE_STAGES as readonly unknown[]).includes(stage);
+}
+
+/**
+ * Why a v4 row's stage facts are invalid; `[]` when they are valid:
+ *
+ * - `stage_executions` is a non-empty array of well-formed entries, each with a
+ *   `task_cost` that passes the task-cost summary contract (including its
+ *   stricter forbidden-key list);
+ * - a `task_cost.task_id` equals the row's `task_id` when the row has one;
+ * - per base stage, the **last** entry's `executed_model` equals the matching
+ *   `selected_models` role (stages may repeat on retry, in run order);
+ * - `comparison_group.id` is a minted id and `role_varied` a route role;
+ * - `integration`, when present, is `{}` (reserved for HOK-3343);
+ * - `sdk_version`, when present, is a version string.
+ */
+export function stageExecutionErrors(row: unknown): string[] {
+  if (!isPlainObject(row)) {
+    return ['row must be an object'];
+  }
+  const errors: string[] = [];
+  const executions = row.stage_executions;
+  if (!Array.isArray(executions) || executions.length === 0) {
+    errors.push('stage_executions must be a non-empty array');
+  } else {
+    const lastByStage = new Map<StageExecutionBaseStage, unknown>();
+    for (const [index, entry] of executions.entries()) {
+      const label = `stage_executions[${index}]`;
+      if (!isPlainObject(entry) || !hasOnlyAllowedKeys(entry, STAGE_EXECUTION_FIELDS)) {
+        errors.push(`${label} must be an object with only: ${STAGE_EXECUTION_FIELDS.join(', ')}`);
+        continue;
+      }
+      if (!(STAGE_EXECUTION_STAGES as readonly unknown[]).includes(entry.stage)) {
+        errors.push(`${label}.stage must be one of: ${STAGE_EXECUTION_STAGES.join(', ')}`);
+      }
+      if (typeof entry.executed_model !== 'string' || entry.executed_model.trim().length === 0) {
+        errors.push(`${label}.executed_model must be a non-empty model id`);
+      }
+      if (!(MODEL_EVIDENCE_KINDS as readonly unknown[]).includes(entry.model_evidence)) {
+        errors.push(`${label}.model_evidence must be one of: ${MODEL_EVIDENCE_KINDS.join(', ')}`);
+      }
+      if (typeof entry.harness !== 'string' || !HARNESS_SLUG_PATTERN.test(entry.harness)) {
+        errors.push(`${label}.harness must be a harness slug`);
+      }
+      if (entry.task_cost === undefined) {
+        errors.push(`${label}.task_cost is required (use an unavailable summary for an unmeasured stage)`);
+      } else {
+        try {
+          validateTaskCostSummaryV1(entry.task_cost);
+          if (typeof row.task_id === 'string' && entry.task_cost.task_id !== row.task_id) {
+            errors.push(`${label}.task_cost.task_id must equal the row's task_id`);
+          }
+        } catch (error) {
+          errors.push(`${label}.task_cost: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (isBaseStage(entry.stage)) {
+        lastByStage.set(entry.stage, entry.executed_model);
+      }
+    }
+    const selected = isPlainObject(row.selected_models) ? row.selected_models : {};
+    for (const [stage, model] of lastByStage) {
+      const role = STAGE_TO_ROLE[stage];
+      if (selected[role] !== model) {
+        errors.push(`the last ${stage} stage's executed_model must equal selected_models.${role}`);
+      }
+    }
+  }
+
+  if (row.comparison_group !== undefined) {
+    const group = row.comparison_group;
+    if (!isPlainObject(group) || !hasOnlyAllowedKeys(group, ['id', 'role_varied'])) {
+      errors.push('comparison_group must be an object with only id and role_varied');
+    } else {
+      if (typeof group.id !== 'string' || !MINTED_ID_PATTERN.test(group.id)) {
+        errors.push('comparison_group.id must be a minted pair id (UUID or ULID)');
+      }
+      if (!(ROUTE_ROLES as readonly unknown[]).includes(group.role_varied)) {
+        errors.push(`comparison_group.role_varied must be one of: ${ROUTE_ROLES.join(', ')}`);
+      }
+    }
+  }
+
+  if (
+    row.integration !== undefined
+    && (!isPlainObject(row.integration) || Object.keys(row.integration).length > 0)
+  ) {
+    errors.push('integration is reserved (HOK-3343); only {} is accepted');
+  }
+
+  if (
+    row.sdk_version !== undefined
+    && (typeof row.sdk_version !== 'string' || !SDK_VERSION_PATTERN.test(row.sdk_version))
+  ) {
+    errors.push('sdk_version must be a version string');
+  }
+
+  return errors;
+}
+
 function findRecommendationCopy(value: unknown, path: string[] = []): string | undefined {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
@@ -918,6 +1156,7 @@ export function validateContributionRow(row: unknown): ContributionRow {
   if (
     isPlainObject(row)
     && (row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3
+      || row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4
       || row.schema_version === HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2)
   ) {
     const errors = routingOutcomeErrors(row);
@@ -929,10 +1168,21 @@ export function validateContributionRow(row: unknown): ContributionRow {
     }
   }
 
+  if (isPlainObject(row) && row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4) {
+    const errors = stageExecutionErrors(row);
+    if (errors.length > 0) {
+      throw new ContributionValidationError(
+        'schema_validation_failed',
+        `Invalid stage executions: ${errors.join('; ')}`,
+      );
+    }
+  }
+
   if (
     isTechnicalTaskRouterContributionRowV1(row)
     || isTechnicalTaskRouterContributionRowV2(row)
     || isTechnicalTaskRouterContributionRowV3(row)
+    || isTechnicalTaskRouterContributionRowV4(row)
     || isHarnessOutcomeRowV1(row)
     || isHarnessOutcomeRowV2(row)
     || isSubmitDataContributionRow(row)

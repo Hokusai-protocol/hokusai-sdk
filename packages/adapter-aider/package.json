@@ -27,7 +27,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@hokusai/core": "workspace:*"
+    "@hokusai/core": "workspace:*",
+    "@hokusai/costs": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",

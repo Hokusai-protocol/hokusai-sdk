@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   InMemoryModelRegistry,
-  isHarnessOutcomeRowV2,
+  isTechnicalTaskRouterContributionRowV4,
   validateContributionRow,
 } from '@hokusai/core';
 import {
@@ -134,7 +134,14 @@ describe('runAiderLoop', () => {
     expect(result.row.actual_cost_usd).toBe(0.21);
     expect(result.row.selected_models.coder).toBe('claude-sonnet-4-6');
     expect(result.row.allowed_models.length).toBeGreaterThan(1);
-    expect(isHarnessOutcomeRowV2(result.row)).toBe(true);
+    expect(isTechnicalTaskRouterContributionRowV4(result.row)).toBe(true);
+    expect(result.row.stage_executions).toHaveLength(1);
+    expect(result.row.stage_executions[0]).toMatchObject({
+      stage: 'coding',
+      harness: AIDER_HARNESS_NAME,
+      executed_model: 'claude-sonnet-4-6',
+      task_cost: { harness: 'unknown' },
+    });
   });
 
   it('passes provider-prefixed model ids to Aider byte-for-byte', async () => {
@@ -226,7 +233,7 @@ describe('runAiderLoop', () => {
       runner: runner,
     });
     expect(result.row.completion_result).toBe('failure');
-    expect(result.row.actual_cost_usd).toBeUndefined();
+    expect(result.row.actual_cost_usd).toBeNull();
     expect(result.costOmittedReason).toContain('failed');
     expect(submit).toHaveBeenCalledTimes(1);
   });

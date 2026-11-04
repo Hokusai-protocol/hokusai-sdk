@@ -15,7 +15,9 @@ import {
   buildRouteContextProjection,
   parseRouteContext,
 } from './plugin-commands/commands.js';
-import type { RouteContextProjection } from './plugin-commands/types.js';
+import type { MeasureStage, RouteContextProjection } from './plugin-commands/types.js';
+import type { CostBaselineSnapshot } from './session-usage.js';
+import type { StageCostInput } from './contribution/builder.js';
 import type { ContributionAcceptedResponse } from './client.js';
 import { buildOutcomeReport } from './outcome.js';
 import {
@@ -70,6 +72,12 @@ export interface ExecuteRouteCommandInput {
   metadata?: Record<string, string> | undefined;
   clock?: (() => Date) | undefined;
   previewOnly?: boolean | undefined;
+  /**
+   * Local-only session baseline (session id, route time) persisted in the
+   * stored route context so the report step can measure the route's own
+   * session. Never sent to Hokusai.
+   */
+  sessionBaseline?: CostBaselineSnapshot | undefined;
   store: LocalStore;
   profile: HarnessRoutingProfile;
 }
@@ -100,6 +108,8 @@ export interface PreviewOutcomeCommandInput {
 
 export interface PreviewOutcomeCommandValue {
   correlationId: string;
+  /** The routed task this outcome belongs to (from the stored route). */
+  taskId: string;
   report: ReturnType<HarnessRoutingProfile['buildOutcomeReport']>;
   resolvedRecommendedModel: string;
   previewLines: string[];
@@ -117,6 +127,11 @@ export interface SubmitOutcomeCommandInput extends PreviewOutcomeCommandInput {
    */
   actualCostUsd?: number | undefined;
   wallClockSeconds?: number | undefined;
+  /** Measures the routed session so the row carries a measured `task_cost`. */
+  measureStage?: MeasureStage | undefined;
+  /** The measured session's model is the executed model (Codex). */
+  executedModelFromSession?: boolean | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
 }
 
 export interface SubmitOutcomeCommandValue extends PreviewOutcomeCommandValue {
@@ -519,7 +534,10 @@ export async function executeRouteCommand(
   const routeContext = buildRouteContextProjection(
     input.metadata,
     taskInput.modelConstraints,
-    { taskText },
+    {
+      taskText,
+      ...(input.sessionBaseline ? { costBaseline: input.sessionBaseline } : {}),
+    },
   );
 
   await input.profile.storeCorrelationMetadata?.({
@@ -661,6 +679,7 @@ export async function previewOutcomeCommand(
     const report = input.profile.buildOutcomeReport(reportInput);
     return ok({
       correlationId: resolved.correlationId,
+      taskId: resolved.taskId,
       report,
       resolvedRecommendedModel: recommendedModel.trim(),
       previewLines: buildOutcomePreviewLines(resolved.correlationId, report),
@@ -753,13 +772,30 @@ export async function submitOutcomeCommand(
     input.store,
     preview.value.correlationId,
   );
+  const observedAt = new Date(timestamp).toISOString();
+  let stageCost: StageCostInput | undefined;
+  try {
+    stageCost = await input.measureStage?.({
+      taskId: preview.value.taskId,
+      executedModel: preview.value.report.actualModel,
+      routeContext: routed?.routeContext,
+      endedAt: observedAt,
+      env: input.env,
+    });
+  } catch {
+    // A measurer must not block a report: the stage is reported unmeasured.
+    stageCost = undefined;
+  }
   const rowResult = buildReportContributionRow({
     report: preview.value.report,
     routeContext: routed?.routeContext,
     inferenceLogId: routed?.inferenceLogId,
     recommendedModelId: routed?.recommendedModelId,
     harness: input.profile.harnessName,
-    observedAt: new Date(timestamp).toISOString(),
+    observedAt,
+    taskId: preview.value.taskId,
+    stageCost,
+    executedModelFromSession: input.executedModelFromSession,
     ...(input.actualCostUsd !== undefined
       ? { actualCostUsd: input.actualCostUsd }
       : {}),

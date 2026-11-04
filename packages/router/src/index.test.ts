@@ -180,7 +180,12 @@ describe('createRouter', () => {
       rows: Array<Record<string, unknown>>;
     };
     const row = body.rows[0]!;
-    expect(row.schema_version).toBe('harness_outcome_row/v2');
+    expect(row.schema_version).toBe('technical_task_router_row/v4');
+    expect(typeof row.task_id).toBe('string');
+    // No cost report was passed: one coding stage, reported unmeasured.
+    expect(row.stage_executions).toMatchObject([
+      { stage: 'coding', executed_model: 'claude-sonnet-4-6', task_cost: { coverage: 'unavailable' } },
+    ]);
     // The row is only attributable to its decision through inference_log_id.
     expect(row.inference_log_id).toBe(routed.routeId);
     // The recommended model ran, so nothing was overridden.
@@ -241,7 +246,7 @@ describe('createRouter', () => {
     };
     const row = body.rows[0]!;
     expect(body.metadata.idempotency_key).toBe('external-1');
-    expect(row.schema_version).toBe('harness_outcome_row/v2');
+    expect(row.schema_version).toBe('technical_task_router_row/v4');
     expect(row).not.toHaveProperty('inference_log_id');
     expect(row).not.toHaveProperty('overrides');
     expect(row.allowed_models).toEqual([

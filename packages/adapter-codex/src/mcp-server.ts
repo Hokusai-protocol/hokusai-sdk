@@ -1,5 +1,6 @@
 import readline from 'node:readline';
 import { HokusaiApiError } from '@hokusai/core';
+import { codexCallSessionFromMeta } from './session-cost.js';
 import {
   latestRouteWithCodex,
   previewOutcomeWithCodex,
@@ -191,10 +192,19 @@ function asToolResult(payload: Record<string, unknown>, isError = false) {
   };
 }
 
-async function handleToolCall(name: string, args: Record<string, unknown>) {
+async function handleToolCall(
+  name: string,
+  args: Record<string, unknown>,
+  meta: unknown,
+) {
+  // Codex names the calling session in `_meta`; it stays local (HOK-3412).
+  const session = codexCallSessionFromMeta(meta);
   switch (name) {
     case 'hokusai_route':
-      return routeTaskWithCodex(args as unknown as CodexRouteInput);
+      return routeTaskWithCodex(
+        args as unknown as CodexRouteInput,
+        session ? { session } : {},
+      );
     case 'hokusai_preview_route_payload':
       return previewRoutePayloadWithCodex(args as unknown as CodexRouteInput);
     case 'hokusai_submit_outcome':
@@ -258,7 +268,7 @@ async function handleRequest(request: JsonRpcRequest) {
       request.params && typeof request.params.arguments === 'object'
         ? (request.params.arguments as Record<string, unknown>)
         : {};
-    const result = await handleToolCall(name, args);
+    const result = await handleToolCall(name, args, request.params?._meta);
     if (result.ok) {
       writeResult(
         id,

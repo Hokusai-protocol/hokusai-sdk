@@ -4,8 +4,9 @@ import type {
   ConsentSettings,
   ContributionAcceptedResponse,
   HarnessPayloadPreview,
-  HarnessOutcomeRowV2,
   HarnessRecommendation,
+  StageCostInput,
+  TechnicalTaskRouterContributionRowV4,
   HandoffInstructions,
   HokusaiClient,
   ModelRegistry,
@@ -102,7 +103,13 @@ export interface ReportOutcomeInputWithTaskId extends OutcomeReportInput {
   routedRecommendedModelId?: string;
   /** Redacted routing inputs persisted at route time. */
   routeContext?: RouteContextProjection;
-  /** Optional measured cost of the run, when the harness provides it. */
+  /**
+   * The run's measured cost (a `@hokusai/costs` report over the route's own
+   * session). Becomes the coding stage's `task_cost`; absent means the stage
+   * ran unmeasured and carries an `unavailable` summary.
+   */
+  stageCost?: StageCostInput;
+  /** Contributor-reported cost of the run (evidence; Hokusai reprices from `stageCost`). */
   actualCostUsd?: number;
   /** Optional wall-clock duration of the run, when the harness provides it. */
   wallClockSeconds?: number;
@@ -132,6 +139,31 @@ export interface RouteContextProjection {
 }
 
 /**
+ * What a harness's stage measurer is told about the run being reported.
+ * `routeContext` carries the local-only session baseline captured at route
+ * time (`sessionId`, `baselineAt`, ...); `endedAt` closes the window.
+ */
+export interface MeasureStageInput {
+  taskId: string;
+  /** The model the report says ran. */
+  executedModel: string;
+  routeContext: RouteContextProjection | undefined;
+  endedAt: string;
+  env?: NodeJS.ProcessEnv | undefined;
+}
+
+/**
+ * Measure the reported run's own session(s) with `@hokusai/costs` and return
+ * the report (one summary). Supplied by the harness adapter so core never
+ * parses provider session files. `undefined` (or an empty report) means
+ * nothing could be measured: the stage carries an `unavailable` summary.
+ * Must never throw for a missing or unreadable session.
+ */
+export type MeasureStage = (
+  input: MeasureStageInput,
+) => StageCostInput | undefined | Promise<StageCostInput | undefined>;
+
+/**
  * A routing decision stored at route time, found by an exact key (correlation
  * id, task id or session id). Never "the newest route": an outcome links only
  * to the route recorded for the same task.
@@ -150,7 +182,7 @@ export interface ReportOutcomeResult {
   response?: OutcomeResponse;
   submitted: boolean;
   /** The harness contribution row built for the canonical submission. */
-  contributionRow?: HarnessOutcomeRowV2;
+  contributionRow?: TechnicalTaskRouterContributionRowV4;
   /** The Model 30 contribution acceptance response, when submitted. */
   contribution?: ContributionAcceptedResponse;
 }
@@ -164,7 +196,7 @@ export interface PreviewReportOutcomeResult {
   report: OutcomeReport;
   preview: OutcomeReportPreview;
   /** The harness contribution row that would be submitted, when derivable. */
-  contributionRow?: HarnessOutcomeRowV2;
+  contributionRow?: TechnicalTaskRouterContributionRowV4;
 }
 
 export interface RoutingDecisionSummary {

@@ -1,14 +1,15 @@
 import { rm } from 'node:fs/promises';
 import {
   DEFAULT_REDACTION_CONFIG,
+  SDK_VERSION,
   FilePluginConfigStore,
   FsLocalStore,
   HokusaiDispatchBuilder,
   HokusaiNetworkError,
   ModelMappingError,
-  SDK_VERSION,
-  buildHarnessOutcomeRow,
   buildOutcomeReport,
+  buildTechnicalTaskRouterRowV4,
+  normalizeModelId,
   canReportOutcome,
   canRoute,
   captureCostBaseline,
@@ -31,8 +32,11 @@ import {
   type ContributionAcceptedResponse,
   type CostBaselineSnapshot,
   type ContributionRequest,
-  type HarnessOutcomeRowV2,
   type HarnessRecommendation,
+  type HokusaiTaskDescriptor,
+  type ModelEvidence,
+  type StageCostInput,
+  type TechnicalTaskRouterContributionRowV4,
   type ModelRegistry,
   type OutcomeReport,
   type OutcomeResponse,
@@ -257,7 +261,9 @@ export function buildRouteContextProjection(
     ...(costBaseline
       ? {
           baselineAt: costBaseline.baselineAt,
-          projectDirKey: costBaseline.projectDirKey,
+          ...(costBaseline.projectDirKey !== undefined
+            ? { projectDirKey: costBaseline.projectDirKey }
+            : {}),
           ...(costBaseline.costBaselineUsd !== undefined
             ? { costBaselineUsd: costBaseline.costBaselineUsd }
             : {}),
@@ -513,7 +519,7 @@ function buildOutcomePreviewLines(report: OutcomeReport): string[] {
   return lines;
 }
 
-function buildContributionPreviewLines(row: HarnessOutcomeRowV2): string[] {
+function buildContributionPreviewLines(row: TechnicalTaskRouterContributionRowV4): string[] {
   return [
     '',
     `Contribution row (${row.schema_version}) that will be submitted:`,
@@ -521,11 +527,53 @@ function buildContributionPreviewLines(row: HarnessOutcomeRowV2): string[] {
   ];
 }
 
+/** Whether the measured stage saw the model the report says ran. */
+function stageModelEvidence(
+  executedModel: string,
+  stageCost: StageCostInput | undefined,
+): ModelEvidence {
+  const observed = stageCost?.summaries[0]?.models ?? [];
+  const executed = normalizeModelId(executedModel);
+  return observed.some((model) => normalizeModelId(model) === executed)
+    ? 'session_telemetry'
+    : 'requested_only';
+}
+
 /**
- * Build the canonical harness contribution row from a validated outcome report
- * plus the routing context persisted at route time. Returns a failure result
- * when the required routing signals (inference log id / allowed models) are
- * unavailable, mirroring how the report CLI fails on missing correlation ids.
+ * The model that did most of the measured work (by total tokens), or
+ * `undefined` when the stage was not measured. Ties go to the first seen.
+ */
+export function dominantSessionModel(stageCost: StageCostInput | undefined): string | undefined {
+  const segments = stageCost?.summaries[0]?.model_segments ?? [];
+  const totals = new Map<string, number>();
+  for (const segment of segments) {
+    const { usage } = segment;
+    const tokens =
+      (usage.input_tokens ?? 0) +
+      (usage.output_tokens ?? 0) +
+      (usage.cache_read_tokens ?? 0) +
+      (usage.cache_write_tokens ?? 0);
+    totals.set(segment.model, (totals.get(segment.model) ?? 0) + tokens);
+  }
+  let best: string | undefined;
+  let bestTokens = -1;
+  for (const [model, tokens] of totals) {
+    if (tokens > bestTokens) {
+      best = model;
+      bestTokens = tokens;
+    }
+  }
+  return best;
+}
+
+/**
+ * Build the canonical contribution row (`technical_task_router_row/v4`) from a
+ * validated outcome report plus the routing context persisted at route time.
+ * The run is one `coding` stage whose `task_cost` is the harness's measured
+ * report (`stageCost`), or an `unavailable` summary when nothing was measured.
+ * Returns a failure result when the required routing signals (inference log id
+ * / allowed models / task id) are unavailable, mirroring how the report CLI
+ * fails on missing correlation ids.
  */
 export function buildReportContributionRow(input: {
   report: OutcomeReport;
@@ -533,12 +581,20 @@ export function buildReportContributionRow(input: {
   inferenceLogId: string | undefined;
   /** The model the stored route recommended; the `from` of any override. */
   recommendedModelId: string | undefined;
+  /** The run's measured cost; see {@link ReportOutcomeInputWithTaskId.stageCost}. */
+  stageCost?: StageCostInput | undefined;
+  /**
+   * Trust the measured session over the reported model: the executed model is
+   * the one that did most of the session's work (Codex, whose report comes from
+   * the agent). A difference from the report is recorded as an override.
+   */
+  executedModelFromSession?: boolean | undefined;
   actualCostUsd?: number | undefined;
   wallClockSeconds?: number | undefined;
-  taskId?: string | undefined;
+  taskId: string | undefined;
   harness: string;
   observedAt: string;
-}): AdapterResult<HarnessOutcomeRowV2> {
+}): AdapterResult<TechnicalTaskRouterContributionRowV4> {
   if (!input.inferenceLogId) {
     return fail(
       'CONTRIBUTION_UNAVAILABLE',
@@ -553,6 +609,13 @@ export function buildReportContributionRow(input: {
     );
   }
 
+  if (!input.taskId) {
+    return fail(
+      'CONTRIBUTION_UNAVAILABLE',
+      'No task id is available for this routing decision, so the run cost cannot be attributed to it.',
+    );
+  }
+
   // The plugin knows the recommendation locally, so it can say whether the run
   // followed it. Without it, it cannot, and a routed row must not claim so.
   if (!input.recommendedModelId) {
@@ -562,43 +625,69 @@ export function buildReportContributionRow(input: {
     );
   }
   const recommended = input.recommendedModelId;
-  const executed = input.report.actualModel;
+  const reported = input.report.actualModel;
+  const sessionModel = input.executedModelFromSession
+    ? dominantSessionModel(input.stageCost)
+    : undefined;
+  // Keep the reported spelling when it names the same model as the session.
+  const sessionDiffers =
+    sessionModel !== undefined && normalizeModelId(sessionModel) !== normalizeModelId(reported);
+  const executed = sessionDiffers ? sessionModel : reported;
   const routeOverrides: RouteOverride[] =
     executed === recommended
       ? []
       : (['coder', 'reviewer'] as const).map((role) => ({
           role,
-          source: 'operator' as const,
+          // A session that ran another model than reported is an observation,
+          // not a choice anyone is known to have made.
+          source: sessionDiffers ? ('observed' as const) : ('operator' as const),
           from: recommended,
           to: executed,
-          reason: input.report.recommendationAccepted
-            ? 'model_changed'
-            : 'recommendation_declined',
+          reason: sessionDiffers
+            ? 'session_model_differs'
+            : input.report.recommendationAccepted
+              ? 'model_changed'
+              : 'recommendation_declined',
         }));
 
+  const succeeded = input.report.completionStatus === 'succeeded';
+  const budgetUsd = input.routeContext.budgetUsd;
+  // The cost the row will report: the caller's figure, else the measured stage
+  // total (the builder derives the same value). "Under budget" is only claimed
+  // when both the budget and the cost are known; `outcome_labels.budget_label`
+  // says `unknown` otherwise.
+  const reportedCost = input.actualCostUsd ?? input.stageCost?.summaries[0]?.total_cost_usd ?? undefined;
+  const budgetCompliant =
+    budgetUsd !== undefined && reportedCost !== undefined && reportedCost !== null && reportedCost <= budgetUsd;
   try {
-    const row = buildHarnessOutcomeRow({
+    const row = buildTechnicalTaskRouterRowV4({
+      taskId: input.taskId,
       inferenceLogId: input.inferenceLogId,
       routeOverrides,
-      taskDescriptor: input.routeContext.taskDescriptor,
+      // The stored descriptor is partial (categorical labels a plugin can
+      // derive); the router row carries it as-is.
+      taskDescriptor: input.routeContext.taskDescriptor as unknown as HokusaiTaskDescriptor,
       allowedModels: input.routeContext.allowedModels,
-      selectedModels: {
-        coder: input.report.actualModel,
-        reviewer: input.report.actualModel,
-      },
-      completionResult:
-        input.report.completionStatus === 'succeeded' ? 'success' : 'failure',
+      selectedModels: { coder: executed, reviewer: executed },
+      observedSuccess: succeeded,
+      budgetCompliant,
       harness: input.harness,
       sdkVersion: SDK_VERSION,
       observedAt: input.observedAt,
-      ...(input.routeContext.budgetUsd !== undefined
-        ? { budgetUsd: input.routeContext.budgetUsd }
-        : {}),
+      ...(budgetUsd !== undefined ? { budgetUsd } : {}),
       ...(input.actualCostUsd !== undefined ? { actualCostUsd: input.actualCostUsd } : {}),
       ...(input.wallClockSeconds !== undefined
         ? { wallClockSeconds: input.wallClockSeconds }
         : {}),
-      ...(input.taskId ? { taskId: input.taskId } : {}),
+      stageExecutions: [
+        {
+          stage: 'coding',
+          executedModel: executed,
+          modelEvidence: stageModelEvidence(executed, input.stageCost),
+          harness: input.harness,
+          cost: input.stageCost ?? { summaries: [] },
+        },
+      ],
     });
     return ok(row);
   } catch (error) {
@@ -1266,6 +1355,7 @@ export function createPreviewReportOutcome<
       inferenceLogId,
       routedRecommendedModelId,
       routeContext,
+      stageCost,
       actualCostUsd,
       wallClockSeconds,
       ...reportInput
@@ -1298,9 +1388,10 @@ export function createPreviewReportOutcome<
       recommendedModelId: routedRecommendedModelId,
       harness: profile.harness,
       observedAt: (options?.clock ?? (() => new Date()))().toISOString(),
+      stageCost,
       ...(actualCostUsd !== undefined ? { actualCostUsd } : {}),
       ...(wallClockSeconds !== undefined ? { wallClockSeconds } : {}),
-      ...(taskId ? { taskId } : {}),
+      taskId,
     });
     const contributionRow = contributionResult.ok
       ? contributionResult.value
@@ -1392,18 +1483,19 @@ export function createReportTaskOutcome<
       recommendedModelId,
       harness: profile.harness,
       observedAt,
+      stageCost: input.stageCost,
       ...(input.actualCostUsd !== undefined
         ? { actualCostUsd: input.actualCostUsd }
         : {}),
       ...(input.wallClockSeconds !== undefined
         ? { wallClockSeconds: input.wallClockSeconds }
         : {}),
-      ...(input.taskId ? { taskId: input.taskId } : {}),
+      taskId: input.taskId,
     });
 
     let response: OutcomeResponse | undefined;
     let contribution: ContributionAcceptedResponse | undefined;
-    let contributionRow: HarnessOutcomeRowV2 | undefined = contributionRowResult.ok
+    let contributionRow: TechnicalTaskRouterContributionRowV4 | undefined = contributionRowResult.ok
       ? contributionRowResult.value
       : undefined;
 

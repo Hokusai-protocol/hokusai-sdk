@@ -313,3 +313,24 @@ describe('createRouteTask', () => {
     });
   });
 });
+
+describe('dominantSessionModel (HOK-3412)', () => {
+  it('picks the model with the most measured tokens, else undefined', async () => {
+    const { dominantSessionModel } = await import('./commands.js');
+    const { claudeCodeModelSwitchFixture } = await import('../fixtures/task-cost/claude-code-model-switch.js');
+    const summary = claudeCodeModelSwitchFixture.expectedSummaries[0]!;
+    const byTokens = new Map<string, number>();
+    for (const segment of summary.model_segments) {
+      const u = segment.usage;
+      byTokens.set(
+        segment.model,
+        (byTokens.get(segment.model) ?? 0) +
+          (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_tokens ?? 0) + (u.cache_write_tokens ?? 0),
+      );
+    }
+    const expected = [...byTokens].sort((a, b) => b[1] - a[1])[0]![0];
+    expect(dominantSessionModel({ summaries: [summary] })).toBe(expected);
+    expect(dominantSessionModel({ summaries: [] })).toBeUndefined();
+    expect(dominantSessionModel(undefined)).toBeUndefined();
+  });
+});

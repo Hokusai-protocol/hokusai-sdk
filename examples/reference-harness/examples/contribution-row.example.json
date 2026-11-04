@@ -1,5 +1,5 @@
 {
-  "schema_version": "harness_outcome_row/v2",
+  "schema_version": "technical_task_router_row/v4",
   "task_descriptor": {
     "task_type": "tests",
     "complexity": 5,
@@ -15,17 +15,113 @@
     "coder": "claude-sonnet-4-6",
     "reviewer": "claude-sonnet-4-6"
   },
+  "available_models": {
+    "planner_models": [],
+    "coder_models": [
+      "claude-haiku-4-5",
+      "claude-sonnet-4-6",
+      "claude-opus-4-8"
+    ],
+    "reviewer_models": [
+      "claude-haiku-4-5",
+      "claude-sonnet-4-6",
+      "claude-opus-4-8"
+    ]
+  },
+  "success_under_budget": true,
   "completion_result": "success",
+  "outcome_labels": {
+    "budget_label": "under_budget",
+    "cost_label": "low",
+    "time_label": "fast",
+    "success_label": "success"
+  },
+  "candidate_pool": {
+    "scenario_id": "unknown",
+    "scenario_kind": "unknown",
+    "pool_size": 3
+  },
+  "sparse_cell": {
+    "cell_id": "unknown",
+    "descriptor_signature": "unknown",
+    "observed_count": 0,
+    "is_sparse": false
+  },
+  "observed_at": "2026-06-08T00:00:00.000Z",
   "budget_usd": 0.5,
   "actual_cost_usd": 0.177,
   "wall_clock_seconds": 74.5,
+  "task_id": "ref-task-001",
+  "harness": "reference-harness",
   "inference_log_id": "73c19164-7194-48b1-a62e-7314bcf3ebd5",
   "overrides": [],
-  "harness": "reference-harness",
-  "task_id": "ref-task-001",
-  "observed_at": "2026-06-08T00:00:00.000Z",
-  "harness_metadata": {
-    "harness": "reference-harness",
-    "sdk_version": "0.2.0"
-  }
+  "stage_executions": [
+    {
+      "stage": "coding",
+      "executed_model": "claude-sonnet-4-6",
+      "model_evidence": "provider_response",
+      "harness": "reference-harness",
+      "task_cost": {
+        "schema_version": "task_cost_summary/v1",
+        "task_id": "ref-task-001",
+        "session_ids": [
+          "ref-task-001"
+        ],
+        "harness": "native",
+        "provider_contract_version": "native/1",
+        "models": [
+          "claude-sonnet-4-6"
+        ],
+        "model_segments": [
+          {
+            "model": "claude-sonnet-4-6",
+            "turn_count": 1,
+            "usage": {
+              "input_tokens": 18400,
+              "output_tokens": 3200,
+              "cache_read_tokens": 96000,
+              "cache_write_tokens": 12000,
+              "reasoning_tokens": null
+            },
+            "actual_cost_usd": null,
+            "estimated_cost_usd": 0.177,
+            "cost_source": "local_estimate"
+          }
+        ],
+        "turn_count": 1,
+        "turns_truncated": false,
+        "usage": {
+          "input_tokens": 18400,
+          "output_tokens": 3200,
+          "cache_read_tokens": 96000,
+          "cache_write_tokens": 12000,
+          "reasoning_tokens": null
+        },
+        "actual_cost_usd": null,
+        "estimated_cost_usd": 0.177,
+        "total_cost_usd": 0.177,
+        "cost_source": "local_estimate",
+        "cost_basis": "per_token_api",
+        "coverage": "partial",
+        "field_availability": {
+          "usage": "partial",
+          "actual_cost": "unavailable",
+          "estimated_cost": "available",
+          "pricing": "available"
+        },
+        "pricing_revision": "2026-07-15",
+        "pricing_timestamp": "2026-06-08T00:00:00.000Z",
+        "pricing_source": "local_estimate",
+        "join_confidence": "unattributed",
+        "collected_at": "2026-06-08T00:00:00.000Z",
+        "event_count": 1,
+        "event_ids": [
+          "ref-task-001.e1"
+        ],
+        "diagnostics": [
+          "mixed_coverage"
+        ]
+      }
+    }
+  ]
 }

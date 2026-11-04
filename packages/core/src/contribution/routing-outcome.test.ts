@@ -148,3 +148,17 @@ describe('routing-outcome conformance', () => {
     });
   });
 });
+
+describe('observed override source (HOK-3412)', () => {
+  it('accepts an observed override in a routed row', () => {
+    const row = {
+      ...followedRecommendationRoutingFixture,
+      overrides: [
+        { role: 'coder', source: 'observed', from: 'claude-sonnet-4-6', to: 'claude-opus-4-7', reason: 'session_model_differs' },
+      ],
+      selected_models: { ...followedRecommendationRoutingFixture.selected_models, coder: 'claude-opus-4-7' },
+    };
+    expect(routingOutcomeErrors(row)).toEqual([]);
+    expect(validateContributionRow(row)).toBe(row);
+  });
+});

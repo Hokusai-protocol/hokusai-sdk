@@ -64,12 +64,28 @@ export interface SessionCostSidecar {
 export interface CostBaselineSnapshot {
   /** ISO timestamp of the route — always present; filters transcript turns. */
   baselineAt: string;
-  /** Encoded project-dir key (cwd with non-alphanumerics → `-`). */
-  projectDirKey: string;
+  /**
+   * Encoded project-dir key (cwd with non-alphanumerics → `-`). Claude Code
+   * only; other harnesses locate their session files by id.
+   */
+  projectDirKey?: string;
   /** Cumulative session cost at route time (sidecar diff base), when fresh. */
   costBaselineUsd?: number;
-  /** Session id the baseline cost belongs to, when a fresh sidecar was found. */
+  /**
+   * The session the route ran in. Claude Code: `CLAUDE_CODE_SESSION_ID`, else
+   * a fresh sidecar's id. Codex: the MCP call's `_meta` session id.
+   */
   sessionId?: string;
+}
+
+/** Claude Code exports the running session's id to commands it spawns. */
+export const CLAUDE_CODE_SESSION_ID_ENV = 'CLAUDE_CODE_SESSION_ID';
+
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]{1,200}$/;
+
+function envSessionId(env: NodeJS.ProcessEnv | undefined): string | undefined {
+  const value = (env ?? process.env)[CLAUDE_CODE_SESSION_ID_ENV]?.trim();
+  return value && SAFE_SESSION_ID.test(value) && !value.startsWith('.') ? value : undefined;
 }
 
 /** Token totals summed from a transcript, kept per-tier for correct pricing. */
@@ -207,8 +223,11 @@ function isSidecarFresh(
 
 /**
  * Capture the route-time cost baseline for later diffing. Always records
- * `baselineAt` and the encoded project-dir key; additionally adopts the current
- * sidecar's cost/session id when a fresh sidecar is present. Never throws.
+ * `baselineAt` and the encoded project-dir key. The session id comes from
+ * `CLAUDE_CODE_SESSION_ID` when Claude Code set it (exact), else from a fresh
+ * sidecar. The sidecar's cost is adopted only when it belongs to that same
+ * session: the sidecar is global, so with several sessions open it may be
+ * another session's. Never throws.
  */
 export function captureCostBaseline(input: {
   cwd: string;
@@ -218,9 +237,11 @@ export function captureCostBaseline(input: {
   fs?: SessionUsageFileSystem | undefined;
   freshnessMs?: number | undefined;
 }): CostBaselineSnapshot {
+  const sessionId = envSessionId(input.env);
   const snapshot: CostBaselineSnapshot = {
     baselineAt: input.nowIso,
     projectDirKey: encodeProjectDirKey(input.cwd),
+    ...(sessionId ? { sessionId } : {}),
   };
 
   try {
@@ -228,6 +249,7 @@ export function captureCostBaseline(input: {
     const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
     if (
       sidecar &&
+      (sessionId === undefined || sidecar.session_id === sessionId) &&
       isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)
     ) {
       return {

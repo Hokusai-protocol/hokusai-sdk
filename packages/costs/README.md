@@ -205,10 +205,16 @@ both optional and never called by this package):
 ```ts
 await route.reportOutcome({
   status: 'succeeded',
-  // A null (partial) total must be passed as ABSENT — never as 0.
-  ...(cost.totalUsd !== null ? { actualCostUsd: cost.totalUsd } : {}),
+  // The whole report: it becomes the contribution row's per-stage task_cost
+  // (technical_task_router_row/v4), and its total, when it resolved, is the
+  // reported cost. A null total is never sent as 0.
+  cost,
 });
 ```
+
+The same report shape (`{ summaries }`) is what `buildTechnicalTaskRouterRowV4`
+takes per stage in `@hokusai/core`, so any host that measures with this
+package produces v4 rows without writing its own token handling.
 
 ## Routing and contribution are optional
 
@@ -216,7 +222,7 @@ Measurement is a standalone, local feature. This package never imports the
 router, never constructs a Hokusai client, and needs no `HOKUSAI_API_KEY`.
 Routing (`@hokusai/router`) and outcome contribution remain entirely opt-in,
 separate steps — nothing measured here is submitted anywhere unless _you_
-pass a total to `reportOutcome` yourself.
+pass the report to `reportOutcome` yourself.
 
 ---
 

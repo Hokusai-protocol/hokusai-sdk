@@ -46,7 +46,10 @@ import {
   type CorrelationRecord,
   type CorrelationStorage,
 } from './storage.js';
-import type { HarnessOutcomeRow } from './contribution/index.js';
+import type {
+  HarnessOutcomeRow,
+  TechnicalTaskRouterContributionRowV4,
+} from './contribution/index.js';
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -132,11 +135,11 @@ export interface ContributionRequestMetadata {
 
 /**
  * One-row batch submitted to the Model 30 contributions endpoint. The rows are
- * already-redacted harness outcome rows built by the shared contribution
- * builder.
+ * already-redacted rows built by the shared contribution builders: router row
+ * v4 for current writers (HOK-3412), harness rows for older clients.
  */
 export interface ContributionRequest {
-  rows: HarnessOutcomeRow[];
+  rows: (TechnicalTaskRouterContributionRowV4 | HarnessOutcomeRow)[];
   metadata: ContributionRequestMetadata;
 }
 

@@ -42,19 +42,22 @@ import {
   OPENAI_MODELS,
   PRIORITY_MODELS,
   SDK_VERSION,
-  buildHarnessOutcomeRow,
+  buildTechnicalTaskRouterRowV4,
   deriveTaskDescriptor,
   routingObjectiveToApiValue,
   type CompletionStatus,
   type ConsentConfig,
   type ContributionAcceptedResponse,
+  type HokusaiTaskDescriptor,
   type HokusaiTaskInput,
+  type ModelEvidence,
   type ModelDefinition,
   type RouteOverride,
   type RouteResponse,
   type RouteRoutingInput,
   type RoutingMode,
   type RoutingObjective,
+  type StageCostInput,
   type TaskDescriptorFields,
 } from '@hokusai/core';
 
@@ -149,6 +152,14 @@ export interface ReportOutcomeInput {
   wallClockSeconds?: number;
   /** Optional free-text notes (redacted before submission). */
   notes?: string;
+  /**
+   * The run's `@hokusai/costs` report (`measureTask` / `tracker.summary()`).
+   * It becomes the row's `task_cost` and, when it resolved, its total is the
+   * reported cost. Without it the run is reported unmeasured.
+   */
+  cost?: StageCostInput;
+  /** How you know which model ran. Default `requested_only`. */
+  modelEvidence?: ModelEvidence;
 }
 
 export interface ReportExternalOutcomeInput {
@@ -176,6 +187,14 @@ export interface ReportExternalOutcomeInput {
   taskId?: string;
   /** Override the row observation timestamp. Defaults to now. */
   observedAt?: string;
+  /**
+   * The run's `@hokusai/costs` report (`measureTask` / `tracker.summary()`).
+   * It becomes the row's `task_cost` and, when it resolved, its total is the
+   * reported cost. Without it the run is reported unmeasured.
+   */
+  cost?: StageCostInput;
+  /** How you know which model ran. Default `requested_only`. */
+  modelEvidence?: ModelEvidence;
 }
 
 /** What the server did with a submitted contribution. */
@@ -196,6 +215,7 @@ export interface ContributionResult {
 /** The route a later outcome is attributed to. */
 interface RoutedTask {
   correlationId: string;
+  taskId: string;
   inferenceLogId: string;
   recommendedModel: string;
   allowedModels: string[];
@@ -269,6 +289,62 @@ function resolveModels(models: RouterModel[]): ModelDefinition[] {
   }
 
   return resolved;
+}
+
+/**
+ * One routed (or external) run as a v4 row: a single `coding` stage whose
+ * `task_cost` is the caller's `@hokusai/costs` report, or an unavailable
+ * summary when there is none (HOK-3412).
+ */
+function buildRouterRow(input: {
+  taskId: string;
+  inferenceLogId?: string;
+  routeOverrides?: RouteOverride[];
+  taskDescriptor: TaskDescriptorFields;
+  allowedModels: string[];
+  model: string;
+  status: CompletionStatus;
+  budgetUsd: number | undefined;
+  actualCostUsd: number | undefined;
+  wallClockSeconds: number | undefined;
+  harness: string;
+  observedAt: string;
+  cost: StageCostInput | undefined;
+  modelEvidence: ModelEvidence | undefined;
+}) {
+  const cost = input.cost ?? { summaries: [] };
+  const reported = input.actualCostUsd ?? cost.summaries[0]?.total_cost_usd ?? undefined;
+  return buildTechnicalTaskRouterRowV4({
+    taskId: input.taskId,
+    ...(input.inferenceLogId
+      ? { inferenceLogId: input.inferenceLogId, routeOverrides: input.routeOverrides ?? [] }
+      : {}),
+    taskDescriptor: input.taskDescriptor as unknown as HokusaiTaskDescriptor,
+    allowedModels: input.allowedModels,
+    selectedModels: { coder: input.model, reviewer: input.model },
+    observedSuccess: input.status === 'succeeded',
+    // Only claimed when both the budget and the cost are known.
+    budgetCompliant:
+      input.budgetUsd !== undefined &&
+      reported !== undefined &&
+      reported !== null &&
+      reported <= input.budgetUsd,
+    ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}),
+    ...(input.actualCostUsd !== undefined ? { actualCostUsd: input.actualCostUsd } : {}),
+    ...(input.wallClockSeconds !== undefined ? { wallClockSeconds: input.wallClockSeconds } : {}),
+    harness: input.harness,
+    sdkVersion: SDK_VERSION,
+    observedAt: input.observedAt,
+    stageExecutions: [
+      {
+        stage: 'coding',
+        executedModel: input.model,
+        modelEvidence: input.modelEvidence ?? 'requested_only',
+        harness: input.harness,
+        cost,
+      },
+    ],
+  });
 }
 
 function normalizeTask(task: string | HokusaiTaskInput): HokusaiTaskInput {
@@ -382,6 +458,7 @@ export function createRouter(options: RouterOptions = {}): Router {
 
     lastRoute = {
       correlationId: payload.correlation.correlationId,
+      taskId: task.id,
       inferenceLogId: response.routeId,
       recommendedModel: recommendation.model,
       allowedModels: input.availableModels ?? models.map((model) => model.id),
@@ -431,7 +508,7 @@ export function createRouter(options: RouterOptions = {}): Router {
     // A row without an actual cost cannot be scored against its budget, so the
     // server files it as telemetry and it earns nothing. Say so rather than let
     // the caller discover it in the fidelity tier.
-    if (input.actualCostUsd === undefined) {
+    if (input.actualCostUsd === undefined && input.cost === undefined) {
       warn(
         'reportOutcome was called without `actualCostUsd`, so this contribution is telemetry-only ' +
           'and is not training-eligible. Pass the run cost in USD to make it count.',
@@ -451,25 +528,21 @@ export function createRouter(options: RouterOptions = {}): Router {
             to: actualModel,
             reason: 'caller_model',
           }));
-    const row = buildHarnessOutcomeRow({
+    const row = buildRouterRow({
+      taskId: routed.taskId,
       inferenceLogId: routed.inferenceLogId,
       routeOverrides,
       taskDescriptor: describeTask(routed),
       allowedModels: routed.allowedModels,
-      selectedModels: { coder: actualModel, reviewer: actualModel },
-      completionResult: input.status === 'succeeded' ? 'success' : 'failure',
-      ...(routed.budgetUsd !== undefined
-        ? { budgetUsd: routed.budgetUsd }
-        : {}),
-      ...(input.actualCostUsd !== undefined
-        ? { actualCostUsd: input.actualCostUsd }
-        : {}),
-      ...(input.wallClockSeconds !== undefined
-        ? { wallClockSeconds: input.wallClockSeconds }
-        : {}),
+      model: actualModel,
+      status: input.status,
+      budgetUsd: routed.budgetUsd,
+      actualCostUsd: input.actualCostUsd,
+      wallClockSeconds: input.wallClockSeconds,
       harness: 'hokusai-router',
-      sdkVersion: SDK_VERSION,
       observedAt: new Date().toISOString(),
+      cost: input.cost,
+      modelEvidence: input.modelEvidence,
     });
 
     const response = (await client.submitContribution({
@@ -519,22 +592,19 @@ export function createRouter(options: RouterOptions = {}): Router {
     }
 
     const observationId = input.idempotencyKey ?? createObservationId();
-    const row = buildHarnessOutcomeRow({
+    const row = buildRouterRow({
+      taskId: input.taskId ?? task.id,
       taskDescriptor: describeExternalTask(task, input.context),
       allowedModels,
-      selectedModels: { coder: actualModel, reviewer: actualModel },
-      completionResult: input.status === 'succeeded' ? 'success' : 'failure',
-      ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}),
-      ...(input.actualCostUsd !== undefined
-        ? { actualCostUsd: input.actualCostUsd }
-        : {}),
-      ...(input.wallClockSeconds !== undefined
-        ? { wallClockSeconds: input.wallClockSeconds }
-        : {}),
+      model: actualModel,
+      status: input.status,
+      budgetUsd: input.budgetUsd,
+      actualCostUsd: input.actualCostUsd,
+      wallClockSeconds: input.wallClockSeconds,
       harness: input.harness ?? 'external-observation',
-      sdkVersion: SDK_VERSION,
-      taskId: input.taskId ?? task.id,
       observedAt: input.observedAt ?? new Date().toISOString(),
+      cost: input.cost,
+      modelEvidence: input.modelEvidence,
     });
 
     const response = (await client.submitContribution({

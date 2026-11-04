@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ContributionValidationError,
-  isHarnessOutcomeRowV2,
+  isTechnicalTaskRouterContributionRowV4,
 } from '@hokusai/core';
 import { FAKE_SECRET, createReferenceHarnessAdapter } from './harness/index.js';
 import { runHokusaiLoop } from './hokusai/index.js';
@@ -83,10 +83,28 @@ describe('runReferenceFlow', () => {
     );
   });
 
-  it('emits a row the core validator accepts as harness_outcome_row/v2', async () => {
-    const { trainingEligible } = await runReferenceFlow();
+  it('emits a technical_task_router_row/v4 whose task_cost is the @hokusai/costs report', async () => {
+    const { trainingEligible, partial } = await runReferenceFlow();
 
-    expect(isHarnessOutcomeRowV2(trainingEligible.row)).toBe(true);
+    expect(isTechnicalTaskRouterContributionRowV4(trainingEligible.row)).toBe(true);
+    const [stage] = trainingEligible.row.stage_executions;
+    expect(stage).toMatchObject({
+      stage: 'coding',
+      harness: 'reference-harness',
+      model_evidence: 'provider_response',
+      // No reasoning-token count is reported, so usage coverage is partial.
+      task_cost: { harness: 'native', coverage: 'partial', event_count: 1 },
+    });
+    expect(stage?.task_cost.usage).toMatchObject({
+      input_tokens: 18_400,
+      output_tokens: 3_200,
+      cache_read_tokens: 96_000,
+      cache_write_tokens: 12_000,
+    });
+    // The reported cost is the measured total: the two agree.
+    expect(trainingEligible.row.actual_cost_usd).toBe(stage?.task_cost.total_cost_usd);
+    // Run B withholds cost: the stage is reported unmeasured.
+    expect(partial.row.stage_executions[0]?.task_cost.coverage).toBe('unavailable');
   });
 });
 

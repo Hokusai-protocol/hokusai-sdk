@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "technical_task_router_row/v4",
+  "fields": [
+    "schema_version",
+    "task_descriptor",
+    "allowed_models",
+    "selected_models",
+    "available_models",
+    "budget_usd",
+    "actual_cost_usd",
+    "wall_clock_seconds",
+    "success_under_budget",
+    "completion_result",
+    "outcome_labels",
+    "candidate_pool",
+    "sparse_cell",
+    "scorer_ref",
+    "observed_at",
+    "task_id",
+    "harness",
+    "inference_log_id",
+    "overrides",
+    "stage_executions",
+    "comparison_group",
+    "integration",
+    "sdk_version"
+  ],
+  "stageExecution": {
+    "fields": [
+      "stage",
+      "executed_model",
+      "model_evidence",
+      "harness",
+      "task_cost"
+    ],
+    "stages": [
+      "planning",
+      "coding",
+      "review",
+      "ci-fix",
+      "conflict-resolution",
+      "ready-remediation"
+    ],
+    "stageToRole": {
+      "planning": "planner",
+      "coding": "coder",
+      "review": "reviewer"
+    },
+    "modelEvidence": [
+      "provider_response",
+      "session_telemetry",
+      "requested_only"
+    ],
+    "taskCost": {
+      "schemaVersion": "task_cost_summary/v1",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "native",
+        "pi",
+        "wavemill",
+        "unknown"
+      ],
+      "forbiddenKeys": [
+        "accountid",
+        "apikey",
+        "authorization",
+        "branch",
+        "content",
+        "credentials",
+        "cwd",
+        "description",
+        "dir",
+        "directory",
+        "email",
+        "evalrecord",
+        "filepath",
+        "hostname",
+        "issuebody",
+        "messages",
+        "originalprompt",
+        "password",
+        "path",
+        "prompt",
+        "prompthash",
+        "rawinput",
+        "repo",
+        "repository",
+        "secret",
+        "tasktext",
+        "text",
+        "token",
+        "transcript",
+        "userid",
+        "username",
+        "workspace",
+        "worktree"
+      ]
+    }
+  },
+  "comparisonGroup": {
+    "fields": [
+      "id",
+      "role_varied"
+    ],
+    "roles": [
+      "planner",
+      "coder",
+      "reviewer"
+    ]
+  },
+  "overrides": {
+    "roles": [
+      "planner",
+      "coder",
+      "reviewer"
+    ],
+    "sources": [
+      "escalation",
+      "launchability",
+      "challenge",
+      "operator",
+      "observed"
+    ]
+  },
+  "forbiddenKeys": [
+    "description",
+    "eval_record",
+    "issue_body",
+    "messages",
+    "original_prompt",
+    "originalprompt",
+    "prompt",
+    "raw_input",
+    "task_text"
+  ],
+  "recommendationCopyKeys": [
+    "recommended_model",
+    "recommended_models",
+    "recommended_model_id",
+    "recommendation",
+    "recommendation_accepted",
+    "recommendedmodel",
+    "recommendedmodels",
+    "recommendationaccepted"
+  ]
+}
