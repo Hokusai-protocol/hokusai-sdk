@@ -43,6 +43,12 @@ var init_types = __esm({
       "cumulative_counter_reset",
       /** Codex: `(cached + cache_write) > input` on a normalized event; `input_tokens` clamped to 0. */
       "codex_cache_exceeds_input",
+      /**
+       * Codex: a response ran on a service tier the built-in table does not
+       * price (only Standard, `service_tier: "default"`, is priced); it was
+       * left unpriced instead of billed at Standard rates.
+       */
+      "unpriced_service_tier",
       /** An event-source record was not a usable record shape. */
       "invalid_record",
       /** A file or directory could not be read. */
@@ -8087,20 +8093,119 @@ var ANTHROPIC_MODEL_PRICING = {
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
+var OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272e3;
+function openAiLong(inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd) {
+  return {
+    thresholdInputTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+    inputPerMTokUsd,
+    cachedInputPerMTokUsd,
+    outputPerMTokUsd
+  };
+}
 var OPENAI_MODEL_PRICING = {
-  "gpt-5.5": { inputPerMTokUsd: 5, outputPerMTokUsd: 30 },
-  "gpt-5": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
-  "gpt-5-mini": { inputPerMTokUsd: 0.25, outputPerMTokUsd: 2 },
+  "gpt-6-astra": {
+    inputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 1,
+    outputPerMTokUsd: 50,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(20, 2, 75)
+  },
+  "gpt-6.1-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.1,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.2, 15)
+  },
+  "gpt-6.1-terra": {
+    inputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: 0.05,
+    outputPerMTokUsd: 5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(2, 0.1, 7.5)
+  },
+  "gpt-6-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 15)
+  },
+  "gpt-6-luna": {
+    inputPerMTokUsd: 0.1,
+    cachedInputPerMTokUsd: 0.01,
+    outputPerMTokUsd: 0.5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.2, 0.02, 0.75)
+  },
+  // Promotional pricing "through at least 2026-11-21": re-verify after then.
+  "gpt-5.6-sol": {
+    inputPerMTokUsd: 4,
+    cachedInputPerMTokUsd: 0.4,
+    outputPerMTokUsd: 20,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(8, 0.8, 30)
+  },
+  "gpt-5.6-terra": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 12,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 18)
+  },
+  "gpt-5.6-luna": {
+    inputPerMTokUsd: 0.2,
+    cachedInputPerMTokUsd: 0.02,
+    outputPerMTokUsd: 1.2,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.4, 0.04, 1.8)
+  },
+  "gpt-5.5": {
+    inputPerMTokUsd: 5,
+    cachedInputPerMTokUsd: 0.5,
+    outputPerMTokUsd: 30,
+    longContext: openAiLong(10, 1, 45)
+  },
+  "gpt-5.5-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4": {
+    inputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 0.25,
+    outputPerMTokUsd: 15,
+    longContext: openAiLong(5, 0.5, 22.5)
+  },
+  "gpt-5.4-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4-mini": { inputPerMTokUsd: 0.75, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 4.5 },
+  "gpt-5.4-nano": { inputPerMTokUsd: 0.2, cachedInputPerMTokUsd: 0.02, outputPerMTokUsd: 1.25 },
+  "gpt-5.3-codex": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2-pro": { inputPerMTokUsd: 21, cachedInputPerMTokUsd: null, outputPerMTokUsd: 168 },
+  "gpt-5.1": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5-mini": { inputPerMTokUsd: 0.25, cachedInputPerMTokUsd: 0.025, outputPerMTokUsd: 2 },
+  "gpt-5-nano": { inputPerMTokUsd: 0.05, cachedInputPerMTokUsd: 5e-3, outputPerMTokUsd: 0.4 },
+  "gpt-5-pro": { inputPerMTokUsd: 15, cachedInputPerMTokUsd: null, outputPerMTokUsd: 120 },
+  "gpt-4.1": { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, cachedInputPerMTokUsd: 0.1, outputPerMTokUsd: 1.6 },
+  "gpt-4o": { inputPerMTokUsd: 2.5, cachedInputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "gpt-4o-mini": { inputPerMTokUsd: 0.15, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 0.6 },
+  o3: { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "o3-pro": { inputPerMTokUsd: 20, cachedInputPerMTokUsd: null, outputPerMTokUsd: 80 },
+  // Not on the current page: earlier per-model pages, legacy cache multipliers.
   "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
   "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
-  "gpt-4o": { inputPerMTokUsd: 2.5, outputPerMTokUsd: 10 },
-  "gpt-4o-mini": { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.6 },
-  "gpt-4.1": { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
-  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, outputPerMTokUsd: 1.6 },
   "gpt-4-turbo": { inputPerMTokUsd: 10, outputPerMTokUsd: 30 },
   o1: { inputPerMTokUsd: 15, outputPerMTokUsd: 60 },
   "o1-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
-  o3: { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
   "o3-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
   "o4-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 }
 };
@@ -8115,7 +8220,7 @@ var MODEL_PRICING = {
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
-var MODEL_PRICING_AS_OF = "2026-07-15";
+var MODEL_PRICING_AS_OF = "2026-11-04";
 var COMPACT_DATE_SUFFIX = /-\d{8}$/;
 var DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
 var GEMINI_STABLE_SUFFIX = /-001$/;
@@ -8179,6 +8284,30 @@ function nonNegativeOrNull(value) {
   }
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
+function cacheRate(explicit, inputRate, multiplier, legacyEligible) {
+  if (explicit === null) return void 0;
+  if (explicit !== void 0) return explicit;
+  return legacyEligible ? inputRate * multiplier : void 0;
+}
+function appliedRates(model, price, promptTokens, requestScoped) {
+  const legacyEligible = isAnthropicModel(model) || isOpenAIModel(model);
+  const long = requestScoped && price.longContext && promptTokens > price.longContext.thresholdInputTokens ? price.longContext : void 0;
+  if (long) {
+    return {
+      input: long.inputPerMTokUsd,
+      output: long.outputPerMTokUsd,
+      cacheRead: cacheRate(long.cachedInputPerMTokUsd, long.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, false),
+      // Long-context cache writes share the TTL ambiguity: never priced.
+      cacheWrite: void 0
+    };
+  }
+  return {
+    input: price.inputPerMTokUsd,
+    output: price.outputPerMTokUsd,
+    cacheRead: cacheRate(price.cachedInputPerMTokUsd, price.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, legacyEligible),
+    cacheWrite: cacheRate(price.cacheWritePerMTokUsd, price.inputPerMTokUsd, CACHE_WRITE_INPUT_MULTIPLIER, legacyEligible)
+  };
+}
 function computeActualCostUsd(input) {
   const price = resolveModelPrice(input.model);
   if (!price) {
@@ -8191,12 +8320,16 @@ function computeActualCostUsd(input) {
   if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
     return void 0;
   }
-  if (cacheCreationTokens > 0 || cacheReadTokens > 0) {
-    if (!isAnthropicModel(input.model) && !isOpenAIModel(input.model)) {
-      return void 0;
-    }
+  const rates = appliedRates(
+    input.model,
+    price,
+    inputTokens + cacheReadTokens + cacheCreationTokens,
+    input.requestScoped === true
+  );
+  if (cacheReadTokens > 0 && rates.cacheRead === void 0 || cacheCreationTokens > 0 && rates.cacheWrite === void 0) {
+    return void 0;
   }
-  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
+  const cost = inputTokens / 1e6 * rates.input + cacheCreationTokens / 1e6 * (rates.cacheWrite ?? 0) + cacheReadTokens / 1e6 * (rates.cacheRead ?? 0) + outputTokens / 1e6 * rates.output;
   return Math.round(cost * 1e6) / 1e6;
 }
 function isAnthropicModel(model) {
@@ -11363,7 +11496,7 @@ var QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA = Object.freeze(
 var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 var FIXTURE_TASK_ID = "task-0001";
 var FIXTURE_SESSION_ID = "session-0001";
-var FIXTURE_PRICING_REVISION = MODEL_PRICING_AS_OF;
+var FIXTURE_PRICING_REVISION = "2026-07-15";
 function isoAt(offsetSeconds) {
   return new Date(FIXTURE_EPOCH_MS + offsetSeconds * 1e3).toISOString().replace(".000Z", "Z");
 }
@@ -16964,7 +17097,7 @@ function priceWithOverride(override, usage, inputTokens, outputTokens, ctx) {
   );
   return { estimated: toMicroUsd(pico), ...provenance, diagnostics: [] };
 }
-function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx) {
+function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx, requestScoped) {
   const price = resolveModelPrice(model);
   if (price === void 0) {
     return {
@@ -16978,7 +17111,8 @@ function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx) {
     inputTokens,
     outputTokens,
     cacheCreationTokens: usage.cache_write_tokens ?? 0,
-    cacheReadTokens: usage.cache_read_tokens ?? 0
+    cacheReadTokens: usage.cache_read_tokens ?? 0,
+    requestScoped
   });
   if (estimated === void 0) {
     return {
@@ -17030,7 +17164,8 @@ function resolveEstimate(req, ctx) {
     req.usage,
     inputTokens,
     outputTokens,
-    ctx
+    ctx,
+    req.requestScoped === true
   );
 }
 function resolveEventPrice(req, ctx = {}) {
@@ -17198,6 +17333,9 @@ function createTaskCostEngine(options) {
         observedModel,
         usage: normalized.usage,
         harness: input.harness,
+        // A delta event is one provider request (a cumulative snapshot or a
+        // declared aggregate is not), so a long-context tier may apply.
+        requestScoped: (input.usageKind ?? "delta") === "delta" && input.aggregate !== true,
         ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
         ...input.costBasis !== void 0 ? { costBasis: input.costBasis } : {},
         ...input.estimatedCostUsd !== void 0 ? { estimatedCostUsd: input.estimatedCostUsd } : {},
@@ -17297,7 +17435,13 @@ function assembleInputs(taskId, harness, providerContractVersion, rows) {
         ...row.actualCostUsd !== null ? { actualCostUsd: row.actualCostUsd } : {},
         ...row.isSubagent !== void 0 ? { isSubagent: row.isSubagent } : {},
         observedAt: row.observedAt,
-        ...row.usageInvalid ? { diagnostics: ["invalid_token_usage"] } : {}
+        ...row.unpriced ? { estimatedCostUsd: null } : {},
+        ...row.usageInvalid || row.unpriced ? {
+          diagnostics: [
+            ...row.usageInvalid ? ["invalid_token_usage"] : [],
+            ...row.unpriced ? ["no_pricing_data"] : []
+          ]
+        } : {}
       });
     }
   }
@@ -17596,6 +17740,7 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
   };
   let currentTurnId = null;
   let currentModel = "unknown";
+  let currentServiceTier = null;
   for (const entry of parseJsonlObjects(content, diagnostics, parseOptions)) {
     const payload = asRecord(entry.payload);
     if (entry.type === "session_meta") {
@@ -17606,6 +17751,13 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
     if (entry.type === "turn_context") {
       currentTurnId = idOrNull(payload?.turn_id);
       currentModel = modelOrNull(payload?.model) ?? currentModel;
+      continue;
+    }
+    if (entry.type === "event_msg" && payload?.type === "thread_settings_applied") {
+      const tier = asRecord(payload.thread_settings)?.service_tier;
+      if (typeof tier === "string" && /^[a-z][a-z0-9_-]{0,31}$/.test(tier)) {
+        currentServiceTier = tier;
+      }
       continue;
     }
     if (entry.type !== "event_msg" || payload?.type !== "token_count") {
@@ -17625,7 +17777,8 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
       observedMs: null,
       delta: null,
       cumulative: null,
-      usageInvalid: false
+      usageInvalid: false,
+      serviceTier: currentServiceTier
     };
     const timestamp2 = timestampOrNull(entry.timestamp);
     if (timestamp2 !== null) {
@@ -17661,6 +17814,7 @@ function normalizeCodexBuckets(usage, diagnostics) {
   }
   return { ...usage, input_tokens: normalized };
 }
+var CODEX_STANDARD_SERVICE_TIER = "default";
 function extractCodexUsage(options) {
   const boundary = resolveTaskBoundary(options.boundary);
   const diagnostics = {};
@@ -17715,6 +17869,8 @@ function extractCodexUsage(options) {
       if (byIdentity.has(eventId2)) {
         countDiagnostic(diagnostics, "duplicate_row");
       }
+      const unpriced = observation.serviceTier !== null && observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
+      if (unpriced) countDiagnostic(diagnostics, "unpriced_service_tier");
       byIdentity.set(eventId2, {
         eventId: eventId2,
         sessionId,
@@ -17725,7 +17881,8 @@ function extractCodexUsage(options) {
         usage,
         actualCostUsd: null,
         harnessVersion: session.harnessVersion,
-        usageInvalid: observation.usageInvalid
+        usageInvalid: observation.usageInvalid,
+        ...unpriced ? { unpriced: true } : {}
       });
     }
   }
@@ -17923,7 +18080,8 @@ var USAGE_RECORD_ALLOWED_KEYS = [
   "occurredAt",
   "usageKind",
   "isSubagent",
-  "replayOfEventId"
+  "replayOfEventId",
+  "aggregate"
 ];
 var FRIENDLY_ALLOWED_KEYS = [
   "eventId",
@@ -17946,7 +18104,8 @@ var FRIENDLY_ALLOWED_KEYS = [
   "diagnostics",
   "estimatedCostUsd",
   "pricingSource",
-  "priceTable"
+  "priceTable",
+  "aggregate"
 ];
 var PREBUILT_ALLOWED_KEYS = [
   "schema_version",
@@ -18150,6 +18309,7 @@ var DIAGNOSTIC_MESSAGES = {
   duplicate_row: "a source row repeated an already-seen identity",
   cumulative_counter_reset: "a cumulative counter regressed; the baseline was reset",
   codex_cache_exceeds_input: "reported cache tokens exceeded input tokens; uncached input was clamped to zero",
+  unpriced_service_tier: "a response ran on a non-Standard service tier, which the built-in table does not price; it was left unpriced",
   // Mapped / tracker-level codes.
   malformed_line: "a session-file line was malformed and skipped",
   invalid_record: "a record was not a usable record shape",
@@ -18178,6 +18338,7 @@ var DIAGNOSTIC_ORDER = [
   "duplicate_row",
   "cumulative_counter_reset",
   "codex_cache_exceeds_input",
+  "unpriced_service_tier",
   "oversized_file",
   "invalid_usage",
   "duplicate_event",
@@ -18473,7 +18634,8 @@ function createTrackerWithInternals(options = {}) {
       observedAt: typeof occurredAt === "string" ? occurredAt : "",
       costBasis: projected.costBasis ?? defaultBasis,
       ...projected.replayOfEventId !== void 0 ? { replayOfEventId: projected.replayOfEventId } : {},
-      ...projected.isSubagent !== void 0 ? { isSubagent: projected.isSubagent } : {}
+      ...projected.isSubagent !== void 0 ? { isSubagent: projected.isSubagent } : {},
+      ...projected.aggregate === true ? { aggregate: true } : {}
     };
     return ingestInto(kind, harness, providerContract, input, eventId2);
   }

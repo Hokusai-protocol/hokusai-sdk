@@ -3688,20 +3688,119 @@ var ANTHROPIC_MODEL_PRICING = {
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
+var OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272e3;
+function openAiLong(inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd) {
+  return {
+    thresholdInputTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+    inputPerMTokUsd,
+    cachedInputPerMTokUsd,
+    outputPerMTokUsd
+  };
+}
 var OPENAI_MODEL_PRICING = {
-  "gpt-5.5": { inputPerMTokUsd: 5, outputPerMTokUsd: 30 },
-  "gpt-5": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
-  "gpt-5-mini": { inputPerMTokUsd: 0.25, outputPerMTokUsd: 2 },
+  "gpt-6-astra": {
+    inputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 1,
+    outputPerMTokUsd: 50,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(20, 2, 75)
+  },
+  "gpt-6.1-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.1,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.2, 15)
+  },
+  "gpt-6.1-terra": {
+    inputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: 0.05,
+    outputPerMTokUsd: 5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(2, 0.1, 7.5)
+  },
+  "gpt-6-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 15)
+  },
+  "gpt-6-luna": {
+    inputPerMTokUsd: 0.1,
+    cachedInputPerMTokUsd: 0.01,
+    outputPerMTokUsd: 0.5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.2, 0.02, 0.75)
+  },
+  // Promotional pricing "through at least 2026-11-21": re-verify after then.
+  "gpt-5.6-sol": {
+    inputPerMTokUsd: 4,
+    cachedInputPerMTokUsd: 0.4,
+    outputPerMTokUsd: 20,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(8, 0.8, 30)
+  },
+  "gpt-5.6-terra": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 12,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 18)
+  },
+  "gpt-5.6-luna": {
+    inputPerMTokUsd: 0.2,
+    cachedInputPerMTokUsd: 0.02,
+    outputPerMTokUsd: 1.2,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.4, 0.04, 1.8)
+  },
+  "gpt-5.5": {
+    inputPerMTokUsd: 5,
+    cachedInputPerMTokUsd: 0.5,
+    outputPerMTokUsd: 30,
+    longContext: openAiLong(10, 1, 45)
+  },
+  "gpt-5.5-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4": {
+    inputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 0.25,
+    outputPerMTokUsd: 15,
+    longContext: openAiLong(5, 0.5, 22.5)
+  },
+  "gpt-5.4-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4-mini": { inputPerMTokUsd: 0.75, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 4.5 },
+  "gpt-5.4-nano": { inputPerMTokUsd: 0.2, cachedInputPerMTokUsd: 0.02, outputPerMTokUsd: 1.25 },
+  "gpt-5.3-codex": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2-pro": { inputPerMTokUsd: 21, cachedInputPerMTokUsd: null, outputPerMTokUsd: 168 },
+  "gpt-5.1": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5-mini": { inputPerMTokUsd: 0.25, cachedInputPerMTokUsd: 0.025, outputPerMTokUsd: 2 },
+  "gpt-5-nano": { inputPerMTokUsd: 0.05, cachedInputPerMTokUsd: 5e-3, outputPerMTokUsd: 0.4 },
+  "gpt-5-pro": { inputPerMTokUsd: 15, cachedInputPerMTokUsd: null, outputPerMTokUsd: 120 },
+  "gpt-4.1": { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, cachedInputPerMTokUsd: 0.1, outputPerMTokUsd: 1.6 },
+  "gpt-4o": { inputPerMTokUsd: 2.5, cachedInputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "gpt-4o-mini": { inputPerMTokUsd: 0.15, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 0.6 },
+  o3: { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "o3-pro": { inputPerMTokUsd: 20, cachedInputPerMTokUsd: null, outputPerMTokUsd: 80 },
+  // Not on the current page: earlier per-model pages, legacy cache multipliers.
   "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
   "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
-  "gpt-4o": { inputPerMTokUsd: 2.5, outputPerMTokUsd: 10 },
-  "gpt-4o-mini": { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.6 },
-  "gpt-4.1": { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
-  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, outputPerMTokUsd: 1.6 },
   "gpt-4-turbo": { inputPerMTokUsd: 10, outputPerMTokUsd: 30 },
   o1: { inputPerMTokUsd: 15, outputPerMTokUsd: 60 },
   "o1-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
-  o3: { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
   "o3-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
   "o4-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 }
 };
@@ -3716,7 +3815,6 @@ var MODEL_PRICING = {
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
-var MODEL_PRICING_AS_OF = "2026-07-15";
 
 // ../core/src/session-usage.ts
 var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
@@ -6141,7 +6239,7 @@ var QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA = Object.freeze(
 var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 var FIXTURE_TASK_ID = "task-0001";
 var FIXTURE_SESSION_ID = "session-0001";
-var FIXTURE_PRICING_REVISION = MODEL_PRICING_AS_OF;
+var FIXTURE_PRICING_REVISION = "2026-07-15";
 function isoAt(offsetSeconds) {
   return new Date(FIXTURE_EPOCH_MS + offsetSeconds * 1e3).toISOString().replace(".000Z", "Z");
 }
@@ -8970,7 +9068,10 @@ var multiRoundReview = (() => {
   };
 })();
 
-// ../core/src/fixtures/routing-outcome.ts
+// ../core/src/fixtures/contribution-v4.ts
+var TASK_ID = "task-0001";
+var INFERENCE_LOG_ID = "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a80";
+var CONTRIBUTION_V4_CHALLENGE_PAIR_ID = "01a1a6d0-0000-7000-8000-000000000001";
 var descriptor = {
   task_type: "bugfix",
   language: "typescript",
@@ -8986,13 +9087,139 @@ var descriptor = {
   ui_heavy: false,
   risk_level: "medium"
 };
-var pool = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7", "glm-5.3-flash"];
-function routerRow(routing, success) {
+var pool = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-4-8", "gpt-5-codex"];
+function summaryOf(fixture) {
+  const [summary] = fixture.expectedSummaries;
+  if (!summary) throw new Error(`task-cost fixture ${fixture.name} has no summary`);
+  return summary;
+}
+function stage(name, executedModel, harness, source, modelEvidence = "session_telemetry") {
   return {
-    schema_version: "technical_task_router_row/v3",
+    stage: name,
+    executed_model: executedModel,
+    model_evidence: modelEvidence,
+    harness,
+    task_cost: summaryOf(source)
+  };
+}
+function v4Row(fields) {
+  return {
+    schema_version: "technical_task_router_row/v4",
     task_descriptor: descriptor,
     allowed_models: pool,
     available_models: { planner_models: pool, coder_models: pool, reviewer_models: pool },
+    budget_usd: 5,
+    wall_clock_seconds: 1840,
+    success_under_budget: true,
+    completion_result: "success",
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool.length },
+    sparse_cell: {
+      cell_id: "bugfix-typescript",
+      descriptor_signature: "bugfix|typescript|backend",
+      observed_count: 41,
+      is_sparse: false
+    },
+    observed_at: "2026-11-04T18:00:00.000Z",
+    task_id: TASK_ID,
+    harness: "wavemill",
+    ...fields
+  };
+}
+var lowCostLabels = {
+  budget_label: "under_budget",
+  cost_label: "low",
+  time_label: "slow",
+  success_label: "success"
+};
+var singleHarnessV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  selected_models: { planner: "claude-sonnet-5", coder: "claude-sonnet-5", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("planning", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("coding", "claude-sonnet-5", "claude-code", claudeCodeModelSwitchFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.0489 + 0.1185 + 0.10925
+  actual_cost_usd: 0.27665,
+  outcome_labels: lowCostLabels
+});
+var mixedHarnessV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  selected_models: { planner: "claude-sonnet-5", coder: "claude-haiku-4-5", reviewer: "claude-sonnet-5" },
+  stage_executions: [
+    stage("planning", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("coding", "claude-haiku-4-5", "native", nativeSimpleFixture, "provider_response"),
+    stage("review", "claude-sonnet-5", "claude-code", claudeCodeRetryFixture)
+  ],
+  // 0.0489 + 0.0027 + 0.0399
+  actual_cost_usd: 0.0915,
+  outcome_labels: lowCostLabels
+});
+var challengePrimaryV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  comparison_group: { id: CONTRIBUTION_V4_CHALLENGE_PAIR_ID, role_varied: "coder" },
+  selected_models: { coder: "claude-sonnet-5", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.0489 + 0.10925
+  actual_cost_usd: 0.15815,
+  outcome_labels: lowCostLabels
+});
+var challengeChallengerV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [
+    { role: "coder", source: "challenge", from: "claude-sonnet-5", to: "gpt-5-codex", reason: "challenge_arm" }
+  ],
+  comparison_group: { id: CONTRIBUTION_V4_CHALLENGE_PAIR_ID, role_varied: "coder" },
+  selected_models: { coder: "gpt-5-codex", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "gpt-5-codex", "codex", codexSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.02125 + 0.10925
+  actual_cost_usd: 0.1305,
+  outcome_labels: lowCostLabels
+});
+var ciFixRepairV4Fixture = v4Row({
+  selected_models: { coder: "gpt-5-codex", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "gpt-5-codex", "codex", codexSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture),
+    stage("ci-fix", "gpt-5-codex", "codex", codexRealCacheFixture)
+  ],
+  // 0.02125 + 0.10925 + 0.605988
+  actual_cost_usd: 0.736488,
+  outcome_labels: lowCostLabels
+});
+
+// ../core/src/fixtures/routing-outcome.ts
+var descriptor2 = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool2 = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7", "glm-5.3-flash"];
+function routerRow(routing, success) {
+  return {
+    schema_version: "technical_task_router_row/v3",
+    task_descriptor: descriptor2,
+    allowed_models: pool2,
+    available_models: { planner_models: pool2, coder_models: pool2, reviewer_models: pool2 },
     budget_usd: 5,
     actual_cost_usd: 2.29,
     wall_clock_seconds: 1840,
@@ -9004,7 +9231,7 @@ function routerRow(routing, success) {
       time_label: "slow",
       success_label: success ? "success" : "failure"
     },
-    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool.length },
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool2.length },
     sparse_cell: { cell_id: "bugfix-typescript", descriptor_signature: "bugfix|typescript|backend", observed_count: 41, is_sparse: false },
     observed_at: "2026-10-30T18:00:00.000Z",
     harness: "wavemill",
@@ -9085,6 +9312,71 @@ var HARNESS_OUTCOME_ROW_V2_FIELDS = Object.freeze([
   ...HARNESS_OUTCOME_ROW_FIELDS,
   "overrides"
 ]);
+var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  "prompt",
+  "messages",
+  "task_text",
+  "raw_input",
+  "eval_record",
+  "originalprompt",
+  "original_prompt",
+  "description",
+  "issue_body"
+]);
+var STAGE_EXECUTION_BASE_STAGES = ["planning", "coding", "review"];
+var STAGE_EXECUTION_REPAIR_STAGES = [
+  "ci-fix",
+  "conflict-resolution",
+  "ready-remediation"
+];
+var STAGE_EXECUTION_STAGES = [
+  ...STAGE_EXECUTION_BASE_STAGES,
+  ...STAGE_EXECUTION_REPAIR_STAGES
+];
+var STAGE_TO_ROLE = Object.freeze({
+  planning: "planner",
+  coding: "coder",
+  review: "reviewer"
+});
+var RICH_ROUTER_ROW_FIELDS = [
+  "schema_version",
+  "task_descriptor",
+  "allowed_models",
+  "selected_models",
+  "available_models",
+  "budget_usd",
+  "actual_cost_usd",
+  "wall_clock_seconds",
+  "success_under_budget",
+  "completion_result",
+  "outcome_labels",
+  "candidate_pool",
+  "sparse_cell",
+  "scorer_ref",
+  "observed_at",
+  "task_id",
+  "harness"
+];
+var ROUTER_ROW_V3_EXTRA_FIELDS = ["inference_log_id", "overrides"];
+var ROUTER_ROW_V4_EXTRA_FIELDS = [
+  ...ROUTER_ROW_V3_EXTRA_FIELDS,
+  "stage_executions",
+  "comparison_group",
+  "integration",
+  "sdk_version"
+];
+var TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
+  ...RICH_ROUTER_ROW_FIELDS,
+  ...ROUTER_ROW_V4_EXTRA_FIELDS
+]);
+var STAGE_EXECUTION_FIELDS = Object.freeze([
+  "stage",
+  "executed_model",
+  "model_evidence",
+  "harness",
+  "task_cost"
+]);
+var CONTRIBUTION_FORBIDDEN_KEYS = Object.freeze([...FORBIDDEN_KEYS]);
 var RECOMMENDATION_COPY_KEY_SET = new Set(
   RECOMMENDATION_COPY_KEYS.map((key) => key.replaceAll("_", ""))
 );
@@ -9773,16 +10065,16 @@ function collectReviewEvidence(prNumber, repoDir) {
 }
 function deriveIntent(contract, diffStats) {
   if (!contract) return nullIntent();
-  const descriptor2 = deriveTaskDescriptor({
+  const descriptor3 = deriveTaskDescriptor({
     taskText: contract.taskText,
     repositorySignals: contract.repositorySignals
   });
   const intent = nullIntent();
-  intent.task_type = normalizeTaskType(contract.intent?.task_type ?? descriptor2.task_type);
-  intent.language = normalizeLanguage(contract.intent?.language ?? descriptor2.language);
+  intent.task_type = normalizeTaskType(contract.intent?.task_type ?? descriptor3.task_type);
+  intent.language = normalizeLanguage(contract.intent?.language ?? descriptor3.language);
   intent.domain = normalizeDomain(contract.intent?.domain);
-  intent.complexity = normalizeComplexityValue(contract.intent?.complexity ?? descriptor2.complexity);
-  intent.repo_size_bucket = normalizeRepoSizeBucket(contract.intent?.repo_size_bucket ?? descriptor2.repo_size_bucket);
+  intent.complexity = normalizeComplexityValue(contract.intent?.complexity ?? descriptor3.complexity);
+  intent.repo_size_bucket = normalizeRepoSizeBucket(contract.intent?.repo_size_bucket ?? descriptor3.repo_size_bucket);
   intent.files_touched_bucket = normalizeFilesTouchedBucket(
     contract.intent?.files_touched_bucket ?? bucketFilesTouched(diffStats?.filesTouched)
   );
