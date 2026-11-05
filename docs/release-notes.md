@@ -18,7 +18,7 @@ git push origin v0.x.y
 
 ## Releases
 
-### 0.8.0 — unreleased
+### 0.8.0 — 2026-11-05
 
 **Requires:** `technical_task_router_row/v4` rows need a server that accepts
 them (HOK-3413). Writers switch to v4 in this release; pin **`@hokusai/core` ≥
