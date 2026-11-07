@@ -2,7 +2,7 @@
   "schema_version": "arbiter_shadow_state/v1",
   "repo": "Hokusai-protocol/hokusai-sdk",
   "last_seen_merge_sha": "be9586fd19dba727d0490e3eeb9824ec4fa858ae",
-  "last_run_at": "2026-11-07T13:09:56.119Z",
+  "last_run_at": "2026-11-07T21:55:12.881Z",
   "last_run_status": "ok",
   "last_error_code": null,
   "scorer_id": "baseline-v0",
