@@ -66,10 +66,10 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname3, join as join10, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync6, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname3, join as join10, resolve as resolve6 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-import { parseArgs as parseArgs3 } from "node:util";
+import { parseArgs as parseArgs4 } from "node:util";
 
 // src/candidate-features.ts
 import { statSync as statSync2 } from "node:fs";
@@ -506,9 +506,9 @@ function normalizeText(text) {
 function classifyTaskFamily(input) {
   const haystack = [input.text, ...input.hints ?? []].join("\n");
   const matches = /* @__PURE__ */ new Set();
-  for (const entry of FAMILY_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
-      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
+  for (const entry2 of FAMILY_KEYWORDS) {
+    if (entry2.patterns.some((pattern) => pattern.test(haystack))) {
+      matches.add(entry2.family === "bug" ? "bugfix" : entry2.family);
     }
   }
   if (matches.size > 1) {
@@ -2508,6 +2508,174 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/rework-risk-features.ts
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.1.0";
+var FEATURE_AS_OF_SOURCES = [
+  /** The diff between `base_sha` and `merge_sha`. */
+  "git_diff_base_to_merge",
+  /** Commits reachable from `base_sha`; windows are measured back from `as_of`. */
+  "git_ancestors_of_base",
+  /** Timestamped GitHub events, each at or before `as_of`. */
+  "github_events_until_as_of",
+  /** A PR fact that cannot change after creation. */
+  "immutable_pr_fact",
+  /** Task-contract data written by an instrumented harness before merge. */
+  "harness_contract"
+];
+var POST_MERGE_SOURCES = [
+  "github_current_state",
+  "git_history_after_merge",
+  "label_store",
+  "wall_clock"
+];
+var NO_DIFF = "The diff between base_sha and merge_sha could not be read.";
+var NO_HISTORY = "Ancestor history of base_sha could not be read.";
+var NO_EVENTS = "GitHub returned no timeline for this PR.";
+var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
+var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
+var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
+  manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+  as_of: "merged_at, or the landing commit time when GitHub reports none; see AS_OF_BASES.",
+  entries: Object.freeze([
+    entry("feature.shape.files_touched", "git_diff_base_to_merge", "integer", "Files changed.", NO_DIFF),
+    entry("feature.shape.lines_added", "git_diff_base_to_merge", "integer", "Lines added.", NO_DIFF),
+    entry("feature.shape.lines_deleted", "git_diff_base_to_merge", "integer", "Lines deleted.", NO_DIFF),
+    entry("feature.shape.loc_touched", "git_diff_base_to_merge", "integer", "Lines added plus deleted.", NO_DIFF),
+    entry("feature.shape.tests_changed", "git_diff_base_to_merge", "boolean", "A test file changed.", NO_DIFF),
+    entry("feature.shape.diff_uncertain", "git_diff_base_to_merge", "boolean", "The diff may include other PRs, as in a batched merge.", NO_DIFF),
+    entry("feature.shape.member_commits", "git_diff_base_to_merge", "integer", "First-parent commits the PR contributed.", NO_DIFF),
+    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha.", "No supported analyzer completed on both revisions."),
+    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files in the 90 days before as_of.", NO_HISTORY),
+    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct authors of those commits.", NO_HISTORY),
+    entry("feature.history.file_fix_commits_90d", "git_ancestors_of_base", "integer", "Those commits with a fix-shaped subject. Never read from label tables.", NO_HISTORY),
+    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Age of the most recently created changed file that already existed.", "Every changed file is new, or history could not be read."),
+    entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
+    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "The author's commits among ancestors of base_sha.", NO_HISTORY),
+    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "The author's commits to the changed files among those ancestors.", NO_HISTORY),
+    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", "The author account no longer exists."),
+    entry("feature.process.review_count", "github_events_until_as_of", "integer", "Reviews submitted by as_of.", NO_EVENTS),
+    entry("feature.process.approvals", "github_events_until_as_of", "integer", "Approvals submitted by as_of.", NO_EVENTS),
+    entry("feature.process.changes_requested", "github_events_until_as_of", "integer", "Change requests submitted by as_of, for any PR. Distinct from segment.provenance.change_requests.", NO_EVENTS),
+    entry("feature.process.distinct_reviewers", "github_events_until_as_of", "integer", "Distinct reviewers by as_of.", NO_EVENTS),
+    entry("feature.process.hours_open", "github_events_until_as_of", "number", "Hours from PR creation to as_of.", NO_EVENTS),
+    entry("feature.process.hours_to_first_review", "github_events_until_as_of", "number", "Hours from PR creation to the first review by as_of.", "No review was submitted by as_of."),
+    entry("feature.process.github_label_count", "github_events_until_as_of", "integer", "Labels on the PR at as_of, replayed from label events.", NO_EVENTS),
+    entry("feature.process.title_chars", "github_events_until_as_of", "integer", "Title length at as_of, replayed from rename events.", NO_EVENTS),
+    entry("feature.process.body_chars", "github_events_until_as_of", "integer", "Body length at as_of, replayed from edit history.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("feature.content.diff_sha256", "git_diff_base_to_merge", "content_sha256", "Hash of the private diff that content arms read.", NO_DIFF),
+    entry("feature.content.title_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private title at as_of.", NO_EVENTS),
+    entry("feature.content.body_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private body at as_of.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.provenance.agent_iterations", "harness_contract", "integer", "Agent rework iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.self_review_iterations", "harness_contract", "integer", "Agent self-review iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.human_intervention_count", "harness_contract", "integer", "Human interventions during the run.", NOT_INSTRUMENTED),
+    entry("segment.provenance.review_rounds", "harness_contract", "integer", "Review rounds the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.provenance.change_requests", "harness_contract", "integer", "Change requests the harness recorded.", NOT_INSTRUMENTED),
+    {
+      ...entry("segment.ci.checks_completed_by_merge", "github_events_until_as_of", "integer", "CI results completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    },
+    {
+      ...entry("segment.ci.checks_failed_by_merge", "github_events_until_as_of", "integer", "CI failures completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    }
+  ])
+});
+var LEAKAGE_DENYLIST = Object.freeze([
+  // Corrective-rework and S2 outcome fields.
+  "corrective",
+  "horizon_days",
+  "report_outcome",
+  "reason_codes",
+  "label_provenance",
+  "labeller_version",
+  "normalization_version",
+  "definition_version",
+  "base_label_hash",
+  // Repair pairs and candidates.
+  "record_type",
+  "candidate_id",
+  "repair_pair_ids",
+  "proxy",
+  "confidence",
+  "lag_seconds",
+  "fix",
+  "fix_only",
+  "original_only",
+  "fix_preexisting",
+  "fix_tests",
+  "line_survival",
+  "graph_distance",
+  "original_review",
+  "evidence",
+  "status",
+  // Exclusion and cause codes.
+  "exclusion_code",
+  "exclusion_codes",
+  "cause_code",
+  "cause_codes",
+  "verdict",
+  // Corpus record fields that hold post-merge or enumeration-time state.
+  "relanded_merge_shas",
+  "closing_issues",
+  "labels",
+  "title",
+  "body"
+]);
+var FIELD_NAME = /^(feature|segment)\.[a-z_]+\.[a-z0-9_]+$/;
+var isLabelField = (name) => name === "label" || name.startsWith("label.");
+var isDenied = (name) => LEAKAGE_DENYLIST.includes(name.split(".").at(-1) ?? name);
+function nameError(path4, name) {
+  if (isLabelField(name)) return { path: path4, code: "label_field", message: `${name} is label-side and can never be a feature.` };
+  if (isDenied(name)) return { path: path4, code: "denied_field", message: `${name} is label-side or captured after merge.` };
+  return null;
+}
+function validateFeatureManifest(manifest) {
+  const errors = [];
+  if (typeof manifest.manifest_version !== "string" || !/^rr-merge-features\/\d+\.\d+\.\d+$/.test(manifest.manifest_version)) {
+    errors.push({ path: "manifest_version", code: "invalid_manifest_version", message: "manifest_version must be rr-merge-features/<semver>." });
+  }
+  const seen = /* @__PURE__ */ new Set();
+  (manifest.entries ?? []).forEach((raw, index) => {
+    const item = raw;
+    const path4 = `entries[${index}]`;
+    const name = typeof item.name === "string" ? item.name : "";
+    if (seen.has(name)) errors.push({ path: path4, code: "duplicate_entry", message: `${name} is declared twice.` });
+    seen.add(name);
+    const denied = nameError(path4, name);
+    if (denied) errors.push(denied);
+    else if (!FIELD_NAME.test(name)) errors.push({ path: path4, code: "invalid_namespace", message: `${name} must be feature.<group>.<field> or segment.<group>.<field>.` });
+    if (item.segment !== name.startsWith("segment.")) {
+      errors.push({ path: path4, code: "segment_flag_mismatch", message: `${name}: the segment flag must match the namespace.` });
+    }
+    const source = item.as_of_source;
+    if (source === void 0 || source === null || source === "") {
+      errors.push({ path: path4, code: "missing_as_of_source", message: `${name} declares no as_of source.` });
+    } else if (POST_MERGE_SOURCES.includes(source)) {
+      errors.push({ path: path4, code: "post_merge_as_of_source", message: `${name}: ${JSON.stringify(source)} can see past as_of.` });
+    } else if (!FEATURE_AS_OF_SOURCES.includes(source)) {
+      errors.push({ path: path4, code: "unknown_as_of_source", message: `${name}: ${JSON.stringify(source)} is not a declared as_of source.` });
+    }
+  });
+  return errors;
+}
+function validateFeatureColumns(columns, options = {}) {
+  const manifest = options.manifest ?? REWORK_RISK_FEATURE_MANIFEST;
+  const declared = new Map(manifest.entries.map((item) => [item.name, item]));
+  const errors = validateFeatureManifest(manifest);
+  columns.forEach((column, index) => {
+    const path4 = `columns[${index}]`;
+    const denied = nameError(path4, column);
+    if (denied) {
+      errors.push(denied);
+      return;
+    }
+    const item = declared.get(column);
+    if (!item) errors.push({ path: path4, code: "undeclared_column", message: `${column} is not in ${manifest.manifest_version}.` });
+    else if (item.segment && !options.allowSegments) errors.push({ path: path4, code: "segment_in_arm_input", message: `${column} is a segment feature and cannot be an arm input.` });
+  });
+  return errors;
+}
+
 // ../core/src/arbiter-calibration-label.ts
 var CALIBRATION_VERDICTS = ["yes", "no", "unclear"];
 var CAUSE_CODES = [
@@ -4256,7 +4424,7 @@ function requireDiagnostics(value, label2) {
 }
 function requireStringArray(value, label2, item) {
   if (!Array.isArray(value)) fail(`${label2} must be an array`);
-  return value.map((entry, index) => item(entry, `${label2}[${index}]`));
+  return value.map((entry2, index) => item(entry2, `${label2}[${index}]`));
 }
 function requireTokenUsage(value, label2) {
   const record = requireObject(value, label2);
@@ -4344,9 +4512,9 @@ function validateTaskCostSummaryV1(value) {
   requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "summary.provider_contract_version");
   requireStringArray(record.models, "summary.models", requireModel);
   if (!Array.isArray(record.model_segments)) fail("summary.model_segments must be an array");
-  for (const [index, entry] of record.model_segments.entries()) {
+  for (const [index, entry2] of record.model_segments.entries()) {
     const label2 = `summary.model_segments[${index}]`;
-    const segment = requireObject(entry, label2);
+    const segment = requireObject(entry2, label2);
     requireModel(segment.model, `${label2}.model`);
     requireCount(segment.turn_count, `${label2}.turn_count`);
     requireTokenUsage(segment.usage, `${label2}.usage`);
@@ -7558,11 +7726,11 @@ function derivedResult(derivedId, inputs, t, supersedes) {
     ...supersedes !== void 0 ? { supersedes } : {}
   };
 }
-function decision(index, entry, value, reasons2) {
-  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+function decision(index, entry2, value, reasons2) {
+  const key = entry2.record_type === "attempt" ? entry2.id : entry2.record_type === "derived" ? entry2.derived_id : entry2.write_id;
   return {
     index,
-    record_type: entry.record_type,
+    record_type: entry2.record_type,
     key,
     decision: value,
     ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
@@ -7950,7 +8118,7 @@ var comparisonRecomputed = (() => {
       }
     ],
     expected: {
-      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      decisions: log.map((entry2, index) => decision(index, entry2, "accepted")),
       attempts: [
         state(pair, { current: true }),
         state(primary, { current: true }),
@@ -8061,10 +8229,10 @@ function decided(index, event17, decision2, reasons2) {
 }
 function decisionsFor(stream, overrides = {}) {
   const out = [];
-  for (const [index, entry] of stream.entries()) {
-    if (entry.schema_version !== "queue_lifecycle_event/v1") continue;
+  for (const [index, entry2] of stream.entries()) {
+    if (entry2.schema_version !== "queue_lifecycle_event/v1") continue;
     const [decision2, reasons2] = overrides[index] ?? ["accepted"];
-    out.push(decided(index, entry, decision2, reasons2));
+    out.push(decided(index, entry2, decision2, reasons2));
   }
   return out;
 }
@@ -9510,9 +9678,9 @@ function sumEslintErrors(jsonText) {
   }
   if (!Array.isArray(parsed)) return null;
   let total = 0;
-  for (const entry of parsed) {
-    if (entry && typeof entry === "object" && "errorCount" in entry) {
-      const value = entry.errorCount;
+  for (const entry2 of parsed) {
+    if (entry2 && typeof entry2 === "object" && "errorCount" in entry2) {
+      const value = entry2.errorCount;
       if (typeof value === "number" && Number.isFinite(value)) total += value;
     }
   }
@@ -10227,7 +10395,7 @@ function parseNameStatusOutput(output) {
       path: path4,
       previousPath: normalizedStatus === "R" || normalizedStatus === "C" ? firstPath : void 0
     };
-  }).filter((entry) => entry.status && entry.path);
+  }).filter((entry2) => entry2.status && entry2.path);
 }
 function extractPrNumber(subject) {
   const match = subject.match(/merge pull request #(\d+)\b/i) ?? subject.match(/\(#(\d+)\)\s*$/i);
@@ -10376,7 +10544,7 @@ function parseZeroContextDiff(diffText) {
       });
     }
   }
-  return entries.filter((entry) => entry.oldPath !== null || entry.newPath !== null);
+  return entries.filter((entry2) => entry2.oldPath !== null || entry2.newPath !== null);
 }
 function rangeLineCount(range) {
   return range.end - range.start + 1;
@@ -10395,11 +10563,11 @@ function buildSubstrate(deps, pr2) {
   const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr2.parentSha, pr2.mergeSha]);
   if (result.exitCode !== 0) return null;
   const files = [];
-  for (const entry of parseZeroContextDiff(result.stdout)) {
-    if (entry.hunks.length === 0) continue;
-    const path4 = entry.newPath ?? entry.oldPath;
+  for (const entry2 of parseZeroContextDiff(result.stdout)) {
+    if (entry2.hunks.length === 0) continue;
+    const path4 = entry2.newPath ?? entry2.oldPath;
     if (!path4) continue;
-    files.push({ path: path4, oldPath: entry.oldPath ?? path4, hunks: entry.hunks });
+    files.push({ path: path4, oldPath: entry2.oldPath ?? path4, hunks: entry2.hunks });
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const lineRanges = [];
@@ -10424,11 +10592,11 @@ function blobsAt(deps, sha2, paths) {
     const chunk = unique2.slice(i, i + LS_TREE_CHUNK);
     const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha2, "--", ...chunk]);
     if (result.exitCode !== 0) continue;
-    for (const entry of result.stdout.split("\0")) {
-      const tab = entry.indexOf("	");
+    for (const entry2 of result.stdout.split("\0")) {
+      const tab = entry2.indexOf("	");
       if (tab < 0) continue;
-      const oid = entry.slice(0, tab).split(" ")[2];
-      const path4 = entry.slice(tab + 1);
+      const oid = entry2.slice(0, tab).split(" ")[2];
+      const path4 = entry2.slice(tab + 1);
       if (oid && out.has(path4)) out.set(path4, oid);
     }
   }
@@ -10437,8 +10605,8 @@ function blobsAt(deps, sha2, paths) {
 function forwardFate(deps, pr2, substrate, terminalSha) {
   const toFate = (stdout) => {
     const fate = /* @__PURE__ */ new Map();
-    for (const entry of parseNameStatusOutput(stdout)) {
-      fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
+    for (const entry2 of parseNameStatusOutput(stdout)) {
+      fate.set(entry2.previousPath ?? entry2.path, { status: entry2.status, newPath: entry2.path });
     }
     return fate;
   };
@@ -10456,7 +10624,7 @@ function forwardFate(deps, pr2, substrate, terminalSha) {
     ]);
     if (scoped.exitCode !== 0) return null;
     const fate = toFate(scoped.stdout);
-    if (![...fate.values()].some((entry) => entry.status === "D")) return fate;
+    if (![...fate.values()].some((entry2) => entry2.status === "D")) return fate;
   }
   const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr2.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
@@ -10481,11 +10649,11 @@ function analyseForward(deps, pr2, substrate, terminalSha, baseBlobs) {
   ]);
   if (unified.exitCode !== 0) return null;
   const forwardByOldPath = /* @__PURE__ */ new Map();
-  for (const entry of parseZeroContextDiff(unified.stdout)) {
-    const key = entry.oldPath ?? entry.newPath;
+  for (const entry2 of parseZeroContextDiff(unified.stdout)) {
+    const key = entry2.oldPath ?? entry2.newPath;
     if (!key) continue;
     const ranges = forwardByOldPath.get(key) ?? [];
-    for (const hunk of entry.hunks) {
+    for (const hunk of entry2.hunks) {
       if (hunk.old) ranges.push(hunk.old);
     }
     forwardByOldPath.set(key, ranges);
@@ -11069,7 +11237,7 @@ function validateAsOf(value) {
 function validateHorizons(value) {
   if (value === void 0 || value === "") return [...HORIZONS];
   const parsed = value.split(",").map((part) => Number(part.trim()));
-  const invalid = parsed.filter((entry) => !HORIZONS.includes(entry));
+  const invalid = parsed.filter((entry2) => !HORIZONS.includes(entry2));
   if (invalid.length > 0) {
     throw new ScanInputError(
       `invalid horizons ${invalid.join(", ")}: allowed values are ${HORIZONS.join(", ")}`
@@ -11931,11 +12099,60 @@ function runShadowCli(command, args, io) {
   }
 }
 
+// src/corpus/feature-audit.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+import { resolve as resolve4 } from "node:path";
+import { parseArgs as parseArgs2 } from "node:util";
+function runFeatureAudit(argv, io) {
+  let values;
+  try {
+    ({ values } = parseArgs2({
+      args: [...argv],
+      options: {
+        columns: { type: "string" },
+        "allow-segments": { type: "boolean" },
+        "print-manifest": { type: "boolean" }
+      },
+      strict: true,
+      allowPositionals: false
+    }));
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (values["print-manifest"]) {
+    io.writeStdout(`${JSON.stringify(REWORK_RISK_FEATURE_MANIFEST, null, 2)}
+`);
+    return { exitCode: 0 };
+  }
+  if (!values.columns) {
+    io.writeStderr("error: corpus-feature-audit needs --columns <json array of names> or --print-manifest\n");
+    return { exitCode: 2 };
+  }
+  let columns;
+  try {
+    columns = JSON.parse(readFileSync3(resolve4(io.cwd, values.columns), "utf8"));
+  } catch (error) {
+    io.writeStderr(`error: --columns: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (!Array.isArray(columns) || columns.length === 0 || !columns.every((name) => typeof name === "string")) {
+    io.writeStderr("error: --columns must hold a non-empty JSON array of column names\n");
+    return { exitCode: 2 };
+  }
+  const errors = validateFeatureColumns(columns, { allowSegments: values["allow-segments"] === true });
+  io.writeStdout(`${JSON.stringify({ manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION, ok: errors.length === 0, errors }, null, 2)}
+`);
+  return { exitCode: errors.length === 0 ? 0 : 1 };
+}
+
 // src/corpus/cli.ts
 import { createHash as createHash4, randomBytes } from "node:crypto";
-import { chmodSync, closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
-import { dirname, join as join7, resolve as resolve4 } from "node:path";
-import { parseArgs as parseArgs2 } from "node:util";
+import { chmodSync, closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync4, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
+import { dirname, join as join7, resolve as resolve5 } from "node:path";
+import { parseArgs as parseArgs3 } from "node:util";
 import { gzipSync, inflateRawSync } from "node:zlib";
 
 // src/corpus/calibration.ts
@@ -12748,8 +12965,8 @@ function readRevertCommits(runGit3, branch, from, until) {
   ]);
   if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
   const out = [];
-  for (const entry of result.stdout.split("")) {
-    const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+  for (const entry2 of result.stdout.split("")) {
+    const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
     const epoch = Number.parseInt(epochText, 10);
     if (!/^[0-9a-f]{40}$/.test(sha2) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
     out.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
@@ -13476,8 +13693,8 @@ function readFirstParent(target, runGit3) {
       target.branch
     ]);
     if (result.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target.branch}: ${result.stderr.trim()}`);
-    for (const entry of result.stdout.split("")) {
-      const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+    for (const entry2 of result.stdout.split("")) {
+      const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
       if (!/^[0-9a-f]{40}$/.test(sha2) || seen.has(sha2)) continue;
       const epoch = Number.parseInt(epochText, 10);
       if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
@@ -13501,8 +13718,8 @@ function readRollupMembers(target, runGit3, commits) {
   ]);
   if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
   const bySha = /* @__PURE__ */ new Map();
-  for (const entry of result.stdout.split("")) {
-    const [sha2 = "", parents = "", subject = ""] = entry.replace(/^\n/, "").split("");
+  for (const entry2 of result.stdout.split("")) {
+    const [sha2 = "", parents = "", subject = ""] = entry2.replace(/^\n/, "").split("");
     const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
     const parentSha = parents.trim().split(/\s+/)[0];
     if (/^[0-9a-f]{40}$/.test(sha2) && parentSha && Number.isInteger(prNumber)) bySha.set(sha2, { sha: sha2, parentSha, prNumber });
@@ -13648,9 +13865,9 @@ function parseCohortManifest(input) {
   if (Date.parse(m.window.merged_from) >= Date.parse(m.window.merged_until)) fail2("window must be non-empty");
   for (const key of ["repos", "alternates"]) {
     if (!Array.isArray(m[key])) fail2(`${key} must be an array`);
-    for (const entry of m[key]) {
-      if (!REPO.test(entry?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry?.repo)}`);
-      if (typeof entry.status !== "string") fail2(`${entry.repo}: status is required`);
+    for (const entry2 of m[key]) {
+      if (!REPO.test(entry2?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry2?.repo)}`);
+      if (typeof entry2.status !== "string") fail2(`${entry2.repo}: status is required`);
     }
   }
   return m;
@@ -13658,9 +13875,9 @@ function parseCohortManifest(input) {
 function runnableRepos(manifest, only) {
   const all = [...manifest.repos, ...manifest.alternates];
   if (only) {
-    const entry = all.find((r) => r.repo === only);
-    if (!entry) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
-    return [entry];
+    const entry2 = all.find((r) => r.repo === only);
+    if (!entry2) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
+    return [entry2];
   }
   return all.filter((r) => RUNNABLE_STATUSES.includes(r.status));
 }
@@ -13867,7 +14084,8 @@ var CORPUS_COMMANDS = [
   "corpus-report",
   "corpus-calibration-sample",
   "corpus-calibration-evidence",
-  "corpus-calibration-score"
+  "corpus-calibration-score",
+  "corpus-feature-audit"
 ];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -13977,7 +14195,7 @@ function fileCache(dir) {
   mkdirSync2(dir, { recursive: true });
   const path4 = (key) => join7(dir, `${createHash4("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
-    get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync3(path4(key), "utf8")) : void 0,
+    get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync4(path4(key), "utf8")) : void 0,
     set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
   };
 }
@@ -14000,12 +14218,13 @@ function runCorpusCli(command, argv, io) {
 `);
     return { exitCode: 2 };
   }
+  if (command === "corpus-feature-audit") return runFeatureAudit(argv, io);
   let values;
   let entries;
   let manifestBytes;
   let window;
   try {
-    ({ values } = parseArgs2({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
+    ({ values } = parseArgs3({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -14016,11 +14235,11 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: corpus-calibration-score needs --sample <dir>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationScore(resolve4(io.cwd, values.sample), io);
+    return runCalibrationScore(resolve5(io.cwd, values.sample), io);
   }
   try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
-    manifestBytes = readFileSync3(resolve4(io.cwd, values.manifest));
+    manifestBytes = readFileSync4(resolve5(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
     entries = runnableRepos(manifest, values.repo);
     window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
@@ -14040,14 +14259,14 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log);
+    return runCalibrationSample(entries, manifestBytes, resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.plan), resolve5(io.cwd, values["exclude-slice"]), resolve5(io.cwd, values.out), values.seed, io, log);
   }
   if (command === "corpus-calibration-evidence") {
     if (!values.sample) {
       io.writeStderr("error: corpus-calibration-evidence needs --sample <dir>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationEvidence(resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.sample), io, log);
+    return runCalibrationEvidence(resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.sample), io, log);
   }
   if (command === "corpus-report") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : null;
@@ -14058,7 +14277,7 @@ function runCorpusCli(command, argv, io) {
     let notes = { notes: [], convention_findings: [] };
     try {
       if (values.notes) {
-        const parsed = JSON.parse(readFileSync3(resolve4(io.cwd, values.notes), "utf8"));
+        const parsed = JSON.parse(readFileSync4(resolve5(io.cwd, values.notes), "utf8"));
         notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
       }
     } catch (error) {
@@ -14066,10 +14285,10 @@ function runCorpusCli(command, argv, io) {
 `);
       return { exitCode: 2 };
     }
-    return runReport(entries, resolve4(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve4(io.cwd, values.out), io, log);
+    return runReport(entries, resolve5(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve5(io.cwd, values.out), io, log);
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
-  const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
+  const cacheRoot = resolve5(io.cwd, values["cache-dir"]);
   if (command === "corpus-label" || command === "corpus-corrective") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : /* @__PURE__ */ new Date();
     if (!Number.isFinite(asOf.getTime())) {
@@ -14080,61 +14299,61 @@ function runCorpusCli(command, argv, io) {
     return runLabel(entries, cacheRoot, asOf, graphql, io, log);
   }
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
     const repoDir = join7(cacheRoot, `${owner}__${name}`);
     try {
       mkdirSync2(repoDir, { recursive: true });
       const meta = graphql("query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }", { owner, name });
       const branch = meta.repository.defaultBranchRef?.name;
       if (!branch) throw new Error("repository has no default branch");
-      log(`info: ${entry.repo}: syncing clone of ${branch}`);
-      const runGit3 = syncClone(entry.repo, join7(repoDir, "repo.git"), branch);
+      log(`info: ${entry2.repo}: syncing clone of ${branch}`);
+      const runGit3 = syncClone(entry2.repo, join7(repoDir, "repo.git"), branch);
       const { records, stats } = enumerateCorpusRepo(
-        { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], ...window },
-        { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry.repo, io.sleep ?? blockingSleep, log) }
+        { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], ...window },
+        { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
       );
       writeJsonl(join7(repoDir, "prs.jsonl"), records);
       writeFileSync2(join7(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(stats)}
 `);
-      log(`info: ${entry.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
+      log(`info: ${entry2.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
     const repoDir = join7(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
       const statsPath = join7(repoDir, "enumeration.json");
       if (!existsSync4(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
-      const { branch } = JSON.parse(readFileSync3(statsPath, "utf8"));
-      const records = readFileSync3(join7(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const { branch } = JSON.parse(readFileSync4(statsPath, "utf8"));
+      const records = readFileSync4(join7(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
       const gitDir = join7(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      log(`info: ${entry.repo}: backfilling blobs`);
+      log(`info: ${entry2.repo}: backfilling blobs`);
       const backfill = runGit3(["backfill"]);
       if (backfill.exitCode !== 0) throw new Error(`git backfill failed: ${backfill.stderr.trim().split("\n").pop()}`);
-      log(`info: ${entry.repo}: prefetching cross-references for ${records.length} PRs`);
-      const crossReferences = prefetchCrossReferences(entry.repo, records.map((r) => r.pr_number), graphql, fileCache(join7(repoDir, "graphql")));
-      log(`info: ${entry.repo}: labelling`);
+      log(`info: ${entry2.repo}: prefetching cross-references for ${records.length} PRs`);
+      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join7(repoDir, "graphql")));
+      log(`info: ${entry2.repo}: labelling`);
       const { rows, failed } = labelCorpusRepo(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
       const written = writeJsonl(join7(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         as_of: asOf.toISOString(),
         prs: records.length,
         rows: rows.length,
@@ -14144,7 +14363,7 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         s2_gzip_bytes: written.writtenBytes,
         largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
-        base_rates: summarizeLabels(entry.repo, rows)
+        base_rates: summarizeLabels(entry2.repo, rows)
       };
       writeFileSync2(join7(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
@@ -14153,18 +14372,18 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
       if (failed.length) failures++;
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function readJsonl2(path4) {
-  return readFileSync3(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return readFileSync4(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 function* readGzipJsonlMembers(path4) {
-  const raw = readFileSync3(path4);
+  const raw = readFileSync4(path4);
   for (let offset = 0; offset < raw.length; ) {
     if (raw[offset] !== 31 || raw[offset + 1] !== 139 || raw[offset + 3] !== 0) throw new Error(`${path4}: unexpected gzip member header at byte ${offset}`);
     const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true });
@@ -14174,14 +14393,14 @@ function* readGzipJsonlMembers(path4) {
 }
 function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
     const repoDir = join7(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
       const s2Path = join7(repoDir, "s2.jsonl.gz");
       if (!existsSync4(s2Path)) throw new Error("not labelled yet; run corpus-label first");
-      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
+      const { branch } = JSON.parse(readFileSync4(join7(repoDir, "enumeration.json"), "utf8"));
       const originals = readJsonl2(join7(repoDir, "prs.jsonl"));
       const gitDir = join7(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
@@ -14190,28 +14409,28 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
       let laterPrs = [];
       if (existsSync4(laterPath)) laterPrs = readJsonl2(laterPath);
       else if (window.until < asOf) {
-        log(`info: ${entry.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
+        log(`info: ${entry2.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
         ({ records: laterPrs } = enumerateCorpusRepo(
-          { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], from: window.until, until: asOf },
+          { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], from: window.until, until: asOf },
           { runGit: runGit3, graphql, cache, onDiagnostic: log }
         ));
         writeJsonl(laterPath, laterPrs);
       }
-      log(`info: ${entry.repo}: loading cross-references and S2 rows`);
-      const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
+      log(`info: ${entry2.repo}: loading cross-references and S2 rows`);
+      const crossReferences = prefetchCrossReferences(entry2.repo, originals.map((r) => r.pr_number), graphql, cache);
       const closing = [...originals, ...laterPrs].flatMap((pr2) => pr2.closing_issues);
-      log(`info: ${entry.repo}: fetching labels for ${new Set(closing).size} closed issues`);
-      const issues = prefetchIssueMeta(entry.repo, closing, graphql, cache);
+      log(`info: ${entry2.repo}: fetching labels for ${new Set(closing).size} closed issues`);
+      const issues = prefetchIssueMeta(entry2.repo, closing, graphql, cache);
       const s2Rows = readGzipJsonlMembers(s2Path);
       const result = correctiveCorpusRepo(
-        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
+        { repo: entry2.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
       );
       writeJsonl(join7(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
       writeJsonl(join7(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
       writeJsonl(join7(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         as_of: asOf.toISOString(),
         later_prs: laterPrs.length,
         ...summarizeCorrective(result, originals.length),
@@ -14224,9 +14443,9 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
       if (result.failedPairs.length || result.szz.failed) failures++;
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
@@ -14239,15 +14458,15 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
   const day = asOf.toISOString().slice(0, 10);
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
     const repoDir = join7(cacheRoot, `${owner}__${name}`);
     try {
       for (const file of REPORT_INPUTS) if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
       const counted = (file, onRow) => {
         const path4 = join7(repoDir, file);
-        const bytes = readFileSync3(path4);
-        const record = { repo: entry.repo, file, sha256: sha2562(bytes), bytes: bytes.length, rows: 0 };
+        const bytes = readFileSync4(path4);
+        const record = { repo: entry2.repo, file, sha256: sha2562(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
           for (const row of readGzipJsonlMembers(path4)) {
@@ -14269,12 +14488,12 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
       const pairs = counted("repair_pairs.jsonl.gz", () => {
       })[Symbol.iterator]();
       while (!pairs.next().done) ;
-      const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
+      const summary = summarizeCorpusRepo({ repo: entry2.repo, tier: entry2.tier ?? null, mergeConvention: entry2.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
       repos.push(summary);
-      log(`info: ${entry.repo}: summarized`);
+      log(`info: ${entry2.repo}: summarized`);
     } catch (error) {
       failures++;
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   if (failures) return { exitCode: 3 };
@@ -14313,9 +14532,9 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
   let sliceBytes;
   let sliceRepos;
   try {
-    planBytes = readFileSync3(planPath);
+    planBytes = readFileSync4(planPath);
     plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
-    sliceBytes = readFileSync3(slicePath);
+    sliceBytes = readFileSync4(slicePath);
     const slice = JSON.parse(sliceBytes.toString("utf8"));
     if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
     sliceRepos = new Set(slice.repos);
@@ -14331,19 +14550,19 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
   const units = [];
   const inputs = [];
   let failures = 0;
-  for (const entry of development) {
-    const [owner, name] = entry.repo.split("/");
+  for (const entry2 of development) {
+    const [owner, name] = entry2.repo.split("/");
     const repoDir = join7(cacheRoot, `${owner}__${name}`);
     try {
       const files = ["candidates.jsonl.gz", "corrective.jsonl.gz"];
       for (const file2 of files) {
         const path4 = join7(repoDir, file2);
         if (!existsSync4(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
-        inputs.push({ repo: entry.repo, file: file2, sha256: sha2562(readFileSync3(path4)) });
+        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2562(readFileSync4(path4)) });
       }
       units.push(
         ...classifyCalibrationRepo({
-          repo: entry.repo,
+          repo: entry2.repo,
           horizonDays: plan.horizon_days,
           szzStrongMinLines: plan.szz_strong_min_lines,
           candidates: readGzipJsonlMembers(join7(repoDir, files[0])),
@@ -14352,7 +14571,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
       );
     } catch (error) {
       failures++;
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   if (failures) return { exitCode: 3 };
@@ -14391,12 +14610,12 @@ function runCalibrationScore(sampleDir, io) {
   let sample;
   let sheets;
   try {
-    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync4(join7(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
     sheets = {
-      a: readFileSync3(join7(sampleDir, "sheet-a.csv"), "utf8"),
-      b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8"),
-      h: readFileSync3(join7(sampleDir, "sheet-h.csv"), "utf8")
+      a: readFileSync4(join7(sampleDir, "sheet-a.csv"), "utf8"),
+      b: readFileSync4(join7(sampleDir, "sheet-b.csv"), "utf8"),
+      h: readFileSync4(join7(sampleDir, "sheet-h.csv"), "utf8")
     };
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -14426,7 +14645,7 @@ function runCalibrationScore(sampleDir, io) {
 function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   let sample;
   try {
-    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync4(join7(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
     for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync4(join7(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
   } catch (error) {
@@ -14439,7 +14658,7 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
     const repoDir = join7(cacheRoot, repo.replace("/", "__"));
     try {
-      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
+      const { branch } = JSON.parse(readFileSync4(join7(repoDir, "enumeration.json"), "utf8"));
       const records = [...readJsonl2(join7(repoDir, "prs.jsonl")), ...existsSync4(join7(repoDir, "fix-prs.jsonl")) ? readJsonl2(join7(repoDir, "fix-prs.jsonl")) : []];
       const prs = new Map(records.map((r) => [r.pr_url, r]));
       const bySha = /* @__PURE__ */ new Map();
@@ -15340,6 +15559,8 @@ corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
+                 (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -15406,7 +15627,7 @@ function runScanCli(argv, io) {
     }
     let values;
     try {
-      ({ values } = parseArgs3({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
+      ({ values } = parseArgs4({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -15464,7 +15685,7 @@ function runScanCli(argv, io) {
     if (outSpec === "-") {
       io.writeStdout(output);
     } else {
-      outputPath = resolve5(outSpec);
+      outputPath = resolve6(outSpec);
       mkdirSync4(dirname3(outputPath), { recursive: true });
       writeFileSync4(outputPath, output);
     }
@@ -15499,7 +15720,7 @@ async function runReportCli(argv, io) {
   try {
     let parsed;
     try {
-      parsed = parseArgs3({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
+      parsed = parseArgs4({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -15578,7 +15799,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync5(resolve5(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync6(resolve6(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -15603,7 +15824,7 @@ async function runReportCli(argv, io) {
     }, ...stateDir ? { stateDir } : {} });
     const output = emitReport(draft);
     const outSpec = values.out ?? "-";
-    const outputPath = outSpec === "-" ? null : resolve5(outSpec);
+    const outputPath = outSpec === "-" ? null : resolve6(outSpec);
     if (values.contribute === true) {
       const built = buildContributionPayload(JSON.parse(output));
       if (values["dry-run"] === true) {
@@ -15663,7 +15884,7 @@ function parseGithubTarget(value) {
   return { owner: match[1], repo: match[2], url: `https://github.com/${match[1]}/${match[2]}.git` };
 }
 function resolveRepoDir(raw) {
-  const repoDir = resolve5(validateRepoDir(raw));
+  const repoDir = resolve6(validateRepoDir(raw));
   if (!existsSync6(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
