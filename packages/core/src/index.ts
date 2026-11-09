@@ -347,6 +347,26 @@ export {
 } from './arbiter-corrective-rework.js';
 export { ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA } from './arbiter-corrective-rework-schema.js';
 export {
+  AS_OF_BASES,
+  FEATURE_AS_OF_SOURCES,
+  LEAKAGE_DENYLIST,
+  POST_MERGE_SOURCES,
+  REWORK_RISK_FEATURE_MANIFEST,
+  REWORK_RISK_FEATURE_MANIFEST_VERSION,
+  validateEvidenceAsOf,
+  validateFeatureColumns,
+  validateFeatureManifest,
+  type AsOfBasis,
+  type FeatureAsOfSource,
+  type FeatureKind,
+  type LeakageError,
+  type LeakageErrorCode,
+  type MergeTimeFeatureEntry,
+  type MergeTimeFeatureManifest,
+  type TimestampedEvidence,
+  type ValidateFeatureColumnsOptions,
+} from './rework-risk-features.js';
+export {
   CALIBRATION_TAXONOMY_VERSION,
   CALIBRATION_VERDICTS,
   CAUSE_CODES,

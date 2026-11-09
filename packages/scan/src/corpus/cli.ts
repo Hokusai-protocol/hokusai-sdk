@@ -48,6 +48,7 @@
  * supplies GitHub auth.
  */
 
+import { runFeatureAudit } from './feature-audit.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -114,6 +115,7 @@ export const CORPUS_COMMANDS = [
   'corpus-calibration-sample',
   'corpus-calibration-evidence',
   'corpus-calibration-score',
+  'corpus-feature-audit',
 ] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
@@ -272,6 +274,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(', ')}\n`);
     return { exitCode: 2 };
   }
+  if (command === 'corpus-feature-audit') return runFeatureAudit(argv, io);
   type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string };
   let values: Values;
   let entries: CohortRepo[];
