@@ -21,7 +21,7 @@
 import type { HokusaiFieldError } from './schemas.js';
 
 /** Any change to the entries or the rules below bumps this version. */
-export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.2.0' as const;
+export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.3.0' as const;
 
 /** Sources whose evidence is fixed at or before `as_of`. */
 export const FEATURE_AS_OF_SOURCES = [
@@ -120,16 +120,16 @@ export const REWORK_RISK_FEATURE_MANIFEST: MergeTimeFeatureManifest = Object.fre
     entry('feature.shape.tests_changed', 'git_diff_base_to_merge', 'boolean', 'A test file changed.', NO_DIFF),
     entry('feature.shape.diff_uncertain', 'git_diff_base_to_merge', 'boolean', 'The diff may include other PRs, as in a batched merge.', NO_DIFF),
     entry('feature.shape.member_commits', 'git_diff_base_to_merge', 'integer', 'First-parent commits the PR contributed.', NO_DIFF),
-    entry('feature.shape.complexity_delta', 'git_diff_base_to_merge', 'number', 'wavemill-cyclomatic/v1 at merge_sha minus base_sha.', 'No supported analyzer completed on both revisions.'),
+    entry('feature.shape.complexity_delta', 'git_diff_base_to_merge', 'number', 'wavemill-cyclomatic/v1 at merge_sha minus base_sha, over changed files of 2 MiB or less.', 'No changed file has a supported language, or a file could not be read.'),
 
-    entry('feature.history.file_commits_90d', 'git_ancestors_of_base', 'integer', 'Commits touching the changed files in the 90 days before as_of.', NO_HISTORY),
-    entry('feature.history.file_authors_90d', 'git_ancestors_of_base', 'integer', 'Distinct authors of those commits.', NO_HISTORY),
+    entry('feature.history.file_commits_90d', 'git_ancestors_of_base', 'integer', 'Commits touching the changed files that landed at or before base_sha, within the 90 days before as_of. Paths match exactly, without rename following.', NO_HISTORY),
+    entry('feature.history.file_authors_90d', 'git_ancestors_of_base', 'integer', 'Distinct author emails on those commits.', NO_HISTORY),
     entry('feature.history.file_fix_commits_90d', 'git_ancestors_of_base', 'integer', 'Those commits with a fix-shaped subject. Never read from label tables.', NO_HISTORY),
-    entry('feature.history.newest_file_age_days', 'git_ancestors_of_base', 'number', 'Age of the most recently created changed file that already existed.', 'Every changed file is new, or history could not be read.'),
+    entry('feature.history.newest_file_age_days', 'git_ancestors_of_base', 'number', 'Days since the newest changed file that already existed first landed.', 'Every changed file is new, or history could not be read.'),
     entry('feature.history.new_files', 'git_ancestors_of_base', 'integer', 'Changed files absent at base_sha.', NO_HISTORY),
 
-    entry('feature.author.repo_commits_prior', 'git_ancestors_of_base', 'integer', "The author's commits among ancestors of base_sha.", NO_HISTORY),
-    entry('feature.author.touched_file_commits_prior', 'git_ancestors_of_base', 'integer', "The author's commits to the changed files among those ancestors.", NO_HISTORY),
+    entry('feature.author.repo_commits_prior', 'git_ancestors_of_base', 'integer', "Commits among ancestors of base_sha from the email addresses on the author's commits in this PR.", NO_HISTORY),
+    entry('feature.author.touched_file_commits_prior', 'git_ancestors_of_base', 'integer', "Those commits that touch the changed files.", NO_HISTORY),
     entry('feature.author.is_bot', 'immutable_pr_fact', 'boolean', 'GitHub reports the PR author as a bot.', NO_AUTHOR),
 
     entry('feature.agent.marker_present', 'github_events_until_as_of', 'boolean', 'The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.', NO_MARKER_EVIDENCE),

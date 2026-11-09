@@ -49,6 +49,7 @@
  */
 
 import { runFeatureAudit } from './feature-audit.js';
+import { FEATURE_STEPS, runCorpusFeatures, type FeatureStep } from './feature-run.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -105,6 +106,7 @@ const OPTIONS = {
   'exclude-slice': { type: 'string' },
   seed: { type: 'string' },
   sample: { type: 'string' },
+  step: { type: 'string' },
 } as const;
 
 export const CORPUS_COMMANDS = [
@@ -116,6 +118,7 @@ export const CORPUS_COMMANDS = [
   'corpus-calibration-evidence',
   'corpus-calibration-score',
   'corpus-feature-audit',
+  'corpus-features',
 ] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
@@ -275,7 +278,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     return { exitCode: 2 };
   }
   if (command === 'corpus-feature-audit') return runFeatureAudit(argv, io);
-  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string };
+  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string; step?: string };
   let values: Values;
   let entries: CohortRepo[];
   let manifestBytes: Buffer;
@@ -343,6 +346,28 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve(io.cwd, values['cache-dir']);
+  if (command === 'corpus-features') {
+    const step = values.step as FeatureStep | undefined;
+    if (!step || !FEATURE_STEPS.includes(step)) {
+      io.writeStderr(`error: corpus-features needs --step ${FEATURE_STEPS.join('|')}\n`);
+      return { exitCode: 2 };
+    }
+    if (step === 'manifest' && !values.out) {
+      io.writeStderr('error: corpus-features --step manifest needs --out <file>\n');
+      return { exitCode: 2 };
+    }
+    return runCorpusFeatures({
+      step,
+      entries,
+      cacheRoot,
+      cohortSha256: createHash('sha256').update(manifestBytes).digest('hex'),
+      ...(values.out ? { out: resolve(io.cwd, values.out) } : {}),
+      graphql,
+      writeRows: (path, rows) => { writeJsonl(path, rows, { gzip: true }); },
+      io,
+      log,
+    });
+  }
   if (command === 'corpus-label' || command === 'corpus-corrective') {
     const asOf = values['as-of'] ? new Date(values['as-of']) : new Date();
     if (!Number.isFinite(asOf.getTime())) {

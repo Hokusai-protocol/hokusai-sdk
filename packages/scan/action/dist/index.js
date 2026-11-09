@@ -66,8 +66,8 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync6, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname3, join as join10, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync8, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync3, readFileSync as readFileSync8, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname4, join as join12, resolve as resolve6 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
 import { parseArgs as parseArgs4 } from "node:util";
 
@@ -2509,7 +2509,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
 );
 
 // ../core/src/rework-risk-features.ts
-var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.2.0";
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.3.0";
 var FEATURE_AS_OF_SOURCES = [
   /** The diff between `base_sha` and `merge_sha`. */
   "git_diff_base_to_merge",
@@ -2562,14 +2562,14 @@ var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
     entry("feature.shape.tests_changed", "git_diff_base_to_merge", "boolean", "A test file changed.", NO_DIFF),
     entry("feature.shape.diff_uncertain", "git_diff_base_to_merge", "boolean", "The diff may include other PRs, as in a batched merge.", NO_DIFF),
     entry("feature.shape.member_commits", "git_diff_base_to_merge", "integer", "First-parent commits the PR contributed.", NO_DIFF),
-    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha.", "No supported analyzer completed on both revisions."),
-    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files in the 90 days before as_of.", NO_HISTORY),
-    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct authors of those commits.", NO_HISTORY),
+    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha, over changed files of 2 MiB or less.", "No changed file has a supported language, or a file could not be read."),
+    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files that landed at or before base_sha, within the 90 days before as_of. Paths match exactly, without rename following.", NO_HISTORY),
+    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct author emails on those commits.", NO_HISTORY),
     entry("feature.history.file_fix_commits_90d", "git_ancestors_of_base", "integer", "Those commits with a fix-shaped subject. Never read from label tables.", NO_HISTORY),
-    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Age of the most recently created changed file that already existed.", "Every changed file is new, or history could not be read."),
+    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Days since the newest changed file that already existed first landed.", "Every changed file is new, or history could not be read."),
     entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
-    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "The author's commits among ancestors of base_sha.", NO_HISTORY),
-    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "The author's commits to the changed files among those ancestors.", NO_HISTORY),
+    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "Commits among ancestors of base_sha from the email addresses on the author's commits in this PR.", NO_HISTORY),
+    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "Those commits that touch the changed files.", NO_HISTORY),
     entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", NO_AUTHOR),
     entry("feature.agent.marker_present", "github_events_until_as_of", "boolean", "The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.", NO_MARKER_EVIDENCE),
     { ...entry("feature.agent.tool_family", "github_events_until_as_of", "category", "The agent tool the markers name.", NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
@@ -2702,6 +2702,18 @@ function validateFeatureColumns(columns, options = {}) {
     const item = declared.get(column);
     if (!item) errors.push({ path: path4, code: "undeclared_column", message: `${column} is not in ${manifest.manifest_version}.` });
     else if (item.segment && !options.allowSegments) errors.push({ path: path4, code: "segment_in_arm_input", message: `${column} is a segment feature and cannot be an arm input.` });
+  });
+  return errors;
+}
+function validateEvidenceAsOf(events17, asOf) {
+  const cutoff = Date.parse(asOf);
+  if (!Number.isFinite(cutoff)) return [{ path: "as_of", code: "invalid_as_of", message: `${asOf} is not a timestamp.` }];
+  const errors = [];
+  events17.forEach((event17, index) => {
+    const path4 = `events[${index}]`;
+    const at2 = Date.parse(event17.at);
+    if (!Number.isFinite(at2)) errors.push({ path: path4, code: "invalid_event_timestamp", message: `${event17.source} has no readable timestamp.` });
+    else if (at2 > cutoff) errors.push({ path: path4, code: "event_after_as_of", message: `${event17.source} at ${event17.at} is after as_of ${asOf}.` });
   });
   return errors;
 }
@@ -11398,8 +11410,8 @@ var BASELINE_V0 = Object.freeze({
     if (features.build_ok === false) {
       z -= w.buildFailPenalty;
     }
-    const complexityDelta = features.complexity_delta ?? 0;
-    z -= w.complexityDeltaPenalty * clamp(complexityDelta, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
+    const complexityDelta2 = features.complexity_delta ?? 0;
+    z -= w.complexityDeltaPenalty * clamp(complexityDelta2, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
     const changeRequests = features.change_requests ?? 0;
     z -= w.changeRequestsPenalty * Math.min(changeRequests, w.changeRequestsSaturation);
     const reviewRounds = features.review_rounds ?? 0;
@@ -12178,655 +12190,18 @@ function runFeatureAudit(argv, io) {
   return { exitCode: errors.length === 0 ? 0 : 1 };
 }
 
-// src/corpus/cli.ts
-import { createHash as createHash4, randomBytes } from "node:crypto";
-import { chmodSync, closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync4, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
-import { dirname, join as join7, resolve as resolve5 } from "node:path";
-import { parseArgs as parseArgs3 } from "node:util";
-import { gzipSync, inflateRawSync } from "node:zlib";
+// src/corpus/feature-run.ts
+import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname, join as join8 } from "node:path";
 
-// src/corpus/calibration.ts
+// src/corpus/feature-capture.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join7 } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
+
+// src/corpus/features.ts
 import { createHash as createHash3 } from "node:crypto";
-
-// src/report/stats.ts
-function round42(value) {
-  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
-}
-function roundedInterval(low, high, value) {
-  let lo = round42(Math.max(0, Math.min(1, low)));
-  let hi = round42(Math.max(0, Math.min(1, high)));
-  if (value !== void 0) {
-    lo = Math.min(lo, round42(value));
-    hi = Math.max(hi, round42(value));
-  }
-  return { low: lo, high: hi };
-}
-function wilsonInterval(k, n, z = 1.959964) {
-  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
-    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
-  }
-  if (n === 0) return null;
-  const p = k / n;
-  const z2 = z * z;
-  const den = 1 + z2 / n;
-  const center = (p + z2 / (2 * n)) / den;
-  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
-  return roundedInterval(center - half, center + half, p);
-}
-function katzLogRatioInterval(k1, n1, k2, n2) {
-  for (const [k, n] of [[k1, n1], [k2, n2]]) {
-    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
-      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
-    }
-  }
-  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
-  const a = k1 + (corrected ? 0.5 : 0);
-  const b = n1 - k1 + (corrected ? 0.5 : 0);
-  const c = k2 + (corrected ? 0.5 : 0);
-  const d = n2 - k2 + (corrected ? 0.5 : 0);
-  const ratio3 = a / (a + b) / (c / (c + d));
-  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
-  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
-  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
-  const r = round42(ratio3);
-  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
-}
-function nearestRankQuartiles(sorted) {
-  if (!sorted.length) return null;
-  for (let i = 0; i < sorted.length; i++) {
-    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
-      throw new RangeError("nearestRankQuartiles requires finite ascending values");
-    }
-  }
-  const at2 = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
-  return [at2(0.25), at2(0.5), at2(0.75)];
-}
-function quartileOf(value, cuts) {
-  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
-    throw new RangeError("quartileOf requires finite values and ascending cuts");
-  }
-  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
-}
-
-// src/corpus/calibration.ts
-var CALIBRATION_SAMPLER_VERSION = "1.0.0";
-var CALIBRATION_STRATA = ["revert", "repair_reference", "regression_issue", "szz_strong", "szz_weak", "rejected", "negative"];
-function parseCalibrationPlan(raw) {
-  const plan = raw;
-  if (!plan || typeof plan !== "object") throw new Error("plan must be an object");
-  const allocation = plan.allocation;
-  if (!allocation || typeof allocation !== "object") throw new Error("plan.allocation is required");
-  for (const stratum of CALIBRATION_STRATA) {
-    if (!Number.isInteger(allocation[stratum]) || allocation[stratum] < 0) throw new Error(`plan.allocation.${stratum} must be a non-negative integer`);
-  }
-  const extra = Object.keys(allocation).filter((k) => !CALIBRATION_STRATA.includes(k));
-  if (extra.length) throw new Error(`plan.allocation has unknown strata: ${extra.join(", ")}`);
-  const num2 = (key, ok) => {
-    const v = plan[key];
-    if (typeof v !== "number" || !ok(v)) throw new Error(`plan.${key} is out of range`);
-    return v;
-  };
-  if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
-  return {
-    plan_version: plan.plan_version,
-    horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
-    allocation,
-    double_label_share: num2("double_label_share", (v) => v >= 0 && v <= 1),
-    human_audit_share: num2("human_audit_share", (v) => v > 0 && v <= 1),
-    labellers: parseLabellers(plan.labellers),
-    min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
-    szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
-    kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
-    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
-  };
-}
-function parseLabellers(raw) {
-  const l = raw;
-  if (!l || typeof l.a !== "string" || typeof l.b !== "string" || !l.a || !l.b) throw new Error("plan.labellers needs model IDs for a and b");
-  if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
-  return { a: l.a, b: l.b };
-}
-var sha256 = (...parts) => createHash3("sha256").update(parts.join("\0")).digest("hex");
-function seededOrder(list, key) {
-  return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
-}
-var STRATUM_PRIORITY = ["revert", "repair_reference", "regression_issue", "szz"];
-function classifyCalibrationRepo(input) {
-  const horizonSeconds = input.horizonDays * 86400;
-  const byOriginal = /* @__PURE__ */ new Map();
-  for (const c of input.candidates) {
-    if (c.lag_seconds > horizonSeconds) continue;
-    const list = byOriginal.get(c.original.pr_url) ?? [];
-    list.push({
-      candidate_id: c.candidate_id,
-      proxy: c.proxy,
-      status: c.status,
-      exclusion_code: c.exclusion_code,
-      fix_url: c.fix.pr_url ?? `https://github.com/${input.repo}/commit/${c.fix.sha}`,
-      lag_days: Math.round(c.lag_seconds / 86400 * 10) / 10,
-      blamed_lines: c.evidence.find((e) => e.kind === "blamed_lines")?.count ?? null,
-      revert_reason: c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? null
-    });
-    byOriginal.set(c.original.pr_url, list);
-  }
-  const units = [];
-  for (const row of input.correctiveRows) {
-    if (row.horizon_days !== input.horizonDays || row.corrective === null) continue;
-    const candidates = (byOriginal.get(row.prUrl) ?? []).sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
-    const accepted2 = new Set(row.repair_pair_ids);
-    const acceptedCandidates = candidates.filter((c) => accepted2.has(c.candidate_id));
-    const proxies = [...new Set(acceptedCandidates.map((c) => c.proxy))].filter((p) => ADMITTED_PROXIES.includes(p)).sort();
-    let stratum;
-    if (row.corrective) {
-      const top = STRATUM_PRIORITY.find((p) => proxies.includes(p));
-      if (!top) throw new Error(`${row.prUrl}: corrective row without an accepted pair within ${input.horizonDays} days`);
-      if (top === "szz") {
-        const lines = Math.max(...acceptedCandidates.filter((c) => c.proxy === "szz").map((c) => c.blamed_lines ?? 0));
-        stratum = lines >= input.szzStrongMinLines ? "szz_strong" : "szz_weak";
-      } else stratum = top;
-    } else stratum = candidates.length ? "rejected" : "negative";
-    units.push({ repo: input.repo, pr_url: row.prUrl, stratum, proxies, candidates });
-  }
-  return units;
-}
-function drawCalibrationSample(units, plan, seed) {
-  const items = [];
-  const cells = /* @__PURE__ */ new Map();
-  const shortfalls = [];
-  for (const stratum of CALIBRATION_STRATA) {
-    const byRepo = /* @__PURE__ */ new Map();
-    for (const u of units) {
-      if (u.stratum !== stratum) continue;
-      const list = byRepo.get(u.repo);
-      if (list) list.push(u);
-      else byRepo.set(u.repo, [u]);
-    }
-    for (const [repo, list] of byRepo) {
-      byRepo.set(repo, seededOrder(list, (u) => sha256(seed, stratum, u.pr_url)));
-      cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
-    }
-    const repos = seededOrder([...byRepo.keys()], (repo) => sha256(seed, "repo", stratum, repo));
-    const want = plan.allocation[stratum];
-    const picked = [];
-    for (let round = 0; picked.length < want; round++) {
-      let any = false;
-      for (const repo of repos) {
-        const unit = byRepo.get(repo)[round];
-        if (!unit || picked.length >= want) continue;
-        picked.push(unit);
-        cells.get(`${repo}\0${stratum}`).sampled++;
-        any = true;
-      }
-      if (!any) break;
-    }
-    if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
-    const doubles = new Set(
-      seededOrder(picked, (u) => sha256(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
-    );
-    const audited = new Set(
-      seededOrder(picked, (u) => sha256(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
-    );
-    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
-  }
-  return {
-    items: seededOrder(items, (i) => sha256(seed, "order", i.item_id)),
-    cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
-    shortfalls
-  };
-}
-var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "related_prs", "corrective", "cause_code", "exclusion_code", "notes"];
-var csvCell = (value) => /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-function renderLabelSheet(items, related = /* @__PURE__ */ new Map(), filled = /* @__PURE__ */ new Map()) {
-  const rows = items.map((item) => {
-    const row = {
-      item_id: item.item_id,
-      pr_url: item.pr_url,
-      candidate_fixes: [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "),
-      related_prs: (related.get(item.item_id) ?? []).join(" "),
-      ...filled.get(item.item_id)
-    };
-    return SHEET_COLUMNS.map((c) => row[c] ?? "");
-  });
-  return `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
-`;
-}
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cell2 = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        cell2 += '"';
-        i++;
-      } else if (ch === '"') quoted = false;
-      else cell2 += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ",") {
-      row.push(cell2);
-      cell2 = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell2);
-      rows.push(row);
-      row = [];
-      cell2 = "";
-    } else cell2 += ch;
-  }
-  if (cell2 || row.length) {
-    row.push(cell2);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((c) => c.trim()));
-}
-function parseLabelSheet(text, items) {
-  const [header, ...rows] = parseCsv(text);
-  const col = (name) => header?.indexOf(name) ?? -1;
-  const errors = [];
-  const missing = ["item_id", "corrective", "cause_code", "exclusion_code"].filter((c) => col(c) < 0);
-  if (missing.length) return { labels: /* @__PURE__ */ new Map(), unlabelled: [], errors: [`missing columns: ${missing.join(", ")}`] };
-  const labels = /* @__PURE__ */ new Map();
-  const unlabelled = [];
-  const causes = CAUSE_CODES;
-  const exclusions = HUMAN_EXCLUSION_CODES;
-  for (const r of rows) {
-    const get = (name) => (r[col(name)] ?? "").trim().toLowerCase();
-    const id2 = (r[col("item_id")] ?? "").trim();
-    const item = items.get(id2);
-    if (!item) {
-      errors.push(`${id2 || "(blank)"}: not in the sample`);
-      continue;
-    }
-    if (labels.has(id2)) {
-      errors.push(`${id2}: labelled twice on one sheet`);
-      continue;
-    }
-    const verdict = get("corrective");
-    const cause = get("cause_code");
-    const exclusion = get("exclusion_code") || null;
-    if (!verdict) {
-      unlabelled.push(id2);
-      continue;
-    }
-    if (!CALIBRATION_VERDICTS.includes(verdict)) {
-      errors.push(`${id2}: corrective must be yes, no or unclear, not "${verdict}"`);
-      continue;
-    }
-    if (verdict === "yes") {
-      if (!causes.includes(cause) || cause === "not_rework") errors.push(`${id2}: a yes needs a cause code other than not_rework`);
-      if (exclusion) errors.push(`${id2}: a yes takes no exclusion code`);
-      labels.set(id2, { verdict, cause_code: cause, exclusion_code: null });
-    } else if (verdict === "no") {
-      if (cause && cause !== "not_rework") errors.push(`${id2}: a no takes cause not_rework (or blank)`);
-      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
-      if (!exclusion && item.candidates.length) errors.push(`${id2}: a no on an item with candidate fixes needs an exclusion code`);
-      labels.set(id2, { verdict, cause_code: "not_rework", exclusion_code: exclusion });
-    } else {
-      if (cause && cause !== "unclear") errors.push(`${id2}: an unclear takes cause unclear (or blank)`);
-      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
-      labels.set(id2, { verdict: "unclear", cause_code: "unclear", exclusion_code: exclusion });
-    }
-  }
-  return { labels, unlabelled, errors };
-}
-function cohensKappa(pairs) {
-  if (!pairs.length) return null;
-  const n = pairs.length;
-  const a = /* @__PURE__ */ new Map();
-  const b = /* @__PURE__ */ new Map();
-  let agree = 0;
-  for (const [x, y] of pairs) {
-    if (x === y) agree++;
-    a.set(x, (a.get(x) ?? 0) + 1);
-    b.set(y, (b.get(y) ?? 0) + 1);
-  }
-  const po = agree / n;
-  let pe = 0;
-  for (const [k, count] of a) pe += count / n * ((b.get(k) ?? 0) / n);
-  if (pe === 1) return null;
-  return round43((po - pe) / (1 - pe));
-}
-function kappaWithCodes(pairs, codes, floor) {
-  const per_code = {};
-  for (const code of codes) {
-    const used = pairs.filter(([x, y]) => x === code || y === code).length;
-    const kappa = used ? cohensKappa(pairs.map(([x, y]) => [String(x === code), String(y === code)])) : null;
-    per_code[code] = { used, kappa, verdict: !used ? "not_observed" : kappa === null ? "undefined" : kappa >= floor ? "pass" : "below_floor" };
-  }
-  return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
-}
-function agreementBetween(items, x, y, floor) {
-  const both = items.filter((i) => x.has(i.item_id) && y.has(i.item_id));
-  const pairs = (pick) => both.flatMap((i) => {
-    const a = pick(x.get(i.item_id));
-    const b = pick(y.get(i.item_id));
-    return a !== null && b !== null ? [[a, b]] : [];
-  });
-  return {
-    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, floor),
-    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, floor),
-    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, floor)
-  };
-}
-var round43 = (x) => Math.round(x * 1e4) / 1e4;
-function definitionVariants(plan) {
-  const strongSzz = (c) => c.proxy !== "szz" || (c.blamed_lines ?? 0) >= plan.szz_strong_min_lines;
-  const notInternal = (c) => c.proxy !== "revert" || c.revert_reason !== "internal_build";
-  return [
-    { name: "cr-0.1.0", description: "all admitted proxies (P1\u2013P4)", keep: () => true },
-    { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
-    { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
-    { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
-    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
-  ];
-}
-var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
-var precisionOf = (positive) => (rows) => {
-  let num2 = 0;
-  let den = 0;
-  for (const r of rows) {
-    if (!positive(r.item)) continue;
-    den += r.weight;
-    if (r.label.verdict === "yes") num2 += r.weight;
-  }
-  return den ? num2 / den : null;
-};
-var recallOf = (positive) => (rows) => {
-  let num2 = 0;
-  let den = 0;
-  for (const r of rows) {
-    if (r.label.verdict !== "yes") continue;
-    den += r.weight;
-    if (positive(r.item)) num2 += r.weight;
-  }
-  return den ? num2 / den : null;
-};
-function prng(seed) {
-  let a = parseInt(sha256(seed, "bootstrap").slice(0, 8), 16) >>> 0;
-  return () => {
-    a = a + 1831565813 >>> 0;
-    let t = a;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-function bootstrap(rows, estimator, relevant, seed, resamples) {
-  const estimate = estimator(rows);
-  const n = rows.filter(relevant).length;
-  if (estimate === null) return { estimate: null, ci95: null, n };
-  const cells = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    const key = `${r.item.repo}\0${r.item.stratum}`;
-    const cell2 = cells.get(key);
-    if (cell2) cell2.push(r);
-    else cells.set(key, [r]);
-  }
-  const groups = [...cells.values()];
-  const rand = prng(seed);
-  const values = [];
-  for (let b = 0; b < resamples; b++) {
-    const resampled = [];
-    for (const g of groups) for (let i = 0; i < g.length; i++) resampled.push(g[Math.floor(rand() * g.length)]);
-    const v = estimator(resampled);
-    if (v !== null) values.push(v);
-  }
-  values.sort((x, y) => x - y);
-  const at2 = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
-  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at2(0.025)), high: round43(at2(0.975)) } : null, n };
-}
-function scoreCalibration(input) {
-  const { plan, items, sheetA, sheetB, seed } = input;
-  const resamples = input.resamples ?? 2e3;
-  const decided2 = (id2) => {
-    const l = sheetA.get(id2);
-    return l && l.verdict !== "unclear" ? l : null;
-  };
-  const decidedPerCell = /* @__PURE__ */ new Map();
-  for (const item of items) if (decided2(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
-  const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
-  const rows = items.flatMap((item) => {
-    const label2 = decided2(item.item_id);
-    const key = `${item.repo}\0${item.stratum}`;
-    return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
-  });
-  const unrepresented = input.cells.filter((c) => !decidedPerCell.get(`${c.repo}\0${c.stratum}`)).reduce((s, c) => s + c.population, 0);
-  const est = (name, estimator, relevant, subset = rows) => bootstrap(subset, estimator, relevant, `${seed}\0${name}`, resamples);
-  const strata = CALIBRATION_STRATA.map((stratum) => {
-    const inStratum = items.filter((i) => i.stratum === stratum);
-    const count = (v) => inStratum.filter((i) => sheetA.get(i.item_id)?.verdict === v).length;
-    const yes = count("yes");
-    const no = count("no");
-    return {
-      stratum,
-      sampled: inStratum.length,
-      yes,
-      no,
-      unclear: count("unclear"),
-      unlabelled: inStratum.filter((i) => !sheetA.has(i.item_id)).length,
-      yes_rate: yes + no ? round43(yes / (yes + no)) : null,
-      yes_rate_ci95: wilsonInterval(yes, yes + no)
-    };
-  });
-  const proxies = {};
-  for (const proxy of ADMITTED_PROXIES) {
-    const fired = (item) => item.proxies.includes(proxy);
-    proxies[proxy] = {
-      precision: est(`p:${proxy}`, precisionOf(fired), (r) => fired(r.item)),
-      recall: est(`r:${proxy}`, recallOf(fired), (r) => r.label.verdict === "yes")
-    };
-  }
-  const definitions = definitionVariants(plan).map((d) => {
-    const positive = (item) => accepted(item).some(d.keep);
-    return {
-      name: d.name,
-      description: d.description,
-      precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
-      recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
-    };
-  });
-  let chosen = null;
-  for (const d of definitions) {
-    if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
-    if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
-  }
-  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha256(seed, "pseudonym", repo));
-  const anyProxy = (item) => item.proxies.length > 0;
-  const repos = repoNames.map((repo, i) => {
-    const subset = rows.filter((r) => r.item.repo === repo);
-    return {
-      repo,
-      pseudonym: `R${i + 1}`,
-      sampled: items.filter((it) => it.repo === repo).length,
-      precision: est(`rp:${repo}`, precisionOf(anyProxy), (r) => anyProxy(r.item), subset),
-      recall: est(`rr:${repo}`, recallOf(anyProxy), (r) => r.label.verdict === "yes", subset)
-    };
-  });
-  const rejected = items.filter((i) => i.stratum === "rejected");
-  const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
-  const rejDecided = rejected.filter((i) => decided2(i.item_id)).length;
-  const by_code = {};
-  for (const item of rejected) {
-    const label2 = sheetA.get(item.item_id);
-    if (label2?.verdict !== "no") continue;
-    const human = label2.exclusion_code ?? "(none)";
-    for (const auto of new Set(item.candidates.map((c) => c.exclusion_code ?? "(accepted)"))) {
-      by_code[auto] ??= {};
-      by_code[auto][human] = (by_code[auto][human] ?? 0) + 1;
-    }
-  }
-  const linkage_error = {};
-  for (const proxy of ADMITTED_PROXIES) {
-    const nos = items.filter((i) => i.proxies.includes(proxy) && sheetA.get(i.item_id)?.verdict === "no");
-    const linkage = nos.filter((i) => sheetA.get(i.item_id)?.exclusion_code === "linkage_error").length;
-    linkage_error[proxy] = { no: nos.length, linkage_error: linkage, rate: nos.length ? round43(linkage / nos.length) : null };
-  }
-  const raw = {};
-  const weighted = {};
-  let yesWeight = 0;
-  for (const item of items) {
-    const label2 = sheetA.get(item.item_id);
-    if (label2?.verdict === "yes") raw[label2.cause_code] = (raw[label2.cause_code] ?? 0) + 1;
-  }
-  for (const r of rows) {
-    if (r.label.verdict !== "yes") continue;
-    weighted[r.label.cause_code] = (weighted[r.label.cause_code] ?? 0) + r.weight;
-    yesWeight += r.weight;
-  }
-  const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round43(v / yesWeight)]));
-  const agreement = agreementBetween(items, sheetA, sheetB, plan.kappa_floor);
-  return {
-    sampler_version: CALIBRATION_SAMPLER_VERSION,
-    plan,
-    items: items.length,
-    labelled: sheetA.size,
-    unlabelled: items.length - sheetA.size,
-    unclear: [...sheetA.values()].filter((l) => l.verdict === "unclear").length,
-    unrepresented_population: unrepresented,
-    strata,
-    proxies,
-    definitions,
-    chosen_definition: chosen?.name ?? null,
-    repos,
-    rejections: { wrongly_rejected: { yes: rejYes, decided: rejDecided, rate: rejDecided ? round43(rejYes / rejDecided) : null, ci95: wilsonInterval(rejYes, rejDecided) }, by_code },
-    linkage_error,
-    causes: { raw, weighted_share },
-    agreement
-  };
-}
-function scoreCalibrationRun(input) {
-  const { plan, items, cells, sheets, seed, resamples } = input;
-  const model = scoreCalibration({ plan, items, cells, sheetA: sheets.a, sheetB: sheets.b, seed, resamples });
-  const audited = items.filter((i) => i.audit);
-  const human = scoreCalibration({ plan, items: audited, cells, sheetA: sheets.h, sheetB: sheets.a, seed, resamples });
-  const kappa = human.agreement.corrective.kappa;
-  const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
-  const primary = models_stand_in ? model : human;
-  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
-  return {
-    plan,
-    model,
-    human,
-    human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
-    models_stand_in,
-    primary: models_stand_in ? "model" : "human",
-    chosen_definition: primary.chosen_definition,
-    gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
-  };
-}
-var pct = (x) => x === null || x === void 0 ? "\u2014" : `${(x * 100).toFixed(1)}%`;
-var estCell = (e) => e.estimate === null ? "\u2014" : `${pct(e.estimate)} (${pct(e.ci95?.low)}\u2013${pct(e.ci95?.high)})`;
-var kappaCell = (k) => k === null ? "\u2014" : k.toFixed(2);
-function renderAgreement(lines, title, agreement, floor) {
-  lines.push("", `### ${title} (floor \u03BA \u2265 ${floor})`, "");
-  for (const [field, k] of Object.entries(agreement)) {
-    lines.push(`**${field}:** \u03BA = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, "", "| Code | Used | \u03BA | Verdict |", "| --- | --- | --- | --- |");
-    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
-    lines.push("");
-  }
-}
-function renderEstimates(lines, r) {
-  lines.push("", `${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos`);
-  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by these estimates.`);
-  lines.push("", "### Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
-  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
-  lines.push("", `Pick under the plan (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
-  lines.push("", "### Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
-  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
-  lines.push("", "### Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
-  for (const st of r.strata) lines.push(`| ${st.stratum} | ${st.sampled} | ${st.yes} | ${st.no} | ${st.unclear} | ${pct(st.yes_rate)} (${pct(st.yes_rate_ci95?.low)}\u2013${pct(st.yes_rate_ci95?.high)}) |`);
-  lines.push("", "### Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
-  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
-  const w = r.rejections.wrongly_rejected;
-  lines.push("", "### Rejections", "", `Wrongly rejected (judged corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
-  const labelCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
-  if (labelCodes.length) {
-    lines.push("", `| Automatic code \\ labelled code | ${labelCodes.join(" | ")} |`, `| --- |${labelCodes.map(() => " --- |").join("")}`);
-    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${labelCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
-  }
-  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
-  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
-  lines.push("", "### Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
-  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
-}
-function renderCalibrationMarkdown(run) {
-  const { plan, model, human } = run;
-  const lines = [];
-  const complete = model.unlabelled === 0 && human.unlabelled === 0;
-  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
-  lines.push(`Horizon ${plan.horizon_days} days \xB7 plan ${plan.plan_version} \xB7 sampler ${CALIBRATION_SAMPLER_VERSION} \xB7 labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
-  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
-  const k = human.agreement.corrective.kappa;
-  lines.push("", "## Verdict", "");
-  lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
-  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
-  lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
-  lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
-  renderEstimates(lines, model);
-  lines.push("", `## Human audit${run.primary === "human" ? " (primary)" : ""}`);
-  renderEstimates(lines, human);
-  lines.push("", "## Agreement");
-  renderAgreement(lines, "Person vs model A (audit subset)", human.agreement, plan.kappa_floor);
-  renderAgreement(lines, "Person vs model B (audit subset)", run.human_vs_b, plan.kappa_floor);
-  renderAgreement(lines, "Model A vs model B", model.agreement, plan.kappa_floor);
-  return `${lines.join("\n").trimEnd()}
-`;
-}
-
-// src/corpus/calibration-evidence.ts
-var EVIDENCE_DIFF_MAX_CHARS = 6e4;
-var EVIDENCE_RELATED_MAX = 15;
-var EVIDENCE_RELATED_MAX_FILES = 50;
-function git(runGit3, args) {
-  const result = runGit3(args);
-  if (result.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim().split("\n").pop()}`);
-  return result.stdout;
-}
-function cap(diff) {
-  return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
-[diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
-}
-function change(runGit3, url, from, to, pr2) {
-  const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
-  return {
-    url,
-    title: pr2?.title ?? null,
-    body: pr2?.body ?? null,
-    merged_at: pr2?.merged_at ?? null,
-    files,
-    ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
-  };
-}
-function buildItemEvidence(item, context, runGit3) {
-  const pr2 = context.prs.get(item.pr_url);
-  if (!pr2) throw new Error(`${item.item_id}: original not in the enumeration cache`);
-  const original = change(runGit3, pr2.pr_url, pr2.base_sha, pr2.merge_sha, pr2);
-  const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
-  const fixes = fixUrls.map((url) => {
-    const fixPr = context.prs.get(url);
-    if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
-    const sha2 = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
-    if (!sha2) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
-    return change(runGit3, url, `${sha2}^`, sha2, void 0);
-  });
-  const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
-  const since = new Date(pr2.merged_at);
-  const until = new Date(since.getTime() + context.horizonDays * 864e5);
-  const related = [];
-  if (searched.length) {
-    const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
-    const seen = /* @__PURE__ */ new Set([pr2.pr_url, ...fixUrls]);
-    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr2.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
-    for (const r of later) {
-      if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
-      seen.add(r.pr_url);
-      related.push({ url: r.pr_url, title: r.title, merged_at: r.merged_at });
-    }
-  }
-  return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
-}
 
 // src/attribution/agent-markers.ts
 var BOT_SUFFIX = String.raw`(?:\[bot\])?`;
@@ -12964,6 +12339,23 @@ function detectAgentMarkers(input) {
     }
     if (marked) markedCommits += 1;
   }
+  let markedByLanding = false;
+  if (input.landingMessage) {
+    for (const [, name = "", email = ""] of input.landingMessage.matchAll(CO_AUTHOR_TRAILER2)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      coAuthorTrailer = true;
+      markedByLanding = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(input.landingMessage)) {
+      families.add(family);
+      signature = true;
+      markedByLanding = true;
+    }
+  }
   const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? "");
   for (const family of bodyFamilies) {
     families.add(family);
@@ -12972,23 +12364,344 @@ function detectAgentMarkers(input) {
   const commitsKnown = input.commits !== null;
   const specific = [...families].filter((family) => family !== "other");
   const named = specific.length > 1 ? "multiple" : specific[0] ?? (families.has("other") ? "other" : "none");
-  const present = families.size > 0 ? true : commitsKnown && !input.bodyUnavailable ? false : null;
+  const present2 = families.size > 0 ? true : commitsKnown && !input.bodyUnavailable ? false : null;
   const models = [...modelIds];
   return {
-    present,
-    family: present === null ? null : named,
+    present: present2,
+    family: present2 === null ? null : named,
     markedCommitShare: !commitsKnown ? null : input.commits.length === 0 ? 0 : markedCommits / input.commits.length,
     modelIds: models,
     exactModel: models.length === 1 ? models[0] : null,
     markedByAccount: accountFamily !== null,
     markedByBranch: branchFamily !== null,
-    markedByCommit: commitsKnown ? markedCommits > 0 : null,
+    markedByCommit: markedByLanding || markedCommits > 0 ? true : commitsKnown ? false : null,
     markedByBody: input.bodyUnavailable ? null : bodyFamilies.length > 0,
     coAuthorTrailer,
     signature,
     dependencyBot: isDependencyBotLogin(input.authorLogin)
   };
 }
+function agentMarkerColumns(markers) {
+  return {
+    "feature.agent.marker_present": markers.present,
+    "feature.agent.tool_family": markers.family,
+    "feature.agent.marked_commit_share": markers.markedCommitShare,
+    "segment.agent.exact_model": markers.exactModel,
+    "segment.agent.marked_by_account": markers.markedByAccount,
+    "segment.agent.marked_by_branch": markers.markedByBranch,
+    "segment.agent.marked_by_commit": markers.markedByCommit,
+    "segment.agent.marked_by_body": markers.markedByBody,
+    "segment.author.dependency_bot": markers.dependencyBot
+  };
+}
+
+// src/corpus/features.ts
+var MANIFEST_COLUMNS = REWORK_RISK_FEATURE_MANIFEST.entries.map((entry2) => entry2.name);
+var CI_FAILED_STATES = ["FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"];
+var sha256 = (text) => createHash3("sha256").update(text).digest("hex");
+var hours = (ms2) => Number((ms2 / 36e5).toFixed(4));
+function ms(at2) {
+  return Date.parse(at2);
+}
+function byTime(events17) {
+  return events17.map((event17, index) => ({ event: event17, index })).sort((a, b) => ms(a.event.at) - ms(b.event.at) || a.index - b.index).map(({ event: event17 }) => event17);
+}
+function titleAt(evidence3, asOf) {
+  const renames = byTime(evidence3.renames);
+  if (renames.length === 0) return evidence3.title;
+  const cutoff = ms(asOf);
+  const seen = renames.filter((rename) => ms(rename.at) <= cutoff);
+  return seen.at(-1)?.to ?? renames[0].from;
+}
+function bodyAt(evidence3, asOf) {
+  if (evidence3.body_edits.length === 0) return evidence3.body ?? "";
+  const cutoff = ms(asOf);
+  return byTime(evidence3.body_edits).filter((edit) => ms(edit.at) <= cutoff).at(-1)?.body ?? null;
+}
+function labelsAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const labels = /* @__PURE__ */ new Set();
+  for (const event17 of byTime(evidence3.label_events)) {
+    if (ms(event17.at) > cutoff) continue;
+    if (event17.label === null) return null;
+    if (event17.action === "added") labels.add(event17.label);
+    else labels.delete(event17.label);
+  }
+  return [...labels].sort();
+}
+function reviewsAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const dismissedLater = new Map(
+    evidence3.dismissals.filter((event17) => ms(event17.at) > cutoff && event17.review_id).map((event17) => [event17.review_id, event17.previous_state])
+  );
+  return evidence3.reviews.filter((review) => review.submitted_at !== null && ms(review.submitted_at) <= cutoff).map((review) => ({
+    state: dismissedLater.get(review.id) ?? review.state,
+    submitted_at: review.submitted_at,
+    author: review.author
+  }));
+}
+function assertReadableEvidence(evidence3, ci2, asOf) {
+  const events17 = [
+    { source: "created_at", at: evidence3.created_at },
+    ...evidence3.reviews.flatMap((review) => review.submitted_at ? [{ source: "review", at: review.submitted_at }] : []),
+    ...evidence3.dismissals.map((event17) => ({ source: "dismissal", at: event17.at })),
+    ...evidence3.label_events.map((event17) => ({ source: "label_event", at: event17.at })),
+    ...evidence3.renames.map((event17) => ({ source: "rename", at: event17.at })),
+    ...evidence3.body_edits.map((event17) => ({ source: "body_edit", at: event17.at })),
+    ...(ci2?.contexts ?? []).flatMap((context) => context.at ? [{ source: "ci", at: context.at }] : [])
+  ];
+  const errors = validateEvidenceAsOf(events17, asOf).filter((error) => error.code !== "event_after_as_of");
+  if (errors.length) throw new Error(`pr evidence: ${errors[0].message}`);
+}
+function processColumns(evidence3, ci2, asOf) {
+  const empty = {
+    "feature.process.review_count": null,
+    "feature.process.approvals": null,
+    "feature.process.changes_requested": null,
+    "feature.process.distinct_reviewers": null,
+    "feature.process.hours_open": null,
+    "feature.process.hours_to_first_review": null,
+    "feature.process.github_label_count": null,
+    "feature.process.title_chars": null,
+    "feature.process.body_chars": null,
+    "feature.content.title_sha256": null,
+    "feature.content.body_sha256": null
+  };
+  const ciColumns = {
+    "segment.ci.checks_completed_by_merge": null,
+    "segment.ci.checks_failed_by_merge": null
+  };
+  if (ci2) {
+    const cutoff = ms(asOf);
+    const finished = ci2.contexts.filter((context) => context.at !== null && ms(context.at) <= cutoff);
+    if (finished.length > 0) {
+      ciColumns["segment.ci.checks_completed_by_merge"] = finished.length;
+      ciColumns["segment.ci.checks_failed_by_merge"] = finished.filter((context) => context.failed).length;
+    }
+  }
+  if (!evidence3) return { ...empty, ...ciColumns };
+  const reviews = reviewsAt(evidence3, asOf);
+  const created = ms(evidence3.created_at);
+  const open = ms(asOf) - created;
+  const first = reviews.length ? Math.min(...reviews.map((review) => ms(review.submitted_at))) : null;
+  const labels = labelsAt(evidence3, asOf);
+  const title = titleAt(evidence3, asOf);
+  const body = bodyAt(evidence3, asOf);
+  return {
+    "feature.process.review_count": reviews.length,
+    "feature.process.approvals": reviews.filter((review) => review.state === "APPROVED").length,
+    "feature.process.changes_requested": reviews.filter((review) => review.state === "CHANGES_REQUESTED").length,
+    "feature.process.distinct_reviewers": new Set(reviews.flatMap((review) => review.author ? [review.author] : [])).size,
+    "feature.process.hours_open": open >= 0 ? hours(open) : null,
+    "feature.process.hours_to_first_review": first !== null && first >= created ? hours(first - created) : null,
+    "feature.process.github_label_count": labels ? labels.length : null,
+    "feature.process.title_chars": title.length,
+    "feature.process.body_chars": body === null ? null : body.length,
+    "feature.content.title_sha256": sha256(title),
+    "feature.content.body_sha256": body === null ? null : sha256(body),
+    ...ciColumns
+  };
+}
+var MERGE_SUBJECT = /^Merge (?:branch|remote-tracking branch|pull request|tag|commit)\b|^Merge .+ into .+/;
+function markerCommits(evidence3) {
+  if (!evidence3) return null;
+  return evidence3.commits.filter((commit) => !MERGE_SUBJECT.test(commit.message)).map((commit) => ({
+    message: commit.message,
+    ...commit.author_name ? { authorName: commit.author_name } : {},
+    ...commit.author_email ? { authorEmail: commit.author_email } : {}
+  }));
+}
+function extractPrFeatures(input) {
+  const { record, evidence: evidence3, ci: ci2, git: git2 } = input;
+  const asOf = record.merged_at;
+  if (evidence3) {
+    assertReadableEvidence(evidence3, ci2, asOf);
+    if (evidence3.pr_number !== record.pr_number) throw new Error(`evidence is for PR ${evidence3.pr_number}, not ${record.pr_number}`);
+    if (evidence3.merged_at !== null && ms(evidence3.merged_at) !== ms(asOf)) throw new Error(`PR ${record.pr_number}: GitHub's merge time disagrees with the corpus record`);
+  } else if (ci2) {
+    assertReadableEvidence({ pr_number: record.pr_number, created_at: asOf, merged_at: null, title: "", body: null, head_ref: null, reviews: [], dismissals: [], label_events: [], renames: [], body_edits: [], commits: [] }, ci2, asOf);
+  }
+  const body = evidence3 ? bodyAt(evidence3, asOf) : null;
+  const markers = detectAgentMarkers({
+    authorLogin: record.author_login,
+    authorType: record.author_type,
+    headRef: evidence3?.head_ref ?? null,
+    commits: markerCommits(evidence3),
+    body,
+    ...body === null ? { bodyUnavailable: true } : {},
+    ...input.landingMessage ? { landingMessage: input.landingMessage } : {}
+  });
+  const features = {
+    ...Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, null])),
+    "feature.shape.member_commits": record.member_commits,
+    "feature.shape.diff_uncertain": record.batched,
+    "feature.author.is_bot": record.author_type === null ? null : record.author_type === "Bot",
+    ...git2,
+    ...processColumns(evidence3, ci2, asOf),
+    ...agentMarkerColumns(markers)
+  };
+  const undeclared = Object.keys(features).filter((column) => !MANIFEST_COLUMNS.includes(column));
+  if (undeclared.length) throw new Error(`undeclared feature columns: ${undeclared.join(", ")}`);
+  return {
+    manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+    repo: record.repo,
+    pr_number: record.pr_number,
+    merge_sha: record.merge_sha,
+    base_sha: record.base_sha,
+    landed_by: record.landed_by,
+    as_of: asOf,
+    as_of_basis: evidence3 === null ? null : evidence3.merged_at !== null ? "github_merged_at" : "landing_commit_time",
+    features: Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, features[column] ?? null]))
+  };
+}
+
+// src/corpus/feature-capture.ts
+var EVIDENCE_BATCH_SIZE = 25;
+var CI_CAPTURE_FROM = "2025-07-01T00:00:00Z";
+var PAGE = "pageInfo{ hasNextPage endCursor }";
+var REVIEWS = `${PAGE} nodes{ id state submittedAt author{ login } }`;
+var TIMELINE = `${PAGE} nodes{ __typename
+  ... on LabeledEvent{ createdAt label{ name } }
+  ... on UnlabeledEvent{ createdAt label{ name } }
+  ... on RenamedTitleEvent{ createdAt previousTitle currentTitle }
+  ... on ReviewDismissedEvent{ createdAt previousReviewState review{ id } } }`;
+var TIMELINE_TYPES = "itemTypes:[LABELED_EVENT,UNLABELED_EVENT,RENAMED_TITLE_EVENT,REVIEW_DISMISSED_EVENT]";
+var EDITS = `${PAGE} nodes{ editedAt diff }`;
+var COMMITS = `${PAGE} nodes{ commit{ oid message author{ name email user{ login } } } }`;
+var CONTEXTS = `${PAGE} nodes{ __typename ... on CheckRun{ completedAt conclusion } ... on StatusContext{ createdAt state } }`;
+var EVIDENCE_FIELDS = `number createdAt mergedAt title body headRefName
+  reviews(first:100){ ${REVIEWS} }
+  timelineItems(first:100,${TIMELINE_TYPES}){ ${TIMELINE} }
+  userContentEdits(first:100){ ${EDITS} }
+  commits(first:100){ ${COMMITS} }`;
+var CI_FIELDS = `number commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100){ ${CONTEXTS} } } } } }`;
+var FOLLOW_UPS = {
+  reviews: { args: "", nodes: REVIEWS },
+  timelineItems: { args: `${TIMELINE_TYPES},`, nodes: TIMELINE },
+  userContentEdits: { args: "", nodes: EDITS },
+  commits: { args: "", nodes: COMMITS }
+};
+function runQuery(graphql, repo, fields) {
+  const [owner, name] = repo.split("/");
+  const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
+  return data.repository;
+}
+function drainConnections(pr2, repo, graphql) {
+  for (const key of Object.keys(FOLLOW_UPS)) {
+    const connection = pr2[key];
+    let info = connection.pageInfo;
+    while (info.hasNextPage) {
+      const follow = FOLLOW_UPS[key];
+      const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ ${key}(${follow.args}first:100,after:${JSON.stringify(info.endCursor)}){ ${follow.nodes} } }`);
+      const next = page["pr"]?.[key];
+      if (!next) throw new Error(`PR ${pr2.number}: ${key} page disappeared`);
+      connection.nodes = [...connection.nodes ?? [], ...next.nodes ?? []];
+      info = next.pageInfo;
+    }
+  }
+}
+var present = (connection) => (connection.nodes ?? []).filter((node) => node !== null);
+function normalizeEvidence(pr2) {
+  const timeline = present(pr2["timelineItems"]);
+  return {
+    pr_number: pr2.number,
+    created_at: pr2["createdAt"],
+    merged_at: pr2["mergedAt"] ?? null,
+    title: pr2["title"],
+    body: pr2["body"] ?? null,
+    head_ref: pr2["headRefName"] ?? null,
+    reviews: present(pr2["reviews"]).map((review) => ({ id: review.id, state: review.state, submitted_at: review.submittedAt, author: review.author?.login ?? null })),
+    dismissals: timeline.filter((event17) => event17.__typename === "ReviewDismissedEvent").map((event17) => ({ at: event17.createdAt, previous_state: event17.previousReviewState ?? null, review_id: event17.review?.id ?? null })),
+    label_events: timeline.filter((event17) => event17.__typename === "LabeledEvent" || event17.__typename === "UnlabeledEvent").map((event17) => ({ at: event17.createdAt, action: event17.__typename === "LabeledEvent" ? "added" : "removed", label: event17.label?.name ?? null })),
+    renames: timeline.filter((event17) => event17.__typename === "RenamedTitleEvent").map((event17) => ({ at: event17.createdAt, from: event17.previousTitle ?? "", to: event17.currentTitle ?? "" })),
+    body_edits: present(pr2["userContentEdits"]).map((edit) => ({ at: edit.editedAt, body: edit.diff })),
+    commits: present(pr2["commits"]).map(({ commit }) => ({ oid: commit.oid, message: commit.message, author_name: commit.author?.name ?? null, author_email: commit.author?.email ?? null, author_login: commit.author?.user?.login ?? null }))
+  };
+}
+function normalizeCi(pr2) {
+  const head = pr2["commits"].nodes?.[0];
+  const rollup = head?.commit.statusCheckRollup;
+  if (!rollup) return null;
+  return {
+    pr_number: pr2.number,
+    contexts: present(rollup.contexts).map((context) => ({
+      at: context.completedAt ?? context.createdAt ?? null,
+      failed: CI_FAILED_STATES.includes(context.conclusion ?? context.state ?? "")
+    }))
+  };
+}
+function drainContexts(pr2, repo, graphql) {
+  const rollup = pr2["commits"].nodes?.[0]?.commit.statusCheckRollup;
+  if (!rollup) return;
+  let info = rollup.contexts.pageInfo;
+  while (info.hasNextPage) {
+    const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100,after:${JSON.stringify(info.endCursor)}){ ${CONTEXTS} } } } } } }`);
+    const next = page["pr"]?.["commits"]?.nodes[0]?.commit.statusCheckRollup?.contexts;
+    if (!next) break;
+    rollup.contexts.nodes = [...rollup.contexts.nodes ?? [], ...next.nodes ?? []];
+    info = next.pageInfo;
+  }
+}
+function fetchBatch(kind, repo, numbers, graphql, log) {
+  try {
+    const fields = kind === "evidence" ? EVIDENCE_FIELDS : CI_FIELDS;
+    const repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${fields} }`).join("\n"));
+    return numbers.map((number) => {
+      const pr2 = repository[`pr${number}`];
+      if (!pr2) return { pr_number: number, value: null, error: "not_found" };
+      if (kind === "evidence") {
+        drainConnections(pr2, repo, graphql);
+        return { pr_number: number, value: normalizeEvidence(pr2), error: null };
+      }
+      drainContexts(pr2, repo, graphql);
+      return { pr_number: number, value: normalizeCi(pr2), error: null };
+    });
+  } catch (error) {
+    if (numbers.length > 1) {
+      const middle = numbers.length >>> 1;
+      return [...fetchBatch(kind, repo, numbers.slice(0, middle), graphql, log), ...fetchBatch(kind, repo, numbers.slice(middle), graphql, log)];
+    }
+    log(`warn: ${repo}: PR ${numbers[0]} ${kind} capture failed: ${error.message.slice(0, 160)}`);
+    return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
+  }
+}
+var captureDir = (repoDir, kind) => join7(repoDir, "feature-evidence", kind);
+var batchPath = (dir, numbers) => join7(dir, `${numbers[0]}-${numbers.at(-1)}.json.gz`);
+function chunkNumbers(numbers) {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const chunks = [];
+  for (let i = 0; i < sorted.length; i += EVIDENCE_BATCH_SIZE) chunks.push(sorted.slice(i, i + EVIDENCE_BATCH_SIZE));
+  return chunks;
+}
+function captureRepo(kind, repo, repoDir, numbers, graphql, log, now = () => /* @__PURE__ */ new Date()) {
+  const dir = captureDir(repoDir, kind);
+  mkdirSync2(dir, { recursive: true, mode: 448 });
+  const chunks = chunkNumbers(numbers);
+  let fetched = 0;
+  let failed = 0;
+  chunks.forEach((chunk, index) => {
+    const path4 = batchPath(dir, chunk);
+    if (existsSync4(path4)) return;
+    const items = fetchBatch(kind, repo, chunk, graphql, log);
+    failed += items.filter((item) => item.error === "capture_failed").length;
+    fetched += chunk.length;
+    const scratch = `${path4}.partial`;
+    writeFileSync2(scratch, gzipSync(JSON.stringify({ captured_at: now().toISOString(), items })), { mode: 384 });
+    renameSync2(scratch, path4);
+    if (index % 100 === 0) log(`info: ${repo}: ${kind} batch ${index + 1}/${chunks.length}`);
+  });
+  return { batches: chunks.length, fetched, failed };
+}
+function readCapturedBatch(repoDir, kind, chunk) {
+  const path4 = batchPath(captureDir(repoDir, kind), chunk);
+  if (!existsSync4(path4)) return null;
+  return JSON.parse(gunzipSync(readFileSync4(path4)).toString("utf8"));
+}
+
+// src/corpus/feature-git.ts
+import { spawnSync } from "node:child_process";
+import { closeSync as closeSync2, openSync as openSync2, readSync, rmSync as rmSync2 } from "node:fs";
+import { createHash as createHash4 } from "node:crypto";
 
 // src/corpus/corrective-szz.ts
 var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
@@ -13210,6 +12923,7 @@ var REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
 var REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
 var REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
 var FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
+var isFixSubject = (subject) => FIX_TITLE.test(subject);
 var FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
 var REGRESSION_CONTEXT = /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
 var MAX_ORIGINALS_PER_ISSUE = 3;
@@ -13454,8 +13168,8 @@ function originalRef(pr2) {
 function fixRef(event17) {
   return { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha, merged_at: utc(event17.epoch * 1e3) };
 }
-function utc(ms) {
-  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+function utc(ms2) {
+  return new Date(ms2).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 function buildRepairPair(candidate, original, fix, runGit3) {
   const originalFiles = changedFiles(runGit3, original.base_sha, original.merge_sha);
@@ -13678,6 +13392,1097 @@ function summarizeCorrective(result, originals) {
   };
 }
 
+// src/corpus/feature-git.ts
+var DAY_MS = 864e5;
+var WINDOW_MS = 90 * DAY_MS;
+var OUTPUT_LIMIT = 1024 ** 3;
+var MAX_COMPLEXITY_FILE_BYTES = 2 * 1024 ** 2;
+var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+function gitBuffer(gitDir, args, input) {
+  const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], {
+    maxBuffer: OUTPUT_LIMIT,
+    stdio: ["pipe", "pipe", "ignore"],
+    ...input === void 0 ? {} : { input }
+  });
+  return { ok: result.status === 0, stdout: result.stdout ?? Buffer.alloc(0) };
+}
+function forEachGitRecord(gitDir, args, scratch, separator, onRecord) {
+  const out = openSync2(scratch, "w");
+  try {
+    const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], { stdio: ["ignore", out, "pipe"], maxBuffer: 16 * 1024 ** 2 });
+    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${String(result.stderr).trim().split("\n").pop()}`);
+  } finally {
+    closeSync2(out);
+  }
+  const fd = openSync2(scratch, "r");
+  try {
+    const chunk = Buffer.alloc(32 * 1024 ** 2);
+    let carry = Buffer.alloc(0);
+    for (let read = readSync(fd, chunk); read > 0; read = readSync(fd, chunk)) {
+      const data = carry.length ? Buffer.concat([carry, chunk.subarray(0, read)]) : Buffer.from(chunk.subarray(0, read));
+      let start = 0;
+      for (let end = data.indexOf(separator, start); end !== -1; end = data.indexOf(separator, start)) {
+        if (end > start) onRecord(data.toString("utf8", start, end));
+        start = end + 1;
+      }
+      carry = data.subarray(start);
+    }
+    if (carry.length) onRecord(carry.toString("utf8"));
+  } finally {
+    closeSync2(fd);
+    rmSync2(scratch, { force: true });
+  }
+}
+var HistoryIndex = class {
+  /** First-parent position of each commit on the line. */
+  firstParentPosition = /* @__PURE__ */ new Map();
+  /** Position at which each reachable commit landed on the line. */
+  landingPosition = /* @__PURE__ */ new Map();
+  /** Running maximum of landing times, so a mis-dated commit cannot reorder a window. */
+  landingTimes = [];
+  landingMessages = /* @__PURE__ */ new Map();
+  commitPosition = [];
+  commitAuthor = [];
+  commitIsFix = [];
+  authorIds = /* @__PURE__ */ new Map();
+  authorCommits = [];
+  files = /* @__PURE__ */ new Map();
+  commitIds = /* @__PURE__ */ new Map();
+  addLandingLine(lines) {
+    let latest = 0;
+    lines.forEach((line, position) => {
+      this.firstParentPosition.set(line.sha, position);
+      latest = Math.max(latest, line.epochSeconds * 1e3);
+      this.landingTimes.push(latest);
+    });
+  }
+  addCommit(sha2, email, subject, paths) {
+    const position = this.landingPosition.get(sha2);
+    if (position === void 0) return;
+    const key = email.trim().toLowerCase();
+    let author = this.authorIds.get(key);
+    if (author === void 0) {
+      author = this.authorIds.size;
+      this.authorIds.set(key, author);
+      this.authorCommits.push([]);
+    }
+    const id2 = this.commitPosition.length;
+    this.commitIds.set(sha2, id2);
+    this.commitPosition.push(position);
+    this.commitAuthor.push(author);
+    this.commitIsFix.push(isFixSubject(subject));
+    this.authorCommits[author].push(position);
+    for (const path4 of paths) {
+      const list = this.files.get(path4);
+      if (list) list.push(id2);
+      else this.files.set(path4, [id2]);
+    }
+  }
+  /** Sorts by landing position. Call once, after every commit is added. */
+  seal() {
+    for (const list of this.files.values()) list.sort((a, b) => this.commitPosition[a] - this.commitPosition[b]);
+    for (const list of this.authorCommits) list.sort((a, b) => a - b);
+  }
+  /** The newest line position whose history is certainly within `base_sha`'s ancestors. */
+  basePosition(baseSha) {
+    if (baseSha === EMPTY_TREE_SHA2) return -1;
+    const direct = this.firstParentPosition.get(baseSha);
+    if (direct !== void 0) return direct;
+    const landed = this.landingPosition.get(baseSha);
+    return landed === void 0 ? null : landed - 1;
+  }
+  firstAtOrAfter(list, position, read) {
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = low + high >>> 1;
+      if (read(list[middle]) < position) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+  /** The first line position that landed inside the 90 days before `asOfMs`. */
+  windowStart(asOfMs) {
+    return this.firstAtOrAfter(this.landingTimes, asOfMs - WINDOW_MS, (time) => time);
+  }
+  historyColumns(input) {
+    const { basePosition, asOfMs } = input;
+    const windowStart = this.windowStart(asOfMs);
+    const position = (id2) => this.commitPosition[id2];
+    const recent = /* @__PURE__ */ new Set();
+    for (const path4 of input.changedFiles) {
+      const list = this.files.get(path4);
+      if (!list) continue;
+      const from = this.firstAtOrAfter(list, windowStart, position);
+      const to = this.firstAtOrAfter(list, basePosition + 1, position);
+      for (let i = from; i < to; i++) recent.add(list[i]);
+    }
+    let newestFileMs = null;
+    for (const path4 of input.existingFiles) {
+      const first = this.files.get(path4)?.[0];
+      if (first === void 0 || position(first) > basePosition) continue;
+      const created = this.landingTimes[position(first)];
+      newestFileMs = newestFileMs === null ? created : Math.max(newestFileMs, created);
+    }
+    const authorIds = (input.authorEmails ?? []).flatMap((email) => {
+      const id2 = this.authorIds.get(email.trim().toLowerCase());
+      return id2 === void 0 ? [] : [id2];
+    });
+    let repoCommits = 0;
+    for (const id2 of authorIds) {
+      const list = this.authorCommits[id2];
+      repoCommits += this.firstAtOrAfter(list, basePosition + 1, (value) => value);
+    }
+    const touched = /* @__PURE__ */ new Set();
+    if (authorIds.length) {
+      const ids = new Set(authorIds);
+      for (const path4 of input.changedFiles) {
+        const list = this.files.get(path4);
+        if (!list) continue;
+        const to = this.firstAtOrAfter(list, basePosition + 1, position);
+        for (let i = 0; i < to; i++) if (ids.has(this.commitAuthor[list[i]])) touched.add(list[i]);
+      }
+    }
+    return {
+      "feature.history.file_commits_90d": recent.size,
+      "feature.history.file_authors_90d": new Set([...recent].map((id2) => this.commitAuthor[id2])).size,
+      "feature.history.file_fix_commits_90d": [...recent].filter((id2) => this.commitIsFix[id2]).length,
+      "feature.history.newest_file_age_days": newestFileMs === null ? null : Number((Math.max(0, asOfMs - newestFileMs) / DAY_MS).toFixed(2)),
+      "feature.author.repo_commits_prior": input.authorEmails === null ? null : repoCommits,
+      "feature.author.touched_file_commits_prior": input.authorEmails === null ? null : touched.size
+    };
+  }
+  /** Author email of a non-merge commit in the index, for a PR whose own commits are unknown. */
+  commitEmail(sha2) {
+    const id2 = this.commitIds.get(sha2);
+    if (id2 === void 0) return null;
+    const author = this.commitAuthor[id2];
+    for (const [email, value] of this.authorIds) if (value === author) return email;
+    return null;
+  }
+};
+function buildHistoryIndex(gitDir, tip, scratchPrefix, messagesFor) {
+  const index = new HistoryIndex();
+  const line = [];
+  forEachGitRecord(gitDir, ["log", "--first-parent", "--reverse", "--format=%H%x1f%ct%x1f%B%x1e", tip], `${scratchPrefix}.line`, 30, (record) => {
+    const [sha2 = "", epoch = "0", message = ""] = record.replace(/^\n/, "").split("");
+    line.push({ sha: sha2, epochSeconds: Number(epoch) });
+    if (messagesFor.has(sha2)) index.landingMessages.set(sha2, message.trim());
+  });
+  index.addLandingLine(line);
+  const parents = /* @__PURE__ */ new Map();
+  forEachGitRecord(gitDir, ["rev-list", "--parents", tip], `${scratchPrefix}.parents`, 10, (record) => {
+    const [sha2 = "", ...rest] = record.split(" ");
+    parents.set(sha2, rest);
+  });
+  line.forEach(({ sha: sha2 }, position) => {
+    const stack = [sha2];
+    while (stack.length) {
+      const current = stack.pop();
+      if (index.landingPosition.has(current)) continue;
+      index.landingPosition.set(current, position);
+      for (const parent of parents.get(current) ?? []) stack.push(parent);
+    }
+  });
+  parents.clear();
+  forEachGitRecord(
+    gitDir,
+    ["log", "--no-merges", "--no-renames", "-z", "--name-only", "--format=%x1e%H%x1f%ae%x1f%s%x1f", tip],
+    `${scratchPrefix}.files`,
+    30,
+    (record) => {
+      const [sha2 = "", email = "", subject = "", files = ""] = record.split("");
+      index.addCommit(sha2, email, subject, files.split("\0").map((path4) => path4.replace(/^\n/, "")).filter(Boolean));
+    }
+  );
+  index.seal();
+  return index;
+}
+function parseRawNumstat(output) {
+  const tokens2 = output.split("\0");
+  const files = /* @__PURE__ */ new Map();
+  for (let i = 0; i < tokens2.length; i++) {
+    const token = tokens2[i];
+    if (!token) continue;
+    if (token.startsWith(":")) {
+      const [, , oldOid = "", newOid = "", status = ""] = token.slice(1).split(" ");
+      const path4 = tokens2[++i] ?? "";
+      files.set(path4, { path: path4, status: status.charAt(0), oldOid, newOid, added: 0, deleted: 0 });
+      continue;
+    }
+    const [added = "0", deleted = "0", ...rest] = token.split("	");
+    const file = files.get(rest.join("	"));
+    if (file) {
+      file.added = Number(added) || 0;
+      file.deleted = Number(deleted) || 0;
+    }
+  }
+  return [...files.values()];
+}
+var DIFF_FLAGS = ["--no-renames", "--no-ext-diff", "--no-textconv", "--no-color", "--full-index"];
+function readDiff(gitDir, baseSha, mergeSha) {
+  const facts = gitBuffer(gitDir, ["diff", ...DIFF_FLAGS, "--abbrev=40", "--raw", "--numstat", "-z", baseSha, mergeSha]);
+  if (!facts.ok) return null;
+  const patch = gitBuffer(gitDir, ["diff", ...DIFF_FLAGS, "-p", baseSha, mergeSha]);
+  return {
+    files: parseRawNumstat(facts.stdout.toString("utf8")),
+    diffSha256: patch.ok ? createHash4("sha256").update(patch.stdout).digest("hex") : null
+  };
+}
+var ZERO_OID = /^0+$/;
+function complexityDelta(gitDir, files) {
+  const measured = files.filter((file) => fileComplexity("", getExtension(file.path)) !== null);
+  if (measured.length === 0) return null;
+  const oids = [...new Set(measured.flatMap((file) => [file.oldOid, file.newOid]).filter((oid) => !ZERO_OID.test(oid)))];
+  if (oids.length === 0) return null;
+  const output = gitBuffer(gitDir, ["cat-file", "--batch"], `${oids.join("\n")}
+`);
+  if (!output.ok) return null;
+  const blobs = /* @__PURE__ */ new Map();
+  for (let offset = 0; offset < output.stdout.length; ) {
+    const newline = output.stdout.indexOf(10, offset);
+    if (newline === -1) return null;
+    const [oid = "", type = "", size = ""] = output.stdout.toString("utf8", offset, newline).split(" ");
+    if (type === "missing" || type !== "blob" && type !== "commit") return null;
+    const bytes = Number(size);
+    blobs.set(oid, bytes > MAX_COMPLEXITY_FILE_BYTES ? "oversized" : output.stdout.subarray(newline + 1, newline + 1 + bytes));
+    offset = newline + 1 + bytes + 1;
+  }
+  let delta = 0;
+  let any = false;
+  for (const file of measured) {
+    const extension = getExtension(file.path);
+    const oldBlob = ZERO_OID.test(file.oldOid) ? null : blobs.get(file.oldOid);
+    const newBlob = ZERO_OID.test(file.newOid) ? null : blobs.get(file.newOid);
+    if (oldBlob === "oversized" || newBlob === "oversized") continue;
+    if (oldBlob === void 0 || newBlob === void 0) return null;
+    delta += (newBlob ? fileComplexity(newBlob.toString("utf8"), extension) ?? 0 : 0) - (oldBlob ? fileComplexity(oldBlob.toString("utf8"), extension) ?? 0 : 0);
+    any = true;
+  }
+  return any ? delta : null;
+}
+function gitColumns(input) {
+  const { index, gitDir, record } = input;
+  const asOfMs = Date.parse(record.merged_at);
+  const diff = readDiff(gitDir, record.base_sha, record.merge_sha);
+  const shape = diff ? {
+    "feature.shape.files_touched": diff.files.length,
+    "feature.shape.lines_added": diff.files.reduce((sum, file) => sum + file.added, 0),
+    "feature.shape.lines_deleted": diff.files.reduce((sum, file) => sum + file.deleted, 0),
+    "feature.shape.loc_touched": diff.files.reduce((sum, file) => sum + file.added + file.deleted, 0),
+    "feature.shape.tests_changed": diff.files.some((file) => isTestFile(file.path)),
+    "feature.shape.complexity_delta": complexityDelta(gitDir, diff.files),
+    "feature.content.diff_sha256": diff.diffSha256,
+    "feature.history.new_files": diff.files.filter((file) => file.status === "A").length
+  } : {};
+  const basePosition = index.basePosition(record.base_sha);
+  if (!diff || basePosition === null) return shape;
+  const emails = input.authorEmails ?? (() => {
+    const email = index.commitEmail(record.merge_sha);
+    return email ? [email] : null;
+  })();
+  return {
+    ...shape,
+    ...index.historyColumns({
+      basePosition,
+      asOfMs,
+      changedFiles: diff.files.map((file) => file.path),
+      existingFiles: diff.files.filter((file) => file.status !== "A").map((file) => file.path),
+      authorEmails: emails
+    })
+  };
+}
+
+// src/corpus/feature-run.ts
+var FEATURE_STEPS = ["ci", "evidence", "extract", "manifest"];
+function readRecords(repoDir) {
+  return readFileSync5(join8(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => ({ ...JSON.parse(line), title: "", body: "" }));
+}
+function authorEmails(record, evidence3) {
+  if (!evidence3) return null;
+  const emails = evidence3.commits.filter((commit) => commit.author_login !== null && commit.author_login === record.author_login && commit.author_email).map((commit) => commit.author_email);
+  return emails.length ? [...new Set(emails)] : null;
+}
+function landingMessage(record, index) {
+  return record.batched ? null : index.landingMessages.get(record.merge_sha) ?? null;
+}
+function extractRepo(repo, repoDir, writeRows, log) {
+  const manifestErrors = validateFeatureManifest(REWORK_RISK_FEATURE_MANIFEST);
+  const columnErrors = validateFeatureColumns(MANIFEST_COLUMNS, { allowSegments: true });
+  if (manifestErrors.length || columnErrors.length) throw new Error(`manifest failed validation: ${[...manifestErrors, ...columnErrors][0].message}`);
+  const statsPath = join8(repoDir, "enumeration.json");
+  if (!existsSync5(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+  const { branch } = JSON.parse(readFileSync5(statsPath, "utf8"));
+  const records = readRecords(repoDir);
+  const byNumber = new Map(records.map((record) => [record.pr_number, record]));
+  const gitDir = join8(repoDir, "repo.git");
+  log(`info: ${repo}: indexing history`);
+  const index = buildHistoryIndex(gitDir, `refs/heads/${branch}`, join8(repoDir, ".feature-index"), new Set(records.map((record) => record.merge_sha)));
+  const ciNumbers = records.filter((record) => record.merged_at >= CI_CAPTURE_FROM).map((record) => record.pr_number);
+  const ci2 = /* @__PURE__ */ new Map();
+  for (const chunk of chunkNumbers(ciNumbers)) {
+    for (const item of readCapturedBatch(repoDir, "ci", chunk)?.items ?? []) if (item.value) ci2.set(item.pr_number, item.value);
+  }
+  const rows = [];
+  let failed = 0;
+  let withoutEvidence = 0;
+  let capturedFrom = null;
+  let capturedUntil = null;
+  const chunks = chunkNumbers(records.map((record) => record.pr_number));
+  chunks.forEach((chunk, position) => {
+    const batch = readCapturedBatch(repoDir, "evidence", chunk);
+    if (batch) {
+      if (!capturedFrom || batch.captured_at < capturedFrom) capturedFrom = batch.captured_at;
+      if (!capturedUntil || batch.captured_at > capturedUntil) capturedUntil = batch.captured_at;
+    }
+    const items = new Map((batch?.items ?? []).map((item) => [item.pr_number, item.value]));
+    for (const number of chunk) {
+      const record = byNumber.get(number);
+      const evidence3 = items.get(number) ?? null;
+      if (!evidence3) withoutEvidence++;
+      try {
+        rows.push(extractPrFeatures({
+          record,
+          evidence: evidence3,
+          ci: ci2.get(number) ?? null,
+          landingMessage: landingMessage(record, index),
+          git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
+        }));
+      } catch (error) {
+        failed++;
+        log(`warn: ${repo}: PR ${number}: ${error.message.slice(0, 160)}`);
+      }
+    }
+    if (position % 200 === 0) log(`info: ${repo}: extracted ${rows.length}/${records.length}`);
+  });
+  const path4 = join8(repoDir, "features.jsonl.gz");
+  writeRows(path4, rows);
+  const bytes = readFileSync5(path4);
+  const summary = {
+    repo,
+    manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+    prs: records.length,
+    rows: rows.length,
+    failed_rows: failed,
+    rows_without_evidence: withoutEvidence,
+    evidence_captured_from: capturedFrom,
+    evidence_captured_until: capturedUntil,
+    file: "features.jsonl.gz",
+    sha256: createHash5("sha256").update(bytes).digest("hex"),
+    bytes: bytes.length
+  };
+  writeFileSync3(join8(repoDir, "features.summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+  return summary;
+}
+function runCorpusFeatures(input) {
+  const { step, entries, cacheRoot, io, log } = input;
+  const repoDirOf = (repo) => join8(cacheRoot, repo.replace("/", "__"));
+  if (step === "manifest") {
+    const missing = entries.filter((entry2) => !existsSync5(join8(repoDirOf(entry2.repo), "features.summary.json"))).map((entry2) => entry2.repo);
+    if (missing.length) {
+      log(`error: no features yet for ${missing.length} repos`);
+      return { exitCode: 3 };
+    }
+    const repos = entries.map((entry2) => JSON.parse(readFileSync5(join8(repoDirOf(entry2.repo), "features.summary.json"), "utf8")));
+    const manifest = {
+      issue: "HOK-3023",
+      manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+      cohort_manifest_sha256: input.cohortSha256,
+      totals: {
+        repos: repos.length,
+        prs: repos.reduce((sum, repo) => sum + repo.prs, 0),
+        rows: repos.reduce((sum, repo) => sum + repo.rows, 0),
+        failed_rows: repos.reduce((sum, repo) => sum + repo.failed_rows, 0),
+        rows_without_evidence: repos.reduce((sum, repo) => sum + repo.rows_without_evidence, 0)
+      },
+      repos
+    };
+    mkdirSync3(dirname(input.out), { recursive: true });
+    writeFileSync3(input.out, `${JSON.stringify(manifest, null, 2)}
+`);
+    io.writeStdout(`${JSON.stringify(manifest.totals)}
+`);
+    return { exitCode: 0 };
+  }
+  let failures = 0;
+  for (const entry2 of entries) {
+    const repoDir = repoDirOf(entry2.repo);
+    try {
+      if (step === "extract") {
+        const summary = extractRepo(entry2.repo, repoDir, input.writeRows, log);
+        io.writeStdout(`${JSON.stringify({ repo: summary.repo, rows: summary.rows, failed_rows: summary.failed_rows, rows_without_evidence: summary.rows_without_evidence })}
+`);
+        if (summary.failed_rows) failures++;
+        continue;
+      }
+      const kind = step;
+      const records = readRecords(repoDir);
+      const numbers = (kind === "ci" ? records.filter((record) => record.merged_at >= CI_CAPTURE_FROM) : records).map((record) => record.pr_number);
+      const result = captureRepo(kind, entry2.repo, repoDir, numbers, input.graphql, log);
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, prs: numbers.length, ...result })}
+`);
+      if (result.failed) failures++;
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, error: error.message.slice(0, 200) })}
+`);
+      log(`error: ${entry2.repo}: ${error.message.slice(0, 200)}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+
+// src/corpus/cli.ts
+import { createHash as createHash7, randomBytes } from "node:crypto";
+import { chmodSync, closeSync as closeSync3, existsSync as existsSync6, mkdirSync as mkdirSync4, openSync as openSync3, readdirSync, readFileSync as readFileSync6, rmSync as rmSync3, writeFileSync as writeFileSync4, writeSync as writeSync2 } from "node:fs";
+import { dirname as dirname2, join as join9, resolve as resolve5 } from "node:path";
+import { parseArgs as parseArgs3 } from "node:util";
+import { gzipSync as gzipSync2, inflateRawSync } from "node:zlib";
+
+// src/corpus/calibration.ts
+import { createHash as createHash6 } from "node:crypto";
+
+// src/report/stats.ts
+function round42(value) {
+  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+}
+function roundedInterval(low, high, value) {
+  let lo = round42(Math.max(0, Math.min(1, low)));
+  let hi = round42(Math.max(0, Math.min(1, high)));
+  if (value !== void 0) {
+    lo = Math.min(lo, round42(value));
+    hi = Math.max(hi, round42(value));
+  }
+  return { low: lo, high: hi };
+}
+function wilsonInterval(k, n, z = 1.959964) {
+  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
+    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
+  }
+  if (n === 0) return null;
+  const p = k / n;
+  const z2 = z * z;
+  const den = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / den;
+  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
+  return roundedInterval(center - half, center + half, p);
+}
+function katzLogRatioInterval(k1, n1, k2, n2) {
+  for (const [k, n] of [[k1, n1], [k2, n2]]) {
+    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
+      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
+    }
+  }
+  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
+  const a = k1 + (corrected ? 0.5 : 0);
+  const b = n1 - k1 + (corrected ? 0.5 : 0);
+  const c = k2 + (corrected ? 0.5 : 0);
+  const d = n2 - k2 + (corrected ? 0.5 : 0);
+  const ratio3 = a / (a + b) / (c / (c + d));
+  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
+  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
+  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
+  const r = round42(ratio3);
+  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
+}
+function nearestRankQuartiles(sorted) {
+  if (!sorted.length) return null;
+  for (let i = 0; i < sorted.length; i++) {
+    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
+      throw new RangeError("nearestRankQuartiles requires finite ascending values");
+    }
+  }
+  const at2 = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  return [at2(0.25), at2(0.5), at2(0.75)];
+}
+function quartileOf(value, cuts) {
+  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
+    throw new RangeError("quartileOf requires finite values and ascending cuts");
+  }
+  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
+}
+
+// src/corpus/calibration.ts
+var CALIBRATION_SAMPLER_VERSION = "1.0.0";
+var CALIBRATION_STRATA = ["revert", "repair_reference", "regression_issue", "szz_strong", "szz_weak", "rejected", "negative"];
+function parseCalibrationPlan(raw) {
+  const plan = raw;
+  if (!plan || typeof plan !== "object") throw new Error("plan must be an object");
+  const allocation = plan.allocation;
+  if (!allocation || typeof allocation !== "object") throw new Error("plan.allocation is required");
+  for (const stratum of CALIBRATION_STRATA) {
+    if (!Number.isInteger(allocation[stratum]) || allocation[stratum] < 0) throw new Error(`plan.allocation.${stratum} must be a non-negative integer`);
+  }
+  const extra = Object.keys(allocation).filter((k) => !CALIBRATION_STRATA.includes(k));
+  if (extra.length) throw new Error(`plan.allocation has unknown strata: ${extra.join(", ")}`);
+  const num2 = (key, ok) => {
+    const v = plan[key];
+    if (typeof v !== "number" || !ok(v)) throw new Error(`plan.${key} is out of range`);
+    return v;
+  };
+  if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
+  return {
+    plan_version: plan.plan_version,
+    horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
+    allocation,
+    double_label_share: num2("double_label_share", (v) => v >= 0 && v <= 1),
+    human_audit_share: num2("human_audit_share", (v) => v > 0 && v <= 1),
+    labellers: parseLabellers(plan.labellers),
+    min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
+    szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
+    kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
+    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
+  };
+}
+function parseLabellers(raw) {
+  const l = raw;
+  if (!l || typeof l.a !== "string" || typeof l.b !== "string" || !l.a || !l.b) throw new Error("plan.labellers needs model IDs for a and b");
+  if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
+  return { a: l.a, b: l.b };
+}
+var sha2562 = (...parts) => createHash6("sha256").update(parts.join("\0")).digest("hex");
+function seededOrder(list, key) {
+  return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
+}
+var STRATUM_PRIORITY = ["revert", "repair_reference", "regression_issue", "szz"];
+function classifyCalibrationRepo(input) {
+  const horizonSeconds = input.horizonDays * 86400;
+  const byOriginal = /* @__PURE__ */ new Map();
+  for (const c of input.candidates) {
+    if (c.lag_seconds > horizonSeconds) continue;
+    const list = byOriginal.get(c.original.pr_url) ?? [];
+    list.push({
+      candidate_id: c.candidate_id,
+      proxy: c.proxy,
+      status: c.status,
+      exclusion_code: c.exclusion_code,
+      fix_url: c.fix.pr_url ?? `https://github.com/${input.repo}/commit/${c.fix.sha}`,
+      lag_days: Math.round(c.lag_seconds / 86400 * 10) / 10,
+      blamed_lines: c.evidence.find((e) => e.kind === "blamed_lines")?.count ?? null,
+      revert_reason: c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? null
+    });
+    byOriginal.set(c.original.pr_url, list);
+  }
+  const units = [];
+  for (const row of input.correctiveRows) {
+    if (row.horizon_days !== input.horizonDays || row.corrective === null) continue;
+    const candidates = (byOriginal.get(row.prUrl) ?? []).sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
+    const accepted2 = new Set(row.repair_pair_ids);
+    const acceptedCandidates = candidates.filter((c) => accepted2.has(c.candidate_id));
+    const proxies = [...new Set(acceptedCandidates.map((c) => c.proxy))].filter((p) => ADMITTED_PROXIES.includes(p)).sort();
+    let stratum;
+    if (row.corrective) {
+      const top = STRATUM_PRIORITY.find((p) => proxies.includes(p));
+      if (!top) throw new Error(`${row.prUrl}: corrective row without an accepted pair within ${input.horizonDays} days`);
+      if (top === "szz") {
+        const lines = Math.max(...acceptedCandidates.filter((c) => c.proxy === "szz").map((c) => c.blamed_lines ?? 0));
+        stratum = lines >= input.szzStrongMinLines ? "szz_strong" : "szz_weak";
+      } else stratum = top;
+    } else stratum = candidates.length ? "rejected" : "negative";
+    units.push({ repo: input.repo, pr_url: row.prUrl, stratum, proxies, candidates });
+  }
+  return units;
+}
+function drawCalibrationSample(units, plan, seed) {
+  const items = [];
+  const cells = /* @__PURE__ */ new Map();
+  const shortfalls = [];
+  for (const stratum of CALIBRATION_STRATA) {
+    const byRepo = /* @__PURE__ */ new Map();
+    for (const u of units) {
+      if (u.stratum !== stratum) continue;
+      const list = byRepo.get(u.repo);
+      if (list) list.push(u);
+      else byRepo.set(u.repo, [u]);
+    }
+    for (const [repo, list] of byRepo) {
+      byRepo.set(repo, seededOrder(list, (u) => sha2562(seed, stratum, u.pr_url)));
+      cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
+    }
+    const repos = seededOrder([...byRepo.keys()], (repo) => sha2562(seed, "repo", stratum, repo));
+    const want = plan.allocation[stratum];
+    const picked = [];
+    for (let round = 0; picked.length < want; round++) {
+      let any = false;
+      for (const repo of repos) {
+        const unit = byRepo.get(repo)[round];
+        if (!unit || picked.length >= want) continue;
+        picked.push(unit);
+        cells.get(`${repo}\0${stratum}`).sampled++;
+        any = true;
+      }
+      if (!any) break;
+    }
+    if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
+    const doubles = new Set(
+      seededOrder(picked, (u) => sha2562(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
+    );
+    const audited = new Set(
+      seededOrder(picked, (u) => sha2562(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
+    );
+    for (const unit of picked) items.push({ ...unit, item_id: sha2562(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
+  }
+  return {
+    items: seededOrder(items, (i) => sha2562(seed, "order", i.item_id)),
+    cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
+    shortfalls
+  };
+}
+var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "related_prs", "corrective", "cause_code", "exclusion_code", "notes"];
+var csvCell = (value) => /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+function renderLabelSheet(items, related = /* @__PURE__ */ new Map(), filled = /* @__PURE__ */ new Map()) {
+  const rows = items.map((item) => {
+    const row = {
+      item_id: item.item_id,
+      pr_url: item.pr_url,
+      candidate_fixes: [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "),
+      related_prs: (related.get(item.item_id) ?? []).join(" "),
+      ...filled.get(item.item_id)
+    };
+    return SHEET_COLUMNS.map((c) => row[c] ?? "");
+  });
+  return `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
+`;
+}
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell2 = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell2 += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell2 += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {
+      row.push(cell2);
+      cell2 = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell2);
+      rows.push(row);
+      row = [];
+      cell2 = "";
+    } else cell2 += ch;
+  }
+  if (cell2 || row.length) {
+    row.push(cell2);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((c) => c.trim()));
+}
+function parseLabelSheet(text, items) {
+  const [header, ...rows] = parseCsv(text);
+  const col = (name) => header?.indexOf(name) ?? -1;
+  const errors = [];
+  const missing = ["item_id", "corrective", "cause_code", "exclusion_code"].filter((c) => col(c) < 0);
+  if (missing.length) return { labels: /* @__PURE__ */ new Map(), unlabelled: [], errors: [`missing columns: ${missing.join(", ")}`] };
+  const labels = /* @__PURE__ */ new Map();
+  const unlabelled = [];
+  const causes = CAUSE_CODES;
+  const exclusions = HUMAN_EXCLUSION_CODES;
+  for (const r of rows) {
+    const get = (name) => (r[col(name)] ?? "").trim().toLowerCase();
+    const id2 = (r[col("item_id")] ?? "").trim();
+    const item = items.get(id2);
+    if (!item) {
+      errors.push(`${id2 || "(blank)"}: not in the sample`);
+      continue;
+    }
+    if (labels.has(id2)) {
+      errors.push(`${id2}: labelled twice on one sheet`);
+      continue;
+    }
+    const verdict = get("corrective");
+    const cause = get("cause_code");
+    const exclusion = get("exclusion_code") || null;
+    if (!verdict) {
+      unlabelled.push(id2);
+      continue;
+    }
+    if (!CALIBRATION_VERDICTS.includes(verdict)) {
+      errors.push(`${id2}: corrective must be yes, no or unclear, not "${verdict}"`);
+      continue;
+    }
+    if (verdict === "yes") {
+      if (!causes.includes(cause) || cause === "not_rework") errors.push(`${id2}: a yes needs a cause code other than not_rework`);
+      if (exclusion) errors.push(`${id2}: a yes takes no exclusion code`);
+      labels.set(id2, { verdict, cause_code: cause, exclusion_code: null });
+    } else if (verdict === "no") {
+      if (cause && cause !== "not_rework") errors.push(`${id2}: a no takes cause not_rework (or blank)`);
+      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
+      if (!exclusion && item.candidates.length) errors.push(`${id2}: a no on an item with candidate fixes needs an exclusion code`);
+      labels.set(id2, { verdict, cause_code: "not_rework", exclusion_code: exclusion });
+    } else {
+      if (cause && cause !== "unclear") errors.push(`${id2}: an unclear takes cause unclear (or blank)`);
+      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
+      labels.set(id2, { verdict: "unclear", cause_code: "unclear", exclusion_code: exclusion });
+    }
+  }
+  return { labels, unlabelled, errors };
+}
+function cohensKappa(pairs) {
+  if (!pairs.length) return null;
+  const n = pairs.length;
+  const a = /* @__PURE__ */ new Map();
+  const b = /* @__PURE__ */ new Map();
+  let agree = 0;
+  for (const [x, y] of pairs) {
+    if (x === y) agree++;
+    a.set(x, (a.get(x) ?? 0) + 1);
+    b.set(y, (b.get(y) ?? 0) + 1);
+  }
+  const po = agree / n;
+  let pe = 0;
+  for (const [k, count] of a) pe += count / n * ((b.get(k) ?? 0) / n);
+  if (pe === 1) return null;
+  return round43((po - pe) / (1 - pe));
+}
+function kappaWithCodes(pairs, codes, floor) {
+  const per_code = {};
+  for (const code of codes) {
+    const used = pairs.filter(([x, y]) => x === code || y === code).length;
+    const kappa = used ? cohensKappa(pairs.map(([x, y]) => [String(x === code), String(y === code)])) : null;
+    per_code[code] = { used, kappa, verdict: !used ? "not_observed" : kappa === null ? "undefined" : kappa >= floor ? "pass" : "below_floor" };
+  }
+  return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
+}
+function agreementBetween(items, x, y, floor) {
+  const both = items.filter((i) => x.has(i.item_id) && y.has(i.item_id));
+  const pairs = (pick) => both.flatMap((i) => {
+    const a = pick(x.get(i.item_id));
+    const b = pick(y.get(i.item_id));
+    return a !== null && b !== null ? [[a, b]] : [];
+  });
+  return {
+    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, floor),
+    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, floor),
+    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, floor)
+  };
+}
+var round43 = (x) => Math.round(x * 1e4) / 1e4;
+function definitionVariants(plan) {
+  const strongSzz = (c) => c.proxy !== "szz" || (c.blamed_lines ?? 0) >= plan.szz_strong_min_lines;
+  const notInternal = (c) => c.proxy !== "revert" || c.revert_reason !== "internal_build";
+  return [
+    { name: "cr-0.1.0", description: "all admitted proxies (P1\u2013P4)", keep: () => true },
+    { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
+    { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
+    { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
+    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
+  ];
+}
+var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
+var precisionOf = (positive) => (rows) => {
+  let num2 = 0;
+  let den = 0;
+  for (const r of rows) {
+    if (!positive(r.item)) continue;
+    den += r.weight;
+    if (r.label.verdict === "yes") num2 += r.weight;
+  }
+  return den ? num2 / den : null;
+};
+var recallOf = (positive) => (rows) => {
+  let num2 = 0;
+  let den = 0;
+  for (const r of rows) {
+    if (r.label.verdict !== "yes") continue;
+    den += r.weight;
+    if (positive(r.item)) num2 += r.weight;
+  }
+  return den ? num2 / den : null;
+};
+function prng(seed) {
+  let a = parseInt(sha2562(seed, "bootstrap").slice(0, 8), 16) >>> 0;
+  return () => {
+    a = a + 1831565813 >>> 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function bootstrap(rows, estimator, relevant, seed, resamples) {
+  const estimate = estimator(rows);
+  const n = rows.filter(relevant).length;
+  if (estimate === null) return { estimate: null, ci95: null, n };
+  const cells = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    const key = `${r.item.repo}\0${r.item.stratum}`;
+    const cell2 = cells.get(key);
+    if (cell2) cell2.push(r);
+    else cells.set(key, [r]);
+  }
+  const groups = [...cells.values()];
+  const rand = prng(seed);
+  const values = [];
+  for (let b = 0; b < resamples; b++) {
+    const resampled = [];
+    for (const g of groups) for (let i = 0; i < g.length; i++) resampled.push(g[Math.floor(rand() * g.length)]);
+    const v = estimator(resampled);
+    if (v !== null) values.push(v);
+  }
+  values.sort((x, y) => x - y);
+  const at2 = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
+  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at2(0.025)), high: round43(at2(0.975)) } : null, n };
+}
+function scoreCalibration(input) {
+  const { plan, items, sheetA, sheetB, seed } = input;
+  const resamples = input.resamples ?? 2e3;
+  const decided2 = (id2) => {
+    const l = sheetA.get(id2);
+    return l && l.verdict !== "unclear" ? l : null;
+  };
+  const decidedPerCell = /* @__PURE__ */ new Map();
+  for (const item of items) if (decided2(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
+  const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
+  const rows = items.flatMap((item) => {
+    const label2 = decided2(item.item_id);
+    const key = `${item.repo}\0${item.stratum}`;
+    return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
+  });
+  const unrepresented = input.cells.filter((c) => !decidedPerCell.get(`${c.repo}\0${c.stratum}`)).reduce((s, c) => s + c.population, 0);
+  const est = (name, estimator, relevant, subset = rows) => bootstrap(subset, estimator, relevant, `${seed}\0${name}`, resamples);
+  const strata = CALIBRATION_STRATA.map((stratum) => {
+    const inStratum = items.filter((i) => i.stratum === stratum);
+    const count = (v) => inStratum.filter((i) => sheetA.get(i.item_id)?.verdict === v).length;
+    const yes = count("yes");
+    const no = count("no");
+    return {
+      stratum,
+      sampled: inStratum.length,
+      yes,
+      no,
+      unclear: count("unclear"),
+      unlabelled: inStratum.filter((i) => !sheetA.has(i.item_id)).length,
+      yes_rate: yes + no ? round43(yes / (yes + no)) : null,
+      yes_rate_ci95: wilsonInterval(yes, yes + no)
+    };
+  });
+  const proxies = {};
+  for (const proxy of ADMITTED_PROXIES) {
+    const fired = (item) => item.proxies.includes(proxy);
+    proxies[proxy] = {
+      precision: est(`p:${proxy}`, precisionOf(fired), (r) => fired(r.item)),
+      recall: est(`r:${proxy}`, recallOf(fired), (r) => r.label.verdict === "yes")
+    };
+  }
+  const definitions = definitionVariants(plan).map((d) => {
+    const positive = (item) => accepted(item).some(d.keep);
+    return {
+      name: d.name,
+      description: d.description,
+      precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
+      recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
+    };
+  });
+  let chosen = null;
+  for (const d of definitions) {
+    if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
+    if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
+  }
+  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha2562(seed, "pseudonym", repo));
+  const anyProxy = (item) => item.proxies.length > 0;
+  const repos = repoNames.map((repo, i) => {
+    const subset = rows.filter((r) => r.item.repo === repo);
+    return {
+      repo,
+      pseudonym: `R${i + 1}`,
+      sampled: items.filter((it) => it.repo === repo).length,
+      precision: est(`rp:${repo}`, precisionOf(anyProxy), (r) => anyProxy(r.item), subset),
+      recall: est(`rr:${repo}`, recallOf(anyProxy), (r) => r.label.verdict === "yes", subset)
+    };
+  });
+  const rejected = items.filter((i) => i.stratum === "rejected");
+  const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
+  const rejDecided = rejected.filter((i) => decided2(i.item_id)).length;
+  const by_code = {};
+  for (const item of rejected) {
+    const label2 = sheetA.get(item.item_id);
+    if (label2?.verdict !== "no") continue;
+    const human = label2.exclusion_code ?? "(none)";
+    for (const auto of new Set(item.candidates.map((c) => c.exclusion_code ?? "(accepted)"))) {
+      by_code[auto] ??= {};
+      by_code[auto][human] = (by_code[auto][human] ?? 0) + 1;
+    }
+  }
+  const linkage_error = {};
+  for (const proxy of ADMITTED_PROXIES) {
+    const nos = items.filter((i) => i.proxies.includes(proxy) && sheetA.get(i.item_id)?.verdict === "no");
+    const linkage = nos.filter((i) => sheetA.get(i.item_id)?.exclusion_code === "linkage_error").length;
+    linkage_error[proxy] = { no: nos.length, linkage_error: linkage, rate: nos.length ? round43(linkage / nos.length) : null };
+  }
+  const raw = {};
+  const weighted = {};
+  let yesWeight = 0;
+  for (const item of items) {
+    const label2 = sheetA.get(item.item_id);
+    if (label2?.verdict === "yes") raw[label2.cause_code] = (raw[label2.cause_code] ?? 0) + 1;
+  }
+  for (const r of rows) {
+    if (r.label.verdict !== "yes") continue;
+    weighted[r.label.cause_code] = (weighted[r.label.cause_code] ?? 0) + r.weight;
+    yesWeight += r.weight;
+  }
+  const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round43(v / yesWeight)]));
+  const agreement = agreementBetween(items, sheetA, sheetB, plan.kappa_floor);
+  return {
+    sampler_version: CALIBRATION_SAMPLER_VERSION,
+    plan,
+    items: items.length,
+    labelled: sheetA.size,
+    unlabelled: items.length - sheetA.size,
+    unclear: [...sheetA.values()].filter((l) => l.verdict === "unclear").length,
+    unrepresented_population: unrepresented,
+    strata,
+    proxies,
+    definitions,
+    chosen_definition: chosen?.name ?? null,
+    repos,
+    rejections: { wrongly_rejected: { yes: rejYes, decided: rejDecided, rate: rejDecided ? round43(rejYes / rejDecided) : null, ci95: wilsonInterval(rejYes, rejDecided) }, by_code },
+    linkage_error,
+    causes: { raw, weighted_share },
+    agreement
+  };
+}
+function scoreCalibrationRun(input) {
+  const { plan, items, cells, sheets, seed, resamples } = input;
+  const model = scoreCalibration({ plan, items, cells, sheetA: sheets.a, sheetB: sheets.b, seed, resamples });
+  const audited = items.filter((i) => i.audit);
+  const human = scoreCalibration({ plan, items: audited, cells, sheetA: sheets.h, sheetB: sheets.a, seed, resamples });
+  const kappa = human.agreement.corrective.kappa;
+  const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
+  const primary = models_stand_in ? model : human;
+  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
+  return {
+    plan,
+    model,
+    human,
+    human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
+    models_stand_in,
+    primary: models_stand_in ? "model" : "human",
+    chosen_definition: primary.chosen_definition,
+    gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
+  };
+}
+var pct = (x) => x === null || x === void 0 ? "\u2014" : `${(x * 100).toFixed(1)}%`;
+var estCell = (e) => e.estimate === null ? "\u2014" : `${pct(e.estimate)} (${pct(e.ci95?.low)}\u2013${pct(e.ci95?.high)})`;
+var kappaCell = (k) => k === null ? "\u2014" : k.toFixed(2);
+function renderAgreement(lines, title, agreement, floor) {
+  lines.push("", `### ${title} (floor \u03BA \u2265 ${floor})`, "");
+  for (const [field, k] of Object.entries(agreement)) {
+    lines.push(`**${field}:** \u03BA = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, "", "| Code | Used | \u03BA | Verdict |", "| --- | --- | --- | --- |");
+    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
+    lines.push("");
+  }
+}
+function renderEstimates(lines, r) {
+  lines.push("", `${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos`);
+  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by these estimates.`);
+  lines.push("", "### Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
+  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
+  lines.push("", `Pick under the plan (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
+  lines.push("", "### Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
+  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
+  lines.push("", "### Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
+  for (const st of r.strata) lines.push(`| ${st.stratum} | ${st.sampled} | ${st.yes} | ${st.no} | ${st.unclear} | ${pct(st.yes_rate)} (${pct(st.yes_rate_ci95?.low)}\u2013${pct(st.yes_rate_ci95?.high)}) |`);
+  lines.push("", "### Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
+  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
+  const w = r.rejections.wrongly_rejected;
+  lines.push("", "### Rejections", "", `Wrongly rejected (judged corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
+  const labelCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
+  if (labelCodes.length) {
+    lines.push("", `| Automatic code \\ labelled code | ${labelCodes.join(" | ")} |`, `| --- |${labelCodes.map(() => " --- |").join("")}`);
+    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${labelCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
+  }
+  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
+  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
+  lines.push("", "### Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
+  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
+}
+function renderCalibrationMarkdown(run) {
+  const { plan, model, human } = run;
+  const lines = [];
+  const complete = model.unlabelled === 0 && human.unlabelled === 0;
+  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
+  lines.push(`Horizon ${plan.horizon_days} days \xB7 plan ${plan.plan_version} \xB7 sampler ${CALIBRATION_SAMPLER_VERSION} \xB7 labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
+  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
+  const k = human.agreement.corrective.kappa;
+  lines.push("", "## Verdict", "");
+  lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
+  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
+  lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
+  lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
+  renderEstimates(lines, model);
+  lines.push("", `## Human audit${run.primary === "human" ? " (primary)" : ""}`);
+  renderEstimates(lines, human);
+  lines.push("", "## Agreement");
+  renderAgreement(lines, "Person vs model A (audit subset)", human.agreement, plan.kappa_floor);
+  renderAgreement(lines, "Person vs model B (audit subset)", run.human_vs_b, plan.kappa_floor);
+  renderAgreement(lines, "Model A vs model B", model.agreement, plan.kappa_floor);
+  return `${lines.join("\n").trimEnd()}
+`;
+}
+
+// src/corpus/calibration-evidence.ts
+var EVIDENCE_DIFF_MAX_CHARS = 6e4;
+var EVIDENCE_RELATED_MAX = 15;
+var EVIDENCE_RELATED_MAX_FILES = 50;
+function git(runGit3, args) {
+  const result = runGit3(args);
+  if (result.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim().split("\n").pop()}`);
+  return result.stdout;
+}
+function cap(diff) {
+  return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
+[diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
+}
+function change(runGit3, url, from, to, pr2) {
+  const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
+  return {
+    url,
+    title: pr2?.title ?? null,
+    body: pr2?.body ?? null,
+    merged_at: pr2?.merged_at ?? null,
+    files,
+    ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
+  };
+}
+function buildItemEvidence(item, context, runGit3) {
+  const pr2 = context.prs.get(item.pr_url);
+  if (!pr2) throw new Error(`${item.item_id}: original not in the enumeration cache`);
+  const original = change(runGit3, pr2.pr_url, pr2.base_sha, pr2.merge_sha, pr2);
+  const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
+  const fixes = fixUrls.map((url) => {
+    const fixPr = context.prs.get(url);
+    if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
+    const sha2 = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
+    if (!sha2) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
+    return change(runGit3, url, `${sha2}^`, sha2, void 0);
+  });
+  const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
+  const since = new Date(pr2.merged_at);
+  const until = new Date(since.getTime() + context.horizonDays * 864e5);
+  const related = [];
+  if (searched.length) {
+    const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
+    const seen = /* @__PURE__ */ new Set([pr2.pr_url, ...fixUrls]);
+    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr2.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
+    for (const r of later) {
+      if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
+      seen.add(r.pr_url);
+      related.push({ url: r.pr_url, title: r.title, merged_at: r.merged_at });
+    }
+  }
+  return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
+}
+
 // src/corpus/pr-refs.ts
 var SQUASH = /\(#(\d+)\)\s*$/;
 var MERGE_PR = /^merge pull request #(\d+)\b/i;
@@ -13719,9 +14524,9 @@ var SEARCH_QUERY = `query($q:String!,$after:String){
 }`;
 var COUNT_QUERY = `query($q:String!){ search(type:ISSUE, query:$q, first:1){ issueCount } }`;
 var SEARCH_CAP = 1e3;
-var DAY_MS = 864e5;
-var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-var isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+var DAY_MS2 = 864e5;
+var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var isoDay = (ms2) => new Date(ms2).toISOString().slice(0, 10);
 function enumerateCorpusRepo(target, deps) {
   const commits = readFirstParent(target, deps.runGit);
   const rollups = readRollupMembers(target, deps.runGit, commits);
@@ -13811,7 +14616,7 @@ function enumerateCorpusRepo(target, deps) {
       const members = i - first + 1;
       const record = toRecord(pr2, commit, {
         merge_sha: commit.sha,
-        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA2,
+        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA3,
         member_commits: members,
         landed_by: !viaSha.includes(pr2) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
         batched
@@ -13872,8 +14677,8 @@ function readFirstParent(target, runGit3) {
   const seen = /* @__PURE__ */ new Set();
   const start = target.from.getTime();
   const end = target.until.getTime();
-  for (let lo = start; lo < end; lo += 30 * DAY_MS) {
-    const hi = Math.min(lo + 30 * DAY_MS, end);
+  for (let lo = start; lo < end; lo += 30 * DAY_MS2) {
+    const hi = Math.min(lo + 30 * DAY_MS2, end);
     const result = runGit3([
       "log",
       "--first-parent",
@@ -13902,7 +14707,7 @@ function readRollupMembers(target, runGit3, commits) {
   const result = runGit3([
     "log",
     "--grep=^Rollup merge of #",
-    `--since=${new Date(target.from.getTime() - 30 * DAY_MS).toISOString()}`,
+    `--since=${new Date(target.from.getTime() - 30 * DAY_MS2).toISOString()}`,
     `--until=${target.until.toISOString()}`,
     "--pretty=format:%H%x1f%P%x1f%s%x1e",
     target.branch
@@ -13924,7 +14729,7 @@ function readRollupMembers(target, runGit3, commits) {
 }
 function fetchMergedPrs(target, deps) {
   const out = /* @__PURE__ */ new Map();
-  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS]];
+  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS2]];
   while (pending.length) {
     const [lo, hi] = pending.shift();
     const range = `${isoDay(lo)}..${isoDay(hi)}`;
@@ -13938,8 +14743,8 @@ function fetchMergedPrs(target, deps) {
     const count = deps.graphql(COUNT_QUERY, { q }).search.issueCount;
     if (count > SEARCH_CAP) {
       if (hi <= lo) throw new Error(`corpus: more than ${SEARCH_CAP} PRs merged on ${isoDay(lo)}; cannot slice further`);
-      const mid = lo + Math.floor((hi - lo) / DAY_MS / 2) * DAY_MS;
-      pending.unshift([lo, mid], [mid + DAY_MS, hi]);
+      const mid = lo + Math.floor((hi - lo) / DAY_MS2 / 2) * DAY_MS2;
+      pending.unshift([lo, mid], [mid + DAY_MS2, hi]);
       continue;
     }
     const slice = [];
@@ -14266,7 +15071,8 @@ var OPTIONS = {
   plan: { type: "string" },
   "exclude-slice": { type: "string" },
   seed: { type: "string" },
-  sample: { type: "string" }
+  sample: { type: "string" },
+  step: { type: "string" }
 };
 var CORPUS_COMMANDS = [
   "corpus-enumerate",
@@ -14276,7 +15082,8 @@ var CORPUS_COMMANDS = [
   "corpus-calibration-sample",
   "corpus-calibration-evidence",
   "corpus-calibration-score",
-  "corpus-feature-audit"
+  "corpus-feature-audit",
+  "corpus-features"
 ];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -14286,8 +15093,8 @@ function secondsUntilReset() {
   if (result.exitCode !== 0 || !Number.isFinite(reset) || reset === 0) return 60;
   return Math.max(30, reset - Math.floor(Date.now() / 1e3) + 5);
 }
-var blockingSleep = (ms) => {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+var blockingSleep = (ms2) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms2);
 };
 function createGhGraphql(sleep, log) {
   return (query, variables) => {
@@ -14347,7 +15154,7 @@ function createGhPullsForCommit(repo, sleep, log) {
 }
 var GZIP_MEMBER_BYTES = 32 * 1024 * 1024;
 function writeJsonl(path4, rows, options = {}) {
-  const fd = openSync2(path4, "w");
+  const fd = openSync3(path4, "w");
   let bytes = 0;
   let writtenBytes = 0;
   let largestRowBytes = 0;
@@ -14355,7 +15162,7 @@ function writeJsonl(path4, rows, options = {}) {
   let pendingBytes = 0;
   const flush = () => {
     if (pendingBytes === 0) return;
-    const chunk = gzipSync(Buffer.concat(pending));
+    const chunk = gzipSync2(Buffer.concat(pending));
     writeSync2(fd, chunk);
     writtenBytes += chunk.length;
     pending = [];
@@ -14378,25 +15185,25 @@ function writeJsonl(path4, rows, options = {}) {
     }
     flush();
   } finally {
-    closeSync2(fd);
+    closeSync3(fd);
   }
   return { bytes, writtenBytes, largestRowBytes };
 }
 function fileCache(dir) {
-  mkdirSync2(dir, { recursive: true });
-  const path4 = (key) => join7(dir, `${createHash4("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  mkdirSync4(dir, { recursive: true });
+  const path4 = (key) => join9(dir, `${createHash7("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
-    get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync4(path4(key), "utf8")) : void 0,
-    set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
+    get: (key) => existsSync6(path4(key)) ? JSON.parse(readFileSync6(path4(key), "utf8")) : void 0,
+    set: (key, value) => writeFileSync4(path4(key), JSON.stringify(value))
   };
 }
 function syncClone(repo, dir, defaultBranch) {
   const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  for (let attempt2 = 1; !existsSync4(join7(dir, "HEAD")); attempt2++) {
+  for (let attempt2 = 1; !existsSync6(join9(dir, "HEAD")); attempt2++) {
     const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
     if (cloned.exitCode === 0) break;
-    rmSync2(dir, { recursive: true, force: true });
+    rmSync3(dir, { recursive: true, force: true });
     if (attempt2 >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
   }
   const fetched = runGit3(["fetch", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
@@ -14430,7 +15237,7 @@ function runCorpusCli(command, argv, io) {
   }
   try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
-    manifestBytes = readFileSync4(resolve5(io.cwd, values.manifest));
+    manifestBytes = readFileSync6(resolve5(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
     entries = runnableRepos(manifest, values.repo);
     window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
@@ -14468,7 +15275,7 @@ function runCorpusCli(command, argv, io) {
     let notes = { notes: [], convention_findings: [] };
     try {
       if (values.notes) {
-        const parsed = JSON.parse(readFileSync4(resolve5(io.cwd, values.notes), "utf8"));
+        const parsed = JSON.parse(readFileSync6(resolve5(io.cwd, values.notes), "utf8"));
         notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
       }
     } catch (error) {
@@ -14480,6 +15287,31 @@ function runCorpusCli(command, argv, io) {
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve5(io.cwd, values["cache-dir"]);
+  if (command === "corpus-features") {
+    const step = values.step;
+    if (!step || !FEATURE_STEPS.includes(step)) {
+      io.writeStderr(`error: corpus-features needs --step ${FEATURE_STEPS.join("|")}
+`);
+      return { exitCode: 2 };
+    }
+    if (step === "manifest" && !values.out) {
+      io.writeStderr("error: corpus-features --step manifest needs --out <file>\n");
+      return { exitCode: 2 };
+    }
+    return runCorpusFeatures({
+      step,
+      entries,
+      cacheRoot,
+      cohortSha256: createHash7("sha256").update(manifestBytes).digest("hex"),
+      ...values.out ? { out: resolve5(io.cwd, values.out) } : {},
+      graphql,
+      writeRows: (path4, rows) => {
+        writeJsonl(path4, rows, { gzip: true });
+      },
+      io,
+      log
+    });
+  }
   if (command === "corpus-label" || command === "corpus-corrective") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : /* @__PURE__ */ new Date();
     if (!Number.isFinite(asOf.getTime())) {
@@ -14492,20 +15324,20 @@ function runCorpusCli(command, argv, io) {
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const repoDir = join9(cacheRoot, `${owner}__${name}`);
     try {
-      mkdirSync2(repoDir, { recursive: true });
+      mkdirSync4(repoDir, { recursive: true });
       const meta = graphql("query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }", { owner, name });
       const branch = meta.repository.defaultBranchRef?.name;
       if (!branch) throw new Error("repository has no default branch");
       log(`info: ${entry2.repo}: syncing clone of ${branch}`);
-      const runGit3 = syncClone(entry2.repo, join7(repoDir, "repo.git"), branch);
+      const runGit3 = syncClone(entry2.repo, join9(repoDir, "repo.git"), branch);
       const { records, stats } = enumerateCorpusRepo(
         { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], ...window },
-        { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
+        { runGit: runGit3, graphql, cache: fileCache(join9(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
       );
-      writeJsonl(join7(repoDir, "prs.jsonl"), records);
-      writeFileSync2(join7(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
+      writeJsonl(join9(repoDir, "prs.jsonl"), records);
+      writeFileSync4(join9(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(stats)}
 `);
@@ -14523,26 +15355,26 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const repoDir = join9(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const statsPath = join7(repoDir, "enumeration.json");
-      if (!existsSync4(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
-      const { branch } = JSON.parse(readFileSync4(statsPath, "utf8"));
-      const records = readFileSync4(join7(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
-      const gitDir = join7(repoDir, "repo.git");
+      const statsPath = join9(repoDir, "enumeration.json");
+      if (!existsSync6(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+      const { branch } = JSON.parse(readFileSync6(statsPath, "utf8"));
+      const records = readFileSync6(join9(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const gitDir = join9(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       log(`info: ${entry2.repo}: backfilling blobs`);
       const backfill = runGit3(["backfill"]);
       if (backfill.exitCode !== 0) throw new Error(`git backfill failed: ${backfill.stderr.trim().split("\n").pop()}`);
       log(`info: ${entry2.repo}: prefetching cross-references for ${records.length} PRs`);
-      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join7(repoDir, "graphql")));
+      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join9(repoDir, "graphql")));
       log(`info: ${entry2.repo}: labelling`);
       const { rows, failed } = labelCorpusRepo(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
-      const written = writeJsonl(join7(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
+      const written = writeJsonl(join9(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
       const summary = {
         repo: entry2.repo,
         as_of: asOf.toISOString(),
@@ -14556,7 +15388,7 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
         base_rates: summarizeLabels(entry2.repo, rows)
       };
-      writeFileSync2(join7(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync4(join9(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
@@ -14571,10 +15403,10 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   return { exitCode: failures ? 3 : 0 };
 }
 function readJsonl2(path4) {
-  return readFileSync4(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return readFileSync6(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 function* readGzipJsonlMembers(path4) {
-  const raw = readFileSync4(path4);
+  const raw = readFileSync6(path4);
   for (let offset = 0; offset < raw.length; ) {
     if (raw[offset] !== 31 || raw[offset + 1] !== 139 || raw[offset + 3] !== 0) throw new Error(`${path4}: unexpected gzip member header at byte ${offset}`);
     const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true });
@@ -14586,19 +15418,19 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const repoDir = join9(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const s2Path = join7(repoDir, "s2.jsonl.gz");
-      if (!existsSync4(s2Path)) throw new Error("not labelled yet; run corpus-label first");
-      const { branch } = JSON.parse(readFileSync4(join7(repoDir, "enumeration.json"), "utf8"));
-      const originals = readJsonl2(join7(repoDir, "prs.jsonl"));
-      const gitDir = join7(repoDir, "repo.git");
+      const s2Path = join9(repoDir, "s2.jsonl.gz");
+      if (!existsSync6(s2Path)) throw new Error("not labelled yet; run corpus-label first");
+      const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
+      const originals = readJsonl2(join9(repoDir, "prs.jsonl"));
+      const gitDir = join9(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      const cache = fileCache(join7(repoDir, "graphql"));
-      const laterPath = join7(repoDir, "fix-prs.jsonl");
+      const cache = fileCache(join9(repoDir, "graphql"));
+      const laterPath = join9(repoDir, "fix-prs.jsonl");
       let laterPrs = [];
-      if (existsSync4(laterPath)) laterPrs = readJsonl2(laterPath);
+      if (existsSync6(laterPath)) laterPrs = readJsonl2(laterPath);
       else if (window.until < asOf) {
         log(`info: ${entry2.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
         ({ records: laterPrs } = enumerateCorpusRepo(
@@ -14617,9 +15449,9 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
         { repo: entry2.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
       );
-      writeJsonl(join7(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
-      writeJsonl(join7(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
-      writeJsonl(join7(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
+      writeJsonl(join9(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
+      writeJsonl(join9(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
+      writeJsonl(join9(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
       const summary = {
         repo: entry2.repo,
         as_of: asOf.toISOString(),
@@ -14627,7 +15459,7 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
         ...summarizeCorrective(result, originals.length),
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3)
       };
-      writeFileSync2(join7(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync4(join9(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
@@ -14643,7 +15475,7 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
 }
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha2562 = (bytes) => createHash4("sha256").update(bytes).digest("hex");
+  const sha2563 = (bytes) => createHash7("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
@@ -14651,13 +15483,13 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const repoDir = join9(cacheRoot, `${owner}__${name}`);
     try {
-      for (const file of REPORT_INPUTS) if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      for (const file of REPORT_INPUTS) if (!existsSync6(join9(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
       const counted = (file, onRow) => {
-        const path4 = join7(repoDir, file);
-        const bytes = readFileSync4(path4);
-        const record = { repo: entry2.repo, file, sha256: sha2562(bytes), bytes: bytes.length, rows: 0 };
+        const path4 = join9(repoDir, file);
+        const bytes = readFileSync6(path4);
+        const record = { repo: entry2.repo, file, sha256: sha2563(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
           for (const row of readGzipJsonlMembers(path4)) {
@@ -14694,43 +15526,43 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
-    cohort_manifest_sha256: sha2562(manifestBytes),
+    cohort_manifest_sha256: sha2563(manifestBytes),
     label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
     inputs
   };
-  const run_id = sha2562(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
-  mkdirSync2(outDir, { recursive: true });
-  writeFileSync2(join7(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
+  const run_id = sha2563(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  mkdirSync4(outDir, { recursive: true });
+  writeFileSync4(join9(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
+  writeFileSync4(join9(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
+  writeFileSync4(join9(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
 `);
   return { exitCode: unresolved ? 1 : 0 };
 }
 function insideGitWorkTree(path4) {
-  for (let dir = path4; ; dir = dirname(dir)) {
-    if (existsSync4(join7(dir, ".git"))) return true;
-    if (dirname(dir) === dir) return false;
+  for (let dir = path4; ; dir = dirname2(dir)) {
+    if (existsSync6(join9(dir, ".git"))) return true;
+    if (dirname2(dir) === dir) return false;
   }
 }
 function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log) {
-  const sha2562 = (bytes2) => createHash4("sha256").update(bytes2).digest("hex");
+  const sha2563 = (bytes2) => createHash7("sha256").update(bytes2).digest("hex");
   let plan;
   let planBytes;
   let sliceBytes;
   let sliceRepos;
   try {
-    planBytes = readFileSync4(planPath);
+    planBytes = readFileSync6(planPath);
     plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
-    sliceBytes = readFileSync4(slicePath);
+    sliceBytes = readFileSync6(slicePath);
     const slice = JSON.parse(sliceBytes.toString("utf8"));
     if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
-    if (existsSync4(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    if (existsSync6(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -14743,21 +15575,21 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
   let failures = 0;
   for (const entry2 of development) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    const repoDir = join9(cacheRoot, `${owner}__${name}`);
     try {
       const files = ["candidates.jsonl.gz", "corrective.jsonl.gz"];
       for (const file2 of files) {
-        const path4 = join7(repoDir, file2);
-        if (!existsSync4(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
-        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2562(readFileSync4(path4)) });
+        const path4 = join9(repoDir, file2);
+        if (!existsSync6(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
+        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2563(readFileSync6(path4)) });
       }
       units.push(
         ...classifyCalibrationRepo({
           repo: entry2.repo,
           horizonDays: plan.horizon_days,
           szzStrongMinLines: plan.szz_strong_min_lines,
-          candidates: readGzipJsonlMembers(join7(repoDir, files[0])),
-          correctiveRows: readGzipJsonlMembers(join7(repoDir, files[1]))
+          candidates: readGzipJsonlMembers(join9(repoDir, files[0])),
+          correctiveRows: readGzipJsonlMembers(join9(repoDir, files[1]))
         })
       );
     } catch (error) {
@@ -14777,22 +15609,22 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     procedure: "hok-3269-calibration-sample",
     sampler_version: CALIBRATION_SAMPLER_VERSION,
     plan,
-    plan_sha256: sha2562(planBytes),
-    cohort_manifest_sha256: sha2562(manifestBytes),
-    excluded_slice_sha256: sha2562(sliceBytes),
+    plan_sha256: sha2563(planBytes),
+    cohort_manifest_sha256: sha2563(manifestBytes),
+    excluded_slice_sha256: sha2563(sliceBytes),
     seed,
     inputs,
     cells: sample.cells,
     items: sample.items,
     drawn_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  mkdirSync2(outDir, { recursive: true, mode: 448 });
+  mkdirSync4(outDir, { recursive: true, mode: 448 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
 `, "utf8");
-  writeFileSync2(join7(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
+  writeFileSync4(join9(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
   const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
   io.writeStdout(
-    `${JSON.stringify({ sample_sha256: sha2562(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
+    `${JSON.stringify({ sample_sha256: sha2563(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
 `
   );
   return { exitCode: 0 };
@@ -14801,12 +15633,12 @@ function runCalibrationScore(sampleDir, io) {
   let sample;
   let sheets;
   try {
-    sample = JSON.parse(readFileSync4(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync6(join9(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
     sheets = {
-      a: readFileSync4(join7(sampleDir, "sheet-a.csv"), "utf8"),
-      b: readFileSync4(join7(sampleDir, "sheet-b.csv"), "utf8"),
-      h: readFileSync4(join7(sampleDir, "sheet-h.csv"), "utf8")
+      a: readFileSync6(join9(sampleDir, "sheet-a.csv"), "utf8"),
+      b: readFileSync6(join9(sampleDir, "sheet-b.csv"), "utf8"),
+      h: readFileSync6(join9(sampleDir, "sheet-h.csv"), "utf8")
     };
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -14824,11 +15656,11 @@ function runCalibrationScore(sampleDir, io) {
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync2(join7(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
+  writeFileSync4(join9(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
 `, { mode: 384 });
-  writeFileSync2(join7(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
+  writeFileSync4(join9(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join7(sampleDir, "calibration-table.md") })}
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join9(sampleDir, "calibration-table.md") })}
 `
   );
   return { exitCode: 0 };
@@ -14836,9 +15668,9 @@ function runCalibrationScore(sampleDir, io) {
 function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   let sample;
   try {
-    sample = JSON.parse(readFileSync4(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync6(join9(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync4(join7(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
+    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync6(join9(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -14847,14 +15679,14 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   const evidence3 = [];
   let failures = 0;
   for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
-    const repoDir = join7(cacheRoot, repo.replace("/", "__"));
+    const repoDir = join9(cacheRoot, repo.replace("/", "__"));
     try {
-      const { branch } = JSON.parse(readFileSync4(join7(repoDir, "enumeration.json"), "utf8"));
-      const records = [...readJsonl2(join7(repoDir, "prs.jsonl")), ...existsSync4(join7(repoDir, "fix-prs.jsonl")) ? readJsonl2(join7(repoDir, "fix-prs.jsonl")) : []];
+      const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
+      const records = [...readJsonl2(join9(repoDir, "prs.jsonl")), ...existsSync6(join9(repoDir, "fix-prs.jsonl")) ? readJsonl2(join9(repoDir, "fix-prs.jsonl")) : []];
       const prs = new Map(records.map((r) => [r.pr_url, r]));
       const bySha = /* @__PURE__ */ new Map();
       for (const r of records) for (const sha2 of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha2)) bySha.set(sha2, r);
-      const gitDir = join7(repoDir, "repo.git");
+      const gitDir = join9(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       for (const item of sample.items.filter((i) => i.repo === repo)) evidence3.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
     } catch (error) {
@@ -14865,10 +15697,10 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   if (failures) return { exitCode: 3 };
   const order = new Map(sample.items.map((i, n) => [i.item_id, n]));
   evidence3.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
-  writeJsonl(join7(sampleDir, "evidence.jsonl"), evidence3);
-  chmodSync(join7(sampleDir, "evidence.jsonl"), 384);
+  writeJsonl(join9(sampleDir, "evidence.jsonl"), evidence3);
+  chmodSync(join9(sampleDir, "evidence.jsonl"), 384);
   const related = new Map(evidence3.map((e) => [e.item_id, e.related.map((r) => r.url)]));
-  writeFileSync2(join7(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
+  writeFileSync4(join9(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
   const truncated = evidence3.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
   io.writeStdout(`${JSON.stringify({ items: evidence3.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence3.filter((e) => e.related.length).length })}
 `);
@@ -15353,7 +16185,7 @@ function toReportAttribution(value) {
 }
 
 // src/orchestrate/enumerate.ts
-var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var EMPTY_TREE_SHA4 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 function enumerateWindow(options) {
   const { runGit: runGit3, branch, from, to, cursor = null, maxPrs = Number.MAX_SAFE_INTEGER } = options;
   const cutoff = Math.floor(from.getTime() / 1e3);
@@ -15377,7 +16209,7 @@ function enumerateWindow(options) {
     const epoch = Number.parseInt(epochText, 10);
     if (!Number.isFinite(epoch) || epoch < cutoff || epoch > end) continue;
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
-    const parentSha = parents[0] ?? EMPTY_TREE_SHA3;
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA4;
     const subject = subjectParts.join("	");
     merges.push({ mergeSha: sha2, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha2 });
   }
@@ -15388,9 +16220,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash5("sha256").update(stableJson(config)).digest("hex");
+  return createHash8("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -15757,6 +16589,8 @@ corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
+                 (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
 corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
                  (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;
@@ -15884,8 +16718,8 @@ function runScanCli(argv, io) {
       io.writeStdout(output);
     } else {
       outputPath = resolve6(outSpec);
-      mkdirSync4(dirname3(outputPath), { recursive: true });
-      writeFileSync4(outputPath, output);
+      mkdirSync6(dirname4(outputPath), { recursive: true });
+      writeFileSync6(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -15940,7 +16774,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join10(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync3(join12(tmpdir3(), "hokusai-report-"));
       const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -15997,7 +16831,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync6(resolve6(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync8(resolve6(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -16008,7 +16842,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join10(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join12(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -16028,8 +16862,8 @@ async function runReportCli(argv, io) {
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync4(dirname3(outputPath), { recursive: true });
-          writeFileSync4(outputPath, built.body);
+          mkdirSync6(dirname4(outputPath), { recursive: true });
+          writeFileSync6(outputPath, built.body);
         }
       } else {
         const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
@@ -16038,14 +16872,14 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync4(dirname3(outputPath), { recursive: true });
-          writeFileSync4(outputPath, output);
+          mkdirSync6(dirname4(outputPath), { recursive: true });
+          writeFileSync6(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync4(dirname3(outputPath), { recursive: true });
-      writeFileSync4(outputPath, output);
+      mkdirSync6(dirname4(outputPath), { recursive: true });
+      writeFileSync6(outputPath, output);
     }
     try {
       saveState?.();
@@ -16066,7 +16900,7 @@ async function runReportCli(argv, io) {
     diag.error(`unexpected: ${error.message}`);
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   } finally {
-    if (temporaryRepo) rmSync4(temporaryRepo, { recursive: true, force: true });
+    if (temporaryRepo) rmSync5(temporaryRepo, { recursive: true, force: true });
   }
 }
 function parsePositiveInteger(value, fallback, name, maximum) {
@@ -16083,7 +16917,7 @@ function parseGithubTarget(value) {
 }
 function resolveRepoDir(raw) {
   const repoDir = resolve6(validateRepoDir(raw));
-  if (!existsSync6(repoDir) || !statSync4(repoDir).isDirectory()) {
+  if (!existsSync8(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);

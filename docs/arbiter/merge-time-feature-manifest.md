@@ -1,6 +1,6 @@
 # Merge-time feature manifest (HOK-3023)
 
-**Status:** draft, `rr-merge-features/0.2.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
+**Status:** draft, `rr-merge-features/0.3.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
 
 Every arm in the [pre-registered backtest](./rework-risk-preregistration.md) sees the same information: what was knowable when the PR merged. The manifest declares that set, and one validator enforces it.
 
@@ -117,6 +117,28 @@ The evaluation slice stays sealed through this work:
 - Slice repos report pass or fail only.
 
 The coverage probe above is the one exception. It reports evidence availability per repo and quarter for all 18 repos alike, so it does not reveal which repos are in the slice. It holds no labels, outcomes or PR identifiers.
+
+## Extraction
+
+`hokusai-scan corpus-features` builds the rows, one step at a time per repo:
+
+| Step | Output | Published? |
+| --- | --- | --- |
+| `--step ci` | CI results on each PR's head commit, from `feature-evidence/ci/` | No, local only |
+| `--step evidence` | Timestamped reviews, labels, renames, body versions and commits, in `feature-evidence/evidence/` | No, holds raw text |
+| `--step extract` | `features.jsonl.gz` and `features.summary.json` | Yes, derived values and hashes only |
+| `--step manifest --out <file>` | The run manifest: file hashes and row counts per repo | Yes |
+
+Capture resumes where it stopped. `extract` reads no network or clock, so it can be repeated from the same evidence.
+
+- **Rows:** every row has all manifest columns, plus `repo`, `pr_number`, `merge_sha`, `base_sha`, `landed_by`, `as_of` and `as_of_basis`. `as_of_basis` is null when no evidence could be captured for the PR.
+- **Cutoff in git:** a commit counts only if it landed at or before `base_sha` on the default branch's first-parent line. Commit dates are never read, and 90-day windows use landing time, so a backdated commit cannot enter a window early.
+- **Rollup members:** a member's parent is off the first-parent line, so its history stops just before the rollup landed. Earlier members of the same rollup are left out, which can only undercount.
+- **Author history:** the author's commits are matched by the email addresses on their own commits in the PR. A squash PR with no commits to read falls back to the landing commit's email.
+- **Paths:** file history matches exact paths and does not follow renames.
+- **Diff hash:** `feature.content.diff_sha256` hashes the output of `git diff --no-renames --no-ext-diff --no-textconv --no-color --full-index -p <base_sha> <merge_sha>`.
+- **CI capture:** only PRs merged from 2025-07-01 are requested, a quarter earlier than the first retained results the probe found. A CI failure means `FAILURE`, `TIMED_OUT`, `STARTUP_FAILURE` or `ERROR`; a cancelled run usually means it was superseded.
+- **Branch updates:** merge commits from updating a PR's branch don't count toward `marked_commit_share`.
 
 ## Using the validator
 

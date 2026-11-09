@@ -155,6 +155,8 @@ const REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
 const REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
 const REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
 const FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
+/** A fix-shaped subject. Also read as a merge-time feature from ancestor commits, never from label tables. */
+export const isFixSubject = (subject: string): boolean => FIX_TITLE.test(subject);
 const FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
 /**
  * Regression wording just before a citation ("Regression in <sha>", "broken

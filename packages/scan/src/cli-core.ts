@@ -123,6 +123,8 @@ corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
+                 (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
 corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
                  (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;

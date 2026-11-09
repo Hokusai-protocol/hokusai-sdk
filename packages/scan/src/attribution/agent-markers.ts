@@ -32,6 +32,11 @@ export interface AgentMarkerInput {
   body: string | null;
   /** True when the body at `as_of` could not be rebuilt. */
   bodyUnavailable?: boolean;
+  /**
+   * The commit that landed the PR. A squash keeps trailers the PR's own commits may
+   * have lost, but it is not one of those commits, so it never changes the share.
+   */
+  landingMessage?: string;
 }
 
 export interface AgentMarkers {
@@ -193,6 +198,24 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
     if (marked) markedCommits += 1;
   }
 
+  let markedByLanding = false;
+  if (input.landingMessage) {
+    for (const [, name = '', email = ''] of input.landingMessage.matchAll(CO_AUTHOR_TRAILER)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      coAuthorTrailer = true;
+      markedByLanding = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(input.landingMessage)) {
+      families.add(family);
+      signature = true;
+      markedByLanding = true;
+    }
+  }
+
   const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? '');
   for (const family of bodyFamilies) {
     families.add(family);
@@ -213,7 +236,7 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
     exactModel: models.length === 1 ? models[0]! : null,
     markedByAccount: accountFamily !== null,
     markedByBranch: branchFamily !== null,
-    markedByCommit: commitsKnown ? markedCommits > 0 : null,
+    markedByCommit: markedByLanding || markedCommits > 0 ? true : commitsKnown ? false : null,
     markedByBody: input.bodyUnavailable ? null : bodyFamilies.length > 0,
     coAuthorTrailer,
     signature,
