@@ -21,7 +21,7 @@
 import type { HokusaiFieldError } from './schemas.js';
 
 /** Any change to the entries or the rules below bumps this version. */
-export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.1.0' as const;
+export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.2.0' as const;
 
 /** Sources whose evidence is fixed at or before `as_of`. */
 export const FEATURE_AS_OF_SOURCES = [
@@ -31,6 +31,8 @@ export const FEATURE_AS_OF_SOURCES = [
   'git_ancestors_of_base',
   /** Timestamped GitHub events, each at or before `as_of`. */
   'github_events_until_as_of',
+  /** The PR's commits up to its head at merge, plus the landing commit; fixed by SHA. */
+  'pr_commits_at_merge',
   /** A PR fact that cannot change after creation. */
   'immutable_pr_fact',
   /** Task-contract data written by an instrumented harness before merge. */
@@ -55,7 +57,16 @@ export const AS_OF_BASES = [
 ] as const;
 export type AsOfBasis = (typeof AS_OF_BASES)[number];
 
-export type FeatureKind = 'integer' | 'number' | 'boolean' | 'content_sha256';
+export type FeatureKind = 'integer' | 'number' | 'boolean' | 'content_sha256' | 'category';
+
+/**
+ * Agent tools a PR can carry evidence of. `none` means no marker was seen, not
+ * that a person wrote the PR unaided.
+ */
+export const AGENT_TOOL_FAMILIES = [
+  'none', 'claude', 'copilot', 'cursor', 'codex', 'devin', 'gemini', 'aider', 'openhands', 'other', 'multiple',
+] as const;
+export type AgentToolFamily = (typeof AGENT_TOOL_FAMILIES)[number];
 
 export interface MergeTimeFeatureEntry {
   /** `feature.<group>.<field>` or `segment.<group>.<field>`. */
@@ -66,6 +77,11 @@ export interface MergeTimeFeatureEntry {
   readonly null_meaning: string;
   /** Segment features are never arm inputs; they are reported separately. */
   readonly segment: boolean;
+  /**
+   * Allowed values of a `category`. An arm input needs a closed list, because a
+   * value training never saw (a new model name) also dates the row.
+   */
+  readonly categories?: readonly string[];
   /** Only part of the corpus window has this evidence. */
   readonly availability?: string;
 }
@@ -80,6 +96,9 @@ const NO_DIFF = 'The diff between base_sha and merge_sha could not be read.';
 const NO_HISTORY = 'Ancestor history of base_sha could not be read.';
 const NO_EVENTS = 'GitHub returned no timeline for this PR.';
 const NOT_INSTRUMENTED = 'The PR did not come from an instrumented agent harness.';
+const NO_COMMITS = "The PR's commits could not be read.";
+const NO_MARKER_EVIDENCE = 'No marker was found, and the commits or the body at as_of could not be read.';
+const NO_AUTHOR = 'The author account no longer exists.';
 
 const entry = (
   name: string,
@@ -111,7 +130,11 @@ export const REWORK_RISK_FEATURE_MANIFEST: MergeTimeFeatureManifest = Object.fre
 
     entry('feature.author.repo_commits_prior', 'git_ancestors_of_base', 'integer', "The author's commits among ancestors of base_sha.", NO_HISTORY),
     entry('feature.author.touched_file_commits_prior', 'git_ancestors_of_base', 'integer', "The author's commits to the changed files among those ancestors.", NO_HISTORY),
-    entry('feature.author.is_bot', 'immutable_pr_fact', 'boolean', 'GitHub reports the PR author as a bot.', 'The author account no longer exists.'),
+    entry('feature.author.is_bot', 'immutable_pr_fact', 'boolean', 'GitHub reports the PR author as a bot.', NO_AUTHOR),
+
+    entry('feature.agent.marker_present', 'github_events_until_as_of', 'boolean', 'The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.', NO_MARKER_EVIDENCE),
+    { ...entry('feature.agent.tool_family', 'github_events_until_as_of', 'category', 'The agent tool the markers name.', NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
+    entry('feature.agent.marked_commit_share', 'pr_commits_at_merge', 'number', "Share of the PR's commits that carry a marker.", NO_COMMITS),
 
     entry('feature.process.review_count', 'github_events_until_as_of', 'integer', 'Reviews submitted by as_of.', NO_EVENTS),
     entry('feature.process.approvals', 'github_events_until_as_of', 'integer', 'Approvals submitted by as_of.', NO_EVENTS),
@@ -132,6 +155,13 @@ export const REWORK_RISK_FEATURE_MANIFEST: MergeTimeFeatureManifest = Object.fre
     entry('segment.provenance.human_intervention_count', 'harness_contract', 'integer', 'Human interventions during the run.', NOT_INSTRUMENTED),
     entry('segment.provenance.review_rounds', 'harness_contract', 'integer', 'Review rounds the harness recorded.', NOT_INSTRUMENTED),
     entry('segment.provenance.change_requests', 'harness_contract', 'integer', 'Change requests the harness recorded.', NOT_INSTRUMENTED),
+
+    entry('segment.agent.exact_model', 'pr_commits_at_merge', 'category', 'The model a commit names, when exactly one is named. Most markers name only a tool.', 'No commit names exactly one model, or the commits could not be read.'),
+    entry('segment.agent.marked_by_account', 'immutable_pr_fact', 'boolean', 'The PR author is a known agent bot account.', NO_AUTHOR),
+    entry('segment.agent.marked_by_branch', 'immutable_pr_fact', 'boolean', "The PR's head branch has an agent tool's prefix.", 'GitHub reports no head branch for this PR.'),
+    entry('segment.agent.marked_by_commit', 'pr_commits_at_merge', 'boolean', 'A commit has an agent author, co-author trailer, footer or model tag.', NO_COMMITS),
+    entry('segment.agent.marked_by_body', 'github_events_until_as_of', 'boolean', 'The body at as_of has an agent footer or session link.', 'The body at as_of cannot be rebuilt from edit history.'),
+    entry('segment.author.dependency_bot', 'immutable_pr_fact', 'boolean', 'The PR author is a dependency bot. Pre-registration section 2 reports these PRs separately.', NO_AUTHOR),
 
     {
       ...entry('segment.ci.checks_completed_by_merge', 'github_events_until_as_of', 'integer', 'CI results completed by as_of.', 'GitHub no longer retains CI results for this commit.'),
@@ -168,6 +198,7 @@ export type LeakageErrorCode =
   | 'duplicate_entry'
   | 'invalid_namespace'
   | 'segment_flag_mismatch'
+  | 'open_category_in_arm_input'
   | 'missing_as_of_source'
   | 'post_merge_as_of_source'
   | 'unknown_as_of_source'
@@ -205,7 +236,7 @@ export function validateFeatureManifest(manifest: {
   }
   const seen = new Set<string>();
   (manifest.entries ?? []).forEach((raw, index) => {
-    const item = raw as { name?: unknown; segment?: unknown; as_of_source?: unknown };
+    const item = raw as { name?: unknown; segment?: unknown; as_of_source?: unknown; kind?: unknown; categories?: unknown };
     const path = `entries[${index}]`;
     const name = typeof item.name === 'string' ? item.name : '';
     if (seen.has(name)) errors.push({ path, code: 'duplicate_entry', message: `${name} is declared twice.` });
@@ -217,6 +248,10 @@ export function validateFeatureManifest(manifest: {
 
     if (item.segment !== name.startsWith('segment.')) {
       errors.push({ path, code: 'segment_flag_mismatch', message: `${name}: the segment flag must match the namespace.` });
+    }
+
+    if (item.kind === 'category' && !item.segment && !(Array.isArray(item.categories) && item.categories.length > 0)) {
+      errors.push({ path, code: 'open_category_in_arm_input', message: `${name}: an arm input needs a closed list of categories.` });
     }
 
     const source = item.as_of_source;

@@ -1,6 +1,6 @@
 # Merge-time feature manifest (HOK-3023)
 
-**Status:** draft, `rr-merge-features/0.1.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
+**Status:** draft, `rr-merge-features/0.2.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
 
 Every arm in the [pre-registered backtest](./rework-risk-preregistration.md) sees the same information: what was knowable when the PR merged. The manifest declares that set, and one validator enforces it.
 
@@ -17,6 +17,7 @@ Each row has an `as_of`, and each manifest entry declares where its evidence com
 | `git_diff_base_to_merge` | The diff from `base_sha` to `merge_sha` | Both commits are fixed |
 | `git_ancestors_of_base` | Commits reachable from `base_sha` | Reachability; commit dates only set the length of a window |
 | `github_events_until_as_of` | Timestamped reviews, label events, renames and edits | Each event is checked against `as_of` |
+| `pr_commits_at_merge` | The PR's commits up to its head at merge, plus the landing commit | Commits are fixed by SHA |
 | `immutable_pr_fact` | Facts that cannot change after PR creation | They cannot change |
 | `harness_contract` | Task-contract data from an instrumented harness | Written before merge |
 
@@ -34,8 +35,11 @@ Each row has an `as_of`, and each manifest entry declares where its evidence com
 | `feature.shape` | Diff size, tests changed, complexity change | Arm input |
 | `feature.history` | Churn, authors and fix-shaped commits on the changed files | Arm input |
 | `feature.author` | The author's prior commits; whether the author is a bot | Arm input |
+| `feature.agent` | Evidence that an agent tool worked on the PR: whether a marker exists, which tool, and the share of commits marked | Arm input |
 | `feature.process` | Reviews by merge; labels, title and body as they were at merge | Arm input |
 | `feature.content` | Hashes of the private diff, title and body that content arms read | Arm input |
+| `segment.agent` | The exact model a commit names, and where each marker was found | Reported separately |
+| `segment.author` | Whether the author is a dependency bot | Reported separately |
 | `segment.provenance` | The five instrumented-agent fields | Reported separately; null elsewhere |
 | `segment.ci` | CI results finished by merge | Reported separately; 2025Q4 onward only |
 
@@ -45,6 +49,28 @@ Left out of v1:
 
 - **`type_errors`, `lint_errors` and locally built `build_ok`:** running each repo's historical tooling isn't practical at corpus scale.
 - **`dependency_depth`:** the extractor has no structural index yet.
+
+## Agent markers
+
+`feature.author.is_bot` only says that GitHub reports the author account as a bot. A person who uses Claude Code and opens the PR themselves is not a bot, so agent use is detected separately, by `detectAgentMarkers` in `@hokusai/scan`.
+
+| Evidence | Examples |
+| --- | --- |
+| Co-author trailer or commit author | `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>` |
+| Footer or model tag in a commit | `Generated with Claude Code`, a line reading `model: gpt-4o` |
+| Footer or session link in the PR body at `as_of` | `Generated with Claude Code`, a Devin session link |
+| Head branch prefix | `claude/`, `copilot/`, `cursor/` |
+| Bot account | `copilot-swe-agent`, `devin-ai-integration` |
+
+- **These fields mean "agent-marked", not "agent-written".** People remove markers, so false means no marker was seen, never that a person worked alone. One marked commit in a large PR shows assistance, and `marked_commit_share` separates that from a PR that is mostly marked.
+- **Agent markers are arm inputs.** They are knowable at merge. A feature also gives every arm the same evidence, including the commit trailers that no content field exposes.
+- **The exact model is a segment only.** New model names keep appearing, so the evaluation window would hold names training never saw, and each name also dates the PR. The validator requires any category used as an arm input to have a closed list.
+- **Comparing tools or models is not causal.** Teams may give agents different work. A fair comparison uses actual versus predicted rework from a model trained without markers, on development repos, so that it stays outside the frozen gate.
+- **Dependency bots are separate.** `is_bot` also covers merge and CI bots. `segment.author.dependency_bot` uses the same login pattern as the corrective label, and supports the separate reporting in pre-registration §2. Dependency and merge bots are not agent markers.
+
+Before the freeze, the audit reviews a sample from development repos by hand and reports the detector's precision, along with marker rate by quarter and how well markers alone predict rework. `fixtures/arbiter/rework-risk/agent-marker-cases.json` tests behaviour only; its cases are written by hand. Undisclosed agent use cannot be measured.
+
+`classifyCommitActor` in the survival labeller is deliberately separate. It sets `undone_by` in versioned labels, so changing it needs a labeller version bump and relabelling.
 
 ## Boundary rulings
 

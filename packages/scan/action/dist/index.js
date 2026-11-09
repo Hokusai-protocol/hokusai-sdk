@@ -2509,7 +2509,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
 );
 
 // ../core/src/rework-risk-features.ts
-var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.1.0";
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.2.0";
 var FEATURE_AS_OF_SOURCES = [
   /** The diff between `base_sha` and `merge_sha`. */
   "git_diff_base_to_merge",
@@ -2517,6 +2517,8 @@ var FEATURE_AS_OF_SOURCES = [
   "git_ancestors_of_base",
   /** Timestamped GitHub events, each at or before `as_of`. */
   "github_events_until_as_of",
+  /** The PR's commits up to its head at merge, plus the landing commit; fixed by SHA. */
+  "pr_commits_at_merge",
   /** A PR fact that cannot change after creation. */
   "immutable_pr_fact",
   /** Task-contract data written by an instrumented harness before merge. */
@@ -2528,10 +2530,26 @@ var POST_MERGE_SOURCES = [
   "label_store",
   "wall_clock"
 ];
+var AGENT_TOOL_FAMILIES = [
+  "none",
+  "claude",
+  "copilot",
+  "cursor",
+  "codex",
+  "devin",
+  "gemini",
+  "aider",
+  "openhands",
+  "other",
+  "multiple"
+];
 var NO_DIFF = "The diff between base_sha and merge_sha could not be read.";
 var NO_HISTORY = "Ancestor history of base_sha could not be read.";
 var NO_EVENTS = "GitHub returned no timeline for this PR.";
 var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
+var NO_COMMITS = "The PR's commits could not be read.";
+var NO_MARKER_EVIDENCE = "No marker was found, and the commits or the body at as_of could not be read.";
+var NO_AUTHOR = "The author account no longer exists.";
 var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
 var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
   manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
@@ -2552,7 +2570,10 @@ var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
     entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
     entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "The author's commits among ancestors of base_sha.", NO_HISTORY),
     entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "The author's commits to the changed files among those ancestors.", NO_HISTORY),
-    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", "The author account no longer exists."),
+    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", NO_AUTHOR),
+    entry("feature.agent.marker_present", "github_events_until_as_of", "boolean", "The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.", NO_MARKER_EVIDENCE),
+    { ...entry("feature.agent.tool_family", "github_events_until_as_of", "category", "The agent tool the markers name.", NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
+    entry("feature.agent.marked_commit_share", "pr_commits_at_merge", "number", "Share of the PR's commits that carry a marker.", NO_COMMITS),
     entry("feature.process.review_count", "github_events_until_as_of", "integer", "Reviews submitted by as_of.", NO_EVENTS),
     entry("feature.process.approvals", "github_events_until_as_of", "integer", "Approvals submitted by as_of.", NO_EVENTS),
     entry("feature.process.changes_requested", "github_events_until_as_of", "integer", "Change requests submitted by as_of, for any PR. Distinct from segment.provenance.change_requests.", NO_EVENTS),
@@ -2570,6 +2591,12 @@ var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
     entry("segment.provenance.human_intervention_count", "harness_contract", "integer", "Human interventions during the run.", NOT_INSTRUMENTED),
     entry("segment.provenance.review_rounds", "harness_contract", "integer", "Review rounds the harness recorded.", NOT_INSTRUMENTED),
     entry("segment.provenance.change_requests", "harness_contract", "integer", "Change requests the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.agent.exact_model", "pr_commits_at_merge", "category", "The model a commit names, when exactly one is named. Most markers name only a tool.", "No commit names exactly one model, or the commits could not be read."),
+    entry("segment.agent.marked_by_account", "immutable_pr_fact", "boolean", "The PR author is a known agent bot account.", NO_AUTHOR),
+    entry("segment.agent.marked_by_branch", "immutable_pr_fact", "boolean", "The PR's head branch has an agent tool's prefix.", "GitHub reports no head branch for this PR."),
+    entry("segment.agent.marked_by_commit", "pr_commits_at_merge", "boolean", "A commit has an agent author, co-author trailer, footer or model tag.", NO_COMMITS),
+    entry("segment.agent.marked_by_body", "github_events_until_as_of", "boolean", "The body at as_of has an agent footer or session link.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.author.dependency_bot", "immutable_pr_fact", "boolean", "The PR author is a dependency bot. Pre-registration section 2 reports these PRs separately.", NO_AUTHOR),
     {
       ...entry("segment.ci.checks_completed_by_merge", "github_events_until_as_of", "integer", "CI results completed by as_of.", "GitHub no longer retains CI results for this commit."),
       availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
@@ -2646,6 +2673,9 @@ function validateFeatureManifest(manifest) {
     else if (!FIELD_NAME.test(name)) errors.push({ path: path4, code: "invalid_namespace", message: `${name} must be feature.<group>.<field> or segment.<group>.<field>.` });
     if (item.segment !== name.startsWith("segment.")) {
       errors.push({ path: path4, code: "segment_flag_mismatch", message: `${name}: the segment flag must match the namespace.` });
+    }
+    if (item.kind === "category" && !item.segment && !(Array.isArray(item.categories) && item.categories.length > 0)) {
+      errors.push({ path: path4, code: "open_category_in_arm_input", message: `${name}: an arm input needs a closed list of categories.` });
     }
     const source = item.as_of_source;
     if (source === void 0 || source === null || source === "") {
@@ -12798,6 +12828,168 @@ function buildItemEvidence(item, context, runGit3) {
   return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
 }
 
+// src/attribution/agent-markers.ts
+var BOT_SUFFIX = String.raw`(?:\[bot\])?`;
+var IDENTITIES = [
+  {
+    family: "claude",
+    // A bare "Claude" needs the tool's email or the bot suffix: it is also a first name.
+    name: /^(?:claude\[bot\]|claude\s+(?:code|opus|sonnet|haiku|fable|\d)[\w.\s-]*(?:\([^)]*\))?)$/i,
+    email: /^(?:noreply|claude)@anthropic\.com$/i
+  },
+  { family: "copilot", name: new RegExp(`^(?:github )?copilot(?:-swe-agent|-autofix)?${BOT_SUFFIX}$`, "i"), email: /^(?:\d+\+)?copilot@users\.noreply\.github\.com$/i },
+  { family: "cursor", name: new RegExp(`^cursor(?:[ -]agent)?${BOT_SUFFIX}$`, "i"), email: /^cursoragent@cursor\.com$/i },
+  { family: "codex", name: new RegExp(`^(?:openai[ -])?codex${BOT_SUFFIX}$|^chatgpt-codex-connector${BOT_SUFFIX}$`, "i"), email: /^(?:codex|noreply)@openai\.com$/i },
+  { family: "devin", name: new RegExp(`^devin-ai-integration${BOT_SUFFIX}$|^devin ai$`, "i"), email: /devin-ai-integration/i },
+  { family: "gemini", name: new RegExp(`^(?:google[ -])?gemini(?:[ -](?:cli|code[ -]assist))?${BOT_SUFFIX}$`, "i") },
+  { family: "aider", name: /^aider(?:\s*\([^)]*\))?$|\(aider\)$/i, email: /^noreply@aider\.chat$/i },
+  { family: "openhands", name: new RegExp(`^openhands(?:-agent)?${BOT_SUFFIX}$`, "i"), email: /^openhands@all-hands\.dev$/i },
+  { family: "other", name: new RegExp(`^(?:ai|coding)[ _-]agent${BOT_SUFFIX}$`, "i") }
+];
+var CO_AUTHOR_TRAILER2 = /^[ \t]*co-authored-by:[ \t]*(.*?)[ \t]*<([^>]*)>/gim;
+var FOOTER_TOOLS = {
+  "claude code": "claude",
+  claude: "claude",
+  "github copilot": "copilot",
+  copilot: "copilot",
+  cursor: "cursor",
+  "openai codex": "codex",
+  codex: "codex",
+  "gemini cli": "gemini",
+  gemini: "gemini",
+  devin: "devin",
+  aider: "aider",
+  openhands: "openhands"
+};
+var FOOTER = new RegExp(
+  String.raw`^\W*(?:generated|created|written|authored|made)\s+(?:with|by|using)\W+(${Object.keys(FOOTER_TOOLS).join("|")})\]?(?:\([^)\s]*\))?\W*$`,
+  "im"
+);
+var SESSION_LINKS = [
+  { family: "claude", link: /https:\/\/claude\.ai\/code\/session/i },
+  { family: "devin", link: /https:\/\/app\.devin\.ai\/sessions\//i },
+  { family: "codex", link: /https:\/\/chatgpt\.com\/codex\/tasks\//i },
+  { family: "cursor", link: /https:\/\/cursor\.com\/(?:agents|background-agent)/i }
+];
+var MODEL_TAG = /^[ \t]*model[ \t]*[=:][ \t]*((?:claude|gpt|gemini)-[\w.-]+|o[13](?:-[\w.-]+)?)[ \t]*$/gim;
+var BRANCH_FAMILIES = {
+  claude: "claude",
+  "claude-code": "claude",
+  copilot: "copilot",
+  cursor: "cursor",
+  codex: "codex",
+  devin: "devin",
+  gemini: "gemini",
+  aider: "aider",
+  openhands: "openhands",
+  agent: "other",
+  bot: "other"
+};
+var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
+function isDependencyBotLogin(login) {
+  return !!login && DEPENDENCY_BOT.test(login);
+}
+function identityFamily(name, email) {
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim();
+  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? null;
+}
+function branchAgentFamily(headRef) {
+  const prefix = headRef?.includes("/") ? headRef.split("/")[0]?.toLowerCase() : void 0;
+  return prefix ? BRANCH_FAMILIES[prefix] ?? null : null;
+}
+function modelFromIdentity(name) {
+  const aider = /^aider\s*\(([^)]+)\)/i.exec(name.trim());
+  const raw = aider ? aider[1].split("/").at(-1) : /^claude\s+\S/i.test(name.trim()) ? name.replace(/\([^)]*\)/g, "") : null;
+  if (!raw) return null;
+  const slug = raw.trim().toLowerCase().replace(/[\s.]+/g, "-");
+  if (slug === "claude-code") return null;
+  return /^(?:claude-|gpt-|gemini-|o[13](?:-|$))/.test(slug) ? slug : null;
+}
+function withoutQuotedText(text) {
+  return text.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/<!--[\s\S]*?-->/g, "").split("\n").filter((line) => !line.trimStart().startsWith(">")).join("\n");
+}
+function signatureFamilies(text) {
+  const cleaned = withoutQuotedText(text);
+  const found = [];
+  const footer = FOOTER.exec(cleaned);
+  if (footer) found.push(FOOTER_TOOLS[footer[1].toLowerCase()]);
+  for (const { family, link } of SESSION_LINKS) if (link.test(cleaned)) found.push(family);
+  return found;
+}
+function modelFamily(model) {
+  return model.startsWith("claude-") ? "claude" : model.startsWith("gemini-") ? "gemini" : "other";
+}
+function detectAgentMarkers(input) {
+  const families = /* @__PURE__ */ new Set();
+  const modelIds = /* @__PURE__ */ new Set();
+  let coAuthorTrailer = false;
+  let signature = false;
+  const login = input.authorLogin ?? "";
+  const isBotAccount = /\[bot\]$/i.test(login) || (input.authorType ?? "").toLowerCase() === "bot";
+  const accountFamily = isBotAccount ? identityFamily(`${login.replace(/\[bot\]$/i, "")}[bot]`, "") : null;
+  if (accountFamily) families.add(accountFamily);
+  const branchFamily = branchAgentFamily(input.headRef);
+  if (branchFamily) families.add(branchFamily);
+  let markedCommits = 0;
+  for (const commit of input.commits ?? []) {
+    let marked = false;
+    const authorFamily = identityFamily(commit.authorName ?? "", commit.authorEmail ?? "");
+    if (authorFamily) {
+      families.add(authorFamily);
+      marked = true;
+      const model = modelFromIdentity(commit.authorName ?? "");
+      if (model) modelIds.add(model);
+    }
+    for (const [, name = "", email = ""] of commit.message.matchAll(CO_AUTHOR_TRAILER2)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      coAuthorTrailer = true;
+      marked = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(commit.message)) {
+      families.add(family);
+      signature = true;
+      marked = true;
+    }
+    for (const [, model = ""] of commit.message.matchAll(MODEL_TAG)) {
+      const normalized = model.toLowerCase();
+      modelIds.add(normalized);
+      families.add(modelFamily(normalized));
+      signature = true;
+      marked = true;
+    }
+    if (marked) markedCommits += 1;
+  }
+  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? "");
+  for (const family of bodyFamilies) {
+    families.add(family);
+    signature = true;
+  }
+  const commitsKnown = input.commits !== null;
+  const specific = [...families].filter((family) => family !== "other");
+  const named = specific.length > 1 ? "multiple" : specific[0] ?? (families.has("other") ? "other" : "none");
+  const present = families.size > 0 ? true : commitsKnown && !input.bodyUnavailable ? false : null;
+  const models = [...modelIds];
+  return {
+    present,
+    family: present === null ? null : named,
+    markedCommitShare: !commitsKnown ? null : input.commits.length === 0 ? 0 : markedCommits / input.commits.length,
+    modelIds: models,
+    exactModel: models.length === 1 ? models[0] : null,
+    markedByAccount: accountFamily !== null,
+    markedByBranch: branchFamily !== null,
+    markedByCommit: commitsKnown ? markedCommits > 0 : null,
+    markedByBody: input.bodyUnavailable ? null : bodyFamilies.length > 0,
+    coAuthorTrailer,
+    signature,
+    dependencyBot: isDependencyBotLogin(input.authorLogin)
+  };
+}
+
 // src/corpus/corrective-szz.ts
 var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
 var GENERATED_PATH = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.(?:mod|sum)|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock)$|(?:^|\/)(?:__snapshots__|__generated__|generated|openapi-gen|testdata|translations)\/|\.(?:snap|pb\.go|pb\.cc|pb\.h|min\.js|png|jpe?g|gif|svg|ico)$|[._]generated\.[^/]+$/;
@@ -13022,7 +13214,6 @@ var FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|
 var REGRESSION_CONTEXT = /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
 var MAX_ORIGINALS_PER_ISSUE = 3;
 var BACKPORT2 = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
-var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
 var REVERT_REASON = /\bdue to\b([^\n]*)/i;
 var NON_DEFECT_REASON = /merge conflict|conflicts? with|(?:to|in order to)(?: be able to)? (?:cleanly )?revert|dependen(?:cy|t) (?:of|on)|depends on|land ?race|stack (?:is )?in a (?:weird|bad|broken) state|wait(?:ing)? for .{0,40}(?:confirm|approv|review)|before merging|needs? to (?:be )?land(?:ed)? internally|ghfirst|diff train/i;
 function evidence2(kind, ref3 = null, count = null) {
@@ -13176,7 +13367,7 @@ function isRevert(event17) {
   return REVERT_TITLE.test(event17.title) || /^\s*this reverts commit [0-9a-f]{7,40}/im.test(event17.body) || /^\s*reverts [\w.-]+\/[\w.-]+#\d+/im.test(event17.body);
 }
 function commonExclusion(event17) {
-  if (event17.authorLogin && DEPENDENCY_BOT.test(event17.authorLogin)) return "dependency_bot";
+  if (isDependencyBotLogin(event17.authorLogin)) return "dependency_bot";
   if (BACKPORT2.test(`${event17.title}
 ${event17.body}`)) return "backport";
   return null;
@@ -15089,6 +15280,13 @@ var unique = (values) => [...new Set(values)];
 var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some((signature) => value.toLowerCase().startsWith(signature));
 function attributePullRequest(pr2, config = {}) {
   const metadata = extractMetadataBlock(pr2.body);
+  const markers = detectAgentMarkers({
+    authorLogin: pr2.authorLogin,
+    authorType: pr2.authorType,
+    headRef: pr2.headRef,
+    commits: pr2.commitMessages.map((message) => ({ message })),
+    body: pr2.body
+  });
   const agentMethods = [];
   const harnessMethods = [];
   const modelMethods = [];
@@ -15109,13 +15307,13 @@ function attributePullRequest(pr2, config = {}) {
     identifiedAgent = true;
     agentMethods.push(configuredBot ? "owner_config" : "bot_author");
   }
-  if (pr2.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
+  if (markers.coAuthorTrailer) {
     identifiedAgent = true;
     agentMethods.push("co_authored_by_trailer");
   }
   const configuredPrefix = config.branchPrefixes?.find((value) => pr2.headRef.startsWith(value));
   const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr2.headRef.startsWith(value));
-  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr2.headRef);
+  const builtInPrefix = branchAgentFamily(pr2.headRef) !== null;
   if (configuredPrefix || ownerPrefix || builtInPrefix) {
     identifiedAgent = true;
     agentMethods.push(ownerPrefix ? "owner_config" : "branch_prefix");
@@ -15125,15 +15323,15 @@ function attributePullRequest(pr2, config = {}) {
     identifiedAgent = true;
     agentMethods.push("pr_label");
   }
-  const signatureMatches = pr2.commitMessages.join("\n").match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
-  const signatureModels = [...new Set(signatureMatches.map((value) => value.toLowerCase()))];
-  if (signatureModels.length) {
+  const signatureModels = markers.modelIds;
+  if (markers.signature) {
     identifiedAgent = true;
     agentMethods.push("commit_signature");
   }
   const metadataHarness = typeof metadata?.["harness"] === "string" ? metadata["harness"].toLowerCase() : null;
   const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
-  const prefixHarness = builtInPrefix ? pr2.headRef.split("/")[0]?.toLowerCase() ?? null : null;
+  const prefixFamily = branchAgentFamily(pr2.headRef);
+  const prefixHarness = prefixFamily === "claude" ? "claude-code" : prefixFamily;
   const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value) => !!value);
   const harnessIds = [...new Set(harnessEvidence.filter((value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)))];
   const harness = harnessIds.length === 1 ? harnessIds[0] : null;

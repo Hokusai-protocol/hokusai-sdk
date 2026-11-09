@@ -9,6 +9,24 @@
       "expect_codes": []
     },
     {
+      "name": "agent markers are arm inputs",
+      "columns": ["feature.agent.marker_present", "feature.agent.tool_family", "feature.agent.marked_commit_share"],
+      "allow_segments": false,
+      "expect_codes": []
+    },
+    {
+      "name": "the exact model name is not an arm input",
+      "columns": ["segment.agent.exact_model"],
+      "allow_segments": false,
+      "expect_codes": ["segment_in_arm_input"]
+    },
+    {
+      "name": "the exact model name can be reported as a segment",
+      "columns": ["segment.agent.exact_model", "segment.author.dependency_bot"],
+      "allow_segments": true,
+      "expect_codes": []
+    },
+    {
       "name": "canary: a deliberate post-merge feature",
       "columns": ["feature.process.reviews_after_merge"],
       "allow_segments": false,

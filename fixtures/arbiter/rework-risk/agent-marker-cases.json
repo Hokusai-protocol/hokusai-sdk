@@ -1,0 +1,41 @@
+{
+  "issue": "HOK-3023",
+  "purpose": "Marker formats and look-alikes for detectAgentMarkers. These cases are written by hand, not sampled from repos, so they test behaviour and say nothing about precision on real PRs.",
+  "cases": [
+    { "name": "Claude Code trailer naming a model", "commits": [{ "message": "Fix\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>" }], "expect": { "present": true, "family": "claude", "exactModel": "claude-opus-4-5", "markedCommitShare": 1 } },
+    { "name": "Claude trailer with a context note", "commits": [{ "message": "Fix\n\nCo-Authored-By: Claude Sonnet 4.5 (1M context) <noreply@anthropic.com>" }], "expect": { "present": true, "family": "claude", "exactModel": "claude-sonnet-4-5" } },
+    { "name": "plain Claude trailer names no model", "commits": [{ "message": "Fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>" }], "expect": { "present": true, "family": "claude", "exactModel": null } },
+    { "name": "Claude Code trailer names no model", "commits": [{ "message": "Fix\n\nCo-authored-by: Claude Code <noreply@anthropic.com>" }], "expect": { "present": true, "family": "claude", "exactModel": null } },
+    { "name": "Copilot trailer", "commits": [{ "message": "Fix\n\nCo-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>" }], "expect": { "present": true, "family": "copilot", "exactModel": null } },
+    { "name": "Cursor Agent trailer", "commits": [{ "message": "Fix\n\nCo-authored-by: Cursor Agent <cursoragent@cursor.com>" }], "expect": { "present": true, "family": "cursor" } },
+    { "name": "aider trailer naming a model", "commits": [{ "message": "Fix\n\nCo-authored-by: aider (openai/gpt-4o) <noreply@aider.chat>" }], "expect": { "present": true, "family": "aider", "exactModel": "gpt-4o" } },
+    { "name": "commit authored by an agent identity", "commits": [{ "message": "Fix", "authorName": "openhands", "authorEmail": "openhands@all-hands.dev" }], "expect": { "present": true, "family": "openhands", "markedByCommit": true } },
+    { "name": "footer in a commit message", "commits": [{ "message": "Fix\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)" }], "expect": { "present": true, "family": "claude", "signature": true } },
+    { "name": "footer in the PR body", "commits": [{ "message": "Fix" }], "body": "Summary\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)", "expect": { "present": true, "family": "claude", "markedByBody": true, "markedByCommit": false, "markedCommitShare": 0 } },
+    { "name": "session link in the PR body", "commits": [{ "message": "Fix" }], "body": "Devin run: https://app.devin.ai/sessions/abc123", "expect": { "present": true, "family": "devin", "markedByBody": true } },
+    { "name": "one marked commit of four", "commits": [{ "message": "a" }, { "message": "b" }, { "message": "c" }, { "message": "d\n\nCo-Authored-By: Claude <noreply@anthropic.com>" }], "expect": { "present": true, "markedCommitShare": 0.25 } },
+    { "name": "two tools", "commits": [{ "message": "a\n\nCo-Authored-By: Claude <noreply@anthropic.com>" }, { "message": "b\n\nCo-authored-by: Cursor Agent <cursoragent@cursor.com>" }], "expect": { "present": true, "family": "multiple" } },
+    { "name": "two named models leave the model unknown", "commits": [{ "message": "a\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>" }, { "message": "b\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>" }], "expect": { "present": true, "family": "claude", "exactModel": null } },
+    { "name": "agent bot account", "authorLogin": "copilot-swe-agent", "authorType": "Bot", "commits": [], "expect": { "present": true, "family": "copilot", "markedByAccount": true } },
+    { "name": "agent branch prefix", "headRef": "claude/fix-x", "commits": [{ "message": "Fix" }], "expect": { "present": true, "family": "claude", "markedByBranch": true } },
+
+    { "name": "look-alike: person named Claude", "commits": [{ "message": "Fix\n\nCo-authored-by: Claude Martin <claude.martin@example.com>", "authorName": "Claude Martin", "authorEmail": "claude.martin@example.com" }], "expect": { "present": false, "family": "none" } },
+    { "name": "look-alike: person with a bare first name", "commits": [{ "message": "Fix", "authorName": "Claude", "authorEmail": "claude@example.com" }], "expect": { "present": false } },
+    { "name": "look-alike: person named Devin", "commits": [{ "message": "Fix", "authorName": "Devin Binnie", "authorEmail": "devin@example.com" }], "expect": { "present": false } },
+    { "name": "look-alike: person who works at Anthropic", "commits": [{ "message": "Fix", "authorName": "A Person", "authorEmail": "a.person@anthropic.com" }], "expect": { "present": false } },
+    { "name": "look-alike: commit naming a model", "commits": [{ "message": "Add gpt-4 tokenizer test\n\nUpdate pricing for claude-3-5-sonnet" }], "expect": { "present": false, "modelIds": [] } },
+    { "name": "look-alike: prose about a footer", "commits": [{ "message": "Fix" }], "body": "This was not generated with Claude Code by the author.\nWe should reject code generated with Copilot in this repo.", "expect": { "present": false } },
+    { "name": "look-alike: footer in a quote", "commits": [{ "message": "Fix" }], "body": "> Generated with Claude Code", "expect": { "present": false } },
+    { "name": "look-alike: footer in a code block", "commits": [{ "message": "Fix" }], "body": "```\nGenerated with Claude Code\n```", "expect": { "present": false } },
+    { "name": "look-alike: footer in a PR template comment", "commits": [{ "message": "Fix" }], "body": "<!-- Generated with Claude Code -->", "expect": { "present": false } },
+    { "name": "look-alike: dependency-bot co-author", "commits": [{ "message": "Merge\n\nCo-authored-by: dependabot[bot] <support@github.com>" }], "expect": { "present": false } },
+    { "name": "look-alike: branch about a tool, no prefix", "headRef": "fix-claude-parser", "commits": [{ "message": "Fix" }], "expect": { "present": false, "markedByBranch": false } },
+
+    { "name": "dependency bot is not an agent", "authorLogin": "dependabot[bot]", "authorType": "Bot", "commits": [{ "message": "Bump x" }], "expect": { "present": false, "dependencyBot": true } },
+    { "name": "merge bot is not an agent", "authorLogin": "mergify[bot]", "authorType": "Bot", "commits": [{ "message": "Merge" }], "expect": { "present": false, "dependencyBot": false } },
+
+    { "name": "unread commits and no other evidence is unknown", "commits": null, "expect": { "present": null, "family": null, "markedCommitShare": null, "markedByCommit": null } },
+    { "name": "unread body and no other evidence is unknown", "commits": [{ "message": "Fix" }], "bodyUnavailable": true, "expect": { "present": null, "family": null, "markedByBody": null } },
+    { "name": "a marker still counts when the body is unread", "commits": [{ "message": "Fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>" }], "bodyUnavailable": true, "expect": { "present": true, "family": "claude", "markedByBody": null } }
+  ]
+}

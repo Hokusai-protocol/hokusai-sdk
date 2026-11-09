@@ -13,6 +13,7 @@ import {
   repairPairFixture,
 } from './fixtures/arbiter-corrective-rework.js';
 import {
+  AGENT_TOOL_FAMILIES,
   FEATURE_AS_OF_SOURCES,
   REWORK_RISK_FEATURE_MANIFEST,
   validateEvidenceAsOf,
@@ -53,6 +54,13 @@ describe('the merge-time feature manifest', () => {
     expect(entryNames.filter((name) => name.includes('.ci.') && !name.startsWith('segment.'))).toEqual([]);
   });
 
+  it('gives arm inputs a closed category list and keeps the exact model out', () => {
+    const family = REWORK_RISK_FEATURE_MANIFEST.entries.find((entry) => entry.name === 'feature.agent.tool_family');
+    expect(family?.categories).toEqual(AGENT_TOOL_FAMILIES);
+    expect(entryNames).toContain('segment.agent.exact_model');
+    expect(entryNames).not.toContain('feature.agent.exact_model');
+  });
+
   it('declares no structural blast-radius field from a fix', () => {
     expect(entryNames.filter((name) => name.endsWith('graph_distance'))).toEqual([]);
   });
@@ -68,6 +76,7 @@ describe('validateFeatureManifest', () => {
     ['segment_flag_mismatch', { ...validEntry, segment: true }],
     ['label_field', { ...validEntry, name: 'label.corrective' }],
     ['denied_field', { ...validEntry, name: 'feature.shape.lag_seconds' }],
+    ['open_category_in_arm_input', { ...validEntry, kind: 'category' }],
   ])('rejects with %s', (code, entry) => {
     expect(codes(validateFeatureManifest(manifestWith(entry)))).toContain(code);
   });

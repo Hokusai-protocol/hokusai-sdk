@@ -347,6 +347,7 @@ export {
 } from './arbiter-corrective-rework.js';
 export { ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA } from './arbiter-corrective-rework-schema.js';
 export {
+  AGENT_TOOL_FAMILIES,
   AS_OF_BASES,
   FEATURE_AS_OF_SOURCES,
   LEAKAGE_DENYLIST,
@@ -356,6 +357,7 @@ export {
   validateEvidenceAsOf,
   validateFeatureColumns,
   validateFeatureManifest,
+  type AgentToolFamily,
   type AsOfBasis,
   type FeatureAsOfSource,
   type FeatureKind,
