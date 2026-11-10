@@ -1,6 +1,6 @@
 # Merge-time feature manifest (HOK-3023)
 
-**Status:** draft, `rr-merge-features/0.3.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
+**Status:** draft, `rr-merge-features/0.4.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
 
 Every arm in the [pre-registered backtest](./rework-risk-preregistration.md) sees the same information: what was knowable when the PR merged. The manifest declares that set, and one validator enforces it.
 
@@ -56,11 +56,14 @@ Left out of v1:
 
 | Evidence | Examples |
 | --- | --- |
-| Co-author trailer or commit author | `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>` |
-| Footer or model tag in a commit | `Generated with Claude Code`, a line reading `model: gpt-4o` |
-| Footer or session link in the PR body at `as_of` | `Generated with Claude Code`, a Devin session link |
-| Head branch prefix | `claude/`, `copilot/`, `cursor/` |
+| Co-author trailer or commit author | `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`, or an organization's own agent account such as `acme-claude-bot` (a tool word and a bot or agent word) |
+| `Assisted-by` trailer, as AI-use policies ask for | `Assisted-by: codex (gpt-5.5)` |
+| Footer, model tag or authorship statement in a commit | `Generated with Claude Code`, `model: gpt-4o`, `Test was written by Claude` |
+| Footer, session link or authorship statement in the PR body at `as_of` | `Generated with Claude Code`, a Devin session link, `Authored by Claude Code (Opus 4.8)` |
+| Head branch prefix | `claude/`, `copilot/`, `cursor/`; not `bot/`, which release automation uses |
 | Bot account | `copilot-swe-agent`, `devin-ai-integration` |
+
+An authorship statement needs a verb such as authored, co-authored, built, written or implemented, then by, with, using or via, then the tool within four words on the same line, with the tool's own capitalization. So "cursor-based pagination" and "not authored by Claude Code" do not count.
 
 - **These fields mean "agent-marked", not "agent-written".** People remove markers, so false means no marker was seen, never that a person worked alone. One marked commit in a large PR shows assistance, and `marked_commit_share` separates that from a PR that is mostly marked.
 - **Agent markers are arm inputs.** They are knowable at merge. A feature also gives every arm the same evidence, including the commit trailers that no content field exposes.
@@ -125,11 +128,14 @@ The coverage probe above is the one exception. It reports evidence availability 
 | Step | Output | Published? |
 | --- | --- | --- |
 | `--step ci` | CI results on each PR's head commit, from `feature-evidence/ci/` | No, local only |
-| `--step evidence` | Timestamped reviews, labels, renames, body versions and commits, in `feature-evidence/evidence/` | No, holds raw text |
+| `--step evidence` | Timestamped reviews, body versions and commits, in `feature-evidence/evidence/` | No, holds raw text |
+| `--step timeline` | Label, rename and review-dismissal events, in `feature-evidence/timeline/` | No, holds raw text |
 | `--step extract` | `features.jsonl.gz` and `features.summary.json` | Yes, derived values and hashes only |
 | `--step manifest --out <file>` | The run manifest: file hashes and row counts per repo | Yes |
 
 Capture resumes where it stopped. `extract` reads no network or clock, so it can be repeated from the same evidence.
+
+**Timeline events are captured on their own.** GitHub returns about 310 timeline nodes per query, across all the PRs batched into it. Past that it drops the rest and still reports `hasNextPage: false`, with no error. The spot check found this: one 25-PR batch returned 0 of a PR's 34 label events. Reviews, body edits and commits were complete in every batch tested. The timeline step splits any batch whose total reaches 150 nodes, and extract takes timeline events only from that step. A PR with evidence but no timeline capture has no evidence row.
 
 - **Rows:** every row has all manifest columns, plus `repo`, `pr_number`, `merge_sha`, `base_sha`, `landed_by`, `as_of` and `as_of_basis`. `as_of_basis` is null when no evidence could be captured for the PR.
 - **Cutoff in git:** a commit counts only if it landed at or before `base_sha` on the default branch's first-parent line. Commit dates are never read, and 90-day windows use landing time, so a backdated commit cannot enter a window early.
@@ -140,7 +146,7 @@ Capture resumes where it stopped. `extract` reads no network or clock, so it can
 - **CI capture:** only PRs merged from 2025-07-01 are requested, a quarter earlier than the first retained results the probe found. A CI failure means `FAILURE`, `TIMED_OUT`, `STARTUP_FAILURE` or `ERROR`; a cancelled run usually means it was superseded.
 - **Branch updates:** merge commits from updating a PR's branch don't count toward `marked_commit_share`.
 
-The first full run, at commit b49a1d9, produced 364,743 rows for all 18 repos, with no failed rows and 2 PRs without evidence. `fixtures/arbiter/corpus/hok-3023-feature-run-manifest.json` holds its counts and file hashes, and the rows are in `s3://hokusai-pipeline-data-development/arbiter-corpus/hok-3023/`.
+`fixtures/arbiter/corpus/hok-3023-feature-run-manifest.json` holds the current run's counts and file hashes, and the rows are in `s3://hokusai-pipeline-data-development/arbiter-corpus/hok-3023/`. The first run, at commit b49a1d9 with manifest 0.3.0, was replaced: its label counts, titles and review states could be wrong wherever GitHub had truncated a batch's timeline.
 
 ## Using the validator
 

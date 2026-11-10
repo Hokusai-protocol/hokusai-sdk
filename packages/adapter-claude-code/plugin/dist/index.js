@@ -7562,7 +7562,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
 );
 
 // ../core/src/rework-risk-features.ts
-var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.3.0";
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.4.0";
 var AGENT_TOOL_FAMILIES = [
   "none",
   "claude",

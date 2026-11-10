@@ -2509,7 +2509,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
 );
 
 // ../core/src/rework-risk-features.ts
-var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.3.0";
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.4.0";
 var FEATURE_AS_OF_SOURCES = [
   /** The diff between `base_sha` and `merge_sha`. */
   "git_diff_base_to_merge",
@@ -12222,6 +12222,24 @@ var IDENTITIES = [
   { family: "other", name: new RegExp(`^(?:ai|coding)[ _-]agent${BOT_SUFFIX}$`, "i") }
 ];
 var CO_AUTHOR_TRAILER2 = /^[ \t]*co-authored-by:[ \t]*(.*?)[ \t]*<([^>]*)>/gim;
+var TOOL_WORDS = String.raw`Claude Code|Claude|GitHub Copilot|Copilot|Cursor|OpenAI Codex|Codex|Gemini CLI|Gemini|Devin|Aider|aider|OpenHands`;
+var toolFamily = (word) => FOOTER_TOOLS[word.toLowerCase()];
+var ASSISTED_TRAILER = new RegExp(String.raw`^[ \t]*(?:assisted|generated|co-developed)-by:[ \t]*.*?\b(${TOOL_WORDS})\b`, "gim");
+var AUTHORSHIP = new RegExp(
+  String.raw`(?<!\b(?:not|never|n't)[ \t]+)(?<!\bnot[ \t]+(?:been[ \t]+)?)\b(?:[Cc]o-?[Aa]uthored|[Aa]uthored|[Bb]uilt|[Ww]ritten|[Ii]mplemented|[Dd]eveloped)[ \t]+(?:by|with|using|via)\b[ \t]+(?:the[ \t]+)?(?:[\w-]+[ \t]+){0,3}?\(?(${TOOL_WORDS})\b`,
+  "gm"
+);
+var TOOL_TOKENS = {
+  claude: "claude",
+  copilot: "copilot",
+  cursor: "cursor",
+  codex: "codex",
+  devin: "devin",
+  gemini: "gemini",
+  aider: "aider",
+  openhands: "openhands"
+};
+var AGENT_TOKENS = /* @__PURE__ */ new Set(["bot", "agent", "ai"]);
 var FOOTER_TOOLS = {
   "claude code": "claude",
   claude: "claude",
@@ -12254,20 +12272,29 @@ var BRANCH_FAMILIES = {
   cursor: "cursor",
   codex: "codex",
   devin: "devin",
+  // Not `bot/`: release and dependency automation use it (`bot/bump-version/...`).
   gemini: "gemini",
   aider: "aider",
   openhands: "openhands",
-  agent: "other",
-  bot: "other"
+  agent: "other"
 };
 var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
 function isDependencyBotLogin(login) {
   return !!login && DEPENDENCY_BOT.test(login);
 }
+function botAccountFamily(name, email) {
+  for (const text of [name, email.split("@")[0] ?? ""]) {
+    const tokens2 = text.toLowerCase().replace(/\[bot\]$/, "-bot").split(/[^a-z0-9]+/).filter(Boolean);
+    if (!tokens2.some((token) => AGENT_TOKENS.has(token))) continue;
+    const tool = tokens2.find((token) => token in TOOL_TOKENS);
+    if (tool) return TOOL_TOKENS[tool];
+  }
+  return null;
+}
 function identityFamily(name, email) {
   const trimmedName = name.trim();
   const trimmedEmail = email.trim();
-  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? null;
+  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? botAccountFamily(trimmedName, trimmedEmail);
 }
 function branchAgentFamily(headRef) {
   const prefix = headRef?.includes("/") ? headRef.split("/")[0]?.toLowerCase() : void 0;
@@ -12284,13 +12311,24 @@ function modelFromIdentity(name) {
 function withoutQuotedText(text) {
   return text.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/<!--[\s\S]*?-->/g, "").split("\n").filter((line) => !line.trimStart().startsWith(">")).join("\n");
 }
-function signatureFamilies(text) {
+function signatureMatches(text) {
   const cleaned = withoutQuotedText(text);
   const found = [];
   const footer = FOOTER.exec(cleaned);
-  if (footer) found.push(FOOTER_TOOLS[footer[1].toLowerCase()]);
-  for (const { family, link } of SESSION_LINKS) if (link.test(cleaned)) found.push(family);
+  if (footer) found.push({ family: FOOTER_TOOLS[footer[1].toLowerCase()], rule: "footer", text: footer[0] });
+  for (const { family, link } of SESSION_LINKS) {
+    const match = link.exec(cleaned);
+    if (match) found.push({ family, rule: "session_link", text: match[0] });
+  }
+  for (const match of cleaned.matchAll(ASSISTED_TRAILER)) found.push({ family: toolFamily(match[1]), rule: "assisted_trailer", text: match[0] });
+  for (const match of cleaned.matchAll(AUTHORSHIP)) found.push({ family: toolFamily(match[1]), rule: "authorship", text: match[0] });
   return found;
+}
+function signatureFamilies(text, evidence3, source = "signature") {
+  return signatureMatches(text).map((match) => {
+    evidence3?.push({ source, rule: match.rule, text: match.text.trim().slice(0, 200) });
+    return match.family;
+  });
 }
 function modelFamily(model) {
   return model.startsWith("claude-") ? "claude" : model.startsWith("gemini-") ? "gemini" : "other";
@@ -12298,20 +12336,28 @@ function modelFamily(model) {
 function detectAgentMarkers(input) {
   const families = /* @__PURE__ */ new Set();
   const modelIds = /* @__PURE__ */ new Set();
+  const evidence3 = [];
   let coAuthorTrailer = false;
   let signature = false;
   const login = input.authorLogin ?? "";
   const isBotAccount = /\[bot\]$/i.test(login) || (input.authorType ?? "").toLowerCase() === "bot";
   const accountFamily = isBotAccount ? identityFamily(`${login.replace(/\[bot\]$/i, "")}[bot]`, "") : null;
-  if (accountFamily) families.add(accountFamily);
+  if (accountFamily) {
+    families.add(accountFamily);
+    evidence3.push({ source: "account", rule: "identity", text: login });
+  }
   const branchFamily = branchAgentFamily(input.headRef);
-  if (branchFamily) families.add(branchFamily);
+  if (branchFamily) {
+    families.add(branchFamily);
+    evidence3.push({ source: "branch", rule: "prefix", text: input.headRef ?? "" });
+  }
   let markedCommits = 0;
   for (const commit of input.commits ?? []) {
     let marked = false;
     const authorFamily = identityFamily(commit.authorName ?? "", commit.authorEmail ?? "");
     if (authorFamily) {
       families.add(authorFamily);
+      evidence3.push({ source: "commit_author", rule: "identity", text: `${commit.authorName ?? ""} <${commit.authorEmail ?? ""}>` });
       marked = true;
       const model = modelFromIdentity(commit.authorName ?? "");
       if (model) modelIds.add(model);
@@ -12320,12 +12366,13 @@ function detectAgentMarkers(input) {
       const family = identityFamily(name, email);
       if (!family) continue;
       families.add(family);
+      evidence3.push({ source: "co_author", rule: "identity", text: `${name} <${email}>` });
       coAuthorTrailer = true;
       marked = true;
       const model = modelFromIdentity(name);
       if (model) modelIds.add(model);
     }
-    for (const family of signatureFamilies(commit.message)) {
+    for (const family of signatureFamilies(commit.message, evidence3)) {
       families.add(family);
       signature = true;
       marked = true;
@@ -12334,6 +12381,7 @@ function detectAgentMarkers(input) {
       const normalized = model.toLowerCase();
       modelIds.add(normalized);
       families.add(modelFamily(normalized));
+      evidence3.push({ source: "model_tag", rule: "model_tag", text: model });
       signature = true;
       marked = true;
     }
@@ -12350,13 +12398,13 @@ function detectAgentMarkers(input) {
       const model = modelFromIdentity(name);
       if (model) modelIds.add(model);
     }
-    for (const family of signatureFamilies(input.landingMessage)) {
+    for (const family of signatureFamilies(input.landingMessage, evidence3, "landing")) {
       families.add(family);
       signature = true;
       markedByLanding = true;
     }
   }
-  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? "");
+  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? "", evidence3, "body");
   for (const family of bodyFamilies) {
     families.add(family);
     signature = true;
@@ -12378,7 +12426,8 @@ function detectAgentMarkers(input) {
     markedByBody: input.bodyUnavailable ? null : bodyFamilies.length > 0,
     coAuthorTrailer,
     signature,
-    dependencyBot: isDependencyBotLogin(input.authorLogin)
+    dependencyBot: isDependencyBotLogin(input.authorLogin),
+    evidence: evidence3
   };
 }
 function agentMarkerColumns(markers) {

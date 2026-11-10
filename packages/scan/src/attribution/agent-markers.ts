@@ -56,6 +56,8 @@ export interface AgentMarkers {
   /** A commit has an agent footer or model tag, or the body has a footer or session link. */
   signature: boolean;
   dependencyBot: boolean;
+  /** What matched, for audits. Holds raw commit and body text: never publish it. */
+  evidence: { source: 'account' | 'branch' | 'commit_author' | 'co_author' | 'signature' | 'model_tag' | 'landing' | 'body'; rule: string; text: string }[];
 }
 
 const BOT_SUFFIX = String.raw`(?:\[bot\])?`;
@@ -78,6 +80,25 @@ const IDENTITIES: readonly { family: Family; name?: RegExp; email?: RegExp }[] =
 
 const CO_AUTHOR_TRAILER = /^[ \t]*co-authored-by:[ \t]*(.*?)[ \t]*<([^>]*)>/gim;
 
+/** A tool as a whole word, with the capitalization tools use, so "cursor-based" is not Cursor. */
+const TOOL_WORDS = String.raw`Claude Code|Claude|GitHub Copilot|Copilot|Cursor|OpenAI Codex|Codex|Gemini CLI|Gemini|Devin|Aider|aider|OpenHands`;
+const toolFamily = (word: string): Family => FOOTER_TOOLS[word.toLowerCase()]!;
+
+/** `Assisted-by: codex (gpt-5.5)`, as AI-use policies such as LLVM's ask for. The first tool named wins. */
+const ASSISTED_TRAILER = new RegExp(String.raw`^[ \t]*(?:assisted|generated|co-developed)-by:[ \t]*.*?\b(${TOOL_WORDS})\b`, 'gim');
+
+/** "Authored by Claude Code", "Co-authored with PostHog Code (Claude Opus 4.7)": a statement, not a mention. */
+const AUTHORSHIP = new RegExp(
+  String.raw`(?<!\b(?:not|never|n't)[ \t]+)(?<!\bnot[ \t]+(?:been[ \t]+)?)\b(?:[Cc]o-?[Aa]uthored|[Aa]uthored|[Bb]uilt|[Ww]ritten|[Ii]mplemented|[Dd]eveloped)[ \t]+(?:by|with|using|via)\b[ \t]+(?:the[ \t]+)?(?:[\w-]+[ \t]+){0,3}?\(?(${TOOL_WORDS})\b`,
+  'gm',
+);
+
+/** Tool names that, with a bot or agent word, make an organization's own agent account (`acme-claude-bot`). */
+const TOOL_TOKENS: Readonly<Record<string, Family>> = {
+  claude: 'claude', copilot: 'copilot', cursor: 'cursor', codex: 'codex', devin: 'devin', gemini: 'gemini', aider: 'aider', openhands: 'openhands',
+};
+const AGENT_TOKENS = new Set(['bot', 'agent', 'ai']);
+
 const FOOTER_TOOLS: Readonly<Record<string, Family>> = {
   'claude code': 'claude', claude: 'claude', 'github copilot': 'copilot', copilot: 'copilot', cursor: 'cursor',
   'openai codex': 'codex', codex: 'codex', 'gemini cli': 'gemini', gemini: 'gemini', devin: 'devin', aider: 'aider', openhands: 'openhands',
@@ -96,7 +117,8 @@ const MODEL_TAG = /^[ \t]*model[ \t]*[=:][ \t]*((?:claude|gpt|gemini)-[\w.-]+|o[
 
 const BRANCH_FAMILIES: Readonly<Record<string, Family>> = {
   claude: 'claude', 'claude-code': 'claude', copilot: 'copilot', cursor: 'cursor', codex: 'codex', devin: 'devin',
-  gemini: 'gemini', aider: 'aider', openhands: 'openhands', agent: 'other', bot: 'other',
+  // Not `bot/`: release and dependency automation use it (`bot/bump-version/...`).
+  gemini: 'gemini', aider: 'aider', openhands: 'openhands', agent: 'other',
 };
 
 const DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
@@ -105,10 +127,21 @@ export function isDependencyBotLogin(login: string | null | undefined): boolean 
   return !!login && DEPENDENCY_BOT.test(login);
 }
 
+/** A tool word together with a bot or agent word in one name or email local part. */
+function botAccountFamily(name: string, email: string): Family | null {
+  for (const text of [name, email.split('@')[0] ?? '']) {
+    const tokens = text.toLowerCase().replace(/\[bot\]$/, '-bot').split(/[^a-z0-9]+/).filter(Boolean);
+    if (!tokens.some((token) => AGENT_TOKENS.has(token))) continue;
+    const tool = tokens.find((token) => token in TOOL_TOKENS);
+    if (tool) return TOOL_TOKENS[tool]!;
+  }
+  return null;
+}
+
 function identityFamily(name: string, email: string): Family | null {
   const trimmedName = name.trim();
   const trimmedEmail = email.trim();
-  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? null;
+  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? botAccountFamily(trimmedName, trimmedEmail);
 }
 
 /** The family a branch's first path segment names, if any. */
@@ -136,13 +169,25 @@ function withoutQuotedText(text: string): string {
     .join('\n');
 }
 
-function signatureFamilies(text: string): Family[] {
+function signatureMatches(text: string): { family: Family; rule: string; text: string }[] {
   const cleaned = withoutQuotedText(text);
-  const found: Family[] = [];
+  const found: { family: Family; rule: string; text: string }[] = [];
   const footer = FOOTER.exec(cleaned);
-  if (footer) found.push(FOOTER_TOOLS[footer[1]!.toLowerCase()]!);
-  for (const { family, link } of SESSION_LINKS) if (link.test(cleaned)) found.push(family);
+  if (footer) found.push({ family: FOOTER_TOOLS[footer[1]!.toLowerCase()]!, rule: 'footer', text: footer[0] });
+  for (const { family, link } of SESSION_LINKS) {
+    const match = link.exec(cleaned);
+    if (match) found.push({ family, rule: 'session_link', text: match[0] });
+  }
+  for (const match of cleaned.matchAll(ASSISTED_TRAILER)) found.push({ family: toolFamily(match[1]!), rule: 'assisted_trailer', text: match[0] });
+  for (const match of cleaned.matchAll(AUTHORSHIP)) found.push({ family: toolFamily(match[1]!), rule: 'authorship', text: match[0] });
   return found;
+}
+
+function signatureFamilies(text: string, evidence?: AgentMarkers['evidence'], source: AgentMarkers['evidence'][number]['source'] = 'signature'): Family[] {
+  return signatureMatches(text).map((match) => {
+    evidence?.push({ source, rule: match.rule, text: match.text.trim().slice(0, 200) });
+    return match.family;
+  });
 }
 
 function modelFamily(model: string): Family {
@@ -152,6 +197,7 @@ function modelFamily(model: string): Family {
 export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
   const families = new Set<Family>();
   const modelIds = new Set<string>();
+  const evidence: AgentMarkers['evidence'] = [];
   let coAuthorTrailer = false;
   let signature = false;
 
@@ -159,10 +205,16 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
   const isBotAccount = /\[bot\]$/i.test(login) || (input.authorType ?? '').toLowerCase() === 'bot';
   // Normalized to the [bot] form: a bare "claude" login could be a person.
   const accountFamily = isBotAccount ? identityFamily(`${login.replace(/\[bot\]$/i, '')}[bot]`, '') : null;
-  if (accountFamily) families.add(accountFamily);
+  if (accountFamily) {
+    families.add(accountFamily);
+    evidence.push({ source: 'account', rule: 'identity', text: login });
+  }
 
   const branchFamily = branchAgentFamily(input.headRef);
-  if (branchFamily) families.add(branchFamily);
+  if (branchFamily) {
+    families.add(branchFamily);
+    evidence.push({ source: 'branch', rule: 'prefix', text: input.headRef ?? '' });
+  }
 
   let markedCommits = 0;
   for (const commit of input.commits ?? []) {
@@ -170,6 +222,7 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
     const authorFamily = identityFamily(commit.authorName ?? '', commit.authorEmail ?? '');
     if (authorFamily) {
       families.add(authorFamily);
+      evidence.push({ source: 'commit_author', rule: 'identity', text: `${commit.authorName ?? ''} <${commit.authorEmail ?? ''}>` });
       marked = true;
       const model = modelFromIdentity(commit.authorName ?? '');
       if (model) modelIds.add(model);
@@ -178,12 +231,13 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
       const family = identityFamily(name, email);
       if (!family) continue;
       families.add(family);
+      evidence.push({ source: 'co_author', rule: 'identity', text: `${name} <${email}>` });
       coAuthorTrailer = true;
       marked = true;
       const model = modelFromIdentity(name);
       if (model) modelIds.add(model);
     }
-    for (const family of signatureFamilies(commit.message)) {
+    for (const family of signatureFamilies(commit.message, evidence)) {
       families.add(family);
       signature = true;
       marked = true;
@@ -192,6 +246,7 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
       const normalized = model.toLowerCase();
       modelIds.add(normalized);
       families.add(modelFamily(normalized));
+      evidence.push({ source: 'model_tag', rule: 'model_tag', text: model });
       signature = true;
       marked = true;
     }
@@ -209,14 +264,14 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
       const model = modelFromIdentity(name);
       if (model) modelIds.add(model);
     }
-    for (const family of signatureFamilies(input.landingMessage)) {
+    for (const family of signatureFamilies(input.landingMessage, evidence, 'landing')) {
       families.add(family);
       signature = true;
       markedByLanding = true;
     }
   }
 
-  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? '');
+  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? '', evidence, 'body');
   for (const family of bodyFamilies) {
     families.add(family);
     signature = true;
@@ -241,6 +296,7 @@ export function detectAgentMarkers(input: AgentMarkerInput): AgentMarkers {
     coAuthorTrailer,
     signature,
     dependencyBot: isDependencyBotLogin(input.authorLogin),
+    evidence,
   };
 }
 

@@ -21,7 +21,7 @@
 import type { HokusaiFieldError } from './schemas.js';
 
 /** Any change to the entries or the rules below bumps this version. */
-export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.3.0' as const;
+export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.4.0' as const;
 
 /** Sources whose evidence is fixed at or before `as_of`. */
 export const FEATURE_AS_OF_SOURCES = [
