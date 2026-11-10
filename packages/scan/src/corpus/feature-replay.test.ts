@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CorpusPrRecord } from './enumerate.js';
 import { chunkNumbers } from './feature-capture.js';
 import { blankPostMergeRecord, differingColumns, replayRepo, runFeatureReplay, truncateCiAt, withPostMergeActivity, withPreMergeReview } from './feature-replay.js';
+import { loadEvidenceChunk } from './feature-run.js';
 import { extractPrFeatures, type CiEvidence, type PrEvidence } from './features.js';
 
 const day = (n: number, hour = 12) => `2026-03-${String(n).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00Z`;
@@ -121,10 +122,17 @@ beforeAll(() => {
   execFileSync('git', ['clone', '-q', '--bare', work, join(repoDir, 'repo.git')]);
   writeFileSync(join(repoDir, 'enumeration.json'), JSON.stringify({ branch: 'main' }));
   writeFileSync(join(repoDir, 'prs.jsonl'), `${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
-  for (const kind of ['evidence', 'ci'] as const) mkdirSync(join(repoDir, 'feature-evidence', kind), { recursive: true });
+  for (const kind of ['evidence', 'ci', 'timeline'] as const) mkdirSync(join(repoDir, 'feature-evidence', kind), { recursive: true });
   for (const chunk of chunkNumbers(records.map((record) => record.pr_number))) {
-    const items = chunk.map((number) => ({ pr_number: number, value: evidence.get(number)!, error: null }));
-    writeFileSync(join(repoDir, 'feature-evidence', 'evidence', `${chunk[0]}-${chunk.at(-1)}.json.gz`), gzipSync(JSON.stringify({ captured_at: day(30), items })));
+    const name = `${chunk[0]}-${chunk.at(-1)}.json.gz`;
+    // As captured: the evidence batch carries no timeline events; the timeline batch does.
+    const items = chunk.map((number) => ({ pr_number: number, value: { ...evidence.get(number)!, dismissals: [], label_events: [], renames: [] }, error: null }));
+    writeFileSync(join(repoDir, 'feature-evidence', 'evidence', name), gzipSync(JSON.stringify({ captured_at: day(30), items })));
+    const timeline = chunk.map((number) => {
+      const { dismissals, label_events: labelEvents, renames } = evidence.get(number)!;
+      return { pr_number: number, value: { pr_number: number, dismissals, label_events: labelEvents, renames }, error: null };
+    });
+    writeFileSync(join(repoDir, 'feature-evidence', 'timeline', name), gzipSync(JSON.stringify({ captured_at: day(30), items: timeline })));
   }
 });
 
@@ -158,6 +166,25 @@ describe('replay on a real repository', () => {
     expect(readFileSync(join(out, 'replay-1.json'), 'utf8')).toContain('pr_number');
     expect(runFeatureReplay({ entries, cacheRoot: root, slicePath: slice, outDir: join(work, 'out'), cuts: 1, perCut: 1, io, log: () => {} }).exitCode).toBe(2);
   }, 60_000);
+});
+
+describe('loadEvidenceChunk', () => {
+  it('takes timeline events from the timeline capture and fails closed without one', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hok-3023-chunk-'));
+    try {
+      for (const kind of ['evidence', 'timeline'] as const) mkdirSync(join(dir, 'feature-evidence', kind), { recursive: true });
+      const value = { ...evidence.get(1)!, label_events: [] };
+      writeFileSync(join(dir, 'feature-evidence', 'evidence', '1-2.json.gz'), gzipSync(JSON.stringify({ captured_at: day(30), items: [{ pr_number: 1, value, error: null }, { pr_number: 2, value: { ...value, pr_number: 2 }, error: null }] })));
+      expect(() => loadEvidenceChunk(dir, [1, 2])).toThrow(/run --step timeline/);
+      const events = { pr_number: 1, dismissals: [], renames: [], label_events: [{ at: day(3), action: 'added', label: 'bug' }] };
+      writeFileSync(join(dir, 'feature-evidence', 'timeline', '1-2.json.gz'), gzipSync(JSON.stringify({ captured_at: day(31), items: [{ pr_number: 1, value: events, error: null }, { pr_number: 2, value: null, error: 'capture_failed' }] })));
+      const loaded = loadEvidenceChunk(dir, [1, 2]);
+      expect(loaded.evidence.get(1)!.label_events).toEqual(events.label_events);
+      expect(loaded.evidence.get(2)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the canaries', () => {

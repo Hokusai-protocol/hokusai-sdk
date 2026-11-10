@@ -1,7 +1,9 @@
 /**
  * `hokusai-scan corpus-features` (HOK-3023). Steps, per repo:
  *   ci        CI results on PR heads, first because older results may be expiring
- *   evidence  timestamped reviews, labels, renames, edits and commits
+ *   evidence  timestamped reviews, body edits and commits
+ *   timeline  label, rename and review-dismissal events, in batches small enough
+ *             that GitHub does not silently truncate them (see feature-capture.ts)
  *   extract   features.jsonl.gz and features.summary.json, offline and deterministic
  *   manifest  the run manifest over every repo's features, to --out
  *
@@ -16,11 +18,11 @@ import { dirname, join } from 'node:path';
 import { REWORK_RISK_FEATURE_MANIFEST_VERSION, validateFeatureColumns, validateFeatureManifest, REWORK_RISK_FEATURE_MANIFEST } from '@hokusai/core';
 import type { CohortRepo } from './manifest.js';
 import type { CorpusPrRecord, GraphqlRunner } from './enumerate.js';
-import { CI_CAPTURE_FROM, captureRepo, chunkNumbers, readCapturedBatch, type CapturedItem, type CaptureKind } from './feature-capture.js';
+import { CI_CAPTURE_FROM, captureRepo, chunkNumbers, readCapturedBatch, type CaptureKind, type TimelineEvidence } from './feature-capture.js';
 import { buildHistoryIndex, gitColumns, type HistoryIndex } from './feature-git.js';
 import { MANIFEST_COLUMNS, extractPrFeatures, type CiEvidence, type FeatureRow, type PrEvidence } from './features.js';
 
-export const FEATURE_STEPS = ['ci', 'evidence', 'extract', 'manifest'] as const;
+export const FEATURE_STEPS = ['ci', 'evidence', 'timeline', 'extract', 'manifest'] as const;
 export type FeatureStep = (typeof FEATURE_STEPS)[number];
 
 export interface FeatureRunIO {
@@ -51,6 +53,25 @@ export function authorEmails(record: CorpusPrRecord, evidence: PrEvidence | null
   if (!evidence) return null;
   const emails = evidence.commits.filter((commit) => commit.author_login !== null && commit.author_login === record.author_login && commit.author_email).map((commit) => commit.author_email!);
   return emails.length ? [...new Set(emails)] : null;
+}
+
+/**
+ * One chunk's evidence with its timeline events. A PR with evidence but no captured
+ * timeline gets null: its labels, title and review states at `as_of` are unknown.
+ */
+export function loadEvidenceChunk(repoDir: string, chunk: readonly number[]): { capturedAt: string | null; evidence: Map<number, PrEvidence | null> } {
+  const batch = readCapturedBatch<PrEvidence>(repoDir, 'evidence', chunk);
+  const out = new Map<number, PrEvidence | null>(chunk.map((number) => [number, null]));
+  if (!batch) return { capturedAt: null, evidence: out };
+  const timeline = readCapturedBatch<TimelineEvidence>(repoDir, 'timeline', chunk);
+  if (!timeline) throw new Error(`no timeline capture for PRs ${chunk[0]}-${chunk.at(-1)}; run --step timeline first`);
+  const events = new Map(timeline.items.map((item) => [item.pr_number, item.value]));
+  for (const item of batch.items) {
+    const found = events.get(item.pr_number);
+    if (!item.value || !found) continue;
+    out.set(item.pr_number, { ...item.value, dismissals: found.dismissals, label_events: found.label_events, renames: found.renames });
+  }
+  return { capturedAt: batch.captured_at < timeline.captured_at ? batch.captured_at : timeline.captured_at, evidence: out };
 }
 
 export function landingMessage(record: CorpusPrRecord, index: HistoryIndex): string | null {
@@ -85,12 +106,11 @@ export function extractRepo(repo: string, repoDir: string, writeRows: (path: str
   let capturedUntil: string | null = null;
   const chunks = chunkNumbers(records.map((record) => record.pr_number));
   chunks.forEach((chunk, position) => {
-    const batch = readCapturedBatch<PrEvidence>(repoDir, 'evidence', chunk);
-    if (batch) {
-      if (!capturedFrom || batch.captured_at < capturedFrom) capturedFrom = batch.captured_at;
-      if (!capturedUntil || batch.captured_at > capturedUntil) capturedUntil = batch.captured_at;
+    const { capturedAt, evidence: items } = loadEvidenceChunk(repoDir, chunk);
+    if (capturedAt) {
+      if (!capturedFrom || capturedAt < capturedFrom) capturedFrom = capturedAt;
+      if (!capturedUntil || capturedAt > capturedUntil) capturedUntil = capturedAt;
     }
-    const items = new Map((batch?.items ?? []).map((item: CapturedItem<PrEvidence>) => [item.pr_number, item.value]));
     for (const number of chunk) {
       const record = byNumber.get(number)!;
       const evidence = items.get(number) ?? null;

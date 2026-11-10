@@ -23,7 +23,7 @@ import type { CohortRepo } from './manifest.js';
 import type { CorpusPrRecord } from './enumerate.js';
 import { CI_CAPTURE_FROM, chunkNumbers, readCapturedBatch } from './feature-capture.js';
 import { buildHistoryIndex, gitColumns, type HistoryIndex } from './feature-git.js';
-import { authorEmails, landingMessage, readRecords } from './feature-run.js';
+import { authorEmails, landingMessage, loadEvidenceChunk, readRecords } from './feature-run.js';
 import { extractPrFeatures, reviewsAt, labelsAt, truncateEvidenceAt, type CiEvidence, type FeatureRow, type PrEvidence } from './features.js';
 
 export const REPLAY_VERSION = 'rr-feature-replay/1.0.0';
@@ -198,8 +198,7 @@ export function replayRepo(input: { repo: string; repoDir: string; seed: string;
   for (const chunk of chunkNumbers(ciNumbers)) for (const number of chunk) ciChunkOf.set(number, chunk);
   const load = (number: number) => {
     if (!evidenceCache.has(number)) {
-      for (const item of readCapturedBatch<PrEvidence>(repoDir, 'evidence', chunkOf.get(number)!)?.items ?? []) evidenceCache.set(item.pr_number, item.value);
-      if (!evidenceCache.has(number)) evidenceCache.set(number, null);
+      for (const [pr, value] of loadEvidenceChunk(repoDir, chunkOf.get(number)!).evidence) evidenceCache.set(pr, value);
     }
     const ciChunk = ciChunkOf.get(number);
     if (!ciCache.has(number)) {

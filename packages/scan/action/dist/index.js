@@ -12577,6 +12577,7 @@ function truncateEvidenceAt(evidence3, asOf) {
 // src/corpus/feature-capture.ts
 var EVIDENCE_BATCH_SIZE = 25;
 var CI_CAPTURE_FROM = "2025-07-01T00:00:00Z";
+var TIMELINE_SPLIT_NODES = 150;
 var PAGE = "pageInfo{ hasNextPage endCursor }";
 var REVIEWS = `${PAGE} nodes{ id state submittedAt author{ login } }`;
 var TIMELINE = `${PAGE} nodes{ __typename
@@ -12590,13 +12591,12 @@ var COMMITS = `${PAGE} nodes{ commit{ oid message author{ name email user{ login
 var CONTEXTS = `${PAGE} nodes{ __typename ... on CheckRun{ completedAt conclusion } ... on StatusContext{ createdAt state } }`;
 var EVIDENCE_FIELDS = `number createdAt mergedAt title body headRefName
   reviews(first:100){ ${REVIEWS} }
-  timelineItems(first:100,${TIMELINE_TYPES}){ ${TIMELINE} }
   userContentEdits(first:100){ ${EDITS} }
   commits(first:100){ ${COMMITS} }`;
+var TIMELINE_FIELDS = `number timelineItems(first:100,${TIMELINE_TYPES}){ ${TIMELINE} }`;
 var CI_FIELDS = `number commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100){ ${CONTEXTS} } } } } }`;
 var FOLLOW_UPS = {
   reviews: { args: "", nodes: REVIEWS },
-  timelineItems: { args: `${TIMELINE_TYPES},`, nodes: TIMELINE },
   userContentEdits: { args: "", nodes: EDITS },
   commits: { args: "", nodes: COMMITS }
 };
@@ -12605,12 +12605,13 @@ function runQuery(graphql, repo, fields) {
   const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
   return data.repository;
 }
-function drainConnections(pr2, repo, graphql) {
-  for (const key of Object.keys(FOLLOW_UPS)) {
+var TIMELINE_FOLLOW_UP = { timelineItems: { args: `${TIMELINE_TYPES},`, nodes: TIMELINE } };
+function drainConnections(pr2, repo, graphql, followUps = FOLLOW_UPS) {
+  for (const key of Object.keys(followUps)) {
     const connection = pr2[key];
     let info = connection.pageInfo;
     while (info.hasNextPage) {
-      const follow = FOLLOW_UPS[key];
+      const follow = followUps[key];
       const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ ${key}(${follow.args}first:100,after:${JSON.stringify(info.endCursor)}){ ${follow.nodes} } }`);
       const next = page["pr"]?.[key];
       if (!next) throw new Error(`PR ${pr2.number}: ${key} page disappeared`);
@@ -12620,8 +12621,16 @@ function drainConnections(pr2, repo, graphql) {
   }
 }
 var present = (connection) => (connection.nodes ?? []).filter((node) => node !== null);
-function normalizeEvidence(pr2) {
+function normalizeTimeline(pr2) {
   const timeline = present(pr2["timelineItems"]);
+  return {
+    pr_number: pr2.number,
+    dismissals: timeline.filter((event17) => event17.__typename === "ReviewDismissedEvent").map((event17) => ({ at: event17.createdAt, previous_state: event17.previousReviewState ?? null, review_id: event17.review?.id ?? null })),
+    label_events: timeline.filter((event17) => event17.__typename === "LabeledEvent" || event17.__typename === "UnlabeledEvent").map((event17) => ({ at: event17.createdAt, action: event17.__typename === "LabeledEvent" ? "added" : "removed", label: event17.label?.name ?? null })),
+    renames: timeline.filter((event17) => event17.__typename === "RenamedTitleEvent").map((event17) => ({ at: event17.createdAt, from: event17.previousTitle ?? "", to: event17.currentTitle ?? "" }))
+  };
+}
+function normalizeEvidence(pr2) {
   return {
     pr_number: pr2.number,
     created_at: pr2["createdAt"],
@@ -12630,9 +12639,9 @@ function normalizeEvidence(pr2) {
     body: pr2["body"] ?? null,
     head_ref: pr2["headRefName"] ?? null,
     reviews: present(pr2["reviews"]).map((review) => ({ id: review.id, state: review.state, submitted_at: review.submittedAt, author: review.author?.login ?? null })),
-    dismissals: timeline.filter((event17) => event17.__typename === "ReviewDismissedEvent").map((event17) => ({ at: event17.createdAt, previous_state: event17.previousReviewState ?? null, review_id: event17.review?.id ?? null })),
-    label_events: timeline.filter((event17) => event17.__typename === "LabeledEvent" || event17.__typename === "UnlabeledEvent").map((event17) => ({ at: event17.createdAt, action: event17.__typename === "LabeledEvent" ? "added" : "removed", label: event17.label?.name ?? null })),
-    renames: timeline.filter((event17) => event17.__typename === "RenamedTitleEvent").map((event17) => ({ at: event17.createdAt, from: event17.previousTitle ?? "", to: event17.currentTitle ?? "" })),
+    dismissals: [],
+    label_events: [],
+    renames: [],
     body_edits: present(pr2["userContentEdits"]).map((edit) => ({ at: edit.editedAt, body: edit.diff })),
     commits: present(pr2["commits"]).map(({ commit }) => ({ oid: commit.oid, message: commit.message, author_name: commit.author?.name ?? null, author_email: commit.author?.email ?? null, author_login: commit.author?.user?.login ?? null }))
   };
@@ -12662,6 +12671,7 @@ function drainContexts(pr2, repo, graphql) {
   }
 }
 function fetchBatch(kind, repo, numbers, graphql, log) {
+  if (kind === "timeline") return fetchTimeline(repo, numbers, graphql, log);
   try {
     const fields = kind === "evidence" ? EVIDENCE_FIELDS : CI_FIELDS;
     const repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${fields} }`).join("\n"));
@@ -12683,6 +12693,33 @@ function fetchBatch(kind, repo, numbers, graphql, log) {
     log(`warn: ${repo}: PR ${numbers[0]} ${kind} capture failed: ${error.message.slice(0, 160)}`);
     return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
   }
+}
+function fetchTimeline(repo, numbers, graphql, log) {
+  const split = () => {
+    const middle = numbers.length >>> 1;
+    return [...fetchTimeline(repo, numbers.slice(0, middle), graphql, log), ...fetchTimeline(repo, numbers.slice(middle), graphql, log)];
+  };
+  let repository;
+  try {
+    repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${TIMELINE_FIELDS} }`).join("\n"));
+  } catch (error) {
+    if (numbers.length > 1) return split();
+    log(`warn: ${repo}: PR ${numbers[0]} timeline capture failed: ${error.message.slice(0, 160)}`);
+    return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
+  }
+  const nodes = numbers.reduce((sum, number) => sum + (repository[`pr${number}`]?.["timelineItems"]?.nodes ?? []).length, 0);
+  if (numbers.length > 1 && nodes >= TIMELINE_SPLIT_NODES) return split();
+  return numbers.map((number) => {
+    const pr2 = repository[`pr${number}`];
+    if (!pr2) return { pr_number: number, value: null, error: "not_found" };
+    try {
+      drainConnections(pr2, repo, graphql, TIMELINE_FOLLOW_UP);
+    } catch (error) {
+      log(`warn: ${repo}: PR ${number} timeline capture failed: ${error.message.slice(0, 160)}`);
+      return { pr_number: number, value: null, error: "capture_failed" };
+    }
+    return { pr_number: number, value: normalizeTimeline(pr2), error: null };
+  });
 }
 var captureDir = (repoDir, kind) => join7(repoDir, "feature-evidence", kind);
 var batchPath = (dir, numbers) => join7(dir, `${numbers[0]}-${numbers.at(-1)}.json.gz`);
@@ -13713,7 +13750,7 @@ function gitColumns(input) {
 }
 
 // src/corpus/feature-run.ts
-var FEATURE_STEPS = ["ci", "evidence", "extract", "manifest"];
+var FEATURE_STEPS = ["ci", "evidence", "timeline", "extract", "manifest"];
 function readRecords(repoDir) {
   return readFileSync5(join8(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => ({ ...JSON.parse(line), title: "", body: "" }));
 }
@@ -13721,6 +13758,20 @@ function authorEmails(record, evidence3) {
   if (!evidence3) return null;
   const emails = evidence3.commits.filter((commit) => commit.author_login !== null && commit.author_login === record.author_login && commit.author_email).map((commit) => commit.author_email);
   return emails.length ? [...new Set(emails)] : null;
+}
+function loadEvidenceChunk(repoDir, chunk) {
+  const batch = readCapturedBatch(repoDir, "evidence", chunk);
+  const out = new Map(chunk.map((number) => [number, null]));
+  if (!batch) return { capturedAt: null, evidence: out };
+  const timeline = readCapturedBatch(repoDir, "timeline", chunk);
+  if (!timeline) throw new Error(`no timeline capture for PRs ${chunk[0]}-${chunk.at(-1)}; run --step timeline first`);
+  const events17 = new Map(timeline.items.map((item) => [item.pr_number, item.value]));
+  for (const item of batch.items) {
+    const found = events17.get(item.pr_number);
+    if (!item.value || !found) continue;
+    out.set(item.pr_number, { ...item.value, dismissals: found.dismissals, label_events: found.label_events, renames: found.renames });
+  }
+  return { capturedAt: batch.captured_at < timeline.captured_at ? batch.captured_at : timeline.captured_at, evidence: out };
 }
 function landingMessage(record, index) {
   return record.batched ? null : index.landingMessages.get(record.merge_sha) ?? null;
@@ -13749,12 +13800,11 @@ function extractRepo(repo, repoDir, writeRows, log) {
   let capturedUntil = null;
   const chunks = chunkNumbers(records.map((record) => record.pr_number));
   chunks.forEach((chunk, position) => {
-    const batch = readCapturedBatch(repoDir, "evidence", chunk);
-    if (batch) {
-      if (!capturedFrom || batch.captured_at < capturedFrom) capturedFrom = batch.captured_at;
-      if (!capturedUntil || batch.captured_at > capturedUntil) capturedUntil = batch.captured_at;
+    const { capturedAt, evidence: items } = loadEvidenceChunk(repoDir, chunk);
+    if (capturedAt) {
+      if (!capturedFrom || capturedAt < capturedFrom) capturedFrom = capturedAt;
+      if (!capturedUntil || capturedAt > capturedUntil) capturedUntil = capturedAt;
     }
-    const items = new Map((batch?.items ?? []).map((item) => [item.pr_number, item.value]));
     for (const number of chunk) {
       const record = byNumber.get(number);
       const evidence3 = items.get(number) ?? null;
@@ -13981,8 +14031,7 @@ function replayRepo(input) {
   for (const chunk of chunkNumbers(ciNumbers)) for (const number of chunk) ciChunkOf.set(number, chunk);
   const load = (number) => {
     if (!evidenceCache.has(number)) {
-      for (const item of readCapturedBatch(repoDir, "evidence", chunkOf.get(number))?.items ?? []) evidenceCache.set(item.pr_number, item.value);
-      if (!evidenceCache.has(number)) evidenceCache.set(number, null);
+      for (const [pr2, value] of loadEvidenceChunk(repoDir, chunkOf.get(number)).evidence) evidenceCache.set(pr2, value);
     }
     const ciChunk = ciChunkOf.get(number);
     if (!ciCache.has(number)) {

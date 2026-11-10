@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GraphqlRunner } from './enumerate.js';
-import { captureRepo, chunkNumbers, normalizeCi, normalizeEvidence, readCapturedBatch } from './feature-capture.js';
+import { TIMELINE_SPLIT_NODES, captureRepo, chunkNumbers, normalizeCi, normalizeEvidence, normalizeTimeline, readCapturedBatch, type TimelineEvidence } from './feature-capture.js';
 import type { PrEvidence } from './features.js';
 
 const page = (nodes: unknown[], hasNextPage = false, endCursor: string | null = null) => ({ pageInfo: { hasNextPage, endCursor }, nodes });
@@ -25,9 +25,9 @@ const tempDir = (): string => {
 
 const fromBatch = (query: string) => [...query.matchAll(/pr(\d+): pullRequest\(number:\d+\)/g)].map((match) => Number(match[1]));
 
-describe('normalizeEvidence', () => {
+describe('normalizeTimeline', () => {
   it('separates timeline events by type', () => {
-    const evidence = normalizeEvidence(apiPr(1, {
+    const evidence = normalizeTimeline(apiPr(1, {
       timelineItems: page([
         { __typename: 'LabeledEvent', createdAt: 'a', label: { name: 'bug' } },
         { __typename: 'UnlabeledEvent', createdAt: 'b', label: { name: 'bug' } },
@@ -38,6 +38,38 @@ describe('normalizeEvidence', () => {
     expect(evidence.label_events.map((event) => event.action)).toEqual(['added', 'removed']);
     expect(evidence.renames).toEqual([{ at: 'c', from: 'p', to: 'q' }]);
     expect(evidence.dismissals).toEqual([{ at: 'd', previous_state: 'APPROVED', review_id: 'r' }]);
+  });
+
+  it('is never read from the evidence batch, whose timeline GitHub may have truncated', () => {
+    const evidence = normalizeEvidence(apiPr(1, { timelineItems: page([{ __typename: 'LabeledEvent', createdAt: 'a', label: { name: 'bug' } }]) }));
+    expect([evidence.label_events, evidence.renames, evidence.dismissals]).toEqual([[], [], []]);
+  });
+});
+
+describe('timeline capture', () => {
+  // GitHub's behaviour, reproduced: past ~310 timeline nodes in one query it drops
+  // the rest and still reports hasNextPage: false.
+  const CAP = 310;
+  const events = (number: number) => Array.from({ length: number % 3 === 0 ? 60 : 5 }, (_, i) => ({ __typename: 'LabeledEvent', createdAt: `2026-01-01T00:00:${String(i % 60).padStart(2, '0')}Z`, label: { name: `l${i}` } }));
+  const capped: GraphqlRunner = (query) => {
+    let budget = CAP;
+    return {
+      repository: Object.fromEntries(fromBatch(query).map((number) => {
+        const nodes = events(number).slice(0, Math.max(0, budget));
+        budget -= nodes.length;
+        return [`pr${number}`, { number, timelineItems: page(nodes) }];
+      })),
+    };
+  };
+
+  it('splits a batch near the cap, so no PR comes back short', () => {
+    const numbers = Array.from({ length: 25 }, (_, i) => i + 1);
+    const repoDir = tempDir();
+    captureRepo('timeline', 'org/repo', repoDir, numbers, capped, () => {});
+    const items = readCapturedBatch<TimelineEvidence>(repoDir, 'timeline', numbers)!.items;
+    expect(items.map((item) => item.value!.label_events.length)).toEqual(numbers.map((number) => events(number).length));
+    expect(numbers.reduce((sum, number) => sum + events(number).length, 0)).toBeGreaterThan(CAP);
+    expect(TIMELINE_SPLIT_NODES).toBeLessThan(CAP / 2);
   });
 });
 
