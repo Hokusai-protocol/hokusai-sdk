@@ -140,6 +140,8 @@ Capture resumes where it stopped. `extract` reads no network or clock, so it can
 - **CI capture:** only PRs merged from 2025-07-01 are requested, a quarter earlier than the first retained results the probe found. A CI failure means `FAILURE`, `TIMED_OUT`, `STARTUP_FAILURE` or `ERROR`; a cancelled run usually means it was superseded.
 - **Branch updates:** merge commits from updating a PR's branch don't count toward `marked_commit_share`.
 
+The first full run, at commit b49a1d9, produced 364,743 rows for all 18 repos, with no failed rows and 2 PRs without evidence. `fixtures/arbiter/corpus/hok-3023-feature-run-manifest.json` holds its counts and file hashes, and the rows are in `s3://hokusai-pipeline-data-development/arbiter-corpus/hok-3023/`.
+
 ## Using the validator
 
 Dataset assembly and experiment evaluation must run the validator on their feature columns and stop on any error, and must pass every case in the conformance file.
