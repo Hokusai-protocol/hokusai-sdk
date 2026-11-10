@@ -66,8 +66,8 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync3, readFileSync as readFileSync8, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname4, join as join12, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readFileSync as readFileSync9, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname4, join as join13, resolve as resolve6 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
 import { parseArgs as parseArgs4 } from "node:util";
 
@@ -3258,42 +3258,42 @@ function structural(schema, value, path4, errors, root) {
 }
 function invariant(report) {
   const errors = [];
-  const add = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
+  const add2 = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
   if (report.scan.horizons_days.some(
     (horizon2, index) => index > 0 && horizon2 <= report.scan.horizons_days[index - 1]
   ))
-    add("horizons_not_ascending", "scan.horizons_days");
+    add2("horizons_not_ascending", "scan.horizons_days");
   const checkCell = (c, path4, basis2) => {
     if (c.suppressed && (c.value !== null || c.ci !== null || !c.suppression_reasons.length))
-      add("suppressed_cell_has_value", path4);
+      add2("suppressed_cell_has_value", path4);
     if (!c.suppressed && (c.value === null || c.suppression_reasons.length))
-      add("shown_cell_missing_value", path4);
+      add2("shown_cell_missing_value", path4);
     if (c.ci && c.value !== null && !(c.ci.low <= c.value && c.value <= c.ci.high))
-      add("ci_out_of_order", path4);
+      add2("ci_out_of_order", path4);
     if (basis2 && c.basis !== basis2)
-      add("descriptive_section_with_prediction_cell", path4);
+      add2("descriptive_section_with_prediction_cell", path4);
     if (c.basis === "out_of_sample_prediction" && !report.model_provenance)
-      add("prediction_without_provenance", path4);
+      add2("prediction_without_provenance", path4);
   };
   const sections = report.aggregates;
   for (const [name, s] of Object.entries(sections)) {
     if (s.basis === "out_of_sample_prediction" && !report.model_provenance)
-      add("prediction_without_provenance", `aggregates.${name}`);
+      add2("prediction_without_provenance", `aggregates.${name}`);
     if (s.status === "suppressed" && !s.suppression_reasons.length)
-      add("section_status_mismatch", `aggregates.${name}`);
+      add2("section_status_mismatch", `aggregates.${name}`);
     s.rows.forEach((row, i) => {
       for (const [k, v] of Object.entries(row))
         if (k === "cell" || k.endsWith("_rate") || k === "ratio") {
           const c = v;
           checkCell(c, `aggregates.${name}.rows[${i}].${k}`, s.basis);
           if (s.status === "suppressed" && !c.suppressed)
-            add(
+            add2(
               "section_status_mismatch",
               `aggregates.${name}.rows[${i}].${k}`
             );
         }
       if (typeof row.horizon_days === "number" && !report.scan.horizons_days.includes(row.horizon_days))
-        add(
+        add2(
           "horizon_not_declared",
           `aggregates.${name}.rows[${i}].horizon_days`
         );
@@ -3302,37 +3302,37 @@ function invariant(report) {
   report.aggregates.risk_ratios.rows.forEach((row, index) => {
     const allowed = REPORT_FEATURE_BUCKETS[row.feature];
     if (!allowed || !allowed.includes(row.bucket))
-      add(
+      add2(
         "feature_bucket_mismatch",
         `aggregates.risk_ratios.rows[${index}].bucket`
       );
   });
   if (report.eligibility.model_routing_cta && !report.eligibility.exact_model_table)
-    add("cta_without_exact_model", "eligibility.model_routing_cta");
+    add2("cta_without_exact_model", "eligibility.model_routing_cta");
   for (const [flag, name] of [
     ["exact_model_table", "survival_by_model"],
     ["harness_table", "survival_by_harness"],
     ["cost_adjusted_by_model", "cost_adjusted_survival_by_model"]
   ])
     if (!report.eligibility[flag] && report.aggregates[name].status === "shown")
-      add("model_table_ineligible_but_shown", `aggregates.${name}`);
+      add2("model_table_ineligible_but_shown", `aggregates.${name}`);
   if (report.eligibility.cost_adjusted_by_model && (!report.cost || report.cost.actual.suppressed))
-    add(
+    add2(
       "cost_adjusted_needs_actual_cost",
       "eligibility.cost_adjusted_by_model"
     );
   if (report.prs.length !== report.coverage.prs_enumerated || report.coverage.attribution.agent.identified_agent + report.coverage.attribution.agent.identified_human_signal + report.coverage.attribution.agent.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.harness.identified + report.coverage.attribution.harness.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.exact_model.identified + report.coverage.attribution.exact_model.unknown !== report.coverage.prs_enumerated)
-    add("coverage_sum_mismatch", "coverage");
+    add2("coverage_sum_mismatch", "coverage");
   report.prs.forEach((pr2, i) => {
     if (pr2.prediction && !report.model_provenance)
-      add("prediction_without_provenance", `prs[${i}].prediction`);
+      add2("prediction_without_provenance", `prs[${i}].prediction`);
     if (pr2.labels.length !== report.scan.horizons_days.length || new Set(pr2.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr2.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
-      add("labels_horizon_mismatch", `prs[${i}].labels`);
+      add2("labels_horizon_mismatch", `prs[${i}].labels`);
     pr2.labels.forEach((l, j) => {
       if (!report.scan.horizons_days.includes(l.horizon_days))
-        add("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
+        add2("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
       if (l.outcome.report_outcome !== deriveReportOutcome(l.outcome))
-        add(
+        add2(
           "label_outcome_inconsistent",
           `prs[${i}].labels[${j}].outcome.report_outcome`
         );
@@ -3340,7 +3340,7 @@ function invariant(report) {
   });
   if (report.retrospective) {
     if (!report.model_provenance)
-      add("prediction_without_provenance", "retrospective");
+      add2("prediction_without_provenance", "retrospective");
     for (const k of ["precision", "recall", "flagged_share"])
       checkCell(
         report.retrospective[k],
@@ -3348,7 +3348,7 @@ function invariant(report) {
         report.retrospective.basis
       );
     if (!report.eligibility.retrospective && !report.retrospective.suppressed)
-      add("model_table_ineligible_but_shown", "retrospective");
+      add2("model_table_ineligible_but_shown", "retrospective");
   }
   return errors;
 }
@@ -12554,6 +12554,25 @@ function extractPrFeatures(input) {
     features: Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, features[column] ?? null]))
   };
 }
+function truncateEvidenceAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const before = (events17) => events17.filter((event17) => ms(event17.at) <= cutoff);
+  const body = bodyAt(evidence3, asOf);
+  const dismissedLater = new Map(
+    evidence3.dismissals.filter((event17) => ms(event17.at) > cutoff && event17.review_id).map((event17) => [event17.review_id, event17.previous_state])
+  );
+  return {
+    ...evidence3,
+    title: titleAt(evidence3, asOf),
+    body,
+    reviews: evidence3.reviews.filter((review) => review.submitted_at !== null && ms(review.submitted_at) <= cutoff).map((review) => ({ ...review, state: dismissedLater.get(review.id) ?? review.state })),
+    dismissals: before(evidence3.dismissals),
+    label_events: before(evidence3.label_events),
+    renames: before(evidence3.renames),
+    // With no version left, an empty history would read the rolled-back body, null, as ''.
+    body_edits: body === null ? [{ at: evidence3.created_at, body: null }] : before(evidence3.body_edits)
+  };
+}
 
 // src/corpus/feature-capture.ts
 var EVIDENCE_BATCH_SIZE = 25;
@@ -12977,7 +12996,7 @@ function detectCandidates(input) {
   const eventsById = /* @__PURE__ */ new Map();
   const issueCiters = issueCitations(input.repo, input.originals, input.crossReferences);
   const szzStats = { fixes: 0, skipped: 0, too_large: 0 };
-  const add = (original, event17, proxy, items, exclusion) => {
+  const add2 = (original, event17, proxy, items, exclusion) => {
     if (original.pr_url === event17.pr?.pr_url) return;
     const lag = event17.epoch - Math.floor(Date.parse(original.merged_at) / 1e3);
     if (lag < 1 || lag > MAX_FIX_LAG_SECONDS) return;
@@ -13000,7 +13019,7 @@ ${event17.body}`;
       const reason = evidence2("revert_reason", revertReasonClass(event17));
       for (const target of revertTargets(event17, text, input.repo, index)) {
         const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
-        add(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
+        add2(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
       }
       continue;
     }
@@ -13033,7 +13052,7 @@ ${event17.body}`;
         cited.set(original, items);
       }
     }
-    for (const [original, items] of cited) add(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
+    for (const [original, items] of cited) add2(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
     const closed = event17.closingIssues.flatMap((n) => {
       const issue = input.issues.get(n);
       return issue ? [{ n, issue }] : [];
@@ -13043,7 +13062,7 @@ ${event17.body}`;
       const citers = issueCiters.get(n) ?? [];
       if (!labels.length || citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
       for (const { original, url } of citers) {
-        add(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
+        add2(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
       }
     }
     const bugs = closed.filter(({ issue }) => isBugIssue(issue));
@@ -13057,7 +13076,7 @@ ${event17.body}`;
     if (szz.tooLarge) szzStats.too_large++;
     const bugEvidence = bugs.map(({ issue }) => evidence2("closes_bug_issue", issue.url));
     for (const [original, lines] of szz.blamed) {
-      add(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
+      add2(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
     }
   }
   const candidates = [...drafts.entries()].map(([id2, d]) => ({
@@ -13833,15 +13852,243 @@ function runCorpusFeatures(input) {
   return { exitCode: failures ? 3 : 0 };
 }
 
+// src/corpus/feature-replay.ts
+import { createHash as createHash6, randomBytes } from "node:crypto";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, readdirSync, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname2, join as join9 } from "node:path";
+var REPLAY_VERSION = "rr-feature-replay/1.0.0";
+var SECOND = 1e3;
+function insideGitWorkTree(path4) {
+  for (let dir = path4; ; dir = dirname2(dir)) {
+    if (existsSync6(join9(dir, ".git"))) return true;
+    if (dirname2(dir) === dir) return false;
+  }
+}
+var shift = (at2, ms2) => new Date(Date.parse(at2) + ms2).toISOString();
+function truncateCiAt(ci2, asOf) {
+  if (!ci2) return null;
+  const cutoff = Date.parse(asOf);
+  return { ...ci2, contexts: ci2.contexts.filter((context) => context.at !== null && Date.parse(context.at) <= cutoff) };
+}
+function blankPostMergeRecord(record) {
+  return { ...record, relanded_merge_shas: [], labels: [], closing_issues: [], title: "", body: "" };
+}
+function withPostMergeActivity(evidence3, asOf) {
+  const latest = Math.max(
+    Date.parse(asOf),
+    ...[...evidence3.renames, ...evidence3.body_edits, ...evidence3.label_events, ...evidence3.dismissals].map((event17) => Date.parse(event17.at)),
+    ...evidence3.reviews.flatMap((review) => review.submitted_at ? [Date.parse(review.submitted_at)] : [])
+  );
+  const after = new Date(latest + SECOND).toISOString();
+  const later = new Date(latest + 30 * 86400 * SECOND).toISOString();
+  const labels = labelsAt(evidence3, asOf) ?? [];
+  const lastTitle = evidence3.renames.length ? evidence3.renames.at(-1).to : evidence3.title;
+  return {
+    ...evidence3,
+    title: "CANARY TITLE",
+    body: "CANARY BODY",
+    reviews: [
+      // Existing reviews, dismissed after the merge.
+      ...evidence3.reviews.map((review) => review.state === "DISMISSED" ? review : { ...review, state: "DISMISSED" }),
+      { id: "canary-approve", state: "APPROVED", submitted_at: after, author: "canary-reviewer" },
+      { id: "canary-changes", state: "CHANGES_REQUESTED", submitted_at: later, author: "canary-reviewer-2" }
+    ],
+    dismissals: [
+      ...evidence3.dismissals,
+      ...evidence3.reviews.filter((review) => review.state !== "DISMISSED").map((review) => ({ at: after, previous_state: review.state, review_id: review.id }))
+    ],
+    label_events: [
+      ...evidence3.label_events,
+      { at: after, action: "added", label: "canary-label" },
+      ...labels.map((label2) => ({ at: later, action: "removed", label: label2 }))
+    ],
+    renames: [...evidence3.renames, { at: after, from: lastTitle, to: "CANARY TITLE" }],
+    body_edits: [
+      ...evidence3.body_edits.length ? evidence3.body_edits : [{ at: evidence3.created_at, body: evidence3.body }],
+      { at: after, body: "CANARY BODY" }
+    ]
+  };
+}
+function withPostMergeCi(ci2, number, asOf) {
+  return {
+    pr_number: number,
+    contexts: [...ci2?.contexts ?? [], { at: shift(asOf, SECOND), failed: true }, { at: null, failed: false }]
+  };
+}
+function withPostMergeRecord(record) {
+  return { ...record, relanded_merge_shas: ["f".repeat(40)], labels: ["canary-label"], closing_issues: [999999999], title: "CANARY TITLE", body: "CANARY BODY" };
+}
+function withPreMergeReview(evidence3, asOf) {
+  const at2 = Date.parse(asOf) - SECOND >= Date.parse(evidence3.created_at) ? shift(asOf, -SECOND) : asOf;
+  return { ...evidence3, reviews: [...evidence3.reviews, { id: "control-review", state: "APPROVED", submitted_at: at2, author: "control-reviewer" }] };
+}
+function differingColumns(a, b) {
+  const out = [];
+  for (const key of ["manifest_version", "repo", "pr_number", "merge_sha", "base_sha", "landed_by", "as_of", "as_of_basis"]) {
+    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) out.push(key);
+  }
+  const columns = /* @__PURE__ */ new Set([...Object.keys(a.features), ...Object.keys(b.features)]);
+  for (const column of columns) if (JSON.stringify(a.features[column]) !== JSON.stringify(b.features[column])) out.push(column);
+  return out;
+}
+function rng(seed, label2) {
+  let counter = 0;
+  return () => {
+    const digest = createHash6("sha256").update(`${seed}:${label2}:${counter++}`).digest();
+    return digest.readUInt32BE(0) / 2 ** 32;
+  };
+}
+function shuffled(items, random) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+var emptyTally = () => ({ sampled: 0, replay_identical: 0, perturbed_identical: 0, control_changed: 0, leaky_reading_differs: 0 });
+function add(into, from) {
+  for (const key of Object.keys(into)) into[key] += from[key];
+}
+function replayRepo(input) {
+  const { repo, repoDir, seed, log, label: label2 } = input;
+  const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
+  const records = readRecords(repoDir);
+  const gitDir = join9(repoDir, "repo.git");
+  const scratch = join9(repoDir, ".feature-index-replay");
+  const merges = new Set(records.map((record) => record.merge_sha));
+  log(`info: ${label2}: indexing full history`);
+  const full = buildHistoryIndex(gitDir, `refs/heads/${branch}`, scratch, merges);
+  const line = [];
+  for (const [sha2, position] of full.firstParentPosition) line[position] = sha2;
+  const landing = (record) => full.landingPosition.get(record.merge_sha);
+  const placed = records.filter((record) => landing(record) !== void 0).sort((a, b) => landing(a) - landing(b));
+  const random = rng(seed, repo);
+  const types = [...new Set(placed.map((record) => record.landed_by))].sort();
+  const anchors = [];
+  for (const type of types) anchors.push(shuffled(placed.filter((record) => record.landed_by === type), random)[0]);
+  for (const record of shuffled(placed, random)) {
+    if (anchors.length >= Math.max(input.cuts, types.length)) break;
+    if (!anchors.includes(record)) anchors.push(record);
+  }
+  const evidenceCache = /* @__PURE__ */ new Map();
+  const ciCache = /* @__PURE__ */ new Map();
+  const chunks = chunkNumbers(records.map((record) => record.pr_number));
+  const chunkOf = /* @__PURE__ */ new Map();
+  for (const chunk of chunks) for (const number of chunk) chunkOf.set(number, chunk);
+  const ciNumbers = records.filter((record) => record.merged_at >= CI_CAPTURE_FROM).map((record) => record.pr_number);
+  const ciChunkOf = /* @__PURE__ */ new Map();
+  for (const chunk of chunkNumbers(ciNumbers)) for (const number of chunk) ciChunkOf.set(number, chunk);
+  const load = (number) => {
+    if (!evidenceCache.has(number)) {
+      for (const item of readCapturedBatch(repoDir, "evidence", chunkOf.get(number))?.items ?? []) evidenceCache.set(item.pr_number, item.value);
+      if (!evidenceCache.has(number)) evidenceCache.set(number, null);
+    }
+    const ciChunk = ciChunkOf.get(number);
+    if (!ciCache.has(number)) {
+      if (ciChunk) for (const item of readCapturedBatch(repoDir, "ci", ciChunk)?.items ?? []) ciCache.set(item.pr_number, item.value);
+      if (!ciCache.has(number)) ciCache.set(number, null);
+    }
+    return { evidence: evidenceCache.get(number), ci: ciCache.get(number) };
+  };
+  const row = (index, record, evidence3, ci2) => extractPrFeatures({
+    record,
+    evidence: evidence3,
+    ci: ci2,
+    landingMessage: landingMessage(record, index),
+    git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
+  });
+  const result = { repo, cuts: anchors.length, totals: emptyTally(), by_landed_by: {}, items: [] };
+  anchors.forEach((anchor, cutNumber) => {
+    const cutPosition = landing(anchor);
+    const cutSha = line[cutPosition];
+    log(`info: ${label2}: cut ${cutNumber + 1}/${anchors.length}`);
+    const cut = buildHistoryIndex(gitDir, cutSha, scratch, merges);
+    const before = placed.filter((record) => record !== anchor && landing(record) <= cutPosition && landing(record) >= cutPosition - 300);
+    const sample = [anchor, ...shuffled(before, random).slice(0, input.perCut - 1)];
+    for (const record of sample) {
+      const { evidence: evidence3, ci: ci2 } = load(record.pr_number);
+      const asOf = record.merged_at;
+      const tally = emptyTally();
+      tally.sampled = 1;
+      const baseline = row(full, record, evidence3, ci2);
+      const replay = differingColumns(baseline, row(cut, blankPostMergeRecord(record), evidence3 ? truncateEvidenceAt(evidence3, asOf) : null, truncateCiAt(ci2, asOf)));
+      const perturbed = evidence3 ? differingColumns(baseline, row(full, withPostMergeRecord(record), withPostMergeActivity(evidence3, asOf), withPostMergeCi(ci2, record.pr_number, asOf))) : differingColumns(baseline, row(full, withPostMergeRecord(record), null, ci2));
+      const controlChanged = evidence3 ? differingColumns(baseline, row(full, record, withPreMergeReview(evidence3, asOf), ci2)).length > 0 : false;
+      const leaky = evidence3 ? evidence3.reviews.length !== reviewsAt(evidence3, asOf).length || JSON.stringify([...record.labels].sort()) !== JSON.stringify(labelsAt(evidence3, asOf)) : false;
+      if (replay.length === 0) tally.replay_identical = 1;
+      if (perturbed.length === 0) tally.perturbed_identical = 1;
+      if (controlChanged) tally.control_changed = 1;
+      if (leaky) tally.leaky_reading_differs = 1;
+      add(result.totals, tally);
+      add(result.by_landed_by[record.landed_by] ??= emptyTally(), tally);
+      result.items.push({ pr_number: record.pr_number, landed_by: record.landed_by, cut_sha: cutSha, replay, perturbed, control_changed: controlChanged, leaky_reading_differs: leaky });
+    }
+  });
+  return result;
+}
+function runFeatureReplay(input) {
+  const { io, log } = input;
+  let sliceRepos;
+  let sliceSha;
+  try {
+    const bytes = readFileSync6(input.slicePath);
+    sliceSha = createHash6("sha256").update(bytes).digest("hex");
+    const slice = JSON.parse(bytes.toString("utf8"));
+    if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
+    sliceRepos = new Set(slice.repos);
+    if (insideGitWorkTree(input.outDir)) throw new Error("--out must be outside any git work tree; sampled PRs would reveal development repos");
+    if (existsSync6(input.outDir) && readdirSync(input.outDir).length) throw new Error(`${input.outDir} is not empty`);
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const development = input.entries.filter((entry2) => !sliceRepos.has(entry2.repo));
+  const seed = input.seed ?? randomBytes(32).toString("hex");
+  mkdirSync4(input.outDir, { recursive: true });
+  const totals = emptyTally();
+  const byLandedBy = {};
+  let failures = 0;
+  development.forEach((entry2, position) => {
+    const label2 = `development repo ${position + 1}/${development.length}`;
+    try {
+      const result = replayRepo({ repo: entry2.repo, repoDir: join9(input.cacheRoot, entry2.repo.replace("/", "__")), seed, cuts: input.cuts, perCut: input.perCut, log, label: label2 });
+      writeFileSync4(join9(input.outDir, `replay-${position + 1}.json`), `${JSON.stringify(result, null, 2)}
+`);
+      add(totals, result.totals);
+      for (const [type, tally] of Object.entries(result.by_landed_by)) add(byLandedBy[type] ??= emptyTally(), tally);
+    } catch (error) {
+      failures++;
+      log(`error: ${label2}: ${error.message.slice(0, 200)}`);
+    }
+  });
+  const summary = {
+    replay_version: REPLAY_VERSION,
+    excluded_slice_sha256: sliceSha,
+    development_repos: development.length,
+    failed_repos: failures,
+    seed,
+    totals,
+    by_landed_by: Object.fromEntries(Object.entries(byLandedBy).sort(([a], [b]) => a.localeCompare(b)))
+  };
+  writeFileSync4(join9(input.outDir, "summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+  io.writeStdout(`${JSON.stringify(summary)}
+`);
+  const passed = failures === 0 && totals.sampled > 0 && totals.replay_identical === totals.sampled && totals.perturbed_identical === totals.sampled;
+  return { exitCode: passed ? 0 : 1 };
+}
+
 // src/corpus/cli.ts
-import { createHash as createHash7, randomBytes } from "node:crypto";
-import { chmodSync, closeSync as closeSync3, existsSync as existsSync6, mkdirSync as mkdirSync4, openSync as openSync3, readdirSync, readFileSync as readFileSync6, rmSync as rmSync3, writeFileSync as writeFileSync4, writeSync as writeSync2 } from "node:fs";
-import { dirname as dirname2, join as join9, resolve as resolve5 } from "node:path";
+import { createHash as createHash8, randomBytes as randomBytes2 } from "node:crypto";
+import { chmodSync, closeSync as closeSync3, existsSync as existsSync7, mkdirSync as mkdirSync5, openSync as openSync3, readdirSync as readdirSync2, readFileSync as readFileSync7, rmSync as rmSync3, writeFileSync as writeFileSync5, writeSync as writeSync2 } from "node:fs";
+import { join as join10, resolve as resolve5 } from "node:path";
 import { parseArgs as parseArgs3 } from "node:util";
 import { gzipSync as gzipSync2, inflateRawSync } from "node:zlib";
 
 // src/corpus/calibration.ts
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 
 // src/report/stats.ts
 function round42(value) {
@@ -13941,7 +14188,7 @@ function parseLabellers(raw) {
   if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
   return { a: l.a, b: l.b };
 }
-var sha2562 = (...parts) => createHash6("sha256").update(parts.join("\0")).digest("hex");
+var sha2562 = (...parts) => createHash7("sha256").update(parts.join("\0")).digest("hex");
 function seededOrder(list, key) {
   return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
 }
@@ -14490,19 +14737,19 @@ var BORS_AUTO = /^(?:auto merge|rollup merge) of #(\d+)\b/i;
 var BORS_BATCH = /^merge((?:\s+#\d+)+)\s*$/i;
 function extractCorpusPrNumbers(subject, body, repo) {
   const found = [];
-  const add = (value) => {
+  const add2 = (value) => {
     const n = Number(value);
     if (Number.isInteger(n) && n > 0 && !found.includes(n)) found.push(n);
   };
   const trimmed = subject.trim();
   const batch = trimmed.match(BORS_BATCH);
   if (batch) {
-    for (const match of batch[1].matchAll(/#(\d+)/g)) add(match[1]);
+    for (const match of batch[1].matchAll(/#(\d+)/g)) add2(match[1]);
   } else {
-    add((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
+    add2((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
   }
   const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp3(repo)}/pull/(\\d+)\\s*$`, "im");
-  add(body.match(trailer)?.[1]);
+  add2(body.match(trailer)?.[1]);
   return found;
 }
 function escapeRegExp3(value) {
@@ -15083,7 +15330,8 @@ var CORPUS_COMMANDS = [
   "corpus-calibration-evidence",
   "corpus-calibration-score",
   "corpus-feature-audit",
-  "corpus-features"
+  "corpus-features",
+  "corpus-feature-replay"
 ];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -15190,17 +15438,17 @@ function writeJsonl(path4, rows, options = {}) {
   return { bytes, writtenBytes, largestRowBytes };
 }
 function fileCache(dir) {
-  mkdirSync4(dir, { recursive: true });
-  const path4 = (key) => join9(dir, `${createHash7("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  mkdirSync5(dir, { recursive: true });
+  const path4 = (key) => join10(dir, `${createHash8("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
-    get: (key) => existsSync6(path4(key)) ? JSON.parse(readFileSync6(path4(key), "utf8")) : void 0,
-    set: (key, value) => writeFileSync4(path4(key), JSON.stringify(value))
+    get: (key) => existsSync7(path4(key)) ? JSON.parse(readFileSync7(path4(key), "utf8")) : void 0,
+    set: (key, value) => writeFileSync5(path4(key), JSON.stringify(value))
   };
 }
 function syncClone(repo, dir, defaultBranch) {
   const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  for (let attempt2 = 1; !existsSync6(join9(dir, "HEAD")); attempt2++) {
+  for (let attempt2 = 1; !existsSync7(join10(dir, "HEAD")); attempt2++) {
     const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
     if (cloned.exitCode === 0) break;
     rmSync3(dir, { recursive: true, force: true });
@@ -15237,7 +15485,7 @@ function runCorpusCli(command, argv, io) {
   }
   try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
-    manifestBytes = readFileSync6(resolve5(io.cwd, values.manifest));
+    manifestBytes = readFileSync7(resolve5(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
     entries = runnableRepos(manifest, values.repo);
     window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
@@ -15275,7 +15523,7 @@ function runCorpusCli(command, argv, io) {
     let notes = { notes: [], convention_findings: [] };
     try {
       if (values.notes) {
-        const parsed = JSON.parse(readFileSync6(resolve5(io.cwd, values.notes), "utf8"));
+        const parsed = JSON.parse(readFileSync7(resolve5(io.cwd, values.notes), "utf8"));
         notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
       }
     } catch (error) {
@@ -15284,6 +15532,27 @@ function runCorpusCli(command, argv, io) {
       return { exitCode: 2 };
     }
     return runReport(entries, resolve5(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve5(io.cwd, values.out), io, log);
+  }
+  if (command === "corpus-feature-replay") {
+    if (!values["exclude-slice"] || !values.out) {
+      io.writeStderr("error: corpus-feature-replay needs --exclude-slice <slice manifest> and --out <private dir>\n");
+      return { exitCode: 2 };
+    }
+    if (values.seed !== void 0 && !/^[0-9a-f]{64}$/.test(values.seed)) {
+      io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
+      return { exitCode: 2 };
+    }
+    return runFeatureReplay({
+      entries,
+      cacheRoot: resolve5(io.cwd, values["cache-dir"]),
+      slicePath: resolve5(io.cwd, values["exclude-slice"]),
+      outDir: resolve5(io.cwd, values.out),
+      ...values.seed ? { seed: values.seed } : {},
+      cuts: 6,
+      perCut: 8,
+      io,
+      log
+    });
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve5(io.cwd, values["cache-dir"]);
@@ -15302,7 +15571,7 @@ function runCorpusCli(command, argv, io) {
       step,
       entries,
       cacheRoot,
-      cohortSha256: createHash7("sha256").update(manifestBytes).digest("hex"),
+      cohortSha256: createHash8("sha256").update(manifestBytes).digest("hex"),
       ...values.out ? { out: resolve5(io.cwd, values.out) } : {},
       graphql,
       writeRows: (path4, rows) => {
@@ -15324,20 +15593,20 @@ function runCorpusCli(command, argv, io) {
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join9(cacheRoot, `${owner}__${name}`);
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
-      mkdirSync4(repoDir, { recursive: true });
+      mkdirSync5(repoDir, { recursive: true });
       const meta = graphql("query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }", { owner, name });
       const branch = meta.repository.defaultBranchRef?.name;
       if (!branch) throw new Error("repository has no default branch");
       log(`info: ${entry2.repo}: syncing clone of ${branch}`);
-      const runGit3 = syncClone(entry2.repo, join9(repoDir, "repo.git"), branch);
+      const runGit3 = syncClone(entry2.repo, join10(repoDir, "repo.git"), branch);
       const { records, stats } = enumerateCorpusRepo(
         { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], ...window },
-        { runGit: runGit3, graphql, cache: fileCache(join9(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
+        { runGit: runGit3, graphql, cache: fileCache(join10(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
       );
-      writeJsonl(join9(repoDir, "prs.jsonl"), records);
-      writeFileSync4(join9(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
+      writeJsonl(join10(repoDir, "prs.jsonl"), records);
+      writeFileSync5(join10(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(stats)}
 `);
@@ -15355,26 +15624,26 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join9(cacheRoot, `${owner}__${name}`);
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const statsPath = join9(repoDir, "enumeration.json");
-      if (!existsSync6(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
-      const { branch } = JSON.parse(readFileSync6(statsPath, "utf8"));
-      const records = readFileSync6(join9(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
-      const gitDir = join9(repoDir, "repo.git");
+      const statsPath = join10(repoDir, "enumeration.json");
+      if (!existsSync7(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+      const { branch } = JSON.parse(readFileSync7(statsPath, "utf8"));
+      const records = readFileSync7(join10(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       log(`info: ${entry2.repo}: backfilling blobs`);
       const backfill = runGit3(["backfill"]);
       if (backfill.exitCode !== 0) throw new Error(`git backfill failed: ${backfill.stderr.trim().split("\n").pop()}`);
       log(`info: ${entry2.repo}: prefetching cross-references for ${records.length} PRs`);
-      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join9(repoDir, "graphql")));
+      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join10(repoDir, "graphql")));
       log(`info: ${entry2.repo}: labelling`);
       const { rows, failed } = labelCorpusRepo(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
-      const written = writeJsonl(join9(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
+      const written = writeJsonl(join10(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
       const summary = {
         repo: entry2.repo,
         as_of: asOf.toISOString(),
@@ -15388,7 +15657,7 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
         base_rates: summarizeLabels(entry2.repo, rows)
       };
-      writeFileSync4(join9(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
@@ -15403,10 +15672,10 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   return { exitCode: failures ? 3 : 0 };
 }
 function readJsonl2(path4) {
-  return readFileSync6(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return readFileSync7(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 function* readGzipJsonlMembers(path4) {
-  const raw = readFileSync6(path4);
+  const raw = readFileSync7(path4);
   for (let offset = 0; offset < raw.length; ) {
     if (raw[offset] !== 31 || raw[offset + 1] !== 139 || raw[offset + 3] !== 0) throw new Error(`${path4}: unexpected gzip member header at byte ${offset}`);
     const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true });
@@ -15418,19 +15687,19 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join9(cacheRoot, `${owner}__${name}`);
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const s2Path = join9(repoDir, "s2.jsonl.gz");
-      if (!existsSync6(s2Path)) throw new Error("not labelled yet; run corpus-label first");
-      const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
-      const originals = readJsonl2(join9(repoDir, "prs.jsonl"));
-      const gitDir = join9(repoDir, "repo.git");
+      const s2Path = join10(repoDir, "s2.jsonl.gz");
+      if (!existsSync7(s2Path)) throw new Error("not labelled yet; run corpus-label first");
+      const { branch } = JSON.parse(readFileSync7(join10(repoDir, "enumeration.json"), "utf8"));
+      const originals = readJsonl2(join10(repoDir, "prs.jsonl"));
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      const cache = fileCache(join9(repoDir, "graphql"));
-      const laterPath = join9(repoDir, "fix-prs.jsonl");
+      const cache = fileCache(join10(repoDir, "graphql"));
+      const laterPath = join10(repoDir, "fix-prs.jsonl");
       let laterPrs = [];
-      if (existsSync6(laterPath)) laterPrs = readJsonl2(laterPath);
+      if (existsSync7(laterPath)) laterPrs = readJsonl2(laterPath);
       else if (window.until < asOf) {
         log(`info: ${entry2.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
         ({ records: laterPrs } = enumerateCorpusRepo(
@@ -15449,9 +15718,9 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
         { repo: entry2.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
       );
-      writeJsonl(join9(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
-      writeJsonl(join9(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
-      writeJsonl(join9(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
+      writeJsonl(join10(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
+      writeJsonl(join10(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
+      writeJsonl(join10(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
       const summary = {
         repo: entry2.repo,
         as_of: asOf.toISOString(),
@@ -15459,7 +15728,7 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
         ...summarizeCorrective(result, originals.length),
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3)
       };
-      writeFileSync4(join9(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
@@ -15475,7 +15744,7 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
 }
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha2563 = (bytes) => createHash7("sha256").update(bytes).digest("hex");
+  const sha2563 = (bytes) => createHash8("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
@@ -15483,12 +15752,12 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   let failures = 0;
   for (const entry2 of entries) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join9(cacheRoot, `${owner}__${name}`);
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
-      for (const file of REPORT_INPUTS) if (!existsSync6(join9(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      for (const file of REPORT_INPUTS) if (!existsSync7(join10(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
       const counted = (file, onRow) => {
-        const path4 = join9(repoDir, file);
-        const bytes = readFileSync6(path4);
+        const path4 = join10(repoDir, file);
+        const bytes = readFileSync7(path4);
         const record = { repo: entry2.repo, file, sha256: sha2563(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
@@ -15531,65 +15800,59 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
     inputs
   };
   const run_id = sha2563(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
-  mkdirSync4(outDir, { recursive: true });
-  writeFileSync4(join9(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
+  mkdirSync5(outDir, { recursive: true });
+  writeFileSync5(join10(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
-  writeFileSync4(join9(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
+  writeFileSync5(join10(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
 `);
-  writeFileSync4(join9(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
+  writeFileSync5(join10(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
 `);
   return { exitCode: unresolved ? 1 : 0 };
 }
-function insideGitWorkTree(path4) {
-  for (let dir = path4; ; dir = dirname2(dir)) {
-    if (existsSync6(join9(dir, ".git"))) return true;
-    if (dirname2(dir) === dir) return false;
-  }
-}
 function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log) {
-  const sha2563 = (bytes2) => createHash7("sha256").update(bytes2).digest("hex");
+  const sha2563 = (bytes2) => createHash8("sha256").update(bytes2).digest("hex");
   let plan;
   let planBytes;
   let sliceBytes;
   let sliceRepos;
   try {
-    planBytes = readFileSync6(planPath);
+    planBytes = readFileSync7(planPath);
     plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
-    sliceBytes = readFileSync6(slicePath);
+    sliceBytes = readFileSync7(slicePath);
     const slice = JSON.parse(sliceBytes.toString("utf8"));
     if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
-    if (existsSync6(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    if (existsSync7(outDir) && readdirSync2(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
     return { exitCode: 2 };
   }
   const development = entries.filter((e) => !sliceRepos.has(e.repo));
-  const seed = seedArg ?? randomBytes(32).toString("hex");
+  const seed = seedArg ?? randomBytes2(32).toString("hex");
   const units = [];
   const inputs = [];
   let failures = 0;
   for (const entry2 of development) {
     const [owner, name] = entry2.repo.split("/");
-    const repoDir = join9(cacheRoot, `${owner}__${name}`);
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
       const files = ["candidates.jsonl.gz", "corrective.jsonl.gz"];
       for (const file2 of files) {
-        const path4 = join9(repoDir, file2);
-        if (!existsSync6(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
-        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2563(readFileSync6(path4)) });
+        const path4 = join10(repoDir, file2);
+        if (!existsSync7(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
+        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2563(readFileSync7(path4)) });
       }
       units.push(
         ...classifyCalibrationRepo({
           repo: entry2.repo,
           horizonDays: plan.horizon_days,
           szzStrongMinLines: plan.szz_strong_min_lines,
-          candidates: readGzipJsonlMembers(join9(repoDir, files[0])),
-          correctiveRows: readGzipJsonlMembers(join9(repoDir, files[1]))
+          candidates: readGzipJsonlMembers(join10(repoDir, files[0])),
+          correctiveRows: readGzipJsonlMembers(join10(repoDir, files[1]))
         })
       );
     } catch (error) {
@@ -15618,10 +15881,10 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     items: sample.items,
     drawn_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  mkdirSync4(outDir, { recursive: true, mode: 448 });
+  mkdirSync5(outDir, { recursive: true, mode: 448 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
 `, "utf8");
-  writeFileSync4(join9(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
+  writeFileSync5(join10(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
   const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
   io.writeStdout(
     `${JSON.stringify({ sample_sha256: sha2563(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
@@ -15633,12 +15896,12 @@ function runCalibrationScore(sampleDir, io) {
   let sample;
   let sheets;
   try {
-    sample = JSON.parse(readFileSync6(join9(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
     sheets = {
-      a: readFileSync6(join9(sampleDir, "sheet-a.csv"), "utf8"),
-      b: readFileSync6(join9(sampleDir, "sheet-b.csv"), "utf8"),
-      h: readFileSync6(join9(sampleDir, "sheet-h.csv"), "utf8")
+      a: readFileSync7(join10(sampleDir, "sheet-a.csv"), "utf8"),
+      b: readFileSync7(join10(sampleDir, "sheet-b.csv"), "utf8"),
+      h: readFileSync7(join10(sampleDir, "sheet-h.csv"), "utf8")
     };
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -15656,11 +15919,11 @@ function runCalibrationScore(sampleDir, io) {
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync4(join9(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
+  writeFileSync5(join10(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
 `, { mode: 384 });
-  writeFileSync4(join9(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
+  writeFileSync5(join10(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join9(sampleDir, "calibration-table.md") })}
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join10(sampleDir, "calibration-table.md") })}
 `
   );
   return { exitCode: 0 };
@@ -15668,9 +15931,9 @@ function runCalibrationScore(sampleDir, io) {
 function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   let sample;
   try {
-    sample = JSON.parse(readFileSync6(join9(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync6(join9(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
+    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync7(join10(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -15679,14 +15942,14 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   const evidence3 = [];
   let failures = 0;
   for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
-    const repoDir = join9(cacheRoot, repo.replace("/", "__"));
+    const repoDir = join10(cacheRoot, repo.replace("/", "__"));
     try {
-      const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
-      const records = [...readJsonl2(join9(repoDir, "prs.jsonl")), ...existsSync6(join9(repoDir, "fix-prs.jsonl")) ? readJsonl2(join9(repoDir, "fix-prs.jsonl")) : []];
+      const { branch } = JSON.parse(readFileSync7(join10(repoDir, "enumeration.json"), "utf8"));
+      const records = [...readJsonl2(join10(repoDir, "prs.jsonl")), ...existsSync7(join10(repoDir, "fix-prs.jsonl")) ? readJsonl2(join10(repoDir, "fix-prs.jsonl")) : []];
       const prs = new Map(records.map((r) => [r.pr_url, r]));
       const bySha = /* @__PURE__ */ new Map();
       for (const r of records) for (const sha2 of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha2)) bySha.set(sha2, r);
-      const gitDir = join9(repoDir, "repo.git");
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       for (const item of sample.items.filter((i) => i.repo === repo)) evidence3.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
     } catch (error) {
@@ -15697,10 +15960,10 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   if (failures) return { exitCode: 3 };
   const order = new Map(sample.items.map((i, n) => [i.item_id, n]));
   evidence3.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
-  writeJsonl(join9(sampleDir, "evidence.jsonl"), evidence3);
-  chmodSync(join9(sampleDir, "evidence.jsonl"), 384);
+  writeJsonl(join10(sampleDir, "evidence.jsonl"), evidence3);
+  chmodSync(join10(sampleDir, "evidence.jsonl"), 384);
   const related = new Map(evidence3.map((e) => [e.item_id, e.related.map((r) => r.url)]));
-  writeFileSync4(join9(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
+  writeFileSync5(join10(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
   const truncated = evidence3.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
   io.writeStdout(`${JSON.stringify({ items: evidence3.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence3.filter((e) => e.related.length).length })}
 `);
@@ -16220,9 +16483,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash8("sha256").update(stableJson(config)).digest("hex");
+  return createHash9("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -16396,8 +16659,8 @@ ${pr2.body ?? ""}` });
           const checkoutParent = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
           const checkoutDir = path3.join(checkoutParent, "checkout");
           try {
-            const add = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
-            if (add.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
+            const add2 = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
+            if (add2.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
             for (const args of [["-C", checkoutDir, "update-ref", "HEAD", merge.mergeSha], ["-C", checkoutDir, "checkout", "-f"]]) {
               if (deps.runGit(args).exitCode !== 0) throw new Error("Unable to check out PR merge");
             }
@@ -16591,6 +16854,8 @@ corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
 corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
                  (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
+corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slice <slice.json> --out <private dir> [--seed <hex>]
+                 (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
 corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
                  (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;
@@ -16718,8 +16983,8 @@ function runScanCli(argv, io) {
       io.writeStdout(output);
     } else {
       outputPath = resolve6(outSpec);
-      mkdirSync6(dirname4(outputPath), { recursive: true });
-      writeFileSync6(outputPath, output);
+      mkdirSync7(dirname4(outputPath), { recursive: true });
+      writeFileSync7(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -16774,7 +17039,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join12(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync3(join13(tmpdir3(), "hokusai-report-"));
       const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -16831,7 +17096,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync8(resolve6(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync9(resolve6(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -16842,7 +17107,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join12(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join13(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -16862,8 +17127,8 @@ async function runReportCli(argv, io) {
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync6(dirname4(outputPath), { recursive: true });
-          writeFileSync6(outputPath, built.body);
+          mkdirSync7(dirname4(outputPath), { recursive: true });
+          writeFileSync7(outputPath, built.body);
         }
       } else {
         const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
@@ -16872,14 +17137,14 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync6(dirname4(outputPath), { recursive: true });
-          writeFileSync6(outputPath, output);
+          mkdirSync7(dirname4(outputPath), { recursive: true });
+          writeFileSync7(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync6(dirname4(outputPath), { recursive: true });
-      writeFileSync6(outputPath, output);
+      mkdirSync7(dirname4(outputPath), { recursive: true });
+      writeFileSync7(outputPath, output);
     }
     try {
       saveState?.();
@@ -16917,7 +17182,7 @@ function parseGithubTarget(value) {
 }
 function resolveRepoDir(raw) {
   const repoDir = resolve6(validateRepoDir(raw));
-  if (!existsSync8(repoDir) || !statSync4(repoDir).isDirectory()) {
+  if (!existsSync9(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);

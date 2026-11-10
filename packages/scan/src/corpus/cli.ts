@@ -50,9 +50,10 @@
 
 import { runFeatureAudit } from './feature-audit.js';
 import { FEATURE_STEPS, runCorpusFeatures, type FeatureStep } from './feature-run.js';
+import { insideGitWorkTree, runFeatureReplay } from './feature-replay.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gzipSync, inflateRawSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
@@ -119,6 +120,7 @@ export const CORPUS_COMMANDS = [
   'corpus-calibration-score',
   'corpus-feature-audit',
   'corpus-features',
+  'corpus-feature-replay',
 ] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
@@ -343,6 +345,27 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
       return { exitCode: 2 };
     }
     return runReport(entries, resolve(io.cwd, values['cache-dir']), asOf, manifestBytes, notes, resolve(io.cwd, values.out), io, log);
+  }
+  if (command === 'corpus-feature-replay') {
+    if (!values['exclude-slice'] || !values.out) {
+      io.writeStderr('error: corpus-feature-replay needs --exclude-slice <slice manifest> and --out <private dir>\n');
+      return { exitCode: 2 };
+    }
+    if (values.seed !== undefined && !/^[0-9a-f]{64}$/.test(values.seed)) {
+      io.writeStderr('error: --seed must be 64 lowercase hex characters\n');
+      return { exitCode: 2 };
+    }
+    return runFeatureReplay({
+      entries,
+      cacheRoot: resolve(io.cwd, values['cache-dir']),
+      slicePath: resolve(io.cwd, values['exclude-slice']),
+      outDir: resolve(io.cwd, values.out),
+      ...(values.seed ? { seed: values.seed } : {}),
+      cuts: 6,
+      perCut: 8,
+      io,
+      log,
+    });
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
   const cacheRoot = resolve(io.cwd, values['cache-dir']);
@@ -633,14 +656,6 @@ function runReport(
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}\n`);
   return { exitCode: unresolved ? 1 : 0 };
-}
-
-/** True when `path`, or any directory above it, holds a `.git` entry. */
-function insideGitWorkTree(path: string): boolean {
-  for (let dir = path; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, '.git'))) return true;
-    if (dirname(dir) === dir) return false;
-  }
 }
 
 interface SampleFile {

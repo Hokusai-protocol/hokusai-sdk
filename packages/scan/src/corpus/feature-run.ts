@@ -41,19 +41,19 @@ interface FeatureSummary {
   bytes: number;
 }
 
-function readRecords(repoDir: string): CorpusPrRecord[] {
+export function readRecords(repoDir: string): CorpusPrRecord[] {
   // Features read titles and bodies from evidence at as_of, never from these current copies.
   return readFileSync(join(repoDir, 'prs.jsonl'), 'utf8').split('\n').filter(Boolean).map((line) => ({ ...(JSON.parse(line) as CorpusPrRecord), title: '', body: '' }));
 }
 
 /** Emails on the PR author's own commits. Null when the PR's commits are unknown. */
-function authorEmails(record: CorpusPrRecord, evidence: PrEvidence | null): string[] | null {
+export function authorEmails(record: CorpusPrRecord, evidence: PrEvidence | null): string[] | null {
   if (!evidence) return null;
   const emails = evidence.commits.filter((commit) => commit.author_login !== null && commit.author_login === record.author_login && commit.author_email).map((commit) => commit.author_email!);
   return emails.length ? [...new Set(emails)] : null;
 }
 
-function landingMessage(record: CorpusPrRecord, index: HistoryIndex): string | null {
+export function landingMessage(record: CorpusPrRecord, index: HistoryIndex): string | null {
   return record.batched ? null : index.landingMessages.get(record.merge_sha) ?? null;
 }
 
