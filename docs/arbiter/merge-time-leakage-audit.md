@@ -99,7 +99,7 @@ handle this shift; a pooled reading of the marker effect has the wrong sign.
 2. **The agent detector missed common markers** (`Assisted-by`, authorship statements,
    organization agent accounts) and misread `bot/` branches. Fixed in 0.4.0.
 3. **The `is_bot` null meaning is incomplete.** Null also means a PR found by a `(#N)`
-   reference whose author type was not recorded. Correct the text at the 1.0.0 freeze.
+   reference whose author type was not recorded. Corrected in 1.0.0.
 4. **Slice exposure.** Pooled per-type counts let a reader infer which repos are in the evaluation
    slice, and the hand review showed development-repo identities. Per-type results stay private,
    and this audit did not build or tune HOK-3028 arms.
@@ -108,7 +108,9 @@ handle this shift; a pooled reading of the marker effect has the wrong sign.
 
 ## Sign-off
 
-The manifest can be frozen as `rr-merge-features/1.0.0` once finding 3 is corrected.
+The manifest is frozen as `rr-merge-features/1.0.0`, with finding 3 corrected (commit eaa4f09).
+The published rows were rebuilt at 1.0.0 from the same captured evidence. All 364,743 are
+identical to the audited 0.4.0 rows except `manifest_version`, so these results hold for 1.0.0.
 
 - Auditor: Claude Code, 2026-11-11, on commit f889ce3 data
-- Owner: **********\_\_********** Date: ****\_\_****
+- Owner: not yet signed
