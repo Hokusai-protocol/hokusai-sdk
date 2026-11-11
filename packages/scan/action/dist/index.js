@@ -1837,6 +1837,15 @@ var PROXY_CONFIDENCE = Object.freeze({
   abnormal_churn: "low"
 });
 var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
+var CORRECTIVE_REWORK_DEFINITIONS = Object.freeze({
+  "cr-0.1.0": { admitted: ADMITTED_PROXIES, description: "all admitted proxies (P1\u2013P4)" },
+  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" }
+});
+function admittedProxiesFor(definitionVersion) {
+  const definition = CORRECTIVE_REWORK_DEFINITIONS[definitionVersion];
+  if (!definition) throw new Error(`unknown corrective-rework definition ${definitionVersion}`);
+  return definition.admitted;
+}
 var CORRECTIVE_REASON_CODES = [...ADMITTED_PROXIES, "no_accepted_fix", "base_label_missing"];
 function correctiveCandidateId(original, fix, proxy) {
   return createHash2("sha256").update([original.pr_url, fix.pr_url ?? fix.sha, proxy].join("\0"), "utf-8").digest("hex");
@@ -1852,11 +1861,12 @@ function deriveCorrectiveLabel(input) {
     label_provenance: "harvested",
     base_label_hash: input.base_label_hash
   };
+  const admittedList = admittedProxiesFor(input.envelope.definition_version);
   if (!input.base_label_present) {
     return { ...base, corrective: null, confidence: null, reason_codes: ["base_label_missing"], repair_pair_ids: [], envelope };
   }
   const horizonSeconds = input.horizon_days * 86400;
-  const admitted = new Set(ADMITTED_PROXIES);
+  const admitted = new Set(admittedList);
   const within = input.repair_pairs.filter(
     (p) => p.original.pr_url === input.prUrl && admitted.has(p.proxy) && p.lag_seconds > 0 && p.lag_seconds <= horizonSeconds
   );
@@ -1872,7 +1882,7 @@ function deriveCorrectiveLabel(input) {
     ...base,
     corrective: true,
     confidence,
-    reason_codes: ADMITTED_PROXIES.filter((p) => proxies.has(p)),
+    reason_codes: admittedList.filter((p) => proxies.has(p)),
     repair_pair_ids: [...new Set(within.map((p) => p.candidate_id))].sort(),
     envelope
   };
@@ -11205,12 +11215,14 @@ var OPTIONS = {
   seed: { type: "string" },
   sample: { type: "string" },
   gold: { type: "string" },
-  sheet: { type: "string" }
+  sheet: { type: "string" },
+  definition: { type: "string" }
 };
 var CORPUS_COMMANDS = [
   "corpus-enumerate",
   "corpus-label",
   "corpus-corrective",
+  "corpus-corrective-derive",
   "corpus-report",
   "corpus-calibration-sample",
   "corpus-calibration-evidence",
@@ -11402,6 +11414,20 @@ function runCorpusCli(command, argv, io) {
   }
   const log = (line) => io.writeStderr(`${line}
 `);
+  if (command === "corpus-corrective-derive") {
+    const definition = values.definition;
+    if (!definition || !CORRECTIVE_REWORK_DEFINITIONS[definition]) {
+      io.writeStderr(`error: corpus-corrective-derive needs --definition <one of ${Object.keys(CORRECTIVE_REWORK_DEFINITIONS).join(", ")}>
+`);
+      return { exitCode: 2 };
+    }
+    if (definition === CORRECTIVE_REWORK_DEFINITION_VERSION) {
+      io.writeStderr(`error: ${definition} is the default definition; corpus-corrective already writes it to corrective.jsonl.gz
+`);
+      return { exitCode: 2 };
+    }
+    return runCorrectiveDerive(entries, resolve4(io.cwd, values["cache-dir"]), definition, io, log);
+  }
   if (command === "corpus-calibration-sample") {
     if (!values.plan || !values["exclude-slice"] || !values.out) {
       io.writeStderr("error: corpus-calibration-sample needs --plan <json>, --exclude-slice <slice manifest> and --out <private dir>\n");
@@ -11593,6 +11619,53 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
       io.writeStdout(`${JSON.stringify(summary)}
 `);
       if (result.failedPairs.length || result.szz.failed) failures++;
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+`);
+      log(`error: ${entry.repo}: ${error.message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+function runCorrectiveDerive(entries, cacheRoot, definition, io, log) {
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split("/");
+    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+    try {
+      for (const file of ["s2.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"]) {
+        if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      }
+      const first = readGzipJsonlMembers(join7(repoDir, "corrective.jsonl.gz")).next();
+      if (first.done) throw new Error("corrective.jsonl.gz is empty");
+      const { labeller_version, integration_branch, as_of } = first.value.envelope;
+      const envelope = { definition_version: definition, labeller_version, integration_branch, as_of, computed_at: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z") };
+      const pairs = [...readGzipJsonlMembers(join7(repoDir, "repair_pairs.jsonl.gz"))];
+      const rows = deriveCorrectiveRows(readGzipJsonlMembers(join7(repoDir, "s2.jsonl.gz")), pairs, envelope);
+      const written = writeJsonl(join7(repoDir, `corrective.${definition}.jsonl.gz`), rows, { gzip: true });
+      const byHorizon = {};
+      for (const row of rows) {
+        const h = byHorizon[String(row.horizon_days)] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
+        h.rows++;
+        h[row.corrective === null ? "null" : row.corrective ? "true" : "false"]++;
+      }
+      for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
+      const summary = {
+        repo: entry.repo,
+        definition_version: definition,
+        derived_from: "repair_pairs.jsonl.gz",
+        as_of: envelope.as_of,
+        repair_pairs: pairs.length,
+        corrective_by_horizon: byHorizon,
+        file: `corrective.${definition}.jsonl.gz`,
+        sha256: createHash5("sha256").update(readFileSync3(join7(repoDir, `corrective.${definition}.jsonl.gz`))).digest("hex"),
+        bytes: written.writtenBytes
+      };
+      writeFileSync2(join7(repoDir, `corrective.${definition}.summary.json`), `${JSON.stringify(summary, null, 2)}
+`);
+      io.writeStdout(`${JSON.stringify(summary)}
+`);
     } catch (error) {
       failures++;
       io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
@@ -12839,6 +12912,8 @@ corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name
                  (S2 v1.1.0 rows per enumerated PR \xD7 14/30/60 into <cache>/<repo>/s2.jsonl)
 corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
+corpus-corrective-derive --manifest <cohort.json> --cache-dir <path> --definition <cr-x.y.z> [--repo <owner/name>]
+                 (corrective rows under another definition, from existing repair pairs; HOK-3269)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo \xD7 horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
 corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>

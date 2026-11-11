@@ -128,7 +128,12 @@ Titles, bodies, comments and diffs are read on the machine running the labeller,
 ## Versioning
 
 - **Changes to fields or their meaning:** bump `ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION`.
-- **Changes to the definition:** bump `CORRECTIVE_REWORK_DEFINITION_VERSION` (`cr-x.y.z`). This covers which proxies are admitted and their confidence tiers.
+- **Changes to the definition:** add a version to `CORRECTIVE_REWORK_DEFINITIONS` (`cr-x.y.z`). This covers which proxies are admitted and their confidence tiers. `deriveCorrectiveLabel` reads the admitted proxies from the envelope's `definition_version` and refuses a version it does not know. `CORRECTIVE_REWORK_DEFINITION_VERSION` is the default `corpus-corrective` writes.
+
+| Definition | Admits | Status |
+| --- | --- | --- |
+| `cr-0.1.0` | P1–P4: `revert`, `repair_reference`, `szz`, `regression_issue` | Default |
+| `cr-0.2.0` | P1 `revert` and P2 `repair_reference` only (the HOK-3269 `high_precision` variant) | Candidate. It becomes HOK-3028's target only if the HOK-3269 top-up audit clears the precision bar on the auditor's labels |
 
 Records are append-only. For each key, the newest `computed_at` wins.
 
@@ -138,7 +143,8 @@ The labeller writes these files next to each repo's `s2.jsonl.gz` and uploads th
 
 - `candidates.jsonl.gz`
 - `repair_pairs.jsonl.gz`
-- `corrective.jsonl.gz`
+- `corrective.jsonl.gz`, under the default definition
+- `corrective.<definition>.jsonl.gz` and `corrective.<definition>.summary.json`, under any other definition, written by `hokusai-scan corpus-corrective-derive --definition <cr-x.y.z>` from the existing repair pairs. Detection is not re-run, so these rows differ from the default rows only in which proxies count.
 
 HOK-3268 aggregates these files and HOK-3269 samples them. Neither reads the corpus again.
 

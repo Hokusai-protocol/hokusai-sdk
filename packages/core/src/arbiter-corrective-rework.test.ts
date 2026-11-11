@@ -13,6 +13,9 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   ADMITTED_PROXIES,
   ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+  CORRECTIVE_REWORK_DEFINITIONS,
+  CORRECTIVE_REWORK_DEFINITION_VERSION,
+  admittedProxiesFor,
   CORRECTIVE_PROXIES,
   CORRECTIVE_REASON_CODES,
   EVIDENCE_KINDS,
@@ -214,5 +217,57 @@ describe('corrective-rework — deriveCorrectiveLabel', () => {
     expect(correctiveCandidateId(original, { pr_url: null, sha: 'a'.repeat(40) }, 'revert')).not.toBe(
       correctiveCandidateId(original, fix, 'revert'),
     );
+  });
+});
+
+describe('corrective-rework — definitions (HOK-3269)', () => {
+  const DAY = 86_400;
+  const pair = (proxy: RepairPairV1['proxy'], id: string): DeriveCorrectiveInput['repair_pairs'][number] => ({
+    candidate_id: id.repeat(64).slice(0, 64),
+    lag_seconds: 5 * DAY,
+    proxy,
+    confidence: PROXY_CONFIDENCE[proxy],
+    original: { ...repairPairFixture.original },
+  });
+  const derive = (definition: string, pairs: DeriveCorrectiveInput['repair_pairs'], present = true) =>
+    deriveCorrectiveLabel({
+      prUrl: repairPairFixture.original.pr_url,
+      horizon_days: 30,
+      base_label_hash: correctiveTrueFixture.base_label_hash,
+      base_label_present: present,
+      repair_pairs: pairs,
+      envelope: { ...correctiveTrueFixture.envelope, definition_version: definition },
+    });
+
+  it('keeps cr-0.1.0 as the default and admitting every proxy it always did', () => {
+    expect(CORRECTIVE_REWORK_DEFINITION_VERSION).toBe('cr-0.1.0');
+    expect(admittedProxiesFor('cr-0.1.0')).toEqual(ADMITTED_PROXIES);
+  });
+
+  it('cr-0.2.0 admits reverts and repair references only', () => {
+    expect(admittedProxiesFor('cr-0.2.0')).toEqual(['revert', 'repair_reference']);
+    expect(derive('cr-0.2.0', [pair('szz', 'a'), pair('regression_issue', 'b')]).corrective).toBe(false);
+    const row = derive('cr-0.2.0', [pair('szz', 'a'), pair('repair_reference', 'b')]);
+    expect(row.corrective).toBe(true);
+    expect(row.reason_codes).toEqual(['repair_reference']);
+    expect(row.repair_pair_ids).toEqual(['b'.repeat(64)]);
+    expect(row.envelope.definition_version).toBe('cr-0.2.0');
+    expect(validate(row), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it('the same pairs give a cr-0.1.0 positive and a cr-0.2.0 negative when only SZZ links them', () => {
+    expect(derive('cr-0.1.0', [pair('szz', 'a')]).corrective).toBe(true);
+    expect(derive('cr-0.2.0', [pair('szz', 'a')]).corrective).toBe(false);
+  });
+
+  it('every definition admits only schema reason codes', () => {
+    for (const definition of Object.values(CORRECTIVE_REWORK_DEFINITIONS)) {
+      for (const proxy of definition.admitted) expect(CORRECTIVE_REASON_CODES).toContain(proxy);
+    }
+  });
+
+  it('refuses a definition it does not know, even for a missing base label', () => {
+    expect(() => derive('cr-9.9.9', [pair('revert', 'a')])).toThrow(/unknown corrective-rework definition/);
+    expect(() => derive('cr-9.9.9', [], false)).toThrow(/unknown corrective-rework definition/);
   });
 });
