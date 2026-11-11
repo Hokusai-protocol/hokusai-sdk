@@ -9238,6 +9238,15 @@ function parseCalibrationPlan(raw) {
     return v;
   };
   if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
+  const byStratum = plan.human_audit_share_by_stratum;
+  if (byStratum !== void 0) {
+    if (!byStratum || typeof byStratum !== "object") throw new Error("plan.human_audit_share_by_stratum must be an object");
+    for (const [stratum, share] of Object.entries(byStratum)) {
+      if (!CALIBRATION_STRATA.includes(stratum)) throw new Error(`plan.human_audit_share_by_stratum has unknown stratum ${stratum}`);
+      if (typeof share !== "number" || !(share > 0 && share <= 1)) throw new Error(`plan.human_audit_share_by_stratum.${stratum} is out of range`);
+    }
+  }
+  if (plan.pick_needs_human_precision !== void 0 && typeof plan.pick_needs_human_precision !== "boolean") throw new Error("plan.pick_needs_human_precision must be a boolean");
   return {
     plan_version: plan.plan_version,
     horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
@@ -9248,8 +9257,25 @@ function parseCalibrationPlan(raw) {
     min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
     szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
     kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
-    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
+    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1),
+    ...byStratum !== void 0 && { human_audit_share_by_stratum: plan.human_audit_share_by_stratum },
+    ...plan.pick_needs_human_precision !== void 0 && { pick_needs_human_precision: plan.pick_needs_human_precision }
   };
+}
+function auditShare(plan, stratum) {
+  return plan.human_audit_share_by_stratum?.[stratum] ?? plan.human_audit_share;
+}
+function auditedUrls(picked, plan, stratum, seed) {
+  return new Set(
+    seededOrder(picked, (u) => sha256(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * auditShare(plan, stratum))).map((u) => u.pr_url)
+  );
+}
+function extendAudit(items, plan, seed) {
+  const audited = /* @__PURE__ */ new Set();
+  for (const stratum of CALIBRATION_STRATA) for (const url of auditedUrls(items.filter((i) => i.stratum === stratum), plan, stratum, seed)) audited.add(url);
+  const dropped = items.find((i) => i.audit && !audited.has(i.pr_url));
+  if (dropped) throw new Error(`${dropped.item_id}: the new plan would drop an audited item`);
+  return items.map((i) => ({ ...i, audit: audited.has(i.pr_url) }));
 }
 function parseLabellers(raw) {
   const l = raw;
@@ -9334,9 +9360,7 @@ function drawCalibrationSample(units, plan, seed) {
     const doubles = new Set(
       seededOrder(picked, (u) => sha256(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
     );
-    const audited = new Set(
-      seededOrder(picked, (u) => sha256(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
-    );
+    const audited = auditedUrls(picked, plan, stratum, seed);
     for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   return {
@@ -9675,7 +9699,22 @@ function scoreCalibrationRun(input) {
   const kappa = human.agreement.corrective.kappa;
   const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
   const primary = models_stand_in ? model : human;
-  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
+  const pick_rule = models_stand_in && plan.pick_needs_human_precision ? "primary_and_human" : "primary";
+  let chosen_definition = primary.chosen_definition;
+  if (pick_rule === "primary_and_human") {
+    const floor = plan.definition_precision_floor;
+    const clears = (r, name) => {
+      const p = r.definitions.find((d) => d.name === name).precision.estimate;
+      return p !== null && p >= floor;
+    };
+    let best = null;
+    for (const d of model.definitions) {
+      if (!clears(model, d.name) || !clears(human, d.name)) continue;
+      if (!best || (d.recall.estimate ?? 0) > (best.recall.estimate ?? 0)) best = d;
+    }
+    chosen_definition = best?.name ?? null;
+  }
+  const gateDefinition = chosen_definition ?? "cr-0.1.0";
   return {
     plan,
     model,
@@ -9683,7 +9722,8 @@ function scoreCalibrationRun(input) {
     human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
     models_stand_in,
     primary: models_stand_in ? "model" : "human",
-    chosen_definition: primary.chosen_definition,
+    chosen_definition,
+    pick_rule,
     gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
   };
 }
@@ -9734,7 +9774,8 @@ function renderCalibrationMarkdown(run, auditCheck) {
   lines.push("", "## Verdict", "");
   if (auditCheck) lines.push(`- Audit check: the person got ${auditCheck.correct} of ${auditCheck.items} hidden known-answer items right (needs ${auditCheck.min_correct}); audit ${auditCheck.passed ? "accepted" : "**rejected**"}.`);
   lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
-  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
+  const pickFrom = run.pick_rule === "primary_and_human" ? `precision \u2265 ${pct(plan.definition_precision_floor)} on the model labels and on the person's` : `from the ${run.primary} labels`;
+  lines.push(`- cr-0.2.0 pick (${pickFrom}): **${run.chosen_definition ?? "none qualifies"}**`);
   lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
   lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
   renderEstimates(lines, model);
@@ -11175,7 +11216,8 @@ var CORPUS_COMMANDS = [
   "corpus-calibration-evidence",
   "corpus-calibration-score",
   "corpus-calibration-gold",
-  "corpus-calibration-screen"
+  "corpus-calibration-screen",
+  "corpus-calibration-topup"
 ];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -11332,6 +11374,13 @@ function runCorpusCli(command, argv, io) {
       return { exitCode: 2 };
     }
     return runCalibrationGold(resolve4(io.cwd, values.sample), resolve4(io.cwd, values.gold), io);
+  }
+  if (command === "corpus-calibration-topup") {
+    if (!values.sample || !values.plan || !values.gold) {
+      io.writeStderr("error: corpus-calibration-topup needs --sample <dir>, --plan <plan.json> and --gold <gold.json>\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationTopup(resolve4(io.cwd, values.sample), resolve4(io.cwd, values.plan), resolve4(io.cwd, values.gold), io);
   }
   if (command === "corpus-calibration-screen") {
     if (!values.gold || !!values.out === !!values.sheet) {
@@ -11712,6 +11761,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
 function runCalibrationScore(sampleDir, io) {
   let sample;
   let sheets;
+  let topupBack = false;
   try {
     sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
@@ -11720,6 +11770,9 @@ function runCalibrationScore(sampleDir, io) {
       b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8"),
       h: readFileSync3(join7(sampleDir, "sheet-h.csv"), "utf8")
     };
+    const topup = join7(sampleDir, TOPUP_SHEET);
+    topupBack = existsSync4(topup);
+    if (topupBack) sheets.h = appendSheetRows(sheets.h, readFileSync3(topup, "utf8"));
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -11729,7 +11782,8 @@ function runCalibrationScore(sampleDir, io) {
   const goldPath = join7(sampleDir, "gold.json");
   if (existsSync4(goldPath)) {
     try {
-      const hidden = parseGoldSet(JSON.parse(readFileSync3(goldPath, "utf8"))).items.filter((g) => g.use === "hidden");
+      const pending = new Set(topupBack ? [] : (sample.audit_topups ?? []).flatMap((t) => t.gold_item_ids));
+      const hidden = parseGoldSet(JSON.parse(readFileSync3(goldPath, "utf8"))).items.filter((g) => g.use === "hidden" && !pending.has(g.item_id));
       const split = splitGoldRows(sheets.h, new Set(hidden.map((g) => g.item_id)));
       auditCheck = scoreGold(split.gold, hidden, GOLD_PASS_SHARE.hidden);
       sheets.h = split.rest;
@@ -11775,6 +11829,81 @@ function runCalibrationGold(sampleDir, goldPath, io) {
     writeFileSync2(sheetPath, sheet, { mode: 384 });
     io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash5("sha256").update(goldBytes).digest("hex") })}
 `);
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+}
+var TOPUP_SHEET = "sheet-h-topup.csv";
+function appendSheetRows(sheet, extra) {
+  const header = parseCsv(sheet)[0]?.join(",");
+  const extraRows = parseCsv(extra);
+  if (extraRows[0]?.join(",") !== header) throw new Error(`${TOPUP_SHEET} does not have the sheet-h header`);
+  const body = extra.replace(/^\uFEFF?[^\r\n]*\r?\n/, "");
+  return `${sheet.replace(/\s*$/, "\n")}${body}`;
+}
+var TOPUP_PLAN_FIELDS = /* @__PURE__ */ new Set(["plan_version", "human_audit_share_by_stratum", "pick_needs_human_precision"]);
+function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
+  try {
+    const sha2562 = (bytes2) => createHash5("sha256").update(bytes2).digest("hex");
+    const samplePath = join7(sampleDir, "sample.json");
+    const sample = JSON.parse(readFileSync3(samplePath, "utf8"));
+    if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const planBytes = readFileSync3(planPath);
+    const plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
+    if (plan.plan_version === sample.plan.plan_version) throw new Error(`the sample is already on plan ${plan.plan_version}`);
+    const fields = /* @__PURE__ */ new Set([...Object.keys(plan), ...Object.keys(sample.plan)]);
+    for (const field of fields) {
+      if (TOPUP_PLAN_FIELDS.has(field)) continue;
+      if (JSON.stringify(plan[field]) !== JSON.stringify(sample.plan[field])) {
+        throw new Error(`plan.${field} differs from the plan the sample was drawn under; a top-up may change only ${[...TOPUP_PLAN_FIELDS].join(", ")}`);
+      }
+    }
+    const items = extendAudit(sample.items, plan, sample.seed);
+    const added = items.filter((i, n) => i.audit && !sample.items[n].audit);
+    if (!added.length) throw new Error("the new plan audits no item that was not already audited");
+    const goldBytes = readFileSync3(goldPath);
+    const gold = parseGoldSet(JSON.parse(goldBytes.toString("utf8")));
+    const priorGoldPath = join7(sampleDir, "gold.json");
+    const prior = existsSync4(priorGoldPath) ? parseGoldSet(JSON.parse(readFileSync3(priorGoldPath, "utf8"))) : void 0;
+    const priorIds = new Set(prior?.items.map((g) => g.item_id) ?? []);
+    for (const g of prior?.items ?? []) {
+      const same = gold.items.find((x) => x.item_id === g.item_id);
+      if (!same || JSON.stringify(same) !== JSON.stringify(g)) throw new Error(`${g.item_id}: the new gold set must keep every prior gold item unchanged`);
+    }
+    if (prior && gold.gold_version === prior.gold_version) throw new Error(`the gold set is already at ${gold.gold_version}`);
+    const hidden = gold.items.filter((g) => g.use === "hidden" && !priorIds.has(g.item_id));
+    if (!hidden.length) throw new Error("the gold set has no new hidden items for the top-up");
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const sampleUrls = new Set(sample.items.map((i) => i.pr_url));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id) || sampleUrls.has(g.pr_url));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item`);
+    const evidence3 = readJsonl2(join7(sampleDir, "evidence.jsonl"));
+    const related = new Map([...evidence3].map((e) => [e.item_id, e.related.map((r) => r.url)]));
+    const sheet = insertGoldRows(renderLabelSheet(added, related), hidden, sample.seed);
+    const tag = (v) => v.replace(/[^0-9A-Za-z.]/g, "_");
+    const blankPath = join7(sampleDir, "sheet-h-topup.blank.csv");
+    writeFileSync2(blankPath, sheet, { mode: 384, flag: "wx" });
+    writeFileSync2(join7(sampleDir, `sample.plan-${tag(sample.plan.plan_version)}.json`), readFileSync3(samplePath), { mode: 384, flag: "wx" });
+    if (prior) writeFileSync2(join7(sampleDir, `gold.${tag(prior.gold_version)}.json`), readFileSync3(priorGoldPath), { mode: 384, flag: "wx" });
+    const next = {
+      ...sample,
+      plan,
+      plan_sha256: sha2562(planBytes),
+      items,
+      audit_topups: [...sample.audit_topups ?? [], { plan_version: plan.plan_version, from_plan_version: sample.plan.plan_version, added: added.length, gold_item_ids: hidden.map((g) => g.item_id), at: (/* @__PURE__ */ new Date()).toISOString() }]
+    };
+    const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}
+`, "utf8");
+    writeFileSync2(samplePath, bytes, { mode: 384 });
+    writeFileSync2(priorGoldPath, goldBytes, { mode: 384 });
+    const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, added.filter((i) => i.stratum === s).length]).filter(([, n]) => n > 0));
+    io.writeStdout(
+      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha2562(bytes), gold_sha256: sha2562(goldBytes) })}
+`
+    );
     return { exitCode: 0 };
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -12722,6 +12851,8 @@ corpus-calibration-gold --sample <private dir> --gold <gold.json>
                  (mix hidden known-answer rows into the blank human-audit sheet; HOK-3269)
 corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <filled sheet>)
                  (write or grade the auditor screening test; HOK-3269)
+corpus-calibration-topup --sample <private dir> --plan <plan.json> --gold <gold.json>
+                 (audit top-up under a later plan: re-derive audit flags, write the blank top-up sheet with new hidden rows; HOK-3269)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
