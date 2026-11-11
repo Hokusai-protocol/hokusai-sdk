@@ -127,6 +127,8 @@ corpus-calibration-gold --sample <private dir> --gold <gold.json>
                  (mix hidden known-answer rows into the blank human-audit sheet; HOK-3269)
 corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <filled sheet>)
                  (write or grade the auditor screening test; HOK-3269)
+corpus-calibration-topup --sample <private dir> --plan <plan.json> --gold <gold.json>
+                 (audit top-up under a later plan: re-derive audit flags, write the blank top-up sheet with new hidden rows; HOK-3269)
 `;
 
 const OPTION_SPEC = {

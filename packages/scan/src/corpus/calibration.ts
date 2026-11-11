@@ -59,6 +59,18 @@ export interface CalibrationPlan {
   kappa_floor: number;
   /** cr-0.2.0 is the definition variant with the highest recall whose precision estimate is at least this. */
   definition_precision_floor: number;
+  /**
+   * Plan ≥ 1.1.0: per-stratum audit shares that override `human_audit_share`.
+   * The audit order within a stratum is fixed by the seed, so raising a share
+   * keeps every item already audited and adds the next ones in that order.
+   */
+  human_audit_share_by_stratum?: Partial<Record<CalibrationStratum, number>>;
+  /**
+   * Plan ≥ 1.1.0: when model labels stand in, a variant also needs precision
+   * ≥ `definition_precision_floor` on the person's labels to be picked. This is
+   * the bar HOK-3028 §6 checks the pinned target against.
+   */
+  pick_needs_human_precision?: boolean;
 }
 
 export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
@@ -77,6 +89,15 @@ export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
     return v;
   };
   if (typeof plan.plan_version !== 'string') throw new Error('plan.plan_version is required');
+  const byStratum = plan.human_audit_share_by_stratum as Record<string, unknown> | undefined;
+  if (byStratum !== undefined) {
+    if (!byStratum || typeof byStratum !== 'object') throw new Error('plan.human_audit_share_by_stratum must be an object');
+    for (const [stratum, share] of Object.entries(byStratum)) {
+      if (!(CALIBRATION_STRATA as readonly string[]).includes(stratum)) throw new Error(`plan.human_audit_share_by_stratum has unknown stratum ${stratum}`);
+      if (typeof share !== 'number' || !(share > 0 && share <= 1)) throw new Error(`plan.human_audit_share_by_stratum.${stratum} is out of range`);
+    }
+  }
+  if (plan.pick_needs_human_precision !== undefined && typeof plan.pick_needs_human_precision !== 'boolean') throw new Error('plan.pick_needs_human_precision must be a boolean');
   return {
     plan_version: plan.plan_version,
     horizon_days: num('horizon_days', (v) => Number.isInteger(v) && v > 0),
@@ -88,7 +109,36 @@ export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
     szz_strong_min_lines: num('szz_strong_min_lines', (v) => Number.isInteger(v) && v >= 1),
     kappa_floor: num('kappa_floor', (v) => v > 0 && v <= 1),
     definition_precision_floor: num('definition_precision_floor', (v) => v > 0 && v <= 1),
+    ...(byStratum !== undefined && { human_audit_share_by_stratum: plan.human_audit_share_by_stratum }),
+    ...(plan.pick_needs_human_precision !== undefined && { pick_needs_human_precision: plan.pick_needs_human_precision }),
   };
+}
+
+/** The share of a stratum's sampled items that the person labels. */
+export function auditShare(plan: CalibrationPlan, stratum: CalibrationStratum): number {
+  return plan.human_audit_share_by_stratum?.[stratum] ?? plan.human_audit_share;
+}
+
+/** The audited PR URLs among one stratum's sampled units: a seeded prefix, so a larger share is a superset. */
+function auditedUrls(picked: readonly { pr_url: string }[], plan: CalibrationPlan, stratum: CalibrationStratum, seed: string): Set<string> {
+  return new Set(
+    seededOrder(picked, (u) => sha256(seed, 'audit', u.pr_url))
+      .slice(0, Math.ceil(picked.length * auditShare(plan, stratum)))
+      .map((u) => u.pr_url),
+  );
+}
+
+/**
+ * Re-derives the audit flags of a drawn sample under a later plan (an audit
+ * top-up). Nothing but the audit flags changes, and an item already audited
+ * must stay audited: a plan that would shrink the audit is refused.
+ */
+export function extendAudit(items: readonly SampleItem[], plan: CalibrationPlan, seed: string): SampleItem[] {
+  const audited = new Set<string>();
+  for (const stratum of CALIBRATION_STRATA) for (const url of auditedUrls(items.filter((i) => i.stratum === stratum), plan, stratum, seed)) audited.add(url);
+  const dropped = items.find((i) => i.audit && !audited.has(i.pr_url));
+  if (dropped) throw new Error(`${dropped.item_id}: the new plan would drop an audited item`);
+  return items.map((i) => ({ ...i, audit: audited.has(i.pr_url) }));
 }
 
 function parseLabellers(raw: unknown): CalibrationPlan['labellers'] {
@@ -247,11 +297,7 @@ export function drawCalibrationSample(units: readonly PopulationUnit[], plan: Ca
         .slice(0, Math.ceil(picked.length * plan.double_label_share))
         .map((u) => u.pr_url),
     );
-    const audited = new Set(
-      seededOrder(picked, (u) => sha256(seed, 'audit', u.pr_url))
-        .slice(0, Math.ceil(picked.length * plan.human_audit_share))
-        .map((u) => u.pr_url),
-    );
+    const audited = auditedUrls(picked, plan, stratum, seed);
     for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, 'item', unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   // Sheet order mixes strata, so a labeller can't read the stratum off the position.
@@ -739,7 +785,10 @@ export interface CalibrationRun {
   models_stand_in: boolean;
   /** The estimates the pick and the validation table use: the model's if they stand in, else the human audit's. */
   primary: 'model' | 'human';
+  /** The pick: the primary labels' pick, or under `pick_needs_human_precision` the variant that also clears the floor on the person's labels. */
   chosen_definition: string | null;
+  /** Which rule chose `chosen_definition`. */
+  pick_rule: 'primary' | 'primary_and_human';
   /** HOK-3028 §6 label-noise diagnostic: precision of the chosen definition (else cr-0.1.0) against the person's labels. */
   gate_label_precision: { definition: string; precision: Estimate };
 }
@@ -759,7 +808,23 @@ export function scoreCalibrationRun(input: {
   const kappa = human.agreement.corrective.kappa;
   const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
   const primary = models_stand_in ? model : human;
-  const gateDefinition = primary.chosen_definition ?? 'cr-0.1.0';
+  // Plan ≥ 1.1.0: with model labels primary, the pick must also clear the floor on the person's labels.
+  const pick_rule = models_stand_in && plan.pick_needs_human_precision ? 'primary_and_human' : 'primary';
+  let chosen_definition = primary.chosen_definition;
+  if (pick_rule === 'primary_and_human') {
+    const floor = plan.definition_precision_floor;
+    const clears = (r: CalibrationResults, name: string) => {
+      const p = r.definitions.find((d) => d.name === name)!.precision.estimate;
+      return p !== null && p >= floor;
+    };
+    let best: CalibrationResults['definitions'][number] | null = null;
+    for (const d of model.definitions) {
+      if (!clears(model, d.name) || !clears(human, d.name)) continue;
+      if (!best || (d.recall.estimate ?? 0) > (best.recall.estimate ?? 0)) best = d;
+    }
+    chosen_definition = best?.name ?? null;
+  }
+  const gateDefinition = chosen_definition ?? 'cr-0.1.0';
   return {
     plan,
     model,
@@ -767,7 +832,8 @@ export function scoreCalibrationRun(input: {
     human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
     models_stand_in,
     primary: models_stand_in ? 'model' : 'human',
-    chosen_definition: primary.chosen_definition,
+    chosen_definition,
+    pick_rule,
     gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition)!.precision },
   };
 }
@@ -837,7 +903,8 @@ export function renderCalibrationMarkdown(run: CalibrationRun, auditCheck?: { co
   lines.push('', '## Verdict', '');
   if (auditCheck) lines.push(`- Audit check: the person got ${auditCheck.correct} of ${auditCheck.items} hidden known-answer items right (needs ${auditCheck.min_correct}); audit ${auditCheck.passed ? 'accepted' : '**rejected**'}.`);
   lines.push(`- Person vs model A on the verdict: κ = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? '**stand in** for the full sample' : '**do not** stand in; estimates come from the human audit alone'}.`);
-  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? 'none qualifies'}**`);
+  const pickFrom = run.pick_rule === 'primary_and_human' ? `precision ≥ ${pct(plan.definition_precision_floor)} on the model labels and on the person's` : `from the ${run.primary} labels`;
+  lines.push(`- cr-0.2.0 pick (${pickFrom}): **${run.chosen_definition ?? 'none qualifies'}**`);
   lines.push(`- HOK-3028 §6 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
 
   lines.push('', `## Full sample, model A labels${run.primary === 'model' ? ' (primary)' : ''}`);
