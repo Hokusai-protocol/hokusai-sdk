@@ -62,6 +62,7 @@ import {
   CALIBRATION_STRATA,
   classifyCalibrationRepo,
   drawCalibrationSample,
+  extendAudit,
   parseCalibrationPlan,
   parseCsv,
   parseLabelSheet,
@@ -120,6 +121,7 @@ export const CORPUS_COMMANDS = [
   'corpus-calibration-score',
   'corpus-calibration-gold',
   'corpus-calibration-screen',
+  'corpus-calibration-topup',
 ] as const;
 
 const RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
@@ -302,6 +304,13 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
       return { exitCode: 2 };
     }
     return runCalibrationGold(resolve(io.cwd, values.sample), resolve(io.cwd, values.gold), io);
+  }
+  if (command === 'corpus-calibration-topup') {
+    if (!values.sample || !values.plan || !values.gold) {
+      io.writeStderr('error: corpus-calibration-topup needs --sample <dir>, --plan <plan.json> and --gold <gold.json>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationTopup(resolve(io.cwd, values.sample), resolve(io.cwd, values.plan), resolve(io.cwd, values.gold), io);
   }
   if (command === 'corpus-calibration-screen') {
     if (!values.gold || !!values.out === !!values.sheet) {
@@ -648,6 +657,8 @@ interface SampleFile {
   cells: SampleCell[];
   items: SampleItem[];
   drawn_at: string;
+  /** Audit top-ups applied after the draw (plan ≥ 1.1.0); absent when none. */
+  audit_topups?: { plan_version: string; from_plan_version: string; added: number; gold_item_ids: string[]; at: string }[];
 }
 
 function runCalibrationSample(
@@ -742,6 +753,7 @@ function runCalibrationSample(
 function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: number } {
   let sample: SampleFile;
   let sheets: { a: string; b: string; h: string };
+  let topupBack = false;
   try {
     sample = JSON.parse(readFileSync(join(sampleDir, 'sample.json'), 'utf8')) as SampleFile;
     if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
@@ -750,6 +762,10 @@ function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: nu
       b: readFileSync(join(sampleDir, 'sheet-b.csv'), 'utf8'),
       h: readFileSync(join(sampleDir, 'sheet-h.csv'), 'utf8'),
     };
+    // A returned audit top-up (corpus-calibration-topup) is scored with the first audit sheet.
+    const topup = join(sampleDir, TOPUP_SHEET);
+    topupBack = existsSync(topup);
+    if (topupBack) sheets.h = appendSheetRows(sheets.h, readFileSync(topup, 'utf8'));
   } catch (error) {
     io.writeStderr(`error: ${(error as Error).message}\n`);
     return { exitCode: 2 };
@@ -759,7 +775,9 @@ function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: nu
   const goldPath = join(sampleDir, 'gold.json');
   if (existsSync(goldPath)) {
     try {
-      const hidden = parseGoldSet(JSON.parse(readFileSync(goldPath, 'utf8'))).items.filter((g) => g.use === 'hidden');
+      // A top-up's hidden rows count only once its sheet is back; until then its items are just unlabelled.
+      const pending = new Set(topupBack ? [] : (sample.audit_topups ?? []).flatMap((t) => t.gold_item_ids));
+      const hidden = parseGoldSet(JSON.parse(readFileSync(goldPath, 'utf8'))).items.filter((g) => g.use === 'hidden' && !pending.has(g.item_id));
       const split = splitGoldRows(sheets.h, new Set(hidden.map((g) => g.item_id)));
       auditCheck = scoreGold(split.gold, hidden, GOLD_PASS_SHARE.hidden);
       sheets.h = split.rest;
@@ -802,6 +820,96 @@ function runCalibrationGold(sampleDir: string, goldPath: string, io: CorpusCliIO
     writeFileSync(join(sampleDir, 'gold.json'), goldBytes, { mode: 0o600, flag: 'wx' });
     writeFileSync(sheetPath, sheet, { mode: 0o600 });
     io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash('sha256').update(goldBytes).digest('hex') })}\n`);
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+}
+
+/** The returned top-up sheet; the command writes the blank as `sheet-h-topup.blank.csv`. */
+const TOPUP_SHEET = 'sheet-h-topup.csv';
+
+/** `extra`'s data rows appended to `sheet`; both must have the sheet header. */
+function appendSheetRows(sheet: string, extra: string): string {
+  const header = parseCsv(sheet)[0]?.join(',');
+  const extraRows = parseCsv(extra);
+  if (extraRows[0]?.join(',') !== header) throw new Error(`${TOPUP_SHEET} does not have the sheet-h header`);
+  const body = extra.replace(/^\uFEFF?[^\r\n]*\r?\n/, '');
+  return `${sheet.replace(/\s*$/, '\n')}${body}`;
+}
+
+/** Plan fields an audit top-up may change; every other field must equal the plan the sample was drawn under. */
+const TOPUP_PLAN_FIELDS = new Set(['plan_version', 'human_audit_share_by_stratum', 'pick_needs_human_precision']);
+
+/**
+ * Audit top-up (plan ≥ 1.1.0): re-derives the audit flags under the new plan,
+ * so the added items are the next ones in each stratum's seeded audit order,
+ * and writes them, with the gold set's new hidden items mixed in, to a blank
+ * `sheet-h-topup.blank.csv`. The prior sample.json and gold.json are kept
+ * beside the new ones. A second run fails before anything is written.
+ */
+function runCalibrationTopup(sampleDir: string, planPath: string, goldPath: string, io: CorpusCliIO): { exitCode: number } {
+  try {
+    const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+    const samplePath = join(sampleDir, 'sample.json');
+    const sample = JSON.parse(readFileSync(samplePath, 'utf8')) as SampleFile;
+    if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const planBytes = readFileSync(planPath);
+    const plan = parseCalibrationPlan(JSON.parse(planBytes.toString('utf8')));
+    if (plan.plan_version === sample.plan.plan_version) throw new Error(`the sample is already on plan ${plan.plan_version}`);
+    const fields = new Set([...Object.keys(plan), ...Object.keys(sample.plan)]);
+    for (const field of fields) {
+      if (TOPUP_PLAN_FIELDS.has(field)) continue;
+      if (JSON.stringify((plan as unknown as Record<string, unknown>)[field]) !== JSON.stringify((sample.plan as unknown as Record<string, unknown>)[field])) {
+        throw new Error(`plan.${field} differs from the plan the sample was drawn under; a top-up may change only ${[...TOPUP_PLAN_FIELDS].join(', ')}`);
+      }
+    }
+    const items = extendAudit(sample.items, plan, sample.seed);
+    const added = items.filter((i, n) => i.audit && !sample.items[n]!.audit);
+    if (!added.length) throw new Error('the new plan audits no item that was not already audited');
+
+    const goldBytes = readFileSync(goldPath);
+    const gold = parseGoldSet(JSON.parse(goldBytes.toString('utf8')));
+    const priorGoldPath = join(sampleDir, 'gold.json');
+    const prior = existsSync(priorGoldPath) ? parseGoldSet(JSON.parse(readFileSync(priorGoldPath, 'utf8'))) : undefined;
+    const priorIds = new Set(prior?.items.map((g) => g.item_id) ?? []);
+    for (const g of prior?.items ?? []) {
+      const same = gold.items.find((x) => x.item_id === g.item_id);
+      if (!same || JSON.stringify(same) !== JSON.stringify(g)) throw new Error(`${g.item_id}: the new gold set must keep every prior gold item unchanged`);
+    }
+    if (prior && gold.gold_version === prior.gold_version) throw new Error(`the gold set is already at ${gold.gold_version}`);
+    const hidden = gold.items.filter((g) => g.use === 'hidden' && !priorIds.has(g.item_id));
+    if (!hidden.length) throw new Error('the gold set has no new hidden items for the top-up');
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const sampleUrls = new Set(sample.items.map((i) => i.pr_url));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id) || sampleUrls.has(g.pr_url));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item`);
+
+    const evidence = readJsonl<ItemEvidence>(join(sampleDir, 'evidence.jsonl'));
+    const related = new Map([...evidence].map((e) => [e.item_id, e.related.map((r) => r.url)]));
+    const sheet = insertGoldRows(renderLabelSheet(added, related), hidden, sample.seed);
+
+    const tag = (v: string) => v.replace(/[^0-9A-Za-z.]/g, '_');
+    // wx throughout: a second run fails here, before sample.json or gold.json changes.
+    const blankPath = join(sampleDir, 'sheet-h-topup.blank.csv');
+    writeFileSync(blankPath, sheet, { mode: 0o600, flag: 'wx' });
+    writeFileSync(join(sampleDir, `sample.plan-${tag(sample.plan.plan_version)}.json`), readFileSync(samplePath), { mode: 0o600, flag: 'wx' });
+    if (prior) writeFileSync(join(sampleDir, `gold.${tag(prior.gold_version)}.json`), readFileSync(priorGoldPath), { mode: 0o600, flag: 'wx' });
+    const next: SampleFile = {
+      ...sample,
+      plan,
+      plan_sha256: sha256(planBytes),
+      items,
+      audit_topups: [...(sample.audit_topups ?? []), { plan_version: plan.plan_version, from_plan_version: sample.plan.plan_version, added: added.length, gold_item_ids: hidden.map((g) => g.item_id), at: new Date().toISOString() }],
+    };
+    const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    writeFileSync(samplePath, bytes, { mode: 0o600 });
+    writeFileSync(priorGoldPath, goldBytes, { mode: 0o600 });
+    const strata: Record<string, number> = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, added.filter((i) => i.stratum === s).length] as const).filter(([, n]) => n > 0));
+    io.writeStdout(
+      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha256(bytes), gold_sha256: sha256(goldBytes) })}\n`,
+    );
     return { exitCode: 0 };
   } catch (error) {
     io.writeStderr(`error: ${(error as Error).message}\n`);

@@ -8,6 +8,7 @@ import {
   classifyCalibrationRepo,
   cohensKappa,
   drawCalibrationSample,
+  extendAudit,
   parseCalibrationPlan,
   parseCsv,
   parseLabelSheet,
@@ -154,6 +155,22 @@ describe('drawCalibrationSample', () => {
     expect(drawCalibrationSample(units, plan, 'b'.repeat(64)).items.map((i) => i.pr_url).sort()).not.toEqual(sample.items.map((i) => i.pr_url).sort());
   });
 
+  it('audits per-stratum shares under plan 1.1.0, and a top-up keeps every audited item', () => {
+    expect(sample.items.filter((i) => i.audit && i.stratum === 'revert')).toHaveLength(1);
+    const wider = parseCalibrationPlan({ ...plan, plan_version: 'test-2', human_audit_share_by_stratum: { revert: 1, negative: 1 } });
+    const drawn = drawCalibrationSample(units, wider, SEED);
+    expect(drawn.items.map((i) => i.item_id)).toEqual(sample.items.map((i) => i.item_id)); // the audit share never changes the draw
+    expect(drawn.items.filter((i) => i.audit && i.stratum === 'revert')).toHaveLength(2);
+    expect(drawn.items.filter((i) => i.audit && i.stratum === 'negative')).toHaveLength(4);
+    expect(drawn.items.filter((i) => i.audit && i.stratum === 'szz_weak')).toHaveLength(1);
+    expect(extendAudit(sample.items, wider, SEED)).toEqual(drawn.items);
+    for (const item of sample.items.filter((i) => i.audit)) expect(drawn.items.find((i) => i.item_id === item.item_id)!.audit).toBe(true);
+    const narrower = parseCalibrationPlan({ ...plan, plan_version: 'test-3', human_audit_share: 0.1 });
+    expect(() => extendAudit(drawn.items, narrower, SEED)).toThrow('would drop an audited item');
+    expect(() => parseCalibrationPlan({ ...plan, human_audit_share_by_stratum: { nope: 1 } })).toThrow('unknown stratum');
+    expect(() => parseCalibrationPlan({ ...plan, human_audit_share_by_stratum: { revert: 0 } })).toThrow('out of range');
+  });
+
   it('reports a stratum too small for its allocation', () => {
     const small = drawCalibrationSample(population(['a/one'], 1), plan, SEED);
     expect(small.shortfalls).toContainEqual({ stratum: 'revert', allocated: 2, drawn: 1 });
@@ -269,6 +286,26 @@ describe('scoreCalibration', () => {
     expect(split.models_stand_in).toBe(false);
     expect(split.primary).toBe('human');
     expect(split.human.definitions[0]!.recall.estimate).toBe(1); // the person's only yes PRs are proxy-positive
+  });
+
+  it('under plan 1.1.0, picks only a variant that also clears the floor on the person\'s labels', () => {
+    // The person says no on i1 (a revert): κ 0.5, and cr-0.1.0 is 50% precise on their labels.
+    const h = new Map(sheetA);
+    h.set('i1', { verdict: 'no', cause_code: 'not_rework', exclusion_code: 'revert_non_defect' });
+    const lenient = { ...plan, kappa_floor: 0.4 };
+    const before = scoreCalibrationRun({ plan: lenient, items, cells, sheets: { a: sheetA, b: sheetB, h }, seed: SEED, resamples: 200 });
+    expect(before).toMatchObject({ models_stand_in: true, pick_rule: 'primary', chosen_definition: 'cr-0.1.0' });
+    const after = scoreCalibrationRun({ plan: { ...lenient, pick_needs_human_precision: true }, items, cells, sheets: { a: sheetA, b: sheetB, h }, seed: SEED, resamples: 200 });
+    // i1 is the internal-build revert, so no_internal_build drops it and clears the floor on the person's labels.
+    expect(after).toMatchObject({ models_stand_in: true, pick_rule: 'primary_and_human', chosen_definition: 'no_internal_build' });
+    expect(after.gate_label_precision).toMatchObject({ definition: 'no_internal_build', precision: { estimate: 1 } });
+    expect(renderCalibrationMarkdown(after)).toContain("cr-0.2.0 pick (precision ≥ 80.0% on the model labels and on the person's): **no_internal_build**");
+    // If the person also rejects i2, nothing clears the floor on their labels.
+    h.set('i2', { verdict: 'no', cause_code: 'not_rework', exclusion_code: 'revert_non_defect' });
+    const none = scoreCalibrationRun({ plan: { ...lenient, kappa_floor: 0.1, pick_needs_human_precision: true }, items, cells, sheets: { a: sheetA, b: sheetB, h }, seed: SEED, resamples: 200 });
+    expect(none).toMatchObject({ models_stand_in: true, chosen_definition: null, gate_label_precision: { definition: 'cr-0.1.0' } });
+    // When the person agrees, the stricter rule picks what the plain one does.
+    expect(scoreCalibrationRun({ plan: { ...lenient, pick_needs_human_precision: true }, items, cells, sheets: { a: sheetA, b: sheetB, h: sheetA }, seed: SEED, resamples: 200 }).chosen_definition).toBe('cr-0.1.0');
   });
 
   it('renders a table that names no repo', () => {
@@ -394,6 +431,77 @@ describe('corpus-calibration CLI', () => {
     expect(readFileSync(join(dir, 'screening.csv'), 'utf8')).toContain('000000000003');
     writeFileSync(join(dir, 'screening-filled.csv'), readFileSync(join(dir, 'screening.csv'), 'utf8').replace(/,,,,\n$/, ',no,,,looked\n'));
     expect(JSON.parse(run('corpus-calibration-screen', dir, ['--gold', 'gold.json', '--sheet', 'screening-filled.csv']).out)).toMatchObject({ correct: 1, passed: true });
+  });
+});
+
+describe('corpus-calibration-topup', () => {
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const run = (command: string, dir: string, args: string[]) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const { exitCode } = runCorpusCli(command, args, { cwd: dir, writeStdout: (t) => out.push(t), writeStderr: (t) => err.push(t) });
+    return { exitCode, out: out.join(''), err: err.join('') };
+  };
+  const goldItem = (n: number, corrective: 'yes' | 'no') => ({ item_id: `00000000000${n}`, use: 'hidden', kind: corrective === 'yes' ? 'repair_ref' : 'negative', pr_url: url('z/gold', n), candidate_fixes: corrective === 'yes' ? [url('z/gold', n + 50)] : [], related_prs: [], expected: { corrective, exclusion_code: '', fix_url: '' }, why: 't' });
+  const label = (i: SampleItem) => (i.proxies.length ? 'yes,test_gap,' : i.candidates.length ? 'no,,unrelated_edit' : 'no,,');
+  const fill = (sheet: string, items: readonly SampleItem[]) => {
+    const byId = new Map(items.map((i) => [i.item_id, i]));
+    return parseCsv(sheet)
+      .map((r, n) => (n === 0 ? r : r[0]!.startsWith('0000000000') ? [...r.slice(0, 4), r[0] === '000000000001' || r[0] === '000000000003' ? 'yes' : 'no', r[0] === '000000000001' || r[0] === '000000000003' ? 'test_gap' : '', '', ''] : [...r.slice(0, 4), ...label(byId.get(r[0]!)!).split(','), '']))
+      .map((r) => r.join(','))
+      .join('\n');
+  };
+
+  it('adds the next audit items and new hidden rows, scores them once returned, and refuses a second run or a changed plan', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'calibration-topup-'));
+    dirs.push(dir);
+    const p = join(dir, 'private');
+    mkdirSync(p);
+    const units = population(['a/one', 'b/two', 'c/three'], 3);
+    const drawn = drawCalibrationSample(units, plan, SEED);
+    writeFileSync(join(p, 'sample.json'), JSON.stringify({ procedure: 'hok-3269-calibration-sample', sampler_version: '1.0.0', plan, plan_sha256: 'x', seed: SEED, cells: drawn.cells, items: drawn.items, inputs: [] }));
+    writeJsonl(join(p, 'evidence.jsonl'), drawn.items.map((i) => ({ item_id: i.item_id, related: [{ url: url('rel/ated', 1), title: null, merged_at: '' }] })));
+    writeFileSync(join(p, 'sheet-h.csv'), renderLabelSheet(drawn.items.filter((i) => i.audit)));
+    writeFileSync(join(dir, 'gold-1.json'), JSON.stringify({ procedure: 'hok-3269-gold', gold_version: '1.0.0', items: [goldItem(1, 'yes'), goldItem(2, 'no')] }));
+    expect(run('corpus-calibration-gold', dir, ['--sample', 'private', '--gold', 'gold-1.json']).exitCode).toBe(0);
+    const firstSheet = readFileSync(join(p, 'sheet-h.csv'), 'utf8');
+    writeFileSync(join(p, 'sheet-h.csv'), fill(firstSheet, drawn.items));
+    writeFileSync(join(p, 'sheet-a.csv'), fill(renderLabelSheet(drawn.items), drawn.items));
+    writeFileSync(join(p, 'sheet-b.csv'), fill(renderLabelSheet(drawn.items.filter((i) => i.double)), drawn.items));
+
+    const plan2 = { ...plan, plan_version: 'test-2', human_audit_share_by_stratum: { revert: 1, repair_reference: 1 }, pick_needs_human_precision: true };
+    writeFileSync(join(dir, 'plan-2.json'), JSON.stringify(plan2));
+    writeFileSync(join(dir, 'plan-bad.json'), JSON.stringify({ ...plan2, kappa_floor: 0.5 }));
+    writeFileSync(join(dir, 'gold-2.json'), JSON.stringify({ procedure: 'hok-3269-gold', gold_version: '1.1.0', items: [goldItem(1, 'yes'), goldItem(2, 'no'), goldItem(3, 'yes')] }));
+    writeFileSync(join(dir, 'gold-bad.json'), JSON.stringify({ procedure: 'hok-3269-gold', gold_version: '1.1.0', items: [goldItem(1, 'no'), goldItem(2, 'no'), goldItem(3, 'yes')] }));
+    const args = (planFile: string, goldFile: string) => ['--sample', 'private', '--plan', planFile, '--gold', goldFile];
+    expect(run('corpus-calibration-topup', dir, args('plan-bad.json', 'gold-2.json')).err).toContain('plan.kappa_floor differs');
+    expect(run('corpus-calibration-topup', dir, args('plan-2.json', 'gold-bad.json')).err).toContain('must keep every prior gold item unchanged');
+
+    const topup = run('corpus-calibration-topup', dir, args('plan-2.json', 'gold-2.json'));
+    expect(topup.exitCode).toBe(0);
+    expect(JSON.parse(topup.out)).toMatchObject({ added: 2, added_by_stratum: { revert: 1, repair_reference: 1 }, hidden: 1, sheet_rows: 3 });
+    const blank = readFileSync(join(p, 'sheet-h-topup.blank.csv'), 'utf8');
+    expect(blank).toContain('000000000003');
+    expect(blank).not.toContain('000000000001');
+    expect(blank).toContain(url('rel/ated', 1));
+    const sample2 = JSON.parse(readFileSync(join(p, 'sample.json'), 'utf8')) as { plan: CalibrationPlan; items: SampleItem[]; audit_topups: unknown[] };
+    expect(sample2.plan.plan_version).toBe('test-2');
+    expect(sample2.items.filter((i) => i.audit)).toHaveLength(drawn.items.filter((i) => i.audit).length + 2);
+    expect(sample2.audit_topups).toMatchObject([{ plan_version: 'test-2', from_plan_version: 'test', added: 2, gold_item_ids: ['000000000003'] }]);
+    expect(existsSync(join(p, 'sample.plan-test.json'))).toBe(true);
+    expect(existsSync(join(p, 'gold.1.0.0.json'))).toBe(true);
+    expect(run('corpus-calibration-topup', dir, args('plan-2.json', 'gold-2.json')).exitCode).toBe(2);
+
+    // Before the top-up is back, its items are unlabelled and its hidden row is not counted against the auditor.
+    const pending = run('corpus-calibration-score', dir, ['--sample', 'private']);
+    expect(JSON.parse(pending.out)).toMatchObject({ audit_unlabelled: 2, audit_check: { correct: 2, items: 2, passed: true } });
+    writeFileSync(join(p, 'sheet-h-topup.csv'), fill(blank, sample2.items));
+    const back = run('corpus-calibration-score', dir, ['--sample', 'private']);
+    expect(back.exitCode).toBe(0);
+    expect(JSON.parse(back.out)).toMatchObject({ audit_unlabelled: 0, audit_check: { correct: 3, items: 3, passed: true } });
+    expect(readFileSync(join(p, 'calibration-table.md'), 'utf8')).toContain("on the model labels and on the person's");
   });
 });
 
