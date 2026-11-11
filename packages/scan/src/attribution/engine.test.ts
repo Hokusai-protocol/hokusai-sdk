@@ -20,6 +20,20 @@ describe('scan attribution', () => {
     const stale = attributePullRequest({ ...base, body: '<!-- wavemill-meta\nexecutedRoute: coder\nmodel: gpt-4.1\nheadSha: deadbeef\n-->' });
     expect(stale.exactModel.evidence).toBeNull();
   });
+  it('finds agent evidence on a PR opened under a person\'s account', () => {
+    const trailer = attributePullRequest({ ...base, commitMessages: ['Fix\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>'] });
+    expect(trailer.agent).toMatchObject({ status: 'agent', methods: ['co_authored_by_trailer'] });
+    expect(trailer.exactModel).toMatchObject({ id: 'claude-opus-4-5', evidence: 'heuristic' });
+    const footer = attributePullRequest({ ...base, body: 'Summary\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)' });
+    expect(footer.agent).toMatchObject({ status: 'agent', methods: ['commit_signature'] });
+    const branch = attributePullRequest({ ...base, headRef: 'claude/fix-x' });
+    expect(branch.agent.methods).toEqual(['branch_prefix']);
+    expect(branch.harness.id).toBe('claude-code');
+  });
+  it('does not call a PR agent-written because a commit names a model or has a dependency-bot co-author', () => {
+    expect(attributePullRequest({ ...base, commitMessages: ['Add gpt-4 tokenizer test'] }).agent.status).toBe('unknown');
+    expect(attributePullRequest({ ...base, commitMessages: ['Merge\n\nCo-authored-by: dependabot[bot] <support@github.com>'] }).agent.status).toBe('unknown');
+  });
   it('rejects unknown configuration keys', () => {
     expect(() => resolveAttributionConfig({ mystery: true })).toThrow(AttributionConfigError);
   });

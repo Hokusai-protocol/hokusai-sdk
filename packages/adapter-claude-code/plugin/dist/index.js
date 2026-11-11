@@ -85,14 +85,14 @@ function readSessionFiles(options) {
       countDiagnostic(diagnostics, "unreadable_file");
       return;
     }
-    for (const entry of entries) {
-      const fullPath = join4(dir, entry.name);
-      if (entry.isDirectory()) {
+    for (const entry2 of entries) {
+      const fullPath = join4(dir, entry2.name);
+      if (entry2.isDirectory()) {
         if (depth < maxDepth) visit(fullPath, depth + 1);
         continue;
       }
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const sessionId = sessionIds.find((id2) => entry.name.includes(id2));
+      if (!entry2.isFile() || !entry2.name.endsWith(".jsonl")) continue;
+      const sessionId = sessionIds.find((id2) => entry2.name.includes(id2));
       if (sessionId === void 0 || seen.has(fullPath)) continue;
       seen.add(fullPath);
       try {
@@ -327,7 +327,7 @@ function preview(input, config) {
 }
 function sortKeys(payload) {
   if (Array.isArray(payload)) {
-    return payload.map((entry) => sortKeys(entry));
+    return payload.map((entry2) => sortKeys(entry2));
   }
   if (payload && typeof payload === "object") {
     const entries = Object.entries(payload).sort(
@@ -425,11 +425,11 @@ var CSV_METADATA_KEYS = {
 };
 function normalizePool(value) {
   const seen = /* @__PURE__ */ new Set();
-  for (const entry of value) {
-    if (typeof entry !== "string") {
+  for (const entry2 of value) {
+    if (typeof entry2 !== "string") {
       continue;
     }
-    const trimmed = entry.trim();
+    const trimmed = entry2.trim();
     if (trimmed) {
       seen.add(trimmed);
     }
@@ -896,8 +896,8 @@ function validateStringRecord(value, path5, errors) {
     pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry !== "string") {
+  for (const [key, entry2] of Object.entries(value)) {
+    if (typeof entry2 !== "string") {
       pushFieldError(
         errors,
         `${path5}.${key}`,
@@ -1034,8 +1034,8 @@ function validateRedactions(value, path5, errors) {
     );
     return;
   }
-  value.forEach((entry, index) => {
-    if (!isRecord(entry)) {
+  value.forEach((entry2, index) => {
+    if (!isRecord(entry2)) {
       pushFieldError(
         errors,
         `${path5}.${index}`,
@@ -1044,17 +1044,17 @@ function validateRedactions(value, path5, errors) {
       );
       return;
     }
-    if ("label" in entry) {
-      validateNonEmptyString2(entry.label, `${path5}.${index}.label`, errors);
+    if ("label" in entry2) {
+      validateNonEmptyString2(entry2.label, `${path5}.${index}.label`, errors);
       return;
     }
-    validateNonEmptyString2(entry.category, `${path5}.${index}.category`, errors);
+    validateNonEmptyString2(entry2.category, `${path5}.${index}.category`, errors);
     validateNonEmptyString2(
-      entry.placeholder,
+      entry2.placeholder,
       `${path5}.${index}.placeholder`,
       errors
     );
-    if (typeof entry.count !== "number") {
+    if (typeof entry2.count !== "number") {
       pushFieldError(
         errors,
         `${path5}.${index}.count`,
@@ -1266,7 +1266,7 @@ function validateRecommendedModel(modelId2, options) {
   const registry = options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
   const normalizedModelId = modelId2.trim();
   const allowlistedIds = new Set(
-    options.allowlist.map((entry) => registry.resolve(entry)).filter(
+    options.allowlist.map((entry2) => registry.resolve(entry2)).filter(
       (descriptor4) => descriptor4 !== void 0 && descriptor4.provider === "anthropic"
     ).map((descriptor4) => descriptor4.id)
   );
@@ -1766,8 +1766,8 @@ var FsLocalStore = class {
   async clearPayloadHashes() {
     await rm(this.#hashesDir(), { recursive: true, force: true });
   }
-  async appendAudit(entry) {
-    await writeJsonFile(this.#auditFilePath(entry.id), entry);
+  async appendAudit(entry2) {
+    await writeJsonFile(this.#auditFilePath(entry2.id), entry2);
   }
   async listAudit() {
     return (await readJsonFiles(this.#auditDir())).sort(
@@ -1813,22 +1813,22 @@ var FsLocalStore = class {
     );
     const auditEntries = await this.listAudit();
     const keptAuditEntries = pruneByRetention(
-      auditEntries.map((entry) => ({ ...entry, createdAt: entry.timestamp })),
+      auditEntries.map((entry2) => ({ ...entry2, createdAt: entry2.timestamp })),
       now,
       policy
-    ).map((entry) => ({
-      id: entry.id,
-      kind: entry.kind,
-      correlationId: entry.correlationId,
-      status: entry.status,
-      timestamp: entry.timestamp,
-      ...entry.error === void 0 ? {} : { error: entry.error }
+    ).map((entry2) => ({
+      id: entry2.id,
+      kind: entry2.kind,
+      correlationId: entry2.correlationId,
+      status: entry2.status,
+      timestamp: entry2.timestamp,
+      ...entry2.error === void 0 ? {} : { error: entry2.error }
     }));
     await this.#rewriteRecords(
       this.#auditDir(),
       auditEntries,
       keptAuditEntries,
-      (entry) => this.#auditFilePath(entry.id)
+      (entry2) => this.#auditFilePath(entry2.id)
     );
   }
   async clear() {
@@ -1980,7 +1980,7 @@ var HokusaiDispatchBuilder = class {
       return supported;
     }
     const allowed = new Set(
-      this.#modelAllowlist.map((entry) => this.#modelRegistry.resolve(entry)?.id).filter((id2) => id2 !== void 0)
+      this.#modelAllowlist.map((entry2) => this.#modelRegistry.resolve(entry2)?.id).filter((id2) => id2 !== void 0)
     );
     return supported.filter((id2) => allowed.has(id2));
   }
@@ -2573,7 +2573,7 @@ function normalizeContributionResponse(value, requestId) {
 }
 function firstStringArray(...values) {
   for (const value of values) {
-    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    if (Array.isArray(value) && value.every((entry2) => typeof entry2 === "string")) {
       return [...value];
     }
   }
@@ -2595,12 +2595,12 @@ function normalizeRejectedRows(value) {
     return void 0;
   }
   const rows = [];
-  for (const entry of value) {
-    if (!isPlainRecord(entry)) {
+  for (const entry2 of value) {
+    if (!isPlainRecord(entry2)) {
       continue;
     }
-    const index = firstFiniteNumber(entry.index);
-    const reason = firstString(entry.reason);
+    const index = firstFiniteNumber(entry2.index);
+    const reason = firstString(entry2.reason);
     if (index !== void 0 && reason !== void 0) {
       rows.push({ index, reason });
     }
@@ -2623,7 +2623,7 @@ function firstFiniteNumber(...values) {
 }
 function omitUndefined(value) {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== void 0)
+    Object.entries(value).filter(([, entry2]) => entry2 !== void 0)
   );
 }
 function omitEmptySections(inputs) {
@@ -2975,16 +2975,16 @@ function parseApiFieldErrors(value) {
     return void 0;
   }
   const fieldErrors = [];
-  for (const entry of value) {
-    if (!isFieldErrorLike(entry)) {
+  for (const entry2 of value) {
+    if (!isFieldErrorLike(entry2)) {
       continue;
     }
     const fieldError2 = {
-      path: entry.path,
-      message: entry.message
+      path: entry2.path,
+      message: entry2.message
     };
-    if (isFieldErrorCode(entry.code)) {
-      fieldError2.code = entry.code;
+    if (isFieldErrorCode(entry2.code)) {
+      fieldError2.code = entry2.code;
     }
     fieldErrors.push(fieldError2);
   }
@@ -3211,10 +3211,10 @@ function summarizeAllowlist(config, registry) {
   };
   const validModelIds = /* @__PURE__ */ new Set();
   const unknownEntries = [];
-  for (const entry of config.modelAllowlist) {
-    const descriptor3 = resolvedRegistry.resolve(entry);
+  for (const entry2 of config.modelAllowlist) {
+    const descriptor3 = resolvedRegistry.resolve(entry2);
     if (!descriptor3 || descriptor3.provider !== "anthropic") {
-      unknownEntries.push(entry);
+      unknownEntries.push(entry2);
       continue;
     }
     validModelIds.add(descriptor3.id);
@@ -3310,8 +3310,8 @@ function normalizeAllowlist(value, options) {
     return [...DEFAULT_ALLOWLIST];
   }
   const allowlist = [];
-  for (const [index, entry] of rawEntries.entries()) {
-    if (typeof entry !== "string") {
+  for (const [index, entry2] of rawEntries.entries()) {
+    if (typeof entry2 !== "string") {
       options.fieldErrors.push({
         path: `modelAllowlist[${index}]`,
         code: "invalid_type",
@@ -3319,7 +3319,7 @@ function normalizeAllowlist(value, options) {
       });
       continue;
     }
-    const normalized = entry.trim();
+    const normalized = entry2.trim();
     if (normalized.length === 0) {
       continue;
     }
@@ -3363,7 +3363,7 @@ function readEnvConfig(env) {
       )
     } : {},
     ...env.HOKUSAI_MODEL_ALLOWLIST !== void 0 ? {
-      modelAllowlist: env.HOKUSAI_MODEL_ALLOWLIST.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+      modelAllowlist: env.HOKUSAI_MODEL_ALLOWLIST.split(",").map((entry2) => entry2.trim()).filter((entry2) => entry2.length > 0)
     } : {},
     ...env.HOKUSAI_OBJECTIVE !== void 0 ? { routingObjective: env.HOKUSAI_OBJECTIVE } : {}
   };
@@ -3448,7 +3448,7 @@ function displayTaskRecommendation(recommendation) {
   }
   if (recommendation.alternatives && recommendation.alternatives.length > 0) {
     lines.push(
-      `Alternatives: ${recommendation.alternatives.map((entry) => entry.model.id).join(", ")}`
+      `Alternatives: ${recommendation.alternatives.map((entry2) => entry2.model.id).join(", ")}`
     );
     for (const alternative of recommendation.alternatives) {
       const parts = [alternative.model.id];
@@ -3624,7 +3624,7 @@ function parseMetadataList(value) {
   if (!value) {
     return void 0;
   }
-  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  const entries = value.split(",").map((entry2) => entry2.trim()).filter(Boolean);
   return entries.length > 0 ? entries : void 0;
 }
 function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
@@ -3689,7 +3689,7 @@ function parseRouteContext(value) {
     }
     const record = parsed;
     const taskDescriptor = typeof record.taskDescriptor === "object" && record.taskDescriptor !== null && !Array.isArray(record.taskDescriptor) ? record.taskDescriptor : {};
-    const allowedModels = Array.isArray(record.allowedModels) ? record.allowedModels.filter((entry) => typeof entry === "string") : [];
+    const allowedModels = Array.isArray(record.allowedModels) ? record.allowedModels.filter((entry2) => typeof entry2 === "string") : [];
     return {
       taskDescriptor,
       allowedModels,
@@ -3709,7 +3709,7 @@ function parseAlternativeIds(value) {
   }
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === "string") : [];
+    return Array.isArray(parsed) ? parsed.filter((entry2) => typeof entry2 === "string") : [];
   } catch {
     return [];
   }
@@ -3786,7 +3786,7 @@ async function findStoredCorrelationRecord(store, correlationId) {
   }
   const records = await store.listCorrelations();
   const byOriginal = records.find(
-    (entry) => entry.metadata?.originalCorrelationId === correlationId
+    (entry2) => entry2.metadata?.originalCorrelationId === correlationId
   );
   return {
     storedCorrelationId: byOriginal?.correlationId ?? storedCorrelationId,
@@ -4198,7 +4198,7 @@ function createRouteTask(profile17) {
           ...storedCorrelation.record.metadata,
           recommendedModelId: recommendation.model.id,
           recommendedAlternativeIds: JSON.stringify(
-            recommendation.alternatives?.map((entry) => entry.model.id) ?? []
+            recommendation.alternatives?.map((entry2) => entry2.model.id) ?? []
           ),
           reasonHash: hashPayload(recommendation.reason, redactionConfig.salt),
           reasonPreview: redactForStorage(
@@ -4347,11 +4347,11 @@ function createPreviewTaskPayload(profile17) {
         correlationId: "preview-only",
         createdAt: (/* @__PURE__ */ new Date(0)).toISOString()
       },
-      redactions: profile17.buildTaskPacket(input, context.builderOptions).redactionSummary.map((entry) => ({
-        label: entry.category,
-        count: entry.count,
-        category: entry.category,
-        placeholder: `<redacted:${entry.category}>`
+      redactions: profile17.buildTaskPacket(input, context.builderOptions).redactionSummary.map((entry2) => ({
+        label: entry2.category,
+        count: entry2.count,
+        category: entry2.category,
+        placeholder: `<redacted:${entry2.category}>`
       })),
       createdAt: (/* @__PURE__ */ new Date(0)).toISOString()
     });
@@ -5458,8 +5458,8 @@ function validateStringArray(value, path5, errors) {
   }
   const entries = value;
   for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (typeof entry !== "string" || entry.trim().length === 0) {
+    const entry2 = entries[index];
+    if (typeof entry2 !== "string" || entry2.trim().length === 0) {
       errors.push({
         path: `${path5}[${index}]`,
         message: `"${path5}" entries must be non-empty strings.`
@@ -5555,9 +5555,9 @@ function normalizeText(text) {
 function classifyTaskFamily(input) {
   const haystack = [input.text, ...input.hints ?? []].join("\n");
   const matches = /* @__PURE__ */ new Set();
-  for (const entry of FAMILY_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
-      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
+  for (const entry2 of FAMILY_KEYWORDS) {
+    if (entry2.patterns.some((pattern) => pattern.test(haystack))) {
+      matches.add(entry2.family === "bug" ? "bugfix" : entry2.family);
     }
   }
   if (matches.size > 1) {
@@ -5614,7 +5614,7 @@ function summarizeLanguageSignals(extensionCounts) {
   return [...languages].sort((left, right) => left.localeCompare(right));
 }
 function summarizeFrameworkSignals(dependencyCategories) {
-  return [...new Set(dependencyCategories.map((entry) => entry.trim()).filter(Boolean))].sort(
+  return [...new Set(dependencyCategories.map((entry2) => entry2.trim()).filter(Boolean))].sort(
     (left, right) => left.localeCompare(right)
   );
 }
@@ -7561,6 +7561,127 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/rework-risk-features.ts
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/1.0.0";
+var AGENT_TOOL_FAMILIES = [
+  "none",
+  "claude",
+  "copilot",
+  "cursor",
+  "codex",
+  "devin",
+  "gemini",
+  "aider",
+  "openhands",
+  "other",
+  "multiple"
+];
+var NO_DIFF = "The diff between base_sha and merge_sha could not be read.";
+var NO_HISTORY = "Ancestor history of base_sha could not be read.";
+var NO_EVENTS = "GitHub returned no timeline for this PR.";
+var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
+var NO_COMMITS = "The PR's commits could not be read.";
+var NO_MARKER_EVIDENCE = "No marker was found, and the commits or the body at as_of could not be read.";
+var NO_AUTHOR = "The author account no longer exists, or the PR was found from a `(#N)` reference in its landing commit and its author type was not recorded.";
+var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
+var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
+  manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+  as_of: "merged_at, or the landing commit time when GitHub reports none; see AS_OF_BASES.",
+  entries: Object.freeze([
+    entry("feature.shape.files_touched", "git_diff_base_to_merge", "integer", "Files changed.", NO_DIFF),
+    entry("feature.shape.lines_added", "git_diff_base_to_merge", "integer", "Lines added.", NO_DIFF),
+    entry("feature.shape.lines_deleted", "git_diff_base_to_merge", "integer", "Lines deleted.", NO_DIFF),
+    entry("feature.shape.loc_touched", "git_diff_base_to_merge", "integer", "Lines added plus deleted.", NO_DIFF),
+    entry("feature.shape.tests_changed", "git_diff_base_to_merge", "boolean", "A test file changed.", NO_DIFF),
+    entry("feature.shape.diff_uncertain", "git_diff_base_to_merge", "boolean", "The diff may include other PRs, as in a batched merge.", NO_DIFF),
+    entry("feature.shape.member_commits", "git_diff_base_to_merge", "integer", "First-parent commits the PR contributed.", NO_DIFF),
+    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha, over changed files of 2 MiB or less.", "No changed file has a supported language, or a file could not be read."),
+    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files that landed at or before base_sha, within the 90 days before as_of. Paths match exactly, without rename following.", NO_HISTORY),
+    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct author emails on those commits.", NO_HISTORY),
+    entry("feature.history.file_fix_commits_90d", "git_ancestors_of_base", "integer", "Those commits with a fix-shaped subject. Never read from label tables.", NO_HISTORY),
+    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Days since the newest changed file that already existed first landed.", "Every changed file is new, or history could not be read."),
+    entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
+    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "Commits among ancestors of base_sha from the email addresses on the author's commits in this PR.", NO_HISTORY),
+    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "Those commits that touch the changed files.", NO_HISTORY),
+    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", NO_AUTHOR),
+    entry("feature.agent.marker_present", "github_events_until_as_of", "boolean", "The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.", NO_MARKER_EVIDENCE),
+    { ...entry("feature.agent.tool_family", "github_events_until_as_of", "category", "The agent tool the markers name.", NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
+    entry("feature.agent.marked_commit_share", "pr_commits_at_merge", "number", "Share of the PR's commits that carry a marker.", NO_COMMITS),
+    entry("feature.process.review_count", "github_events_until_as_of", "integer", "Reviews submitted by as_of.", NO_EVENTS),
+    entry("feature.process.approvals", "github_events_until_as_of", "integer", "Approvals submitted by as_of.", NO_EVENTS),
+    entry("feature.process.changes_requested", "github_events_until_as_of", "integer", "Change requests submitted by as_of, for any PR. Distinct from segment.provenance.change_requests.", NO_EVENTS),
+    entry("feature.process.distinct_reviewers", "github_events_until_as_of", "integer", "Distinct reviewers by as_of.", NO_EVENTS),
+    entry("feature.process.hours_open", "github_events_until_as_of", "number", "Hours from PR creation to as_of.", NO_EVENTS),
+    entry("feature.process.hours_to_first_review", "github_events_until_as_of", "number", "Hours from PR creation to the first review by as_of.", "No review was submitted by as_of."),
+    entry("feature.process.github_label_count", "github_events_until_as_of", "integer", "Labels on the PR at as_of, replayed from label events.", NO_EVENTS),
+    entry("feature.process.title_chars", "github_events_until_as_of", "integer", "Title length at as_of, replayed from rename events.", NO_EVENTS),
+    entry("feature.process.body_chars", "github_events_until_as_of", "integer", "Body length at as_of, replayed from edit history.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("feature.content.diff_sha256", "git_diff_base_to_merge", "content_sha256", "Hash of the private diff that content arms read.", NO_DIFF),
+    entry("feature.content.title_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private title at as_of.", NO_EVENTS),
+    entry("feature.content.body_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private body at as_of.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.provenance.agent_iterations", "harness_contract", "integer", "Agent rework iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.self_review_iterations", "harness_contract", "integer", "Agent self-review iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.human_intervention_count", "harness_contract", "integer", "Human interventions during the run.", NOT_INSTRUMENTED),
+    entry("segment.provenance.review_rounds", "harness_contract", "integer", "Review rounds the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.provenance.change_requests", "harness_contract", "integer", "Change requests the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.agent.exact_model", "pr_commits_at_merge", "category", "The model a commit names, when exactly one is named. Most markers name only a tool.", "No commit names exactly one model, or the commits could not be read."),
+    entry("segment.agent.marked_by_account", "immutable_pr_fact", "boolean", "The PR author is a known agent bot account.", NO_AUTHOR),
+    entry("segment.agent.marked_by_branch", "immutable_pr_fact", "boolean", "The PR's head branch has an agent tool's prefix.", "GitHub reports no head branch for this PR."),
+    entry("segment.agent.marked_by_commit", "pr_commits_at_merge", "boolean", "A commit has an agent author, co-author trailer, footer or model tag.", NO_COMMITS),
+    entry("segment.agent.marked_by_body", "github_events_until_as_of", "boolean", "The body at as_of has an agent footer or session link.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.author.dependency_bot", "immutable_pr_fact", "boolean", "The PR author is a dependency bot. Pre-registration section 2 reports these PRs separately.", NO_AUTHOR),
+    {
+      ...entry("segment.ci.checks_completed_by_merge", "github_events_until_as_of", "integer", "CI results completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    },
+    {
+      ...entry("segment.ci.checks_failed_by_merge", "github_events_until_as_of", "integer", "CI failures completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    }
+  ])
+});
+var LEAKAGE_DENYLIST = Object.freeze([
+  // Corrective-rework and S2 outcome fields.
+  "corrective",
+  "horizon_days",
+  "report_outcome",
+  "reason_codes",
+  "label_provenance",
+  "labeller_version",
+  "normalization_version",
+  "definition_version",
+  "base_label_hash",
+  // Repair pairs and candidates.
+  "record_type",
+  "candidate_id",
+  "repair_pair_ids",
+  "proxy",
+  "confidence",
+  "lag_seconds",
+  "fix",
+  "fix_only",
+  "original_only",
+  "fix_preexisting",
+  "fix_tests",
+  "line_survival",
+  "graph_distance",
+  "original_review",
+  "evidence",
+  "status",
+  // Exclusion and cause codes.
+  "exclusion_code",
+  "exclusion_codes",
+  "cause_code",
+  "cause_codes",
+  "verdict",
+  // Corpus record fields that hold post-merge or enumeration-time state.
+  "relanded_merge_shas",
+  "closing_issues",
+  "labels",
+  "title",
+  "body"
+]);
+
 // ../core/src/task-cost/enums.ts
 var TASK_COST_FIELD_AVAILABILITIES = [
   "available",
@@ -8495,16 +8616,16 @@ function parseTranscriptUsageTotals(input) {
     if (trimmed.length === 0) {
       continue;
     }
-    let entry;
+    let entry2;
     try {
-      entry = JSON.parse(trimmed);
+      entry2 = JSON.parse(trimmed);
     } catch {
       continue;
     }
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    if (!entry2 || typeof entry2 !== "object" || Array.isArray(entry2)) {
       continue;
     }
-    const record = entry;
+    const record = entry2;
     if (hasAfter) {
       const timestamp2 = record.timestamp;
       if (typeof timestamp2 !== "string") {
@@ -9081,7 +9202,7 @@ function requireDiagnostics(value, label2) {
 }
 function requireStringArray(value, label2, item) {
   if (!Array.isArray(value)) fail2(`${label2} must be an array`);
-  return value.map((entry, index) => item(entry, `${label2}[${index}]`));
+  return value.map((entry2, index) => item(entry2, `${label2}[${index}]`));
 }
 function requireTokenUsage(value, label2) {
   const record = requireObject(value, label2);
@@ -9169,9 +9290,9 @@ function validateTaskCostSummaryV1(value) {
   requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "summary.provider_contract_version");
   requireStringArray(record.models, "summary.models", requireModel);
   if (!Array.isArray(record.model_segments)) fail2("summary.model_segments must be an array");
-  for (const [index, entry] of record.model_segments.entries()) {
+  for (const [index, entry2] of record.model_segments.entries()) {
     const label2 = `summary.model_segments[${index}]`;
-    const segment = requireObject(entry, label2);
+    const segment = requireObject(entry2, label2);
     requireModel(segment.model, `${label2}.model`);
     requireCount(segment.turn_count, `${label2}.turn_count`);
     requireTokenUsage(segment.usage, `${label2}.usage`);
@@ -12815,11 +12936,11 @@ function derivedResult(derivedId, inputs, t, supersedes) {
     ...supersedes !== void 0 ? { supersedes } : {}
   };
 }
-function decision(index, entry, value, reasons2) {
-  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+function decision(index, entry2, value, reasons2) {
+  const key = entry2.record_type === "attempt" ? entry2.id : entry2.record_type === "derived" ? entry2.derived_id : entry2.write_id;
   return {
     index,
-    record_type: entry.record_type,
+    record_type: entry2.record_type,
     key,
     decision: value,
     ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
@@ -13207,7 +13328,7 @@ var comparisonRecomputed = (() => {
       }
     ],
     expected: {
-      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      decisions: log.map((entry2, index) => decision(index, entry2, "accepted")),
       attempts: [
         state(pair, { current: true }),
         state(primary, { current: true }),
@@ -13318,10 +13439,10 @@ function decided(index, event17, decision2, reasons2) {
 }
 function decisionsFor(stream, overrides = {}) {
   const out = [];
-  for (const [index, entry] of stream.entries()) {
-    if (entry.schema_version !== "queue_lifecycle_event/v1") continue;
+  for (const [index, entry2] of stream.entries()) {
+    if (entry2.schema_version !== "queue_lifecycle_event/v1") continue;
     const [decision2, reasons2] = overrides[index] ?? ["accepted"];
-    out.push(decided(index, entry, decision2, reasons2));
+    out.push(decided(index, entry2, decision2, reasons2));
   }
   return out;
 }
@@ -14690,7 +14811,7 @@ function hasOnlyAllowedKeys(value, keys) {
   return Object.keys(value).every((key) => allowed.has(key));
 }
 function isStringArray(value) {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  return Array.isArray(value) && value.every((entry2) => typeof entry2 === "string");
 }
 function isTechnicalTaskRouterSelectedModels(value) {
   if (!isPlainObject5(value)) {
@@ -15071,35 +15192,35 @@ function routingOutcomeErrors(row) {
   }
   const selected = isPlainObject5(row.selected_models) ? row.selected_models : {};
   const lastByRole = /* @__PURE__ */ new Map();
-  for (const [index, entry] of row.overrides.entries()) {
+  for (const [index, entry2] of row.overrides.entries()) {
     const label2 = `overrides[${index}]`;
-    if (!isPlainObject5(entry) || !hasOnlyAllowedKeys(entry, ["role", "source", "from", "to", "reason"])) {
+    if (!isPlainObject5(entry2) || !hasOnlyAllowedKeys(entry2, ["role", "source", "from", "to", "reason"])) {
       errors.push(`${label2} must be an object with role, source, from, to and reason`);
       continue;
     }
-    if (!ROUTE_ROLES.includes(entry.role)) {
+    if (!ROUTE_ROLES.includes(entry2.role)) {
       errors.push(`${label2}.role must be one of: ${ROUTE_ROLES.join(", ")}`);
     }
-    if (!ROUTE_OVERRIDE_SOURCES.includes(entry.source)) {
+    if (!ROUTE_OVERRIDE_SOURCES.includes(entry2.source)) {
       errors.push(`${label2}.source must be one of: ${ROUTE_OVERRIDE_SOURCES.join(", ")}`);
     }
     for (const key of ["from", "to"]) {
-      const model = entry[key];
+      const model = entry2[key];
       if (typeof model !== "string" || model.trim().length === 0) {
         errors.push(`${label2}.${key} must be a non-empty model id`);
       }
     }
-    if (entry.from === entry.to) {
+    if (entry2.from === entry2.to) {
       errors.push(`${label2} must change the model (from equals to)`);
     }
-    if (typeof entry.reason !== "string" || !ROUTE_SLUG_PATTERN.test(entry.reason)) {
+    if (typeof entry2.reason !== "string" || !ROUTE_SLUG_PATTERN.test(entry2.reason)) {
       errors.push(`${label2}.reason must be a slug`);
     }
-    const previous = lastByRole.get(String(entry.role));
-    if (previous && previous.to !== entry.from) {
-      errors.push(`${label2}.from must equal the previous ${String(entry.role)} override's to`);
+    const previous = lastByRole.get(String(entry2.role));
+    if (previous && previous.to !== entry2.from) {
+      errors.push(`${label2}.from must equal the previous ${String(entry2.role)} override's to`);
     }
-    lastByRole.set(String(entry.role), entry);
+    lastByRole.set(String(entry2.role), entry2);
   }
   for (const [role, last] of lastByRole) {
     if (selected[role] !== last.to) {
@@ -15123,38 +15244,38 @@ function stageExecutionErrors(row) {
     errors.push("stage_executions must be a non-empty array");
   } else {
     const lastByStage = /* @__PURE__ */ new Map();
-    for (const [index, entry] of executions.entries()) {
+    for (const [index, entry2] of executions.entries()) {
       const label2 = `stage_executions[${index}]`;
-      if (!isPlainObject5(entry) || !hasOnlyAllowedKeys(entry, STAGE_EXECUTION_FIELDS)) {
+      if (!isPlainObject5(entry2) || !hasOnlyAllowedKeys(entry2, STAGE_EXECUTION_FIELDS)) {
         errors.push(`${label2} must be an object with only: ${STAGE_EXECUTION_FIELDS.join(", ")}`);
         continue;
       }
-      if (!STAGE_EXECUTION_STAGES.includes(entry.stage)) {
+      if (!STAGE_EXECUTION_STAGES.includes(entry2.stage)) {
         errors.push(`${label2}.stage must be one of: ${STAGE_EXECUTION_STAGES.join(", ")}`);
       }
-      if (typeof entry.executed_model !== "string" || entry.executed_model.trim().length === 0) {
+      if (typeof entry2.executed_model !== "string" || entry2.executed_model.trim().length === 0) {
         errors.push(`${label2}.executed_model must be a non-empty model id`);
       }
-      if (!MODEL_EVIDENCE_KINDS.includes(entry.model_evidence)) {
+      if (!MODEL_EVIDENCE_KINDS.includes(entry2.model_evidence)) {
         errors.push(`${label2}.model_evidence must be one of: ${MODEL_EVIDENCE_KINDS.join(", ")}`);
       }
-      if (typeof entry.harness !== "string" || !HARNESS_SLUG_PATTERN.test(entry.harness)) {
+      if (typeof entry2.harness !== "string" || !HARNESS_SLUG_PATTERN.test(entry2.harness)) {
         errors.push(`${label2}.harness must be a harness slug`);
       }
-      if (entry.task_cost === void 0) {
+      if (entry2.task_cost === void 0) {
         errors.push(`${label2}.task_cost is required (use an unavailable summary for an unmeasured stage)`);
       } else {
         try {
-          validateTaskCostSummaryV1(entry.task_cost);
-          if (typeof row.task_id === "string" && entry.task_cost.task_id !== row.task_id) {
+          validateTaskCostSummaryV1(entry2.task_cost);
+          if (typeof row.task_id === "string" && entry2.task_cost.task_id !== row.task_id) {
             errors.push(`${label2}.task_cost.task_id must equal the row's task_id`);
           }
         } catch (error) {
           errors.push(`${label2}.task_cost: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-      if (isBaseStage(entry.stage)) {
-        lastByStage.set(entry.stage, entry.executed_model);
+      if (isBaseStage(entry2.stage)) {
+        lastByStage.set(entry2.stage, entry2.executed_model);
       }
     }
     const selected = isPlainObject5(row.selected_models) ? row.selected_models : {};
@@ -16263,7 +16384,7 @@ function collectCompletionSignals(value, signals) {
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach((entry) => collectCompletionSignals(entry, signals));
+    value.forEach((entry2) => collectCompletionSignals(entry2, signals));
     return;
   }
   if (typeof value !== "object") {
@@ -16272,7 +16393,7 @@ function collectCompletionSignals(value, signals) {
   const record = value;
   collectStructuredSignals(record, signals);
   Object.values(record).forEach(
-    (entry) => collectCompletionSignals(entry, signals)
+    (entry2) => collectCompletionSignals(entry2, signals)
   );
 }
 function collectStructuredSignals(record, signals) {
@@ -16455,7 +16576,7 @@ function createRunPrivacyCli(_profile, impls) {
         );
       }
       const lines = result.value.decisions.map(
-        (entry) => `${entry.createdAt} ${entry.correlationId} ${entry.recommendedModelId ?? "unknown-model"} ${entry.status ?? "unknown-status"}`
+        (entry2) => `${entry2.createdAt} ${entry2.correlationId} ${entry2.recommendedModelId ?? "unknown-model"} ${entry2.status ?? "unknown-status"}`
       );
       return ok2(
         `${renderWarnings(result.value.warnings)}${lines.join("\n")}
@@ -16525,7 +16646,7 @@ function createRunPrivacyCli(_profile, impls) {
         );
       }
       const lines = result.value.entries.map(
-        (entry) => `${new Date(entry.timestamp).toISOString()} ${entry.kind} ${entry.status} ${entry.correlationId}${entry.error ? ` ${entry.error}` : ""}`
+        (entry2) => `${new Date(entry2.timestamp).toISOString()} ${entry2.kind} ${entry2.status} ${entry2.correlationId}${entry2.error ? ` ${entry2.error}` : ""}`
       );
       return ok2(
         `${renderWarnings(result.value.warnings)}${lines.join("\n")}
@@ -16877,9 +16998,9 @@ function collectRawArrayFields(input) {
   const entries = [];
   for (const source of sources) {
     if (!source) continue;
-    for (const entry of source) {
-      if (typeof entry === "string" && entry.trim().length > 0) {
-        entries.push(entry);
+    for (const entry2 of source) {
+      if (typeof entry2 === "string" && entry2.trim().length > 0) {
+        entries.push(entry2);
       }
     }
   }
@@ -16890,7 +17011,7 @@ function buildConstraintList(input) {
     ...input.constraints ?? [],
     ...input.latencyPreference ? [`latency:${input.latencyPreference}`] : [],
     ...input.costPreference ? [`cost:${input.costPreference}`] : []
-  ].map((entry) => entry.trim()).filter(Boolean);
+  ].map((entry2) => entry2.trim()).filter(Boolean);
   return constraints.length > 0 ? constraints : void 0;
 }
 function redactStringArray(entries, config) {
@@ -16899,11 +17020,11 @@ function redactStringArray(entries, config) {
   }
   const output = [];
   const redactions = [];
-  for (const entry of entries) {
-    if (typeof entry !== "string" || entry.trim().length === 0) {
+  for (const entry2 of entries) {
+    if (typeof entry2 !== "string" || entry2.trim().length === 0) {
       continue;
     }
-    const result = redact(entry, config);
+    const result = redact(entry2, config);
     output.push(result.output);
     redactions.push(...result.redactions);
   }
@@ -17598,31 +17719,31 @@ function projectCount(raw, row) {
 }
 function parseClaudeCodeTranscript(content, diagnostics, parseOptions) {
   const rows = [];
-  for (const entry of parseJsonlObjects(content, diagnostics, parseOptions)) {
-    if (entry.type !== "assistant") continue;
-    const message = asRecord(entry.message);
+  for (const entry2 of parseJsonlObjects(content, diagnostics, parseOptions)) {
+    if (entry2.type !== "assistant") continue;
+    const message = asRecord(entry2.message);
     const usage = message === null ? null : asRecord(message.usage);
     if (message === null || usage === null) {
       countDiagnostic(diagnostics, "missing_usage");
       continue;
     }
     const messageId = idOrNull(message.id);
-    const requestId = idOrNull(entry.requestId);
+    const requestId = idOrNull(entry2.requestId);
     const composedKey = messageId !== null && requestId !== null ? `${messageId}.${requestId}` : messageId;
     const row = {
-      sessionId: idOrNull(entry.sessionId),
-      eventKey: composedKey ?? idOrNull(entry.uuid),
-      turnId: idOrNull(entry.uuid),
+      sessionId: idOrNull(entry2.sessionId),
+      eventKey: composedKey ?? idOrNull(entry2.uuid),
+      turnId: idOrNull(entry2.uuid),
       observedAt: null,
       observedMs: null,
       observedModel: modelOrNull(message.model) ?? "unknown",
       usage: {},
       usageInvalid: false,
-      isSubagent: typeof entry.isSidechain === "boolean" ? entry.isSidechain : void 0,
+      isSubagent: typeof entry2.isSidechain === "boolean" ? entry2.isSidechain : void 0,
       actualCostUsd: null,
-      harnessVersion: versionOrNull(entry.version)
+      harnessVersion: versionOrNull(entry2.version)
     };
-    const timestamp2 = timestampOrNull(entry.timestamp);
+    const timestamp2 = timestampOrNull(entry2.timestamp);
     if (timestamp2 !== null) {
       row.observedAt = timestamp2.iso;
       row.observedMs = timestamp2.ms;
@@ -17635,8 +17756,8 @@ function parseClaudeCodeTranscript(content, diagnostics, parseOptions) {
       cache_write_tokens: projectCount(usage.cache_creation_input_tokens, row),
       reasoning_tokens: outputDetails === null ? null : projectCount(outputDetails.thinking_tokens, row)
     };
-    const actual = usdOrNull(entry.costUSD);
-    if (actual === null && isPresent(entry.costUSD)) row.usageInvalid = true;
+    const actual = usdOrNull(entry2.costUSD);
+    if (actual === null && isPresent(entry2.costUSD)) row.usageInvalid = true;
     row.actualCostUsd = actual;
     if (row.usageInvalid) countDiagnostic(diagnostics, "invalid_usage_value");
     rows.push(row);
@@ -17741,26 +17862,26 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
   let currentTurnId = null;
   let currentModel = "unknown";
   let currentServiceTier = null;
-  for (const entry of parseJsonlObjects(content, diagnostics, parseOptions)) {
-    const payload = asRecord(entry.payload);
-    if (entry.type === "session_meta") {
+  for (const entry2 of parseJsonlObjects(content, diagnostics, parseOptions)) {
+    const payload = asRecord(entry2.payload);
+    if (entry2.type === "session_meta") {
       session.sessionId ??= idOrNull(payload?.id) ?? idOrNull(payload?.session_id);
       session.harnessVersion ??= versionOrNull(payload?.cli_version);
       continue;
     }
-    if (entry.type === "turn_context") {
+    if (entry2.type === "turn_context") {
       currentTurnId = idOrNull(payload?.turn_id);
       currentModel = modelOrNull(payload?.model) ?? currentModel;
       continue;
     }
-    if (entry.type === "event_msg" && payload?.type === "thread_settings_applied") {
+    if (entry2.type === "event_msg" && payload?.type === "thread_settings_applied") {
       const tier = asRecord(payload.thread_settings)?.service_tier;
       if (typeof tier === "string" && /^[a-z][a-z0-9_-]{0,31}$/.test(tier)) {
         currentServiceTier = tier;
       }
       continue;
     }
-    if (entry.type !== "event_msg" || payload?.type !== "token_count") {
+    if (entry2.type !== "event_msg" || payload?.type !== "token_count") {
       continue;
     }
     const info = asRecord(payload.info);
@@ -17780,7 +17901,7 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
       usageInvalid: false,
       serviceTier: currentServiceTier
     };
-    const timestamp2 = timestampOrNull(entry.timestamp);
+    const timestamp2 = timestampOrNull(entry2.timestamp);
     if (timestamp2 !== null) {
       observation.observedAt = timestamp2.iso;
       observation.observedMs = timestamp2.ms;
@@ -17918,7 +18039,7 @@ function validateSessionFilesOptions(options) {
     ["roots", options.roots]
   ]) {
     if (list === void 0) continue;
-    if (!Array.isArray(list) || list.some((entry) => typeof entry !== "string")) {
+    if (!Array.isArray(list) || list.some((entry2) => typeof entry2 !== "string")) {
       throw new TaskCostMeasureError(
         `sessionFiles.${name} must be an array of strings`
       );
@@ -19156,8 +19277,8 @@ async function readStateFile(filePath) {
     }
     return Object.fromEntries(
       Object.entries(parsed).filter(
-        (entry) => {
-          const [, value] = entry;
+        (entry2) => {
+          const [, value] = entry2;
           return typeof value === "string";
         }
       )

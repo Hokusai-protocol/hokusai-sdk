@@ -1,0 +1,428 @@
+{
+  "issue": "HOK-3023",
+  "manifest_version": "rr-merge-features/0.4.0",
+  "feature_run_commit": "f889ce3",
+  "excluded_slice_sha256": "a1a436e57183aa141cfe1b45bc7a7f50f393c648c24139dd6703ee4abdb09886",
+  "note": "Pooled over the 12 development repos. Per-repo, per-PR and per-landing-type results are private.",
+  "replay": {
+    "replay_version": "rr-feature-replay/1.0.0",
+    "seed": "5833c4cfbcb56a6f41800753ed28e27491911fdd61501a7d8d158aa5f027cd16",
+    "development_repos": 12,
+    "failed_repos": 0,
+    "totals": {
+      "sampled": 576,
+      "replay_identical": 576,
+      "perturbed_identical": 576,
+      "control_changed": 576,
+      "leaky_reading_differs": 220
+    }
+  },
+  "spot_check": {
+    "excluded_slice_sha256": "a1a436e57183aa141cfe1b45bc7a7f50f393c648c24139dd6703ee4abdb09886",
+    "sampled_prs": 60,
+    "checked_prs": 60,
+    "failed_prs": 0,
+    "development_repos_sampled": 12,
+    "landed_by_types_sampled": 5,
+    "columns": {
+      "feature.author.is_bot": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 58
+      },
+      "feature.process.hours_open": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.process.review_count": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.process.approvals": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.process.changes_requested": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.process.distinct_reviewers": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.process.hours_to_first_review": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.process.github_label_count": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.content.title_sha256": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.shape.files_touched": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.shape.lines_added": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.shape.lines_deleted": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.history.file_commits_90d": {
+        "expectation": "exact",
+        "compared": 60,
+        "agree": 60
+      },
+      "feature.author.repo_commits_prior": {
+        "expectation": "approximate",
+        "compared": 60,
+        "agree": 56
+      },
+      "feature.agent.marker_present": {
+        "expectation": "approximate",
+        "compared": 60,
+        "agree": 59
+      }
+    },
+    "seed": "09aa9ec1ef62feefc8d24002a23456c4aa5ff5c7ec196d0240e599d8785161f4"
+  },
+  "suspicion_scan": {
+    "target": {
+      "name": "corrective_rework",
+      "horizon_days": 30,
+      "note": "label pipeline output as of the HOK-3022 run; the target version is not yet pinned (HOK-3269)"
+    },
+    "development_repos": 12,
+    "rows": 268475,
+    "positives": 7596,
+    "base_rate": 0.0283,
+    "recent_period_from": "2026-02-01",
+    "thresholds": {
+      "suspicious_auc": 0.75,
+      "null_rate_swing": 0.2
+    },
+    "flagged": [],
+    "agent_marker_rate_by_quarter": {
+      "2024Q3": 0.0,
+      "2024Q4": 0.0005,
+      "2025Q1": 0.001,
+      "2025Q2": 0.004,
+      "2025Q3": 0.0088,
+      "2025Q4": 0.02,
+      "2026Q1": 0.1296,
+      "2026Q2": 0.2325,
+      "2026Q3": 0.3123
+    },
+    "label_rate_by_quarter": {
+      "2024Q3": 0.0316,
+      "2024Q4": 0.0314,
+      "2025Q1": 0.0289,
+      "2025Q2": 0.0325,
+      "2025Q3": 0.031,
+      "2025Q4": 0.0264,
+      "2026Q1": 0.028,
+      "2026Q2": 0.0239,
+      "2026Q3": 0.021
+    },
+    "label_rate_marked": 0.0244,
+    "label_rate_unmarked": 0.0286,
+    "models": {
+      "with_agent_markers": {
+        "temporal": {
+          "auc": 0.6973,
+          "pr_auc": 0.0635,
+          "test_rows": 88938,
+          "test_positives": 2191
+        },
+        "repo_grouped": {
+          "auc": 0.6575,
+          "pr_auc": 0.0521
+        }
+      },
+      "without_agent_markers": {
+        "temporal": {
+          "auc": 0.7053,
+          "pr_auc": 0.0645,
+          "test_rows": 88938,
+          "test_positives": 2191
+        },
+        "repo_grouped": {
+          "auc": 0.6558,
+          "pr_auc": 0.0512
+        }
+      },
+      "agent_markers_only_temporal_auc": 0.5006
+    },
+    "features": {
+      "feature.shape.files_touched": {
+        "non_null": 268475,
+        "auc": 0.6591,
+        "within_repo_auc": 0.6582,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.5227,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.lines_added": {
+        "non_null": 268475,
+        "auc": 0.6682,
+        "within_repo_auc": 0.6632,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.556,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.lines_deleted": {
+        "non_null": 268475,
+        "auc": 0.6171,
+        "within_repo_auc": 0.6138,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.4932,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.loc_touched": {
+        "non_null": 268475,
+        "auc": 0.6649,
+        "within_repo_auc": 0.6599,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.549,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.tests_changed": {
+        "non_null": 268475,
+        "auc": 0.5872,
+        "within_repo_auc": 0.5671,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.5402,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.diff_uncertain": {
+        "non_null": 268475,
+        "auc": 0.4952,
+        "within_repo_auc": 0.4773,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.4895,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.member_commits": {
+        "non_null": 268475,
+        "auc": 0.5132,
+        "within_repo_auc": 0.5104,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.4898,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.shape.complexity_delta": {
+        "non_null": 224875,
+        "auc": 0.6193,
+        "within_repo_auc": 0.6182,
+        "null_indicator_auc": 0.4556,
+        "recent_period_auc": 0.5534,
+        "null_rate_swing": 0.0327,
+        "flags": []
+      },
+      "feature.history.file_commits_90d": {
+        "non_null": 268475,
+        "auc": 0.5987,
+        "within_repo_auc": 0.6048,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.5214,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.history.file_authors_90d": {
+        "non_null": 268475,
+        "auc": 0.6105,
+        "within_repo_auc": 0.6115,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.5244,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.history.file_fix_commits_90d": {
+        "non_null": 268475,
+        "auc": 0.5818,
+        "within_repo_auc": 0.5992,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.5443,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.history.newest_file_age_days": {
+        "non_null": 265693,
+        "auc": 0.4791,
+        "within_repo_auc": 0.4534,
+        "null_indicator_auc": 0.4974,
+        "recent_period_auc": 0.4609,
+        "null_rate_swing": 0.0074,
+        "flags": []
+      },
+      "feature.history.new_files": {
+        "non_null": 268475,
+        "auc": 0.5907,
+        "within_repo_auc": 0.5853,
+        "null_indicator_auc": null,
+        "recent_period_auc": 0.53,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.author.repo_commits_prior": {
+        "non_null": 267391,
+        "auc": 0.4838,
+        "within_repo_auc": 0.4717,
+        "null_indicator_auc": 0.5003,
+        "recent_period_auc": 0.4841,
+        "null_rate_swing": 0.0054,
+        "flags": []
+      },
+      "feature.author.touched_file_commits_prior": {
+        "non_null": 267391,
+        "auc": 0.5452,
+        "within_repo_auc": 0.5401,
+        "null_indicator_auc": 0.5003,
+        "recent_period_auc": 0.471,
+        "null_rate_swing": 0.0054,
+        "flags": []
+      },
+      "feature.author.is_bot": {
+        "non_null": 267835,
+        "auc": 0.4911,
+        "within_repo_auc": 0.4944,
+        "null_indicator_auc": 0.4994,
+        "recent_period_auc": 0.5042,
+        "null_rate_swing": 0.0047,
+        "flags": []
+      },
+      "feature.agent.marker_present": {
+        "non_null": 268198,
+        "auc": 0.4943,
+        "within_repo_auc": 0.4996,
+        "null_indicator_auc": 0.4998,
+        "recent_period_auc": 0.6087,
+        "null_rate_swing": 0.0008,
+        "flags": []
+      },
+      "feature.agent.tool_family": {
+        "non_null": 268198,
+        "auc": 0.5067,
+        "within_repo_auc": 0.5012,
+        "null_indicator_auc": 0.4998,
+        "recent_period_auc": 0.3926,
+        "null_rate_swing": 0.0008,
+        "flags": []
+      },
+      "feature.agent.marked_commit_share": {
+        "non_null": 268473,
+        "auc": 0.4979,
+        "within_repo_auc": 0.5005,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.584,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.review_count": {
+        "non_null": 268473,
+        "auc": 0.6278,
+        "within_repo_auc": 0.6332,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.5461,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.approvals": {
+        "non_null": 268473,
+        "auc": 0.5235,
+        "within_repo_auc": 0.5302,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.4884,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.changes_requested": {
+        "non_null": 268473,
+        "auc": 0.5134,
+        "within_repo_auc": 0.5172,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.5004,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.distinct_reviewers": {
+        "non_null": 268473,
+        "auc": 0.5918,
+        "within_repo_auc": 0.6097,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.5569,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.hours_open": {
+        "non_null": 268473,
+        "auc": 0.6507,
+        "within_repo_auc": 0.6329,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.4954,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.hours_to_first_review": {
+        "non_null": 248291,
+        "auc": 0.5956,
+        "within_repo_auc": 0.5552,
+        "null_indicator_auc": 0.4923,
+        "recent_period_auc": 0.4586,
+        "null_rate_swing": 0.0117,
+        "flags": []
+      },
+      "feature.process.github_label_count": {
+        "non_null": 268473,
+        "auc": 0.5228,
+        "within_repo_auc": 0.5444,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.453,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.title_chars": {
+        "non_null": 268473,
+        "auc": 0.5431,
+        "within_repo_auc": 0.5197,
+        "null_indicator_auc": 0.5,
+        "recent_period_auc": 0.5844,
+        "null_rate_swing": 0.0,
+        "flags": []
+      },
+      "feature.process.body_chars": {
+        "non_null": 268193,
+        "auc": 0.5162,
+        "within_repo_auc": 0.5973,
+        "null_indicator_auc": 0.4998,
+        "recent_period_auc": 0.6004,
+        "null_rate_swing": 0.0007,
+        "flags": []
+      }
+    }
+  }
+}

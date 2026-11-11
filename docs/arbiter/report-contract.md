@@ -44,7 +44,9 @@ a new report version rather than silently changing v1.
 
 Attribution methods are `first_party_route_metadata`, `bot_author`,
 `branch_prefix`, `co_authored_by_trailer`, `pr_label`, `commit_signature`, and
-`owner_config`. Suppression reasons are `n_below_floor`,
+`owner_config`. `commit_signature` covers an agent tool's footer, model tag,
+`Assisted-by` trailer or authorship statement in a commit, and the same, or a
+session link, in the PR body. Suppression reasons are `n_below_floor`,
 `agent_coverage_below_floor`, `harness_coverage_below_floor`,
 `exact_model_coverage_below_floor`, `harness_only_evidence`,
 `cost_coverage_below_floor`, `reworked_below_floor`, `no_model_provenance`, and

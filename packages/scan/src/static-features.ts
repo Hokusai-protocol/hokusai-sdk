@@ -594,7 +594,7 @@ function parseNameStatus(output: string): NameStatusChange[] {
   return results;
 }
 
-function getExtension(path: string): string {
+export function getExtension(path: string): string {
   const lastSlash = path.lastIndexOf('/');
   const base = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
   const lastDot = base.lastIndexOf('.');

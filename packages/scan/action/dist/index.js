@@ -66,10 +66,10 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname3, join as join10, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readFileSync as readFileSync9, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname4, join as join13, resolve as resolve6 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-import { parseArgs as parseArgs3 } from "node:util";
+import { parseArgs as parseArgs4 } from "node:util";
 
 // src/candidate-features.ts
 import { statSync as statSync2 } from "node:fs";
@@ -506,9 +506,9 @@ function normalizeText(text) {
 function classifyTaskFamily(input) {
   const haystack = [input.text, ...input.hints ?? []].join("\n");
   const matches = /* @__PURE__ */ new Set();
-  for (const entry of FAMILY_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
-      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
+  for (const entry2 of FAMILY_KEYWORDS) {
+    if (entry2.patterns.some((pattern) => pattern.test(haystack))) {
+      matches.add(entry2.family === "bug" ? "bugfix" : entry2.family);
     }
   }
   if (matches.size > 1) {
@@ -2508,6 +2508,216 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/rework-risk-features.ts
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/1.0.0";
+var FEATURE_AS_OF_SOURCES = [
+  /** The diff between `base_sha` and `merge_sha`. */
+  "git_diff_base_to_merge",
+  /** Commits reachable from `base_sha`; windows are measured back from `as_of`. */
+  "git_ancestors_of_base",
+  /** Timestamped GitHub events, each at or before `as_of`. */
+  "github_events_until_as_of",
+  /** The PR's commits up to its head at merge, plus the landing commit; fixed by SHA. */
+  "pr_commits_at_merge",
+  /** A PR fact that cannot change after creation. */
+  "immutable_pr_fact",
+  /** Task-contract data written by an instrumented harness before merge. */
+  "harness_contract"
+];
+var POST_MERGE_SOURCES = [
+  "github_current_state",
+  "git_history_after_merge",
+  "label_store",
+  "wall_clock"
+];
+var AGENT_TOOL_FAMILIES = [
+  "none",
+  "claude",
+  "copilot",
+  "cursor",
+  "codex",
+  "devin",
+  "gemini",
+  "aider",
+  "openhands",
+  "other",
+  "multiple"
+];
+var NO_DIFF = "The diff between base_sha and merge_sha could not be read.";
+var NO_HISTORY = "Ancestor history of base_sha could not be read.";
+var NO_EVENTS = "GitHub returned no timeline for this PR.";
+var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
+var NO_COMMITS = "The PR's commits could not be read.";
+var NO_MARKER_EVIDENCE = "No marker was found, and the commits or the body at as_of could not be read.";
+var NO_AUTHOR = "The author account no longer exists, or the PR was found from a `(#N)` reference in its landing commit and its author type was not recorded.";
+var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
+var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
+  manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+  as_of: "merged_at, or the landing commit time when GitHub reports none; see AS_OF_BASES.",
+  entries: Object.freeze([
+    entry("feature.shape.files_touched", "git_diff_base_to_merge", "integer", "Files changed.", NO_DIFF),
+    entry("feature.shape.lines_added", "git_diff_base_to_merge", "integer", "Lines added.", NO_DIFF),
+    entry("feature.shape.lines_deleted", "git_diff_base_to_merge", "integer", "Lines deleted.", NO_DIFF),
+    entry("feature.shape.loc_touched", "git_diff_base_to_merge", "integer", "Lines added plus deleted.", NO_DIFF),
+    entry("feature.shape.tests_changed", "git_diff_base_to_merge", "boolean", "A test file changed.", NO_DIFF),
+    entry("feature.shape.diff_uncertain", "git_diff_base_to_merge", "boolean", "The diff may include other PRs, as in a batched merge.", NO_DIFF),
+    entry("feature.shape.member_commits", "git_diff_base_to_merge", "integer", "First-parent commits the PR contributed.", NO_DIFF),
+    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha, over changed files of 2 MiB or less.", "No changed file has a supported language, or a file could not be read."),
+    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files that landed at or before base_sha, within the 90 days before as_of. Paths match exactly, without rename following.", NO_HISTORY),
+    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct author emails on those commits.", NO_HISTORY),
+    entry("feature.history.file_fix_commits_90d", "git_ancestors_of_base", "integer", "Those commits with a fix-shaped subject. Never read from label tables.", NO_HISTORY),
+    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Days since the newest changed file that already existed first landed.", "Every changed file is new, or history could not be read."),
+    entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
+    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "Commits among ancestors of base_sha from the email addresses on the author's commits in this PR.", NO_HISTORY),
+    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "Those commits that touch the changed files.", NO_HISTORY),
+    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", NO_AUTHOR),
+    entry("feature.agent.marker_present", "github_events_until_as_of", "boolean", "The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.", NO_MARKER_EVIDENCE),
+    { ...entry("feature.agent.tool_family", "github_events_until_as_of", "category", "The agent tool the markers name.", NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
+    entry("feature.agent.marked_commit_share", "pr_commits_at_merge", "number", "Share of the PR's commits that carry a marker.", NO_COMMITS),
+    entry("feature.process.review_count", "github_events_until_as_of", "integer", "Reviews submitted by as_of.", NO_EVENTS),
+    entry("feature.process.approvals", "github_events_until_as_of", "integer", "Approvals submitted by as_of.", NO_EVENTS),
+    entry("feature.process.changes_requested", "github_events_until_as_of", "integer", "Change requests submitted by as_of, for any PR. Distinct from segment.provenance.change_requests.", NO_EVENTS),
+    entry("feature.process.distinct_reviewers", "github_events_until_as_of", "integer", "Distinct reviewers by as_of.", NO_EVENTS),
+    entry("feature.process.hours_open", "github_events_until_as_of", "number", "Hours from PR creation to as_of.", NO_EVENTS),
+    entry("feature.process.hours_to_first_review", "github_events_until_as_of", "number", "Hours from PR creation to the first review by as_of.", "No review was submitted by as_of."),
+    entry("feature.process.github_label_count", "github_events_until_as_of", "integer", "Labels on the PR at as_of, replayed from label events.", NO_EVENTS),
+    entry("feature.process.title_chars", "github_events_until_as_of", "integer", "Title length at as_of, replayed from rename events.", NO_EVENTS),
+    entry("feature.process.body_chars", "github_events_until_as_of", "integer", "Body length at as_of, replayed from edit history.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("feature.content.diff_sha256", "git_diff_base_to_merge", "content_sha256", "Hash of the private diff that content arms read.", NO_DIFF),
+    entry("feature.content.title_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private title at as_of.", NO_EVENTS),
+    entry("feature.content.body_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private body at as_of.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.provenance.agent_iterations", "harness_contract", "integer", "Agent rework iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.self_review_iterations", "harness_contract", "integer", "Agent self-review iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.human_intervention_count", "harness_contract", "integer", "Human interventions during the run.", NOT_INSTRUMENTED),
+    entry("segment.provenance.review_rounds", "harness_contract", "integer", "Review rounds the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.provenance.change_requests", "harness_contract", "integer", "Change requests the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.agent.exact_model", "pr_commits_at_merge", "category", "The model a commit names, when exactly one is named. Most markers name only a tool.", "No commit names exactly one model, or the commits could not be read."),
+    entry("segment.agent.marked_by_account", "immutable_pr_fact", "boolean", "The PR author is a known agent bot account.", NO_AUTHOR),
+    entry("segment.agent.marked_by_branch", "immutable_pr_fact", "boolean", "The PR's head branch has an agent tool's prefix.", "GitHub reports no head branch for this PR."),
+    entry("segment.agent.marked_by_commit", "pr_commits_at_merge", "boolean", "A commit has an agent author, co-author trailer, footer or model tag.", NO_COMMITS),
+    entry("segment.agent.marked_by_body", "github_events_until_as_of", "boolean", "The body at as_of has an agent footer or session link.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.author.dependency_bot", "immutable_pr_fact", "boolean", "The PR author is a dependency bot. Pre-registration section 2 reports these PRs separately.", NO_AUTHOR),
+    {
+      ...entry("segment.ci.checks_completed_by_merge", "github_events_until_as_of", "integer", "CI results completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    },
+    {
+      ...entry("segment.ci.checks_failed_by_merge", "github_events_until_as_of", "integer", "CI failures completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    }
+  ])
+});
+var LEAKAGE_DENYLIST = Object.freeze([
+  // Corrective-rework and S2 outcome fields.
+  "corrective",
+  "horizon_days",
+  "report_outcome",
+  "reason_codes",
+  "label_provenance",
+  "labeller_version",
+  "normalization_version",
+  "definition_version",
+  "base_label_hash",
+  // Repair pairs and candidates.
+  "record_type",
+  "candidate_id",
+  "repair_pair_ids",
+  "proxy",
+  "confidence",
+  "lag_seconds",
+  "fix",
+  "fix_only",
+  "original_only",
+  "fix_preexisting",
+  "fix_tests",
+  "line_survival",
+  "graph_distance",
+  "original_review",
+  "evidence",
+  "status",
+  // Exclusion and cause codes.
+  "exclusion_code",
+  "exclusion_codes",
+  "cause_code",
+  "cause_codes",
+  "verdict",
+  // Corpus record fields that hold post-merge or enumeration-time state.
+  "relanded_merge_shas",
+  "closing_issues",
+  "labels",
+  "title",
+  "body"
+]);
+var FIELD_NAME = /^(feature|segment)\.[a-z_]+\.[a-z0-9_]+$/;
+var isLabelField = (name) => name === "label" || name.startsWith("label.");
+var isDenied = (name) => LEAKAGE_DENYLIST.includes(name.split(".").at(-1) ?? name);
+function nameError(path4, name) {
+  if (isLabelField(name)) return { path: path4, code: "label_field", message: `${name} is label-side and can never be a feature.` };
+  if (isDenied(name)) return { path: path4, code: "denied_field", message: `${name} is label-side or captured after merge.` };
+  return null;
+}
+function validateFeatureManifest(manifest) {
+  const errors = [];
+  if (typeof manifest.manifest_version !== "string" || !/^rr-merge-features\/\d+\.\d+\.\d+$/.test(manifest.manifest_version)) {
+    errors.push({ path: "manifest_version", code: "invalid_manifest_version", message: "manifest_version must be rr-merge-features/<semver>." });
+  }
+  const seen = /* @__PURE__ */ new Set();
+  (manifest.entries ?? []).forEach((raw, index) => {
+    const item = raw;
+    const path4 = `entries[${index}]`;
+    const name = typeof item.name === "string" ? item.name : "";
+    if (seen.has(name)) errors.push({ path: path4, code: "duplicate_entry", message: `${name} is declared twice.` });
+    seen.add(name);
+    const denied = nameError(path4, name);
+    if (denied) errors.push(denied);
+    else if (!FIELD_NAME.test(name)) errors.push({ path: path4, code: "invalid_namespace", message: `${name} must be feature.<group>.<field> or segment.<group>.<field>.` });
+    if (item.segment !== name.startsWith("segment.")) {
+      errors.push({ path: path4, code: "segment_flag_mismatch", message: `${name}: the segment flag must match the namespace.` });
+    }
+    if (item.kind === "category" && !item.segment && !(Array.isArray(item.categories) && item.categories.length > 0)) {
+      errors.push({ path: path4, code: "open_category_in_arm_input", message: `${name}: an arm input needs a closed list of categories.` });
+    }
+    const source = item.as_of_source;
+    if (source === void 0 || source === null || source === "") {
+      errors.push({ path: path4, code: "missing_as_of_source", message: `${name} declares no as_of source.` });
+    } else if (POST_MERGE_SOURCES.includes(source)) {
+      errors.push({ path: path4, code: "post_merge_as_of_source", message: `${name}: ${JSON.stringify(source)} can see past as_of.` });
+    } else if (!FEATURE_AS_OF_SOURCES.includes(source)) {
+      errors.push({ path: path4, code: "unknown_as_of_source", message: `${name}: ${JSON.stringify(source)} is not a declared as_of source.` });
+    }
+  });
+  return errors;
+}
+function validateFeatureColumns(columns, options = {}) {
+  const manifest = options.manifest ?? REWORK_RISK_FEATURE_MANIFEST;
+  const declared = new Map(manifest.entries.map((item) => [item.name, item]));
+  const errors = validateFeatureManifest(manifest);
+  columns.forEach((column, index) => {
+    const path4 = `columns[${index}]`;
+    const denied = nameError(path4, column);
+    if (denied) {
+      errors.push(denied);
+      return;
+    }
+    const item = declared.get(column);
+    if (!item) errors.push({ path: path4, code: "undeclared_column", message: `${column} is not in ${manifest.manifest_version}.` });
+    else if (item.segment && !options.allowSegments) errors.push({ path: path4, code: "segment_in_arm_input", message: `${column} is a segment feature and cannot be an arm input.` });
+  });
+  return errors;
+}
+function validateEvidenceAsOf(events17, asOf) {
+  const cutoff = Date.parse(asOf);
+  if (!Number.isFinite(cutoff)) return [{ path: "as_of", code: "invalid_as_of", message: `${asOf} is not a timestamp.` }];
+  const errors = [];
+  events17.forEach((event17, index) => {
+    const path4 = `events[${index}]`;
+    const at2 = Date.parse(event17.at);
+    if (!Number.isFinite(at2)) errors.push({ path: path4, code: "invalid_event_timestamp", message: `${event17.source} has no readable timestamp.` });
+    else if (at2 > cutoff) errors.push({ path: path4, code: "event_after_as_of", message: `${event17.source} at ${event17.at} is after as_of ${asOf}.` });
+  });
+  return errors;
+}
+
 // ../core/src/arbiter-calibration-label.ts
 var CALIBRATION_VERDICTS = ["yes", "no", "unclear"];
 var CAUSE_CODES = [
@@ -3048,42 +3258,42 @@ function structural(schema, value, path4, errors, root) {
 }
 function invariant(report) {
   const errors = [];
-  const add = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
+  const add2 = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
   if (report.scan.horizons_days.some(
     (horizon2, index) => index > 0 && horizon2 <= report.scan.horizons_days[index - 1]
   ))
-    add("horizons_not_ascending", "scan.horizons_days");
+    add2("horizons_not_ascending", "scan.horizons_days");
   const checkCell = (c, path4, basis2) => {
     if (c.suppressed && (c.value !== null || c.ci !== null || !c.suppression_reasons.length))
-      add("suppressed_cell_has_value", path4);
+      add2("suppressed_cell_has_value", path4);
     if (!c.suppressed && (c.value === null || c.suppression_reasons.length))
-      add("shown_cell_missing_value", path4);
+      add2("shown_cell_missing_value", path4);
     if (c.ci && c.value !== null && !(c.ci.low <= c.value && c.value <= c.ci.high))
-      add("ci_out_of_order", path4);
+      add2("ci_out_of_order", path4);
     if (basis2 && c.basis !== basis2)
-      add("descriptive_section_with_prediction_cell", path4);
+      add2("descriptive_section_with_prediction_cell", path4);
     if (c.basis === "out_of_sample_prediction" && !report.model_provenance)
-      add("prediction_without_provenance", path4);
+      add2("prediction_without_provenance", path4);
   };
   const sections = report.aggregates;
   for (const [name, s] of Object.entries(sections)) {
     if (s.basis === "out_of_sample_prediction" && !report.model_provenance)
-      add("prediction_without_provenance", `aggregates.${name}`);
+      add2("prediction_without_provenance", `aggregates.${name}`);
     if (s.status === "suppressed" && !s.suppression_reasons.length)
-      add("section_status_mismatch", `aggregates.${name}`);
+      add2("section_status_mismatch", `aggregates.${name}`);
     s.rows.forEach((row, i) => {
       for (const [k, v] of Object.entries(row))
         if (k === "cell" || k.endsWith("_rate") || k === "ratio") {
           const c = v;
           checkCell(c, `aggregates.${name}.rows[${i}].${k}`, s.basis);
           if (s.status === "suppressed" && !c.suppressed)
-            add(
+            add2(
               "section_status_mismatch",
               `aggregates.${name}.rows[${i}].${k}`
             );
         }
       if (typeof row.horizon_days === "number" && !report.scan.horizons_days.includes(row.horizon_days))
-        add(
+        add2(
           "horizon_not_declared",
           `aggregates.${name}.rows[${i}].horizon_days`
         );
@@ -3092,37 +3302,37 @@ function invariant(report) {
   report.aggregates.risk_ratios.rows.forEach((row, index) => {
     const allowed = REPORT_FEATURE_BUCKETS[row.feature];
     if (!allowed || !allowed.includes(row.bucket))
-      add(
+      add2(
         "feature_bucket_mismatch",
         `aggregates.risk_ratios.rows[${index}].bucket`
       );
   });
   if (report.eligibility.model_routing_cta && !report.eligibility.exact_model_table)
-    add("cta_without_exact_model", "eligibility.model_routing_cta");
+    add2("cta_without_exact_model", "eligibility.model_routing_cta");
   for (const [flag, name] of [
     ["exact_model_table", "survival_by_model"],
     ["harness_table", "survival_by_harness"],
     ["cost_adjusted_by_model", "cost_adjusted_survival_by_model"]
   ])
     if (!report.eligibility[flag] && report.aggregates[name].status === "shown")
-      add("model_table_ineligible_but_shown", `aggregates.${name}`);
+      add2("model_table_ineligible_but_shown", `aggregates.${name}`);
   if (report.eligibility.cost_adjusted_by_model && (!report.cost || report.cost.actual.suppressed))
-    add(
+    add2(
       "cost_adjusted_needs_actual_cost",
       "eligibility.cost_adjusted_by_model"
     );
   if (report.prs.length !== report.coverage.prs_enumerated || report.coverage.attribution.agent.identified_agent + report.coverage.attribution.agent.identified_human_signal + report.coverage.attribution.agent.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.harness.identified + report.coverage.attribution.harness.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.exact_model.identified + report.coverage.attribution.exact_model.unknown !== report.coverage.prs_enumerated)
-    add("coverage_sum_mismatch", "coverage");
+    add2("coverage_sum_mismatch", "coverage");
   report.prs.forEach((pr2, i) => {
     if (pr2.prediction && !report.model_provenance)
-      add("prediction_without_provenance", `prs[${i}].prediction`);
+      add2("prediction_without_provenance", `prs[${i}].prediction`);
     if (pr2.labels.length !== report.scan.horizons_days.length || new Set(pr2.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr2.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
-      add("labels_horizon_mismatch", `prs[${i}].labels`);
+      add2("labels_horizon_mismatch", `prs[${i}].labels`);
     pr2.labels.forEach((l, j) => {
       if (!report.scan.horizons_days.includes(l.horizon_days))
-        add("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
+        add2("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
       if (l.outcome.report_outcome !== deriveReportOutcome(l.outcome))
-        add(
+        add2(
           "label_outcome_inconsistent",
           `prs[${i}].labels[${j}].outcome.report_outcome`
         );
@@ -3130,7 +3340,7 @@ function invariant(report) {
   });
   if (report.retrospective) {
     if (!report.model_provenance)
-      add("prediction_without_provenance", "retrospective");
+      add2("prediction_without_provenance", "retrospective");
     for (const k of ["precision", "recall", "flagged_share"])
       checkCell(
         report.retrospective[k],
@@ -3138,7 +3348,7 @@ function invariant(report) {
         report.retrospective.basis
       );
     if (!report.eligibility.retrospective && !report.retrospective.suppressed)
-      add("model_table_ineligible_but_shown", "retrospective");
+      add2("model_table_ineligible_but_shown", "retrospective");
   }
   return errors;
 }
@@ -4256,7 +4466,7 @@ function requireDiagnostics(value, label2) {
 }
 function requireStringArray(value, label2, item) {
   if (!Array.isArray(value)) fail(`${label2} must be an array`);
-  return value.map((entry, index) => item(entry, `${label2}[${index}]`));
+  return value.map((entry2, index) => item(entry2, `${label2}[${index}]`));
 }
 function requireTokenUsage(value, label2) {
   const record = requireObject(value, label2);
@@ -4344,9 +4554,9 @@ function validateTaskCostSummaryV1(value) {
   requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "summary.provider_contract_version");
   requireStringArray(record.models, "summary.models", requireModel);
   if (!Array.isArray(record.model_segments)) fail("summary.model_segments must be an array");
-  for (const [index, entry] of record.model_segments.entries()) {
+  for (const [index, entry2] of record.model_segments.entries()) {
     const label2 = `summary.model_segments[${index}]`;
-    const segment = requireObject(entry, label2);
+    const segment = requireObject(entry2, label2);
     requireModel(segment.model, `${label2}.model`);
     requireCount(segment.turn_count, `${label2}.turn_count`);
     requireTokenUsage(segment.usage, `${label2}.usage`);
@@ -7558,11 +7768,11 @@ function derivedResult(derivedId, inputs, t, supersedes) {
     ...supersedes !== void 0 ? { supersedes } : {}
   };
 }
-function decision(index, entry, value, reasons2) {
-  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+function decision(index, entry2, value, reasons2) {
+  const key = entry2.record_type === "attempt" ? entry2.id : entry2.record_type === "derived" ? entry2.derived_id : entry2.write_id;
   return {
     index,
-    record_type: entry.record_type,
+    record_type: entry2.record_type,
     key,
     decision: value,
     ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
@@ -7950,7 +8160,7 @@ var comparisonRecomputed = (() => {
       }
     ],
     expected: {
-      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      decisions: log.map((entry2, index) => decision(index, entry2, "accepted")),
       attempts: [
         state(pair, { current: true }),
         state(primary, { current: true }),
@@ -8061,10 +8271,10 @@ function decided(index, event17, decision2, reasons2) {
 }
 function decisionsFor(stream, overrides = {}) {
   const out = [];
-  for (const [index, entry] of stream.entries()) {
-    if (entry.schema_version !== "queue_lifecycle_event/v1") continue;
+  for (const [index, entry2] of stream.entries()) {
+    if (entry2.schema_version !== "queue_lifecycle_event/v1") continue;
     const [decision2, reasons2] = overrides[index] ?? ["accepted"];
-    out.push(decided(index, entry, decision2, reasons2));
+    out.push(decided(index, entry2, decision2, reasons2));
   }
   return out;
 }
@@ -9510,9 +9720,9 @@ function sumEslintErrors(jsonText) {
   }
   if (!Array.isArray(parsed)) return null;
   let total = 0;
-  for (const entry of parsed) {
-    if (entry && typeof entry === "object" && "errorCount" in entry) {
-      const value = entry.errorCount;
+  for (const entry2 of parsed) {
+    if (entry2 && typeof entry2 === "object" && "errorCount" in entry2) {
+      const value = entry2.errorCount;
       if (typeof value === "number" && Number.isFinite(value)) total += value;
     }
   }
@@ -10227,7 +10437,7 @@ function parseNameStatusOutput(output) {
       path: path4,
       previousPath: normalizedStatus === "R" || normalizedStatus === "C" ? firstPath : void 0
     };
-  }).filter((entry) => entry.status && entry.path);
+  }).filter((entry2) => entry2.status && entry2.path);
 }
 function extractPrNumber(subject) {
   const match = subject.match(/merge pull request #(\d+)\b/i) ?? subject.match(/\(#(\d+)\)\s*$/i);
@@ -10376,7 +10586,7 @@ function parseZeroContextDiff(diffText) {
       });
     }
   }
-  return entries.filter((entry) => entry.oldPath !== null || entry.newPath !== null);
+  return entries.filter((entry2) => entry2.oldPath !== null || entry2.newPath !== null);
 }
 function rangeLineCount(range) {
   return range.end - range.start + 1;
@@ -10395,11 +10605,11 @@ function buildSubstrate(deps, pr2) {
   const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr2.parentSha, pr2.mergeSha]);
   if (result.exitCode !== 0) return null;
   const files = [];
-  for (const entry of parseZeroContextDiff(result.stdout)) {
-    if (entry.hunks.length === 0) continue;
-    const path4 = entry.newPath ?? entry.oldPath;
+  for (const entry2 of parseZeroContextDiff(result.stdout)) {
+    if (entry2.hunks.length === 0) continue;
+    const path4 = entry2.newPath ?? entry2.oldPath;
     if (!path4) continue;
-    files.push({ path: path4, oldPath: entry.oldPath ?? path4, hunks: entry.hunks });
+    files.push({ path: path4, oldPath: entry2.oldPath ?? path4, hunks: entry2.hunks });
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const lineRanges = [];
@@ -10424,11 +10634,11 @@ function blobsAt(deps, sha2, paths) {
     const chunk = unique2.slice(i, i + LS_TREE_CHUNK);
     const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha2, "--", ...chunk]);
     if (result.exitCode !== 0) continue;
-    for (const entry of result.stdout.split("\0")) {
-      const tab = entry.indexOf("	");
+    for (const entry2 of result.stdout.split("\0")) {
+      const tab = entry2.indexOf("	");
       if (tab < 0) continue;
-      const oid = entry.slice(0, tab).split(" ")[2];
-      const path4 = entry.slice(tab + 1);
+      const oid = entry2.slice(0, tab).split(" ")[2];
+      const path4 = entry2.slice(tab + 1);
       if (oid && out.has(path4)) out.set(path4, oid);
     }
   }
@@ -10437,8 +10647,8 @@ function blobsAt(deps, sha2, paths) {
 function forwardFate(deps, pr2, substrate, terminalSha) {
   const toFate = (stdout) => {
     const fate = /* @__PURE__ */ new Map();
-    for (const entry of parseNameStatusOutput(stdout)) {
-      fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
+    for (const entry2 of parseNameStatusOutput(stdout)) {
+      fate.set(entry2.previousPath ?? entry2.path, { status: entry2.status, newPath: entry2.path });
     }
     return fate;
   };
@@ -10456,7 +10666,7 @@ function forwardFate(deps, pr2, substrate, terminalSha) {
     ]);
     if (scoped.exitCode !== 0) return null;
     const fate = toFate(scoped.stdout);
-    if (![...fate.values()].some((entry) => entry.status === "D")) return fate;
+    if (![...fate.values()].some((entry2) => entry2.status === "D")) return fate;
   }
   const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr2.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
@@ -10481,11 +10691,11 @@ function analyseForward(deps, pr2, substrate, terminalSha, baseBlobs) {
   ]);
   if (unified.exitCode !== 0) return null;
   const forwardByOldPath = /* @__PURE__ */ new Map();
-  for (const entry of parseZeroContextDiff(unified.stdout)) {
-    const key = entry.oldPath ?? entry.newPath;
+  for (const entry2 of parseZeroContextDiff(unified.stdout)) {
+    const key = entry2.oldPath ?? entry2.newPath;
     if (!key) continue;
     const ranges = forwardByOldPath.get(key) ?? [];
-    for (const hunk of entry.hunks) {
+    for (const hunk of entry2.hunks) {
       if (hunk.old) ranges.push(hunk.old);
     }
     forwardByOldPath.set(key, ranges);
@@ -11069,7 +11279,7 @@ function validateAsOf(value) {
 function validateHorizons(value) {
   if (value === void 0 || value === "") return [...HORIZONS];
   const parsed = value.split(",").map((part) => Number(part.trim()));
-  const invalid = parsed.filter((entry) => !HORIZONS.includes(entry));
+  const invalid = parsed.filter((entry2) => !HORIZONS.includes(entry2));
   if (invalid.length > 0) {
     throw new ScanInputError(
       `invalid horizons ${invalid.join(", ")}: allowed values are ${HORIZONS.join(", ")}`
@@ -11200,8 +11410,8 @@ var BASELINE_V0 = Object.freeze({
     if (features.build_ok === false) {
       z -= w.buildFailPenalty;
     }
-    const complexityDelta = features.complexity_delta ?? 0;
-    z -= w.complexityDeltaPenalty * clamp(complexityDelta, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
+    const complexityDelta2 = features.complexity_delta ?? 0;
+    z -= w.complexityDeltaPenalty * clamp(complexityDelta2, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
     const changeRequests = features.change_requests ?? 0;
     z -= w.changeRequestsPenalty * Math.min(changeRequests, w.changeRequestsSaturation);
     const reviewRounds = features.review_rounds ?? 0;
@@ -11931,655 +12141,672 @@ function runShadowCli(command, args, io) {
   }
 }
 
-// src/corpus/cli.ts
-import { createHash as createHash4, randomBytes } from "node:crypto";
-import { chmodSync, closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
-import { dirname, join as join7, resolve as resolve4 } from "node:path";
+// src/corpus/feature-audit.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+import { resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
-import { gzipSync, inflateRawSync } from "node:zlib";
+function runFeatureAudit(argv, io) {
+  let values;
+  try {
+    ({ values } = parseArgs2({
+      args: [...argv],
+      options: {
+        columns: { type: "string" },
+        "allow-segments": { type: "boolean" },
+        "print-manifest": { type: "boolean" }
+      },
+      strict: true,
+      allowPositionals: false
+    }));
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (values["print-manifest"]) {
+    io.writeStdout(`${JSON.stringify(REWORK_RISK_FEATURE_MANIFEST, null, 2)}
+`);
+    return { exitCode: 0 };
+  }
+  if (!values.columns) {
+    io.writeStderr("error: corpus-feature-audit needs --columns <json array of names> or --print-manifest\n");
+    return { exitCode: 2 };
+  }
+  let columns;
+  try {
+    columns = JSON.parse(readFileSync3(resolve4(io.cwd, values.columns), "utf8"));
+  } catch (error) {
+    io.writeStderr(`error: --columns: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (!Array.isArray(columns) || columns.length === 0 || !columns.every((name) => typeof name === "string")) {
+    io.writeStderr("error: --columns must hold a non-empty JSON array of column names\n");
+    return { exitCode: 2 };
+  }
+  const errors = validateFeatureColumns(columns, { allowSegments: values["allow-segments"] === true });
+  io.writeStdout(`${JSON.stringify({ manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION, ok: errors.length === 0, errors }, null, 2)}
+`);
+  return { exitCode: errors.length === 0 ? 0 : 1 };
+}
 
-// src/corpus/calibration.ts
+// src/corpus/feature-run.ts
+import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname, join as join8 } from "node:path";
+
+// src/corpus/feature-capture.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join7 } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
+
+// src/corpus/features.ts
 import { createHash as createHash3 } from "node:crypto";
 
-// src/report/stats.ts
-function round42(value) {
-  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+// src/attribution/agent-markers.ts
+var BOT_SUFFIX = String.raw`(?:\[bot\])?`;
+var IDENTITIES = [
+  {
+    family: "claude",
+    // A bare "Claude" needs the tool's email or the bot suffix: it is also a first name.
+    name: /^(?:claude\[bot\]|claude\s+(?:code|opus|sonnet|haiku|fable|\d)[\w.\s-]*(?:\([^)]*\))?)$/i,
+    email: /^(?:noreply|claude)@anthropic\.com$/i
+  },
+  { family: "copilot", name: new RegExp(`^(?:github )?copilot(?:-swe-agent|-autofix)?${BOT_SUFFIX}$`, "i"), email: /^(?:\d+\+)?copilot@users\.noreply\.github\.com$/i },
+  { family: "cursor", name: new RegExp(`^cursor(?:[ -]agent)?${BOT_SUFFIX}$`, "i"), email: /^cursoragent@cursor\.com$/i },
+  { family: "codex", name: new RegExp(`^(?:openai[ -])?codex${BOT_SUFFIX}$|^chatgpt-codex-connector${BOT_SUFFIX}$`, "i"), email: /^(?:codex|noreply)@openai\.com$/i },
+  { family: "devin", name: new RegExp(`^devin-ai-integration${BOT_SUFFIX}$|^devin ai$`, "i"), email: /devin-ai-integration/i },
+  { family: "gemini", name: new RegExp(`^(?:google[ -])?gemini(?:[ -](?:cli|code[ -]assist))?${BOT_SUFFIX}$`, "i") },
+  { family: "aider", name: /^aider(?:\s*\([^)]*\))?$|\(aider\)$/i, email: /^noreply@aider\.chat$/i },
+  { family: "openhands", name: new RegExp(`^openhands(?:-agent)?${BOT_SUFFIX}$`, "i"), email: /^openhands@all-hands\.dev$/i },
+  { family: "other", name: new RegExp(`^(?:ai|coding)[ _-]agent${BOT_SUFFIX}$`, "i") }
+];
+var CO_AUTHOR_TRAILER2 = /^[ \t]*co-authored-by:[ \t]*(.*?)[ \t]*<([^>]*)>/gim;
+var TOOL_WORDS = String.raw`Claude Code|Claude|GitHub Copilot|Copilot|Cursor|OpenAI Codex|Codex|Gemini CLI|Gemini|Devin|Aider|aider|OpenHands`;
+var toolFamily = (word) => FOOTER_TOOLS[word.toLowerCase()];
+var ASSISTED_TRAILER = new RegExp(String.raw`^[ \t]*(?:assisted|generated|co-developed)-by:[ \t]*.*?\b(${TOOL_WORDS})\b`, "gim");
+var AUTHORSHIP = new RegExp(
+  String.raw`(?<!\b(?:not|never|n't)[ \t]+)(?<!\bnot[ \t]+(?:been[ \t]+)?)\b(?:[Cc]o-?[Aa]uthored|[Aa]uthored|[Bb]uilt|[Ww]ritten|[Ii]mplemented|[Dd]eveloped)[ \t]+(?:by|with|using|via)\b[ \t]+(?:the[ \t]+)?(?:[\w-]+[ \t]+){0,3}?\(?(${TOOL_WORDS})\b`,
+  "gm"
+);
+var TOOL_TOKENS = {
+  claude: "claude",
+  copilot: "copilot",
+  cursor: "cursor",
+  codex: "codex",
+  devin: "devin",
+  gemini: "gemini",
+  aider: "aider",
+  openhands: "openhands"
+};
+var AGENT_TOKENS = /* @__PURE__ */ new Set(["bot", "agent", "ai"]);
+var FOOTER_TOOLS = {
+  "claude code": "claude",
+  claude: "claude",
+  "github copilot": "copilot",
+  copilot: "copilot",
+  cursor: "cursor",
+  "openai codex": "codex",
+  codex: "codex",
+  "gemini cli": "gemini",
+  gemini: "gemini",
+  devin: "devin",
+  aider: "aider",
+  openhands: "openhands"
+};
+var FOOTER = new RegExp(
+  String.raw`^\W*(?:generated|created|written|authored|made)\s+(?:with|by|using)\W+(${Object.keys(FOOTER_TOOLS).join("|")})\]?(?:\([^)\s]*\))?\W*$`,
+  "im"
+);
+var SESSION_LINKS = [
+  { family: "claude", link: /https:\/\/claude\.ai\/code\/session/i },
+  { family: "devin", link: /https:\/\/app\.devin\.ai\/sessions\//i },
+  { family: "codex", link: /https:\/\/chatgpt\.com\/codex\/tasks\//i },
+  { family: "cursor", link: /https:\/\/cursor\.com\/(?:agents|background-agent)/i }
+];
+var MODEL_TAG = /^[ \t]*model[ \t]*[=:][ \t]*((?:claude|gpt|gemini)-[\w.-]+|o[13](?:-[\w.-]+)?)[ \t]*$/gim;
+var BRANCH_FAMILIES = {
+  claude: "claude",
+  "claude-code": "claude",
+  copilot: "copilot",
+  cursor: "cursor",
+  codex: "codex",
+  devin: "devin",
+  // Not `bot/`: release and dependency automation use it (`bot/bump-version/...`).
+  gemini: "gemini",
+  aider: "aider",
+  openhands: "openhands",
+  agent: "other"
+};
+var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
+function isDependencyBotLogin(login) {
+  return !!login && DEPENDENCY_BOT.test(login);
 }
-function roundedInterval(low, high, value) {
-  let lo = round42(Math.max(0, Math.min(1, low)));
-  let hi = round42(Math.max(0, Math.min(1, high)));
-  if (value !== void 0) {
-    lo = Math.min(lo, round42(value));
-    hi = Math.max(hi, round42(value));
+function botAccountFamily(name, email) {
+  for (const text of [name, email.split("@")[0] ?? ""]) {
+    const tokens2 = text.toLowerCase().replace(/\[bot\]$/, "-bot").split(/[^a-z0-9]+/).filter(Boolean);
+    if (!tokens2.some((token) => AGENT_TOKENS.has(token))) continue;
+    const tool = tokens2.find((token) => token in TOOL_TOKENS);
+    if (tool) return TOOL_TOKENS[tool];
   }
-  return { low: lo, high: hi };
+  return null;
 }
-function wilsonInterval(k, n, z = 1.959964) {
-  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
-    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
+function identityFamily(name, email) {
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim();
+  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? botAccountFamily(trimmedName, trimmedEmail);
+}
+function branchAgentFamily(headRef) {
+  const prefix = headRef?.includes("/") ? headRef.split("/")[0]?.toLowerCase() : void 0;
+  return prefix ? BRANCH_FAMILIES[prefix] ?? null : null;
+}
+function modelFromIdentity(name) {
+  const aider = /^aider\s*\(([^)]+)\)/i.exec(name.trim());
+  const raw = aider ? aider[1].split("/").at(-1) : /^claude\s+\S/i.test(name.trim()) ? name.replace(/\([^)]*\)/g, "") : null;
+  if (!raw) return null;
+  const slug = raw.trim().toLowerCase().replace(/[\s.]+/g, "-");
+  if (slug === "claude-code") return null;
+  return /^(?:claude-|gpt-|gemini-|o[13](?:-|$))/.test(slug) ? slug : null;
+}
+function withoutQuotedText(text) {
+  return text.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/<!--[\s\S]*?-->/g, "").split("\n").filter((line) => !line.trimStart().startsWith(">")).join("\n");
+}
+function signatureMatches(text) {
+  const cleaned = withoutQuotedText(text);
+  const found = [];
+  const footer = FOOTER.exec(cleaned);
+  if (footer) found.push({ family: FOOTER_TOOLS[footer[1].toLowerCase()], rule: "footer", text: footer[0] });
+  for (const { family, link } of SESSION_LINKS) {
+    const match = link.exec(cleaned);
+    if (match) found.push({ family, rule: "session_link", text: match[0] });
   }
-  if (n === 0) return null;
-  const p = k / n;
-  const z2 = z * z;
-  const den = 1 + z2 / n;
-  const center = (p + z2 / (2 * n)) / den;
-  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
-  return roundedInterval(center - half, center + half, p);
+  for (const match of cleaned.matchAll(ASSISTED_TRAILER)) found.push({ family: toolFamily(match[1]), rule: "assisted_trailer", text: match[0] });
+  for (const match of cleaned.matchAll(AUTHORSHIP)) found.push({ family: toolFamily(match[1]), rule: "authorship", text: match[0] });
+  return found;
 }
-function katzLogRatioInterval(k1, n1, k2, n2) {
-  for (const [k, n] of [[k1, n1], [k2, n2]]) {
-    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
-      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
+function signatureFamilies(text, evidence3, source = "signature") {
+  return signatureMatches(text).map((match) => {
+    evidence3?.push({ source, rule: match.rule, text: match.text.trim().slice(0, 200) });
+    return match.family;
+  });
+}
+function modelFamily(model) {
+  return model.startsWith("claude-") ? "claude" : model.startsWith("gemini-") ? "gemini" : "other";
+}
+function detectAgentMarkers(input) {
+  const families = /* @__PURE__ */ new Set();
+  const modelIds = /* @__PURE__ */ new Set();
+  const evidence3 = [];
+  let coAuthorTrailer = false;
+  let signature = false;
+  const login = input.authorLogin ?? "";
+  const isBotAccount = /\[bot\]$/i.test(login) || (input.authorType ?? "").toLowerCase() === "bot";
+  const accountFamily = isBotAccount ? identityFamily(`${login.replace(/\[bot\]$/i, "")}[bot]`, "") : null;
+  if (accountFamily) {
+    families.add(accountFamily);
+    evidence3.push({ source: "account", rule: "identity", text: login });
+  }
+  const branchFamily = branchAgentFamily(input.headRef);
+  if (branchFamily) {
+    families.add(branchFamily);
+    evidence3.push({ source: "branch", rule: "prefix", text: input.headRef ?? "" });
+  }
+  let markedCommits = 0;
+  for (const commit of input.commits ?? []) {
+    let marked = false;
+    const authorFamily = identityFamily(commit.authorName ?? "", commit.authorEmail ?? "");
+    if (authorFamily) {
+      families.add(authorFamily);
+      evidence3.push({ source: "commit_author", rule: "identity", text: `${commit.authorName ?? ""} <${commit.authorEmail ?? ""}>` });
+      marked = true;
+      const model = modelFromIdentity(commit.authorName ?? "");
+      if (model) modelIds.add(model);
+    }
+    for (const [, name = "", email = ""] of commit.message.matchAll(CO_AUTHOR_TRAILER2)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      evidence3.push({ source: "co_author", rule: "identity", text: `${name} <${email}>` });
+      coAuthorTrailer = true;
+      marked = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(commit.message, evidence3)) {
+      families.add(family);
+      signature = true;
+      marked = true;
+    }
+    for (const [, model = ""] of commit.message.matchAll(MODEL_TAG)) {
+      const normalized = model.toLowerCase();
+      modelIds.add(normalized);
+      families.add(modelFamily(normalized));
+      evidence3.push({ source: "model_tag", rule: "model_tag", text: model });
+      signature = true;
+      marked = true;
+    }
+    if (marked) markedCommits += 1;
+  }
+  let markedByLanding = false;
+  if (input.landingMessage) {
+    for (const [, name = "", email = ""] of input.landingMessage.matchAll(CO_AUTHOR_TRAILER2)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      coAuthorTrailer = true;
+      markedByLanding = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(input.landingMessage, evidence3, "landing")) {
+      families.add(family);
+      signature = true;
+      markedByLanding = true;
     }
   }
-  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
-  const a = k1 + (corrected ? 0.5 : 0);
-  const b = n1 - k1 + (corrected ? 0.5 : 0);
-  const c = k2 + (corrected ? 0.5 : 0);
-  const d = n2 - k2 + (corrected ? 0.5 : 0);
-  const ratio3 = a / (a + b) / (c / (c + d));
-  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
-  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
-  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
-  const r = round42(ratio3);
-  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
-}
-function nearestRankQuartiles(sorted) {
-  if (!sorted.length) return null;
-  for (let i = 0; i < sorted.length; i++) {
-    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
-      throw new RangeError("nearestRankQuartiles requires finite ascending values");
-    }
+  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? "", evidence3, "body");
+  for (const family of bodyFamilies) {
+    families.add(family);
+    signature = true;
   }
-  const at2 = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
-  return [at2(0.25), at2(0.5), at2(0.75)];
+  const commitsKnown = input.commits !== null;
+  const specific = [...families].filter((family) => family !== "other");
+  const named = specific.length > 1 ? "multiple" : specific[0] ?? (families.has("other") ? "other" : "none");
+  const present2 = families.size > 0 ? true : commitsKnown && !input.bodyUnavailable ? false : null;
+  const models = [...modelIds];
+  return {
+    present: present2,
+    family: present2 === null ? null : named,
+    markedCommitShare: !commitsKnown ? null : input.commits.length === 0 ? 0 : markedCommits / input.commits.length,
+    modelIds: models,
+    exactModel: models.length === 1 ? models[0] : null,
+    markedByAccount: accountFamily !== null,
+    markedByBranch: branchFamily !== null,
+    markedByCommit: markedByLanding || markedCommits > 0 ? true : commitsKnown ? false : null,
+    markedByBody: input.bodyUnavailable ? null : bodyFamilies.length > 0,
+    coAuthorTrailer,
+    signature,
+    dependencyBot: isDependencyBotLogin(input.authorLogin),
+    evidence: evidence3
+  };
 }
-function quartileOf(value, cuts) {
-  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
-    throw new RangeError("quartileOf requires finite values and ascending cuts");
-  }
-  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
+function agentMarkerColumns(markers) {
+  return {
+    "feature.agent.marker_present": markers.present,
+    "feature.agent.tool_family": markers.family,
+    "feature.agent.marked_commit_share": markers.markedCommitShare,
+    "segment.agent.exact_model": markers.exactModel,
+    "segment.agent.marked_by_account": markers.markedByAccount,
+    "segment.agent.marked_by_branch": markers.markedByBranch,
+    "segment.agent.marked_by_commit": markers.markedByCommit,
+    "segment.agent.marked_by_body": markers.markedByBody,
+    "segment.author.dependency_bot": markers.dependencyBot
+  };
 }
 
-// src/corpus/calibration.ts
-var CALIBRATION_SAMPLER_VERSION = "1.0.0";
-var CALIBRATION_STRATA = ["revert", "repair_reference", "regression_issue", "szz_strong", "szz_weak", "rejected", "negative"];
-function parseCalibrationPlan(raw) {
-  const plan = raw;
-  if (!plan || typeof plan !== "object") throw new Error("plan must be an object");
-  const allocation = plan.allocation;
-  if (!allocation || typeof allocation !== "object") throw new Error("plan.allocation is required");
-  for (const stratum of CALIBRATION_STRATA) {
-    if (!Number.isInteger(allocation[stratum]) || allocation[stratum] < 0) throw new Error(`plan.allocation.${stratum} must be a non-negative integer`);
+// src/corpus/features.ts
+var MANIFEST_COLUMNS = REWORK_RISK_FEATURE_MANIFEST.entries.map((entry2) => entry2.name);
+var CI_FAILED_STATES = ["FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"];
+var sha256 = (text) => createHash3("sha256").update(text).digest("hex");
+var hours = (ms2) => Number((ms2 / 36e5).toFixed(4));
+function ms(at2) {
+  return Date.parse(at2);
+}
+function byTime(events17) {
+  return events17.map((event17, index) => ({ event: event17, index })).sort((a, b) => ms(a.event.at) - ms(b.event.at) || a.index - b.index).map(({ event: event17 }) => event17);
+}
+function titleAt(evidence3, asOf) {
+  const renames = byTime(evidence3.renames);
+  if (renames.length === 0) return evidence3.title;
+  const cutoff = ms(asOf);
+  const seen = renames.filter((rename) => ms(rename.at) <= cutoff);
+  return seen.at(-1)?.to ?? renames[0].from;
+}
+function bodyAt(evidence3, asOf) {
+  if (evidence3.body_edits.length === 0) return evidence3.body ?? "";
+  const cutoff = ms(asOf);
+  return byTime(evidence3.body_edits).filter((edit) => ms(edit.at) <= cutoff).at(-1)?.body ?? null;
+}
+function labelsAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const labels = /* @__PURE__ */ new Set();
+  for (const event17 of byTime(evidence3.label_events)) {
+    if (ms(event17.at) > cutoff) continue;
+    if (event17.label === null) return null;
+    if (event17.action === "added") labels.add(event17.label);
+    else labels.delete(event17.label);
   }
-  const extra = Object.keys(allocation).filter((k) => !CALIBRATION_STRATA.includes(k));
-  if (extra.length) throw new Error(`plan.allocation has unknown strata: ${extra.join(", ")}`);
-  const num2 = (key, ok) => {
-    const v = plan[key];
-    if (typeof v !== "number" || !ok(v)) throw new Error(`plan.${key} is out of range`);
-    return v;
-  };
-  if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
-  return {
-    plan_version: plan.plan_version,
-    horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
-    allocation,
-    double_label_share: num2("double_label_share", (v) => v >= 0 && v <= 1),
-    human_audit_share: num2("human_audit_share", (v) => v > 0 && v <= 1),
-    labellers: parseLabellers(plan.labellers),
-    min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
-    szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
-    kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
-    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
-  };
+  return [...labels].sort();
 }
-function parseLabellers(raw) {
-  const l = raw;
-  if (!l || typeof l.a !== "string" || typeof l.b !== "string" || !l.a || !l.b) throw new Error("plan.labellers needs model IDs for a and b");
-  if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
-  return { a: l.a, b: l.b };
+function reviewsAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const dismissedLater = new Map(
+    evidence3.dismissals.filter((event17) => ms(event17.at) > cutoff && event17.review_id).map((event17) => [event17.review_id, event17.previous_state])
+  );
+  return evidence3.reviews.filter((review) => review.submitted_at !== null && ms(review.submitted_at) <= cutoff).map((review) => ({
+    state: dismissedLater.get(review.id) ?? review.state,
+    submitted_at: review.submitted_at,
+    author: review.author
+  }));
 }
-var sha256 = (...parts) => createHash3("sha256").update(parts.join("\0")).digest("hex");
-function seededOrder(list, key) {
-  return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
-}
-var STRATUM_PRIORITY = ["revert", "repair_reference", "regression_issue", "szz"];
-function classifyCalibrationRepo(input) {
-  const horizonSeconds = input.horizonDays * 86400;
-  const byOriginal = /* @__PURE__ */ new Map();
-  for (const c of input.candidates) {
-    if (c.lag_seconds > horizonSeconds) continue;
-    const list = byOriginal.get(c.original.pr_url) ?? [];
-    list.push({
-      candidate_id: c.candidate_id,
-      proxy: c.proxy,
-      status: c.status,
-      exclusion_code: c.exclusion_code,
-      fix_url: c.fix.pr_url ?? `https://github.com/${input.repo}/commit/${c.fix.sha}`,
-      lag_days: Math.round(c.lag_seconds / 86400 * 10) / 10,
-      blamed_lines: c.evidence.find((e) => e.kind === "blamed_lines")?.count ?? null,
-      revert_reason: c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? null
-    });
-    byOriginal.set(c.original.pr_url, list);
-  }
-  const units = [];
-  for (const row of input.correctiveRows) {
-    if (row.horizon_days !== input.horizonDays || row.corrective === null) continue;
-    const candidates = (byOriginal.get(row.prUrl) ?? []).sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
-    const accepted2 = new Set(row.repair_pair_ids);
-    const acceptedCandidates = candidates.filter((c) => accepted2.has(c.candidate_id));
-    const proxies = [...new Set(acceptedCandidates.map((c) => c.proxy))].filter((p) => ADMITTED_PROXIES.includes(p)).sort();
-    let stratum;
-    if (row.corrective) {
-      const top = STRATUM_PRIORITY.find((p) => proxies.includes(p));
-      if (!top) throw new Error(`${row.prUrl}: corrective row without an accepted pair within ${input.horizonDays} days`);
-      if (top === "szz") {
-        const lines = Math.max(...acceptedCandidates.filter((c) => c.proxy === "szz").map((c) => c.blamed_lines ?? 0));
-        stratum = lines >= input.szzStrongMinLines ? "szz_strong" : "szz_weak";
-      } else stratum = top;
-    } else stratum = candidates.length ? "rejected" : "negative";
-    units.push({ repo: input.repo, pr_url: row.prUrl, stratum, proxies, candidates });
-  }
-  return units;
-}
-function drawCalibrationSample(units, plan, seed) {
-  const items = [];
-  const cells = /* @__PURE__ */ new Map();
-  const shortfalls = [];
-  for (const stratum of CALIBRATION_STRATA) {
-    const byRepo = /* @__PURE__ */ new Map();
-    for (const u of units) {
-      if (u.stratum !== stratum) continue;
-      const list = byRepo.get(u.repo);
-      if (list) list.push(u);
-      else byRepo.set(u.repo, [u]);
-    }
-    for (const [repo, list] of byRepo) {
-      byRepo.set(repo, seededOrder(list, (u) => sha256(seed, stratum, u.pr_url)));
-      cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
-    }
-    const repos = seededOrder([...byRepo.keys()], (repo) => sha256(seed, "repo", stratum, repo));
-    const want = plan.allocation[stratum];
-    const picked = [];
-    for (let round = 0; picked.length < want; round++) {
-      let any = false;
-      for (const repo of repos) {
-        const unit = byRepo.get(repo)[round];
-        if (!unit || picked.length >= want) continue;
-        picked.push(unit);
-        cells.get(`${repo}\0${stratum}`).sampled++;
-        any = true;
-      }
-      if (!any) break;
-    }
-    if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
-    const doubles = new Set(
-      seededOrder(picked, (u) => sha256(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
-    );
-    const audited = new Set(
-      seededOrder(picked, (u) => sha256(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
-    );
-    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
-  }
-  return {
-    items: seededOrder(items, (i) => sha256(seed, "order", i.item_id)),
-    cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
-    shortfalls
-  };
-}
-var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "related_prs", "corrective", "cause_code", "exclusion_code", "notes"];
-var csvCell = (value) => /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-function renderLabelSheet(items, related = /* @__PURE__ */ new Map(), filled = /* @__PURE__ */ new Map()) {
-  const rows = items.map((item) => {
-    const row = {
-      item_id: item.item_id,
-      pr_url: item.pr_url,
-      candidate_fixes: [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "),
-      related_prs: (related.get(item.item_id) ?? []).join(" "),
-      ...filled.get(item.item_id)
-    };
-    return SHEET_COLUMNS.map((c) => row[c] ?? "");
-  });
-  return `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
-`;
-}
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cell2 = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        cell2 += '"';
-        i++;
-      } else if (ch === '"') quoted = false;
-      else cell2 += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ",") {
-      row.push(cell2);
-      cell2 = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell2);
-      rows.push(row);
-      row = [];
-      cell2 = "";
-    } else cell2 += ch;
-  }
-  if (cell2 || row.length) {
-    row.push(cell2);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((c) => c.trim()));
-}
-function parseLabelSheet(text, items) {
-  const [header, ...rows] = parseCsv(text);
-  const col = (name) => header?.indexOf(name) ?? -1;
-  const errors = [];
-  const missing = ["item_id", "corrective", "cause_code", "exclusion_code"].filter((c) => col(c) < 0);
-  if (missing.length) return { labels: /* @__PURE__ */ new Map(), unlabelled: [], errors: [`missing columns: ${missing.join(", ")}`] };
-  const labels = /* @__PURE__ */ new Map();
-  const unlabelled = [];
-  const causes = CAUSE_CODES;
-  const exclusions = HUMAN_EXCLUSION_CODES;
-  for (const r of rows) {
-    const get = (name) => (r[col(name)] ?? "").trim().toLowerCase();
-    const id2 = (r[col("item_id")] ?? "").trim();
-    const item = items.get(id2);
-    if (!item) {
-      errors.push(`${id2 || "(blank)"}: not in the sample`);
-      continue;
-    }
-    if (labels.has(id2)) {
-      errors.push(`${id2}: labelled twice on one sheet`);
-      continue;
-    }
-    const verdict = get("corrective");
-    const cause = get("cause_code");
-    const exclusion = get("exclusion_code") || null;
-    if (!verdict) {
-      unlabelled.push(id2);
-      continue;
-    }
-    if (!CALIBRATION_VERDICTS.includes(verdict)) {
-      errors.push(`${id2}: corrective must be yes, no or unclear, not "${verdict}"`);
-      continue;
-    }
-    if (verdict === "yes") {
-      if (!causes.includes(cause) || cause === "not_rework") errors.push(`${id2}: a yes needs a cause code other than not_rework`);
-      if (exclusion) errors.push(`${id2}: a yes takes no exclusion code`);
-      labels.set(id2, { verdict, cause_code: cause, exclusion_code: null });
-    } else if (verdict === "no") {
-      if (cause && cause !== "not_rework") errors.push(`${id2}: a no takes cause not_rework (or blank)`);
-      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
-      if (!exclusion && item.candidates.length) errors.push(`${id2}: a no on an item with candidate fixes needs an exclusion code`);
-      labels.set(id2, { verdict, cause_code: "not_rework", exclusion_code: exclusion });
-    } else {
-      if (cause && cause !== "unclear") errors.push(`${id2}: an unclear takes cause unclear (or blank)`);
-      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
-      labels.set(id2, { verdict: "unclear", cause_code: "unclear", exclusion_code: exclusion });
-    }
-  }
-  return { labels, unlabelled, errors };
-}
-function cohensKappa(pairs) {
-  if (!pairs.length) return null;
-  const n = pairs.length;
-  const a = /* @__PURE__ */ new Map();
-  const b = /* @__PURE__ */ new Map();
-  let agree = 0;
-  for (const [x, y] of pairs) {
-    if (x === y) agree++;
-    a.set(x, (a.get(x) ?? 0) + 1);
-    b.set(y, (b.get(y) ?? 0) + 1);
-  }
-  const po = agree / n;
-  let pe = 0;
-  for (const [k, count] of a) pe += count / n * ((b.get(k) ?? 0) / n);
-  if (pe === 1) return null;
-  return round43((po - pe) / (1 - pe));
-}
-function kappaWithCodes(pairs, codes, floor) {
-  const per_code = {};
-  for (const code of codes) {
-    const used = pairs.filter(([x, y]) => x === code || y === code).length;
-    const kappa = used ? cohensKappa(pairs.map(([x, y]) => [String(x === code), String(y === code)])) : null;
-    per_code[code] = { used, kappa, verdict: !used ? "not_observed" : kappa === null ? "undefined" : kappa >= floor ? "pass" : "below_floor" };
-  }
-  return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
-}
-function agreementBetween(items, x, y, floor) {
-  const both = items.filter((i) => x.has(i.item_id) && y.has(i.item_id));
-  const pairs = (pick) => both.flatMap((i) => {
-    const a = pick(x.get(i.item_id));
-    const b = pick(y.get(i.item_id));
-    return a !== null && b !== null ? [[a, b]] : [];
-  });
-  return {
-    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, floor),
-    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, floor),
-    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, floor)
-  };
-}
-var round43 = (x) => Math.round(x * 1e4) / 1e4;
-function definitionVariants(plan) {
-  const strongSzz = (c) => c.proxy !== "szz" || (c.blamed_lines ?? 0) >= plan.szz_strong_min_lines;
-  const notInternal = (c) => c.proxy !== "revert" || c.revert_reason !== "internal_build";
-  return [
-    { name: "cr-0.1.0", description: "all admitted proxies (P1\u2013P4)", keep: () => true },
-    { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
-    { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
-    { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
-    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
+function assertReadableEvidence(evidence3, ci2, asOf) {
+  const events17 = [
+    { source: "created_at", at: evidence3.created_at },
+    ...evidence3.reviews.flatMap((review) => review.submitted_at ? [{ source: "review", at: review.submitted_at }] : []),
+    ...evidence3.dismissals.map((event17) => ({ source: "dismissal", at: event17.at })),
+    ...evidence3.label_events.map((event17) => ({ source: "label_event", at: event17.at })),
+    ...evidence3.renames.map((event17) => ({ source: "rename", at: event17.at })),
+    ...evidence3.body_edits.map((event17) => ({ source: "body_edit", at: event17.at })),
+    ...(ci2?.contexts ?? []).flatMap((context) => context.at ? [{ source: "ci", at: context.at }] : [])
   ];
+  const errors = validateEvidenceAsOf(events17, asOf).filter((error) => error.code !== "event_after_as_of");
+  if (errors.length) throw new Error(`pr evidence: ${errors[0].message}`);
 }
-var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
-var precisionOf = (positive) => (rows) => {
-  let num2 = 0;
-  let den = 0;
-  for (const r of rows) {
-    if (!positive(r.item)) continue;
-    den += r.weight;
-    if (r.label.verdict === "yes") num2 += r.weight;
-  }
-  return den ? num2 / den : null;
-};
-var recallOf = (positive) => (rows) => {
-  let num2 = 0;
-  let den = 0;
-  for (const r of rows) {
-    if (r.label.verdict !== "yes") continue;
-    den += r.weight;
-    if (positive(r.item)) num2 += r.weight;
-  }
-  return den ? num2 / den : null;
-};
-function prng(seed) {
-  let a = parseInt(sha256(seed, "bootstrap").slice(0, 8), 16) >>> 0;
-  return () => {
-    a = a + 1831565813 >>> 0;
-    let t = a;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+function processColumns(evidence3, ci2, asOf) {
+  const empty = {
+    "feature.process.review_count": null,
+    "feature.process.approvals": null,
+    "feature.process.changes_requested": null,
+    "feature.process.distinct_reviewers": null,
+    "feature.process.hours_open": null,
+    "feature.process.hours_to_first_review": null,
+    "feature.process.github_label_count": null,
+    "feature.process.title_chars": null,
+    "feature.process.body_chars": null,
+    "feature.content.title_sha256": null,
+    "feature.content.body_sha256": null
   };
-}
-function bootstrap(rows, estimator, relevant, seed, resamples) {
-  const estimate = estimator(rows);
-  const n = rows.filter(relevant).length;
-  if (estimate === null) return { estimate: null, ci95: null, n };
-  const cells = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    const key = `${r.item.repo}\0${r.item.stratum}`;
-    const cell2 = cells.get(key);
-    if (cell2) cell2.push(r);
-    else cells.set(key, [r]);
-  }
-  const groups = [...cells.values()];
-  const rand = prng(seed);
-  const values = [];
-  for (let b = 0; b < resamples; b++) {
-    const resampled = [];
-    for (const g of groups) for (let i = 0; i < g.length; i++) resampled.push(g[Math.floor(rand() * g.length)]);
-    const v = estimator(resampled);
-    if (v !== null) values.push(v);
-  }
-  values.sort((x, y) => x - y);
-  const at2 = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
-  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at2(0.025)), high: round43(at2(0.975)) } : null, n };
-}
-function scoreCalibration(input) {
-  const { plan, items, sheetA, sheetB, seed } = input;
-  const resamples = input.resamples ?? 2e3;
-  const decided2 = (id2) => {
-    const l = sheetA.get(id2);
-    return l && l.verdict !== "unclear" ? l : null;
+  const ciColumns = {
+    "segment.ci.checks_completed_by_merge": null,
+    "segment.ci.checks_failed_by_merge": null
   };
-  const decidedPerCell = /* @__PURE__ */ new Map();
-  for (const item of items) if (decided2(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
-  const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
-  const rows = items.flatMap((item) => {
-    const label2 = decided2(item.item_id);
-    const key = `${item.repo}\0${item.stratum}`;
-    return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
-  });
-  const unrepresented = input.cells.filter((c) => !decidedPerCell.get(`${c.repo}\0${c.stratum}`)).reduce((s, c) => s + c.population, 0);
-  const est = (name, estimator, relevant, subset = rows) => bootstrap(subset, estimator, relevant, `${seed}\0${name}`, resamples);
-  const strata = CALIBRATION_STRATA.map((stratum) => {
-    const inStratum = items.filter((i) => i.stratum === stratum);
-    const count = (v) => inStratum.filter((i) => sheetA.get(i.item_id)?.verdict === v).length;
-    const yes = count("yes");
-    const no = count("no");
-    return {
-      stratum,
-      sampled: inStratum.length,
-      yes,
-      no,
-      unclear: count("unclear"),
-      unlabelled: inStratum.filter((i) => !sheetA.has(i.item_id)).length,
-      yes_rate: yes + no ? round43(yes / (yes + no)) : null,
-      yes_rate_ci95: wilsonInterval(yes, yes + no)
-    };
-  });
-  const proxies = {};
-  for (const proxy of ADMITTED_PROXIES) {
-    const fired = (item) => item.proxies.includes(proxy);
-    proxies[proxy] = {
-      precision: est(`p:${proxy}`, precisionOf(fired), (r) => fired(r.item)),
-      recall: est(`r:${proxy}`, recallOf(fired), (r) => r.label.verdict === "yes")
-    };
-  }
-  const definitions = definitionVariants(plan).map((d) => {
-    const positive = (item) => accepted(item).some(d.keep);
-    return {
-      name: d.name,
-      description: d.description,
-      precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
-      recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
-    };
-  });
-  let chosen = null;
-  for (const d of definitions) {
-    if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
-    if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
-  }
-  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha256(seed, "pseudonym", repo));
-  const anyProxy = (item) => item.proxies.length > 0;
-  const repos = repoNames.map((repo, i) => {
-    const subset = rows.filter((r) => r.item.repo === repo);
-    return {
-      repo,
-      pseudonym: `R${i + 1}`,
-      sampled: items.filter((it) => it.repo === repo).length,
-      precision: est(`rp:${repo}`, precisionOf(anyProxy), (r) => anyProxy(r.item), subset),
-      recall: est(`rr:${repo}`, recallOf(anyProxy), (r) => r.label.verdict === "yes", subset)
-    };
-  });
-  const rejected = items.filter((i) => i.stratum === "rejected");
-  const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
-  const rejDecided = rejected.filter((i) => decided2(i.item_id)).length;
-  const by_code = {};
-  for (const item of rejected) {
-    const label2 = sheetA.get(item.item_id);
-    if (label2?.verdict !== "no") continue;
-    const human = label2.exclusion_code ?? "(none)";
-    for (const auto of new Set(item.candidates.map((c) => c.exclusion_code ?? "(accepted)"))) {
-      by_code[auto] ??= {};
-      by_code[auto][human] = (by_code[auto][human] ?? 0) + 1;
+  if (ci2) {
+    const cutoff = ms(asOf);
+    const finished = ci2.contexts.filter((context) => context.at !== null && ms(context.at) <= cutoff);
+    if (finished.length > 0) {
+      ciColumns["segment.ci.checks_completed_by_merge"] = finished.length;
+      ciColumns["segment.ci.checks_failed_by_merge"] = finished.filter((context) => context.failed).length;
     }
   }
-  const linkage_error = {};
-  for (const proxy of ADMITTED_PROXIES) {
-    const nos = items.filter((i) => i.proxies.includes(proxy) && sheetA.get(i.item_id)?.verdict === "no");
-    const linkage = nos.filter((i) => sheetA.get(i.item_id)?.exclusion_code === "linkage_error").length;
-    linkage_error[proxy] = { no: nos.length, linkage_error: linkage, rate: nos.length ? round43(linkage / nos.length) : null };
-  }
-  const raw = {};
-  const weighted = {};
-  let yesWeight = 0;
-  for (const item of items) {
-    const label2 = sheetA.get(item.item_id);
-    if (label2?.verdict === "yes") raw[label2.cause_code] = (raw[label2.cause_code] ?? 0) + 1;
-  }
-  for (const r of rows) {
-    if (r.label.verdict !== "yes") continue;
-    weighted[r.label.cause_code] = (weighted[r.label.cause_code] ?? 0) + r.weight;
-    yesWeight += r.weight;
-  }
-  const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round43(v / yesWeight)]));
-  const agreement = agreementBetween(items, sheetA, sheetB, plan.kappa_floor);
+  if (!evidence3) return { ...empty, ...ciColumns };
+  const reviews = reviewsAt(evidence3, asOf);
+  const created = ms(evidence3.created_at);
+  const open = ms(asOf) - created;
+  const first = reviews.length ? Math.min(...reviews.map((review) => ms(review.submitted_at))) : null;
+  const labels = labelsAt(evidence3, asOf);
+  const title = titleAt(evidence3, asOf);
+  const body = bodyAt(evidence3, asOf);
   return {
-    sampler_version: CALIBRATION_SAMPLER_VERSION,
-    plan,
-    items: items.length,
-    labelled: sheetA.size,
-    unlabelled: items.length - sheetA.size,
-    unclear: [...sheetA.values()].filter((l) => l.verdict === "unclear").length,
-    unrepresented_population: unrepresented,
-    strata,
-    proxies,
-    definitions,
-    chosen_definition: chosen?.name ?? null,
-    repos,
-    rejections: { wrongly_rejected: { yes: rejYes, decided: rejDecided, rate: rejDecided ? round43(rejYes / rejDecided) : null, ci95: wilsonInterval(rejYes, rejDecided) }, by_code },
-    linkage_error,
-    causes: { raw, weighted_share },
-    agreement
+    "feature.process.review_count": reviews.length,
+    "feature.process.approvals": reviews.filter((review) => review.state === "APPROVED").length,
+    "feature.process.changes_requested": reviews.filter((review) => review.state === "CHANGES_REQUESTED").length,
+    "feature.process.distinct_reviewers": new Set(reviews.flatMap((review) => review.author ? [review.author] : [])).size,
+    "feature.process.hours_open": open >= 0 ? hours(open) : null,
+    "feature.process.hours_to_first_review": first !== null && first >= created ? hours(first - created) : null,
+    "feature.process.github_label_count": labels ? labels.length : null,
+    "feature.process.title_chars": title.length,
+    "feature.process.body_chars": body === null ? null : body.length,
+    "feature.content.title_sha256": sha256(title),
+    "feature.content.body_sha256": body === null ? null : sha256(body),
+    ...ciColumns
   };
 }
-function scoreCalibrationRun(input) {
-  const { plan, items, cells, sheets, seed, resamples } = input;
-  const model = scoreCalibration({ plan, items, cells, sheetA: sheets.a, sheetB: sheets.b, seed, resamples });
-  const audited = items.filter((i) => i.audit);
-  const human = scoreCalibration({ plan, items: audited, cells, sheetA: sheets.h, sheetB: sheets.a, seed, resamples });
-  const kappa = human.agreement.corrective.kappa;
-  const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
-  const primary = models_stand_in ? model : human;
-  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
+var MERGE_SUBJECT = /^Merge (?:branch|remote-tracking branch|pull request|tag|commit)\b|^Merge .+ into .+/;
+function markerCommits(evidence3) {
+  if (!evidence3) return null;
+  return evidence3.commits.filter((commit) => !MERGE_SUBJECT.test(commit.message)).map((commit) => ({
+    message: commit.message,
+    ...commit.author_name ? { authorName: commit.author_name } : {},
+    ...commit.author_email ? { authorEmail: commit.author_email } : {}
+  }));
+}
+function extractPrFeatures(input) {
+  const { record, evidence: evidence3, ci: ci2, git: git2 } = input;
+  const asOf = record.merged_at;
+  if (evidence3) {
+    assertReadableEvidence(evidence3, ci2, asOf);
+    if (evidence3.pr_number !== record.pr_number) throw new Error(`evidence is for PR ${evidence3.pr_number}, not ${record.pr_number}`);
+    if (evidence3.merged_at !== null && ms(evidence3.merged_at) !== ms(asOf)) throw new Error(`PR ${record.pr_number}: GitHub's merge time disagrees with the corpus record`);
+  } else if (ci2) {
+    assertReadableEvidence({ pr_number: record.pr_number, created_at: asOf, merged_at: null, title: "", body: null, head_ref: null, reviews: [], dismissals: [], label_events: [], renames: [], body_edits: [], commits: [] }, ci2, asOf);
+  }
+  const body = evidence3 ? bodyAt(evidence3, asOf) : null;
+  const markers = detectAgentMarkers({
+    authorLogin: record.author_login,
+    authorType: record.author_type,
+    headRef: evidence3?.head_ref ?? null,
+    commits: markerCommits(evidence3),
+    body,
+    ...body === null ? { bodyUnavailable: true } : {},
+    ...input.landingMessage ? { landingMessage: input.landingMessage } : {}
+  });
+  const features = {
+    ...Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, null])),
+    "feature.shape.member_commits": record.member_commits,
+    "feature.shape.diff_uncertain": record.batched,
+    "feature.author.is_bot": record.author_type === null ? null : record.author_type === "Bot",
+    ...git2,
+    ...processColumns(evidence3, ci2, asOf),
+    ...agentMarkerColumns(markers)
+  };
+  const undeclared = Object.keys(features).filter((column) => !MANIFEST_COLUMNS.includes(column));
+  if (undeclared.length) throw new Error(`undeclared feature columns: ${undeclared.join(", ")}`);
   return {
-    plan,
-    model,
-    human,
-    human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
-    models_stand_in,
-    primary: models_stand_in ? "model" : "human",
-    chosen_definition: primary.chosen_definition,
-    gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
+    manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+    repo: record.repo,
+    pr_number: record.pr_number,
+    merge_sha: record.merge_sha,
+    base_sha: record.base_sha,
+    landed_by: record.landed_by,
+    as_of: asOf,
+    as_of_basis: evidence3 === null ? null : evidence3.merged_at !== null ? "github_merged_at" : "landing_commit_time",
+    features: Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, features[column] ?? null]))
   };
 }
-var pct = (x) => x === null || x === void 0 ? "\u2014" : `${(x * 100).toFixed(1)}%`;
-var estCell = (e) => e.estimate === null ? "\u2014" : `${pct(e.estimate)} (${pct(e.ci95?.low)}\u2013${pct(e.ci95?.high)})`;
-var kappaCell = (k) => k === null ? "\u2014" : k.toFixed(2);
-function renderAgreement(lines, title, agreement, floor) {
-  lines.push("", `### ${title} (floor \u03BA \u2265 ${floor})`, "");
-  for (const [field, k] of Object.entries(agreement)) {
-    lines.push(`**${field}:** \u03BA = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, "", "| Code | Used | \u03BA | Verdict |", "| --- | --- | --- | --- |");
-    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
-    lines.push("");
-  }
-}
-function renderEstimates(lines, r) {
-  lines.push("", `${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos`);
-  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by these estimates.`);
-  lines.push("", "### Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
-  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
-  lines.push("", `Pick under the plan (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
-  lines.push("", "### Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
-  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
-  lines.push("", "### Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
-  for (const st of r.strata) lines.push(`| ${st.stratum} | ${st.sampled} | ${st.yes} | ${st.no} | ${st.unclear} | ${pct(st.yes_rate)} (${pct(st.yes_rate_ci95?.low)}\u2013${pct(st.yes_rate_ci95?.high)}) |`);
-  lines.push("", "### Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
-  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
-  const w = r.rejections.wrongly_rejected;
-  lines.push("", "### Rejections", "", `Wrongly rejected (judged corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
-  const labelCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
-  if (labelCodes.length) {
-    lines.push("", `| Automatic code \\ labelled code | ${labelCodes.join(" | ")} |`, `| --- |${labelCodes.map(() => " --- |").join("")}`);
-    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${labelCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
-  }
-  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
-  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
-  lines.push("", "### Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
-  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
-}
-function renderCalibrationMarkdown(run) {
-  const { plan, model, human } = run;
-  const lines = [];
-  const complete = model.unlabelled === 0 && human.unlabelled === 0;
-  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
-  lines.push(`Horizon ${plan.horizon_days} days \xB7 plan ${plan.plan_version} \xB7 sampler ${CALIBRATION_SAMPLER_VERSION} \xB7 labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
-  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
-  const k = human.agreement.corrective.kappa;
-  lines.push("", "## Verdict", "");
-  lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
-  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
-  lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
-  lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
-  renderEstimates(lines, model);
-  lines.push("", `## Human audit${run.primary === "human" ? " (primary)" : ""}`);
-  renderEstimates(lines, human);
-  lines.push("", "## Agreement");
-  renderAgreement(lines, "Person vs model A (audit subset)", human.agreement, plan.kappa_floor);
-  renderAgreement(lines, "Person vs model B (audit subset)", run.human_vs_b, plan.kappa_floor);
-  renderAgreement(lines, "Model A vs model B", model.agreement, plan.kappa_floor);
-  return `${lines.join("\n").trimEnd()}
-`;
+function truncateEvidenceAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const before = (events17) => events17.filter((event17) => ms(event17.at) <= cutoff);
+  const body = bodyAt(evidence3, asOf);
+  const dismissedLater = new Map(
+    evidence3.dismissals.filter((event17) => ms(event17.at) > cutoff && event17.review_id).map((event17) => [event17.review_id, event17.previous_state])
+  );
+  return {
+    ...evidence3,
+    title: titleAt(evidence3, asOf),
+    body,
+    reviews: evidence3.reviews.filter((review) => review.submitted_at !== null && ms(review.submitted_at) <= cutoff).map((review) => ({ ...review, state: dismissedLater.get(review.id) ?? review.state })),
+    dismissals: before(evidence3.dismissals),
+    label_events: before(evidence3.label_events),
+    renames: before(evidence3.renames),
+    // With no version left, an empty history would read the rolled-back body, null, as ''.
+    body_edits: body === null ? [{ at: evidence3.created_at, body: null }] : before(evidence3.body_edits)
+  };
 }
 
-// src/corpus/calibration-evidence.ts
-var EVIDENCE_DIFF_MAX_CHARS = 6e4;
-var EVIDENCE_RELATED_MAX = 15;
-var EVIDENCE_RELATED_MAX_FILES = 50;
-function git(runGit3, args) {
-  const result = runGit3(args);
-  if (result.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim().split("\n").pop()}`);
-  return result.stdout;
+// src/corpus/feature-capture.ts
+var EVIDENCE_BATCH_SIZE = 25;
+var CI_CAPTURE_FROM = "2025-07-01T00:00:00Z";
+var TIMELINE_SPLIT_NODES = 150;
+var PAGE = "pageInfo{ hasNextPage endCursor }";
+var REVIEWS = `${PAGE} nodes{ id state submittedAt author{ login } }`;
+var TIMELINE = `${PAGE} nodes{ __typename
+  ... on LabeledEvent{ createdAt label{ name } }
+  ... on UnlabeledEvent{ createdAt label{ name } }
+  ... on RenamedTitleEvent{ createdAt previousTitle currentTitle }
+  ... on ReviewDismissedEvent{ createdAt previousReviewState review{ id } } }`;
+var TIMELINE_TYPES = "itemTypes:[LABELED_EVENT,UNLABELED_EVENT,RENAMED_TITLE_EVENT,REVIEW_DISMISSED_EVENT]";
+var EDITS = `${PAGE} nodes{ editedAt diff }`;
+var COMMITS = `${PAGE} nodes{ commit{ oid message author{ name email user{ login } } } }`;
+var CONTEXTS = `${PAGE} nodes{ __typename ... on CheckRun{ completedAt conclusion } ... on StatusContext{ createdAt state } }`;
+var EVIDENCE_FIELDS = `number createdAt mergedAt title body headRefName
+  reviews(first:100){ ${REVIEWS} }
+  userContentEdits(first:100){ ${EDITS} }
+  commits(first:100){ ${COMMITS} }`;
+var TIMELINE_FIELDS = `number timelineItems(first:100,${TIMELINE_TYPES}){ ${TIMELINE} }`;
+var CI_FIELDS = `number commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100){ ${CONTEXTS} } } } } }`;
+var FOLLOW_UPS = {
+  reviews: { args: "", nodes: REVIEWS },
+  userContentEdits: { args: "", nodes: EDITS },
+  commits: { args: "", nodes: COMMITS }
+};
+function runQuery(graphql, repo, fields) {
+  const [owner, name] = repo.split("/");
+  const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
+  return data.repository;
 }
-function cap(diff) {
-  return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
-[diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
-}
-function change(runGit3, url, from, to, pr2) {
-  const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
-  return {
-    url,
-    title: pr2?.title ?? null,
-    body: pr2?.body ?? null,
-    merged_at: pr2?.merged_at ?? null,
-    files,
-    ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
-  };
-}
-function buildItemEvidence(item, context, runGit3) {
-  const pr2 = context.prs.get(item.pr_url);
-  if (!pr2) throw new Error(`${item.item_id}: original not in the enumeration cache`);
-  const original = change(runGit3, pr2.pr_url, pr2.base_sha, pr2.merge_sha, pr2);
-  const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
-  const fixes = fixUrls.map((url) => {
-    const fixPr = context.prs.get(url);
-    if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
-    const sha2 = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
-    if (!sha2) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
-    return change(runGit3, url, `${sha2}^`, sha2, void 0);
-  });
-  const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
-  const since = new Date(pr2.merged_at);
-  const until = new Date(since.getTime() + context.horizonDays * 864e5);
-  const related = [];
-  if (searched.length) {
-    const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
-    const seen = /* @__PURE__ */ new Set([pr2.pr_url, ...fixUrls]);
-    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr2.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
-    for (const r of later) {
-      if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
-      seen.add(r.pr_url);
-      related.push({ url: r.pr_url, title: r.title, merged_at: r.merged_at });
+var TIMELINE_FOLLOW_UP = { timelineItems: { args: `${TIMELINE_TYPES},`, nodes: TIMELINE } };
+function drainConnections(pr2, repo, graphql, followUps = FOLLOW_UPS) {
+  for (const key of Object.keys(followUps)) {
+    const connection = pr2[key];
+    let info = connection.pageInfo;
+    while (info.hasNextPage) {
+      const follow = followUps[key];
+      const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ ${key}(${follow.args}first:100,after:${JSON.stringify(info.endCursor)}){ ${follow.nodes} } }`);
+      const next = page["pr"]?.[key];
+      if (!next) throw new Error(`PR ${pr2.number}: ${key} page disappeared`);
+      connection.nodes = [...connection.nodes ?? [], ...next.nodes ?? []];
+      info = next.pageInfo;
     }
   }
-  return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
 }
+var present = (connection) => (connection.nodes ?? []).filter((node) => node !== null);
+function normalizeTimeline(pr2) {
+  const timeline = present(pr2["timelineItems"]);
+  return {
+    pr_number: pr2.number,
+    dismissals: timeline.filter((event17) => event17.__typename === "ReviewDismissedEvent").map((event17) => ({ at: event17.createdAt, previous_state: event17.previousReviewState ?? null, review_id: event17.review?.id ?? null })),
+    label_events: timeline.filter((event17) => event17.__typename === "LabeledEvent" || event17.__typename === "UnlabeledEvent").map((event17) => ({ at: event17.createdAt, action: event17.__typename === "LabeledEvent" ? "added" : "removed", label: event17.label?.name ?? null })),
+    renames: timeline.filter((event17) => event17.__typename === "RenamedTitleEvent").map((event17) => ({ at: event17.createdAt, from: event17.previousTitle ?? "", to: event17.currentTitle ?? "" }))
+  };
+}
+function normalizeEvidence(pr2) {
+  return {
+    pr_number: pr2.number,
+    created_at: pr2["createdAt"],
+    merged_at: pr2["mergedAt"] ?? null,
+    title: pr2["title"],
+    body: pr2["body"] ?? null,
+    head_ref: pr2["headRefName"] ?? null,
+    reviews: present(pr2["reviews"]).map((review) => ({ id: review.id, state: review.state, submitted_at: review.submittedAt, author: review.author?.login ?? null })),
+    dismissals: [],
+    label_events: [],
+    renames: [],
+    body_edits: present(pr2["userContentEdits"]).map((edit) => ({ at: edit.editedAt, body: edit.diff })),
+    commits: present(pr2["commits"]).map(({ commit }) => ({ oid: commit.oid, message: commit.message, author_name: commit.author?.name ?? null, author_email: commit.author?.email ?? null, author_login: commit.author?.user?.login ?? null }))
+  };
+}
+function normalizeCi(pr2) {
+  const head = pr2["commits"].nodes?.[0];
+  const rollup = head?.commit.statusCheckRollup;
+  if (!rollup) return null;
+  return {
+    pr_number: pr2.number,
+    contexts: present(rollup.contexts).map((context) => ({
+      at: context.completedAt ?? context.createdAt ?? null,
+      failed: CI_FAILED_STATES.includes(context.conclusion ?? context.state ?? "")
+    }))
+  };
+}
+function drainContexts(pr2, repo, graphql) {
+  const rollup = pr2["commits"].nodes?.[0]?.commit.statusCheckRollup;
+  if (!rollup) return;
+  let info = rollup.contexts.pageInfo;
+  while (info.hasNextPage) {
+    const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100,after:${JSON.stringify(info.endCursor)}){ ${CONTEXTS} } } } } } }`);
+    const next = page["pr"]?.["commits"]?.nodes[0]?.commit.statusCheckRollup?.contexts;
+    if (!next) break;
+    rollup.contexts.nodes = [...rollup.contexts.nodes ?? [], ...next.nodes ?? []];
+    info = next.pageInfo;
+  }
+}
+function fetchBatch(kind, repo, numbers, graphql, log) {
+  if (kind === "timeline") return fetchTimeline(repo, numbers, graphql, log);
+  try {
+    const fields = kind === "evidence" ? EVIDENCE_FIELDS : CI_FIELDS;
+    const repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${fields} }`).join("\n"));
+    return numbers.map((number) => {
+      const pr2 = repository[`pr${number}`];
+      if (!pr2) return { pr_number: number, value: null, error: "not_found" };
+      if (kind === "evidence") {
+        drainConnections(pr2, repo, graphql);
+        return { pr_number: number, value: normalizeEvidence(pr2), error: null };
+      }
+      drainContexts(pr2, repo, graphql);
+      return { pr_number: number, value: normalizeCi(pr2), error: null };
+    });
+  } catch (error) {
+    if (numbers.length > 1) {
+      const middle = numbers.length >>> 1;
+      return [...fetchBatch(kind, repo, numbers.slice(0, middle), graphql, log), ...fetchBatch(kind, repo, numbers.slice(middle), graphql, log)];
+    }
+    log(`warn: ${repo}: PR ${numbers[0]} ${kind} capture failed: ${error.message.slice(0, 160)}`);
+    return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
+  }
+}
+function fetchTimeline(repo, numbers, graphql, log) {
+  const split = () => {
+    const middle = numbers.length >>> 1;
+    return [...fetchTimeline(repo, numbers.slice(0, middle), graphql, log), ...fetchTimeline(repo, numbers.slice(middle), graphql, log)];
+  };
+  let repository;
+  try {
+    repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${TIMELINE_FIELDS} }`).join("\n"));
+  } catch (error) {
+    if (numbers.length > 1) return split();
+    log(`warn: ${repo}: PR ${numbers[0]} timeline capture failed: ${error.message.slice(0, 160)}`);
+    return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
+  }
+  const nodes = numbers.reduce((sum, number) => sum + (repository[`pr${number}`]?.["timelineItems"]?.nodes ?? []).length, 0);
+  if (numbers.length > 1 && nodes >= TIMELINE_SPLIT_NODES) return split();
+  return numbers.map((number) => {
+    const pr2 = repository[`pr${number}`];
+    if (!pr2) return { pr_number: number, value: null, error: "not_found" };
+    try {
+      drainConnections(pr2, repo, graphql, TIMELINE_FOLLOW_UP);
+    } catch (error) {
+      log(`warn: ${repo}: PR ${number} timeline capture failed: ${error.message.slice(0, 160)}`);
+      return { pr_number: number, value: null, error: "capture_failed" };
+    }
+    return { pr_number: number, value: normalizeTimeline(pr2), error: null };
+  });
+}
+var captureDir = (repoDir, kind) => join7(repoDir, "feature-evidence", kind);
+var batchPath = (dir, numbers) => join7(dir, `${numbers[0]}-${numbers.at(-1)}.json.gz`);
+function chunkNumbers(numbers) {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const chunks = [];
+  for (let i = 0; i < sorted.length; i += EVIDENCE_BATCH_SIZE) chunks.push(sorted.slice(i, i + EVIDENCE_BATCH_SIZE));
+  return chunks;
+}
+function captureRepo(kind, repo, repoDir, numbers, graphql, log, now = () => /* @__PURE__ */ new Date()) {
+  const dir = captureDir(repoDir, kind);
+  mkdirSync2(dir, { recursive: true, mode: 448 });
+  const chunks = chunkNumbers(numbers);
+  let fetched = 0;
+  let failed = 0;
+  chunks.forEach((chunk, index) => {
+    const path4 = batchPath(dir, chunk);
+    if (existsSync4(path4)) return;
+    const items = fetchBatch(kind, repo, chunk, graphql, log);
+    failed += items.filter((item) => item.error === "capture_failed").length;
+    fetched += chunk.length;
+    const scratch = `${path4}.partial`;
+    writeFileSync2(scratch, gzipSync(JSON.stringify({ captured_at: now().toISOString(), items })), { mode: 384 });
+    renameSync2(scratch, path4);
+    if (index % 100 === 0) log(`info: ${repo}: ${kind} batch ${index + 1}/${chunks.length}`);
+  });
+  return { batches: chunks.length, fetched, failed };
+}
+function readCapturedBatch(repoDir, kind, chunk) {
+  const path4 = batchPath(captureDir(repoDir, kind), chunk);
+  if (!existsSync4(path4)) return null;
+  return JSON.parse(gunzipSync(readFileSync4(path4)).toString("utf8"));
+}
+
+// src/corpus/feature-git.ts
+import { spawnSync } from "node:child_process";
+import { closeSync as closeSync2, openSync as openSync2, readSync, rmSync as rmSync2 } from "node:fs";
+import { createHash as createHash4 } from "node:crypto";
 
 // src/corpus/corrective-szz.ts
 var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
@@ -12748,8 +12975,8 @@ function readRevertCommits(runGit3, branch, from, until) {
   ]);
   if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
   const out = [];
-  for (const entry of result.stdout.split("")) {
-    const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+  for (const entry2 of result.stdout.split("")) {
+    const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
     const epoch = Number.parseInt(epochText, 10);
     if (!/^[0-9a-f]{40}$/.test(sha2) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
     out.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
@@ -12801,11 +13028,11 @@ var REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
 var REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
 var REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
 var FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
+var isFixSubject = (subject) => FIX_TITLE.test(subject);
 var FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
 var REGRESSION_CONTEXT = /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
 var MAX_ORIGINALS_PER_ISSUE = 3;
 var BACKPORT2 = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
-var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
 var REVERT_REASON = /\bdue to\b([^\n]*)/i;
 var NON_DEFECT_REASON = /merge conflict|conflicts? with|(?:to|in order to)(?: be able to)? (?:cleanly )?revert|dependen(?:cy|t) (?:of|on)|depends on|land ?race|stack (?:is )?in a (?:weird|bad|broken) state|wait(?:ing)? for .{0,40}(?:confirm|approv|review)|before merging|needs? to (?:be )?land(?:ed)? internally|ghfirst|diff train/i;
 function evidence2(kind, ref3 = null, count = null) {
@@ -12855,7 +13082,7 @@ function detectCandidates(input) {
   const eventsById = /* @__PURE__ */ new Map();
   const issueCiters = issueCitations(input.repo, input.originals, input.crossReferences);
   const szzStats = { fixes: 0, skipped: 0, too_large: 0 };
-  const add = (original, event17, proxy, items, exclusion) => {
+  const add2 = (original, event17, proxy, items, exclusion) => {
     if (original.pr_url === event17.pr?.pr_url) return;
     const lag = event17.epoch - Math.floor(Date.parse(original.merged_at) / 1e3);
     if (lag < 1 || lag > MAX_FIX_LAG_SECONDS) return;
@@ -12878,7 +13105,7 @@ ${event17.body}`;
       const reason = evidence2("revert_reason", revertReasonClass(event17));
       for (const target of revertTargets(event17, text, input.repo, index)) {
         const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
-        add(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
+        add2(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
       }
       continue;
     }
@@ -12911,7 +13138,7 @@ ${event17.body}`;
         cited.set(original, items);
       }
     }
-    for (const [original, items] of cited) add(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
+    for (const [original, items] of cited) add2(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
     const closed = event17.closingIssues.flatMap((n) => {
       const issue = input.issues.get(n);
       return issue ? [{ n, issue }] : [];
@@ -12921,7 +13148,7 @@ ${event17.body}`;
       const citers = issueCiters.get(n) ?? [];
       if (!labels.length || citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
       for (const { original, url } of citers) {
-        add(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
+        add2(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
       }
     }
     const bugs = closed.filter(({ issue }) => isBugIssue(issue));
@@ -12935,7 +13162,7 @@ ${event17.body}`;
     if (szz.tooLarge) szzStats.too_large++;
     const bugEvidence = bugs.map(({ issue }) => evidence2("closes_bug_issue", issue.url));
     for (const [original, lines] of szz.blamed) {
-      add(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
+      add2(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
     }
   }
   const candidates = [...drafts.entries()].map(([id2, d]) => ({
@@ -12959,7 +13186,7 @@ function isRevert(event17) {
   return REVERT_TITLE.test(event17.title) || /^\s*this reverts commit [0-9a-f]{7,40}/im.test(event17.body) || /^\s*reverts [\w.-]+\/[\w.-]+#\d+/im.test(event17.body);
 }
 function commonExclusion(event17) {
-  if (event17.authorLogin && DEPENDENCY_BOT.test(event17.authorLogin)) return "dependency_bot";
+  if (isDependencyBotLogin(event17.authorLogin)) return "dependency_bot";
   if (BACKPORT2.test(`${event17.title}
 ${event17.body}`)) return "backport";
   return null;
@@ -13046,8 +13273,8 @@ function originalRef(pr2) {
 function fixRef(event17) {
   return { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha, merged_at: utc(event17.epoch * 1e3) };
 }
-function utc(ms) {
-  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+function utc(ms2) {
+  return new Date(ms2).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 function buildRepairPair(candidate, original, fix, runGit3) {
   const originalFiles = changedFiles(runGit3, original.base_sha, original.merge_sha);
@@ -13270,6 +13497,1337 @@ function summarizeCorrective(result, originals) {
   };
 }
 
+// src/corpus/feature-git.ts
+var DAY_MS = 864e5;
+var WINDOW_MS = 90 * DAY_MS;
+var OUTPUT_LIMIT = 1024 ** 3;
+var MAX_COMPLEXITY_FILE_BYTES = 2 * 1024 ** 2;
+var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+function gitBuffer(gitDir, args, input) {
+  const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], {
+    maxBuffer: OUTPUT_LIMIT,
+    stdio: ["pipe", "pipe", "ignore"],
+    ...input === void 0 ? {} : { input }
+  });
+  return { ok: result.status === 0, stdout: result.stdout ?? Buffer.alloc(0) };
+}
+function forEachGitRecord(gitDir, args, scratch, separator, onRecord) {
+  const out = openSync2(scratch, "w");
+  try {
+    const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], { stdio: ["ignore", out, "pipe"], maxBuffer: 16 * 1024 ** 2 });
+    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${String(result.stderr).trim().split("\n").pop()}`);
+  } finally {
+    closeSync2(out);
+  }
+  const fd = openSync2(scratch, "r");
+  try {
+    const chunk = Buffer.alloc(32 * 1024 ** 2);
+    let carry = Buffer.alloc(0);
+    for (let read = readSync(fd, chunk); read > 0; read = readSync(fd, chunk)) {
+      const data = carry.length ? Buffer.concat([carry, chunk.subarray(0, read)]) : Buffer.from(chunk.subarray(0, read));
+      let start = 0;
+      for (let end = data.indexOf(separator, start); end !== -1; end = data.indexOf(separator, start)) {
+        if (end > start) onRecord(data.toString("utf8", start, end));
+        start = end + 1;
+      }
+      carry = data.subarray(start);
+    }
+    if (carry.length) onRecord(carry.toString("utf8"));
+  } finally {
+    closeSync2(fd);
+    rmSync2(scratch, { force: true });
+  }
+}
+var HistoryIndex = class {
+  /** First-parent position of each commit on the line. */
+  firstParentPosition = /* @__PURE__ */ new Map();
+  /** Position at which each reachable commit landed on the line. */
+  landingPosition = /* @__PURE__ */ new Map();
+  /** Running maximum of landing times, so a mis-dated commit cannot reorder a window. */
+  landingTimes = [];
+  landingMessages = /* @__PURE__ */ new Map();
+  commitPosition = [];
+  commitAuthor = [];
+  commitIsFix = [];
+  authorIds = /* @__PURE__ */ new Map();
+  authorCommits = [];
+  files = /* @__PURE__ */ new Map();
+  commitIds = /* @__PURE__ */ new Map();
+  addLandingLine(lines) {
+    let latest = 0;
+    lines.forEach((line, position) => {
+      this.firstParentPosition.set(line.sha, position);
+      latest = Math.max(latest, line.epochSeconds * 1e3);
+      this.landingTimes.push(latest);
+    });
+  }
+  addCommit(sha2, email, subject, paths) {
+    const position = this.landingPosition.get(sha2);
+    if (position === void 0) return;
+    const key = email.trim().toLowerCase();
+    let author = this.authorIds.get(key);
+    if (author === void 0) {
+      author = this.authorIds.size;
+      this.authorIds.set(key, author);
+      this.authorCommits.push([]);
+    }
+    const id2 = this.commitPosition.length;
+    this.commitIds.set(sha2, id2);
+    this.commitPosition.push(position);
+    this.commitAuthor.push(author);
+    this.commitIsFix.push(isFixSubject(subject));
+    this.authorCommits[author].push(position);
+    for (const path4 of paths) {
+      const list = this.files.get(path4);
+      if (list) list.push(id2);
+      else this.files.set(path4, [id2]);
+    }
+  }
+  /** Sorts by landing position. Call once, after every commit is added. */
+  seal() {
+    for (const list of this.files.values()) list.sort((a, b) => this.commitPosition[a] - this.commitPosition[b]);
+    for (const list of this.authorCommits) list.sort((a, b) => a - b);
+  }
+  /** The newest line position whose history is certainly within `base_sha`'s ancestors. */
+  basePosition(baseSha) {
+    if (baseSha === EMPTY_TREE_SHA2) return -1;
+    const direct = this.firstParentPosition.get(baseSha);
+    if (direct !== void 0) return direct;
+    const landed = this.landingPosition.get(baseSha);
+    return landed === void 0 ? null : landed - 1;
+  }
+  firstAtOrAfter(list, position, read) {
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = low + high >>> 1;
+      if (read(list[middle]) < position) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+  /** The first line position that landed inside the 90 days before `asOfMs`. */
+  windowStart(asOfMs) {
+    return this.firstAtOrAfter(this.landingTimes, asOfMs - WINDOW_MS, (time) => time);
+  }
+  historyColumns(input) {
+    const { basePosition, asOfMs } = input;
+    const windowStart = this.windowStart(asOfMs);
+    const position = (id2) => this.commitPosition[id2];
+    const recent = /* @__PURE__ */ new Set();
+    for (const path4 of input.changedFiles) {
+      const list = this.files.get(path4);
+      if (!list) continue;
+      const from = this.firstAtOrAfter(list, windowStart, position);
+      const to = this.firstAtOrAfter(list, basePosition + 1, position);
+      for (let i = from; i < to; i++) recent.add(list[i]);
+    }
+    let newestFileMs = null;
+    for (const path4 of input.existingFiles) {
+      const first = this.files.get(path4)?.[0];
+      if (first === void 0 || position(first) > basePosition) continue;
+      const created = this.landingTimes[position(first)];
+      newestFileMs = newestFileMs === null ? created : Math.max(newestFileMs, created);
+    }
+    const authorIds = (input.authorEmails ?? []).flatMap((email) => {
+      const id2 = this.authorIds.get(email.trim().toLowerCase());
+      return id2 === void 0 ? [] : [id2];
+    });
+    let repoCommits = 0;
+    for (const id2 of authorIds) {
+      const list = this.authorCommits[id2];
+      repoCommits += this.firstAtOrAfter(list, basePosition + 1, (value) => value);
+    }
+    const touched = /* @__PURE__ */ new Set();
+    if (authorIds.length) {
+      const ids = new Set(authorIds);
+      for (const path4 of input.changedFiles) {
+        const list = this.files.get(path4);
+        if (!list) continue;
+        const to = this.firstAtOrAfter(list, basePosition + 1, position);
+        for (let i = 0; i < to; i++) if (ids.has(this.commitAuthor[list[i]])) touched.add(list[i]);
+      }
+    }
+    return {
+      "feature.history.file_commits_90d": recent.size,
+      "feature.history.file_authors_90d": new Set([...recent].map((id2) => this.commitAuthor[id2])).size,
+      "feature.history.file_fix_commits_90d": [...recent].filter((id2) => this.commitIsFix[id2]).length,
+      "feature.history.newest_file_age_days": newestFileMs === null ? null : Number((Math.max(0, asOfMs - newestFileMs) / DAY_MS).toFixed(2)),
+      "feature.author.repo_commits_prior": input.authorEmails === null ? null : repoCommits,
+      "feature.author.touched_file_commits_prior": input.authorEmails === null ? null : touched.size
+    };
+  }
+  /** Author email of a non-merge commit in the index, for a PR whose own commits are unknown. */
+  commitEmail(sha2) {
+    const id2 = this.commitIds.get(sha2);
+    if (id2 === void 0) return null;
+    const author = this.commitAuthor[id2];
+    for (const [email, value] of this.authorIds) if (value === author) return email;
+    return null;
+  }
+};
+function buildHistoryIndex(gitDir, tip, scratchPrefix, messagesFor) {
+  const index = new HistoryIndex();
+  const line = [];
+  forEachGitRecord(gitDir, ["log", "--first-parent", "--reverse", "--format=%H%x1f%ct%x1f%B%x1e", tip], `${scratchPrefix}.line`, 30, (record) => {
+    const [sha2 = "", epoch = "0", message = ""] = record.replace(/^\n/, "").split("");
+    line.push({ sha: sha2, epochSeconds: Number(epoch) });
+    if (messagesFor.has(sha2)) index.landingMessages.set(sha2, message.trim());
+  });
+  index.addLandingLine(line);
+  const parents = /* @__PURE__ */ new Map();
+  forEachGitRecord(gitDir, ["rev-list", "--parents", tip], `${scratchPrefix}.parents`, 10, (record) => {
+    const [sha2 = "", ...rest] = record.split(" ");
+    parents.set(sha2, rest);
+  });
+  line.forEach(({ sha: sha2 }, position) => {
+    const stack = [sha2];
+    while (stack.length) {
+      const current = stack.pop();
+      if (index.landingPosition.has(current)) continue;
+      index.landingPosition.set(current, position);
+      for (const parent of parents.get(current) ?? []) stack.push(parent);
+    }
+  });
+  parents.clear();
+  forEachGitRecord(
+    gitDir,
+    ["log", "--no-merges", "--no-renames", "-z", "--name-only", "--format=%x1e%H%x1f%ae%x1f%s%x1f", tip],
+    `${scratchPrefix}.files`,
+    30,
+    (record) => {
+      const [sha2 = "", email = "", subject = "", files = ""] = record.split("");
+      index.addCommit(sha2, email, subject, files.split("\0").map((path4) => path4.replace(/^\n/, "")).filter(Boolean));
+    }
+  );
+  index.seal();
+  return index;
+}
+function parseRawNumstat(output) {
+  const tokens2 = output.split("\0");
+  const files = /* @__PURE__ */ new Map();
+  for (let i = 0; i < tokens2.length; i++) {
+    const token = tokens2[i];
+    if (!token) continue;
+    if (token.startsWith(":")) {
+      const [, , oldOid = "", newOid = "", status = ""] = token.slice(1).split(" ");
+      const path4 = tokens2[++i] ?? "";
+      files.set(path4, { path: path4, status: status.charAt(0), oldOid, newOid, added: 0, deleted: 0 });
+      continue;
+    }
+    const [added = "0", deleted = "0", ...rest] = token.split("	");
+    const file = files.get(rest.join("	"));
+    if (file) {
+      file.added = Number(added) || 0;
+      file.deleted = Number(deleted) || 0;
+    }
+  }
+  return [...files.values()];
+}
+var DIFF_FLAGS = ["--no-renames", "--no-ext-diff", "--no-textconv", "--no-color", "--full-index"];
+function readDiff(gitDir, baseSha, mergeSha) {
+  const facts = gitBuffer(gitDir, ["diff", ...DIFF_FLAGS, "--abbrev=40", "--raw", "--numstat", "-z", baseSha, mergeSha]);
+  if (!facts.ok) return null;
+  const patch = gitBuffer(gitDir, ["diff", ...DIFF_FLAGS, "-p", baseSha, mergeSha]);
+  return {
+    files: parseRawNumstat(facts.stdout.toString("utf8")),
+    diffSha256: patch.ok ? createHash4("sha256").update(patch.stdout).digest("hex") : null
+  };
+}
+var ZERO_OID = /^0+$/;
+function complexityDelta(gitDir, files) {
+  const measured = files.filter((file) => fileComplexity("", getExtension(file.path)) !== null);
+  if (measured.length === 0) return null;
+  const oids = [...new Set(measured.flatMap((file) => [file.oldOid, file.newOid]).filter((oid) => !ZERO_OID.test(oid)))];
+  if (oids.length === 0) return null;
+  const output = gitBuffer(gitDir, ["cat-file", "--batch"], `${oids.join("\n")}
+`);
+  if (!output.ok) return null;
+  const blobs = /* @__PURE__ */ new Map();
+  for (let offset = 0; offset < output.stdout.length; ) {
+    const newline = output.stdout.indexOf(10, offset);
+    if (newline === -1) return null;
+    const [oid = "", type = "", size = ""] = output.stdout.toString("utf8", offset, newline).split(" ");
+    if (type === "missing" || type !== "blob" && type !== "commit") return null;
+    const bytes = Number(size);
+    blobs.set(oid, bytes > MAX_COMPLEXITY_FILE_BYTES ? "oversized" : output.stdout.subarray(newline + 1, newline + 1 + bytes));
+    offset = newline + 1 + bytes + 1;
+  }
+  let delta = 0;
+  let any = false;
+  for (const file of measured) {
+    const extension = getExtension(file.path);
+    const oldBlob = ZERO_OID.test(file.oldOid) ? null : blobs.get(file.oldOid);
+    const newBlob = ZERO_OID.test(file.newOid) ? null : blobs.get(file.newOid);
+    if (oldBlob === "oversized" || newBlob === "oversized") continue;
+    if (oldBlob === void 0 || newBlob === void 0) return null;
+    delta += (newBlob ? fileComplexity(newBlob.toString("utf8"), extension) ?? 0 : 0) - (oldBlob ? fileComplexity(oldBlob.toString("utf8"), extension) ?? 0 : 0);
+    any = true;
+  }
+  return any ? delta : null;
+}
+function gitColumns(input) {
+  const { index, gitDir, record } = input;
+  const asOfMs = Date.parse(record.merged_at);
+  const diff = readDiff(gitDir, record.base_sha, record.merge_sha);
+  const shape = diff ? {
+    "feature.shape.files_touched": diff.files.length,
+    "feature.shape.lines_added": diff.files.reduce((sum, file) => sum + file.added, 0),
+    "feature.shape.lines_deleted": diff.files.reduce((sum, file) => sum + file.deleted, 0),
+    "feature.shape.loc_touched": diff.files.reduce((sum, file) => sum + file.added + file.deleted, 0),
+    "feature.shape.tests_changed": diff.files.some((file) => isTestFile(file.path)),
+    "feature.shape.complexity_delta": complexityDelta(gitDir, diff.files),
+    "feature.content.diff_sha256": diff.diffSha256,
+    "feature.history.new_files": diff.files.filter((file) => file.status === "A").length
+  } : {};
+  const basePosition = index.basePosition(record.base_sha);
+  if (!diff || basePosition === null) return shape;
+  const emails = input.authorEmails ?? (() => {
+    const email = index.commitEmail(record.merge_sha);
+    return email ? [email] : null;
+  })();
+  return {
+    ...shape,
+    ...index.historyColumns({
+      basePosition,
+      asOfMs,
+      changedFiles: diff.files.map((file) => file.path),
+      existingFiles: diff.files.filter((file) => file.status !== "A").map((file) => file.path),
+      authorEmails: emails
+    })
+  };
+}
+
+// src/corpus/feature-run.ts
+var FEATURE_STEPS = ["ci", "evidence", "timeline", "extract", "manifest"];
+function readRecords(repoDir) {
+  return readFileSync5(join8(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => ({ ...JSON.parse(line), title: "", body: "" }));
+}
+function authorEmails(record, evidence3) {
+  if (!evidence3) return null;
+  const emails = evidence3.commits.filter((commit) => commit.author_login !== null && commit.author_login === record.author_login && commit.author_email).map((commit) => commit.author_email);
+  return emails.length ? [...new Set(emails)] : null;
+}
+function loadEvidenceChunk(repoDir, chunk) {
+  const batch = readCapturedBatch(repoDir, "evidence", chunk);
+  const out = new Map(chunk.map((number) => [number, null]));
+  if (!batch) return { capturedAt: null, evidence: out };
+  const timeline = readCapturedBatch(repoDir, "timeline", chunk);
+  if (!timeline) throw new Error(`no timeline capture for PRs ${chunk[0]}-${chunk.at(-1)}; run --step timeline first`);
+  const events17 = new Map(timeline.items.map((item) => [item.pr_number, item.value]));
+  for (const item of batch.items) {
+    const found = events17.get(item.pr_number);
+    if (!item.value || !found) continue;
+    out.set(item.pr_number, { ...item.value, dismissals: found.dismissals, label_events: found.label_events, renames: found.renames });
+  }
+  return { capturedAt: batch.captured_at < timeline.captured_at ? batch.captured_at : timeline.captured_at, evidence: out };
+}
+function landingMessage(record, index) {
+  return record.batched ? null : index.landingMessages.get(record.merge_sha) ?? null;
+}
+function extractRepo(repo, repoDir, writeRows, log) {
+  const manifestErrors = validateFeatureManifest(REWORK_RISK_FEATURE_MANIFEST);
+  const columnErrors = validateFeatureColumns(MANIFEST_COLUMNS, { allowSegments: true });
+  if (manifestErrors.length || columnErrors.length) throw new Error(`manifest failed validation: ${[...manifestErrors, ...columnErrors][0].message}`);
+  const statsPath = join8(repoDir, "enumeration.json");
+  if (!existsSync5(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+  const { branch } = JSON.parse(readFileSync5(statsPath, "utf8"));
+  const records = readRecords(repoDir);
+  const byNumber = new Map(records.map((record) => [record.pr_number, record]));
+  const gitDir = join8(repoDir, "repo.git");
+  log(`info: ${repo}: indexing history`);
+  const index = buildHistoryIndex(gitDir, `refs/heads/${branch}`, join8(repoDir, ".feature-index"), new Set(records.map((record) => record.merge_sha)));
+  const ciNumbers = records.filter((record) => record.merged_at >= CI_CAPTURE_FROM).map((record) => record.pr_number);
+  const ci2 = /* @__PURE__ */ new Map();
+  for (const chunk of chunkNumbers(ciNumbers)) {
+    for (const item of readCapturedBatch(repoDir, "ci", chunk)?.items ?? []) if (item.value) ci2.set(item.pr_number, item.value);
+  }
+  const rows = [];
+  let failed = 0;
+  let withoutEvidence = 0;
+  let capturedFrom = null;
+  let capturedUntil = null;
+  const chunks = chunkNumbers(records.map((record) => record.pr_number));
+  chunks.forEach((chunk, position) => {
+    const { capturedAt, evidence: items } = loadEvidenceChunk(repoDir, chunk);
+    if (capturedAt) {
+      if (!capturedFrom || capturedAt < capturedFrom) capturedFrom = capturedAt;
+      if (!capturedUntil || capturedAt > capturedUntil) capturedUntil = capturedAt;
+    }
+    for (const number of chunk) {
+      const record = byNumber.get(number);
+      const evidence3 = items.get(number) ?? null;
+      if (!evidence3) withoutEvidence++;
+      try {
+        rows.push(extractPrFeatures({
+          record,
+          evidence: evidence3,
+          ci: ci2.get(number) ?? null,
+          landingMessage: landingMessage(record, index),
+          git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
+        }));
+      } catch (error) {
+        failed++;
+        log(`warn: ${repo}: PR ${number}: ${error.message.slice(0, 160)}`);
+      }
+    }
+    if (position % 200 === 0) log(`info: ${repo}: extracted ${rows.length}/${records.length}`);
+  });
+  const path4 = join8(repoDir, "features.jsonl.gz");
+  writeRows(path4, rows);
+  const bytes = readFileSync5(path4);
+  const summary = {
+    repo,
+    manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+    prs: records.length,
+    rows: rows.length,
+    failed_rows: failed,
+    rows_without_evidence: withoutEvidence,
+    evidence_captured_from: capturedFrom,
+    evidence_captured_until: capturedUntil,
+    file: "features.jsonl.gz",
+    sha256: createHash5("sha256").update(bytes).digest("hex"),
+    bytes: bytes.length
+  };
+  writeFileSync3(join8(repoDir, "features.summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+  return summary;
+}
+function runCorpusFeatures(input) {
+  const { step, entries, cacheRoot, io, log } = input;
+  const repoDirOf = (repo) => join8(cacheRoot, repo.replace("/", "__"));
+  if (step === "manifest") {
+    const missing = entries.filter((entry2) => !existsSync5(join8(repoDirOf(entry2.repo), "features.summary.json"))).map((entry2) => entry2.repo);
+    if (missing.length) {
+      log(`error: no features yet for ${missing.length} repos`);
+      return { exitCode: 3 };
+    }
+    const repos = entries.map((entry2) => JSON.parse(readFileSync5(join8(repoDirOf(entry2.repo), "features.summary.json"), "utf8")));
+    const manifest = {
+      issue: "HOK-3023",
+      manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+      cohort_manifest_sha256: input.cohortSha256,
+      totals: {
+        repos: repos.length,
+        prs: repos.reduce((sum, repo) => sum + repo.prs, 0),
+        rows: repos.reduce((sum, repo) => sum + repo.rows, 0),
+        failed_rows: repos.reduce((sum, repo) => sum + repo.failed_rows, 0),
+        rows_without_evidence: repos.reduce((sum, repo) => sum + repo.rows_without_evidence, 0)
+      },
+      repos
+    };
+    mkdirSync3(dirname(input.out), { recursive: true });
+    writeFileSync3(input.out, `${JSON.stringify(manifest, null, 2)}
+`);
+    io.writeStdout(`${JSON.stringify(manifest.totals)}
+`);
+    return { exitCode: 0 };
+  }
+  let failures = 0;
+  for (const entry2 of entries) {
+    const repoDir = repoDirOf(entry2.repo);
+    try {
+      if (step === "extract") {
+        const summary = extractRepo(entry2.repo, repoDir, input.writeRows, log);
+        io.writeStdout(`${JSON.stringify({ repo: summary.repo, rows: summary.rows, failed_rows: summary.failed_rows, rows_without_evidence: summary.rows_without_evidence })}
+`);
+        if (summary.failed_rows) failures++;
+        continue;
+      }
+      const kind = step;
+      const records = readRecords(repoDir);
+      const numbers = (kind === "ci" ? records.filter((record) => record.merged_at >= CI_CAPTURE_FROM) : records).map((record) => record.pr_number);
+      const result = captureRepo(kind, entry2.repo, repoDir, numbers, input.graphql, log);
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, prs: numbers.length, ...result })}
+`);
+      if (result.failed) failures++;
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, error: error.message.slice(0, 200) })}
+`);
+      log(`error: ${entry2.repo}: ${error.message.slice(0, 200)}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+
+// src/corpus/feature-replay.ts
+import { createHash as createHash6, randomBytes } from "node:crypto";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, readdirSync, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname2, join as join9 } from "node:path";
+var REPLAY_VERSION = "rr-feature-replay/1.0.0";
+var SECOND = 1e3;
+function insideGitWorkTree(path4) {
+  for (let dir = path4; ; dir = dirname2(dir)) {
+    if (existsSync6(join9(dir, ".git"))) return true;
+    if (dirname2(dir) === dir) return false;
+  }
+}
+var shift = (at2, ms2) => new Date(Date.parse(at2) + ms2).toISOString();
+function truncateCiAt(ci2, asOf) {
+  if (!ci2) return null;
+  const cutoff = Date.parse(asOf);
+  return { ...ci2, contexts: ci2.contexts.filter((context) => context.at !== null && Date.parse(context.at) <= cutoff) };
+}
+function blankPostMergeRecord(record) {
+  return { ...record, relanded_merge_shas: [], labels: [], closing_issues: [], title: "", body: "" };
+}
+function withPostMergeActivity(evidence3, asOf) {
+  const latest = Math.max(
+    Date.parse(asOf),
+    ...[...evidence3.renames, ...evidence3.body_edits, ...evidence3.label_events, ...evidence3.dismissals].map((event17) => Date.parse(event17.at)),
+    ...evidence3.reviews.flatMap((review) => review.submitted_at ? [Date.parse(review.submitted_at)] : [])
+  );
+  const after = new Date(latest + SECOND).toISOString();
+  const later = new Date(latest + 30 * 86400 * SECOND).toISOString();
+  const labels = labelsAt(evidence3, asOf) ?? [];
+  const lastTitle = evidence3.renames.length ? evidence3.renames.at(-1).to : evidence3.title;
+  return {
+    ...evidence3,
+    title: "CANARY TITLE",
+    body: "CANARY BODY",
+    reviews: [
+      // Existing reviews, dismissed after the merge.
+      ...evidence3.reviews.map((review) => review.state === "DISMISSED" ? review : { ...review, state: "DISMISSED" }),
+      { id: "canary-approve", state: "APPROVED", submitted_at: after, author: "canary-reviewer" },
+      { id: "canary-changes", state: "CHANGES_REQUESTED", submitted_at: later, author: "canary-reviewer-2" }
+    ],
+    dismissals: [
+      ...evidence3.dismissals,
+      ...evidence3.reviews.filter((review) => review.state !== "DISMISSED").map((review) => ({ at: after, previous_state: review.state, review_id: review.id }))
+    ],
+    label_events: [
+      ...evidence3.label_events,
+      { at: after, action: "added", label: "canary-label" },
+      ...labels.map((label2) => ({ at: later, action: "removed", label: label2 }))
+    ],
+    renames: [...evidence3.renames, { at: after, from: lastTitle, to: "CANARY TITLE" }],
+    body_edits: [
+      ...evidence3.body_edits.length ? evidence3.body_edits : [{ at: evidence3.created_at, body: evidence3.body }],
+      { at: after, body: "CANARY BODY" }
+    ]
+  };
+}
+function withPostMergeCi(ci2, number, asOf) {
+  return {
+    pr_number: number,
+    contexts: [...ci2?.contexts ?? [], { at: shift(asOf, SECOND), failed: true }, { at: null, failed: false }]
+  };
+}
+function withPostMergeRecord(record) {
+  return { ...record, relanded_merge_shas: ["f".repeat(40)], labels: ["canary-label"], closing_issues: [999999999], title: "CANARY TITLE", body: "CANARY BODY" };
+}
+function withPreMergeReview(evidence3, asOf) {
+  const at2 = Date.parse(asOf) - SECOND >= Date.parse(evidence3.created_at) ? shift(asOf, -SECOND) : asOf;
+  return { ...evidence3, reviews: [...evidence3.reviews, { id: "control-review", state: "APPROVED", submitted_at: at2, author: "control-reviewer" }] };
+}
+function differingColumns(a, b) {
+  const out = [];
+  for (const key of ["manifest_version", "repo", "pr_number", "merge_sha", "base_sha", "landed_by", "as_of", "as_of_basis"]) {
+    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) out.push(key);
+  }
+  const columns = /* @__PURE__ */ new Set([...Object.keys(a.features), ...Object.keys(b.features)]);
+  for (const column of columns) if (JSON.stringify(a.features[column]) !== JSON.stringify(b.features[column])) out.push(column);
+  return out;
+}
+function rng(seed, label2) {
+  let counter = 0;
+  return () => {
+    const digest = createHash6("sha256").update(`${seed}:${label2}:${counter++}`).digest();
+    return digest.readUInt32BE(0) / 2 ** 32;
+  };
+}
+function shuffled(items, random) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+var emptyTally = () => ({ sampled: 0, replay_identical: 0, perturbed_identical: 0, control_changed: 0, leaky_reading_differs: 0 });
+function add(into, from) {
+  for (const key of Object.keys(into)) into[key] += from[key];
+}
+function replayRepo(input) {
+  const { repo, repoDir, seed, log, label: label2 } = input;
+  const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
+  const records = readRecords(repoDir);
+  const gitDir = join9(repoDir, "repo.git");
+  const scratch = join9(repoDir, ".feature-index-replay");
+  const merges = new Set(records.map((record) => record.merge_sha));
+  log(`info: ${label2}: indexing full history`);
+  const full = buildHistoryIndex(gitDir, `refs/heads/${branch}`, scratch, merges);
+  const line = [];
+  for (const [sha2, position] of full.firstParentPosition) line[position] = sha2;
+  const landing = (record) => full.landingPosition.get(record.merge_sha);
+  const placed = records.filter((record) => landing(record) !== void 0).sort((a, b) => landing(a) - landing(b));
+  const random = rng(seed, repo);
+  const types = [...new Set(placed.map((record) => record.landed_by))].sort();
+  const anchors = [];
+  for (const type of types) anchors.push(shuffled(placed.filter((record) => record.landed_by === type), random)[0]);
+  for (const record of shuffled(placed, random)) {
+    if (anchors.length >= Math.max(input.cuts, types.length)) break;
+    if (!anchors.includes(record)) anchors.push(record);
+  }
+  const evidenceCache = /* @__PURE__ */ new Map();
+  const ciCache = /* @__PURE__ */ new Map();
+  const chunks = chunkNumbers(records.map((record) => record.pr_number));
+  const chunkOf = /* @__PURE__ */ new Map();
+  for (const chunk of chunks) for (const number of chunk) chunkOf.set(number, chunk);
+  const ciNumbers = records.filter((record) => record.merged_at >= CI_CAPTURE_FROM).map((record) => record.pr_number);
+  const ciChunkOf = /* @__PURE__ */ new Map();
+  for (const chunk of chunkNumbers(ciNumbers)) for (const number of chunk) ciChunkOf.set(number, chunk);
+  const load = (number) => {
+    if (!evidenceCache.has(number)) {
+      for (const [pr2, value] of loadEvidenceChunk(repoDir, chunkOf.get(number)).evidence) evidenceCache.set(pr2, value);
+    }
+    const ciChunk = ciChunkOf.get(number);
+    if (!ciCache.has(number)) {
+      if (ciChunk) for (const item of readCapturedBatch(repoDir, "ci", ciChunk)?.items ?? []) ciCache.set(item.pr_number, item.value);
+      if (!ciCache.has(number)) ciCache.set(number, null);
+    }
+    return { evidence: evidenceCache.get(number), ci: ciCache.get(number) };
+  };
+  const row = (index, record, evidence3, ci2) => extractPrFeatures({
+    record,
+    evidence: evidence3,
+    ci: ci2,
+    landingMessage: landingMessage(record, index),
+    git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
+  });
+  const result = { repo, cuts: anchors.length, totals: emptyTally(), by_landed_by: {}, items: [] };
+  anchors.forEach((anchor, cutNumber) => {
+    const cutPosition = landing(anchor);
+    const cutSha = line[cutPosition];
+    log(`info: ${label2}: cut ${cutNumber + 1}/${anchors.length}`);
+    const cut = buildHistoryIndex(gitDir, cutSha, scratch, merges);
+    const before = placed.filter((record) => record !== anchor && landing(record) <= cutPosition && landing(record) >= cutPosition - 300);
+    const sample = [anchor, ...shuffled(before, random).slice(0, input.perCut - 1)];
+    for (const record of sample) {
+      const { evidence: evidence3, ci: ci2 } = load(record.pr_number);
+      const asOf = record.merged_at;
+      const tally = emptyTally();
+      tally.sampled = 1;
+      const baseline = row(full, record, evidence3, ci2);
+      const replay = differingColumns(baseline, row(cut, blankPostMergeRecord(record), evidence3 ? truncateEvidenceAt(evidence3, asOf) : null, truncateCiAt(ci2, asOf)));
+      const perturbed = evidence3 ? differingColumns(baseline, row(full, withPostMergeRecord(record), withPostMergeActivity(evidence3, asOf), withPostMergeCi(ci2, record.pr_number, asOf))) : differingColumns(baseline, row(full, withPostMergeRecord(record), null, ci2));
+      const controlChanged = evidence3 ? differingColumns(baseline, row(full, record, withPreMergeReview(evidence3, asOf), ci2)).length > 0 : false;
+      const leaky = evidence3 ? evidence3.reviews.length !== reviewsAt(evidence3, asOf).length || JSON.stringify([...record.labels].sort()) !== JSON.stringify(labelsAt(evidence3, asOf)) : false;
+      if (replay.length === 0) tally.replay_identical = 1;
+      if (perturbed.length === 0) tally.perturbed_identical = 1;
+      if (controlChanged) tally.control_changed = 1;
+      if (leaky) tally.leaky_reading_differs = 1;
+      add(result.totals, tally);
+      add(result.by_landed_by[record.landed_by] ??= emptyTally(), tally);
+      result.items.push({ pr_number: record.pr_number, landed_by: record.landed_by, cut_sha: cutSha, replay, perturbed, control_changed: controlChanged, leaky_reading_differs: leaky });
+    }
+  });
+  return result;
+}
+function runFeatureReplay(input) {
+  const { io, log } = input;
+  let sliceRepos;
+  let sliceSha;
+  try {
+    const bytes = readFileSync6(input.slicePath);
+    sliceSha = createHash6("sha256").update(bytes).digest("hex");
+    const slice = JSON.parse(bytes.toString("utf8"));
+    if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
+    sliceRepos = new Set(slice.repos);
+    if (insideGitWorkTree(input.outDir)) throw new Error("--out must be outside any git work tree; sampled PRs would reveal development repos");
+    if (existsSync6(input.outDir) && readdirSync(input.outDir).length) throw new Error(`${input.outDir} is not empty`);
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const development = input.entries.filter((entry2) => !sliceRepos.has(entry2.repo));
+  const seed = input.seed ?? randomBytes(32).toString("hex");
+  mkdirSync4(input.outDir, { recursive: true });
+  const totals = emptyTally();
+  const byLandedBy = {};
+  let failures = 0;
+  development.forEach((entry2, position) => {
+    const label2 = `development repo ${position + 1}/${development.length}`;
+    try {
+      const result = replayRepo({ repo: entry2.repo, repoDir: join9(input.cacheRoot, entry2.repo.replace("/", "__")), seed, cuts: input.cuts, perCut: input.perCut, log, label: label2 });
+      writeFileSync4(join9(input.outDir, `replay-${position + 1}.json`), `${JSON.stringify(result, null, 2)}
+`);
+      add(totals, result.totals);
+      for (const [type, tally] of Object.entries(result.by_landed_by)) add(byLandedBy[type] ??= emptyTally(), tally);
+    } catch (error) {
+      failures++;
+      log(`error: ${label2}: ${error.message.slice(0, 200)}`);
+    }
+  });
+  const summary = {
+    replay_version: REPLAY_VERSION,
+    excluded_slice_sha256: sliceSha,
+    development_repos: development.length,
+    failed_repos: failures,
+    seed,
+    totals,
+    by_landed_by: Object.fromEntries(Object.entries(byLandedBy).sort(([a], [b]) => a.localeCompare(b)))
+  };
+  writeFileSync4(join9(input.outDir, "summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+  io.writeStdout(`${JSON.stringify(summary)}
+`);
+  const passed = failures === 0 && totals.sampled > 0 && totals.replay_identical === totals.sampled && totals.perturbed_identical === totals.sampled;
+  return { exitCode: passed ? 0 : 1 };
+}
+
+// src/corpus/cli.ts
+import { createHash as createHash8, randomBytes as randomBytes2 } from "node:crypto";
+import { chmodSync, closeSync as closeSync3, existsSync as existsSync7, mkdirSync as mkdirSync5, openSync as openSync3, readdirSync as readdirSync2, readFileSync as readFileSync7, rmSync as rmSync3, writeFileSync as writeFileSync5, writeSync as writeSync2 } from "node:fs";
+import { join as join10, resolve as resolve5 } from "node:path";
+import { parseArgs as parseArgs3 } from "node:util";
+import { gzipSync as gzipSync2, inflateRawSync } from "node:zlib";
+
+// src/corpus/calibration.ts
+import { createHash as createHash7 } from "node:crypto";
+
+// src/report/stats.ts
+function round42(value) {
+  return Math.round((value + Number.EPSILON) * 1e4) / 1e4;
+}
+function roundedInterval(low, high, value) {
+  let lo = round42(Math.max(0, Math.min(1, low)));
+  let hi = round42(Math.max(0, Math.min(1, high)));
+  if (value !== void 0) {
+    lo = Math.min(lo, round42(value));
+    hi = Math.max(hi, round42(value));
+  }
+  return { low: lo, high: hi };
+}
+function wilsonInterval(k, n, z = 1.959964) {
+  if (!Number.isFinite(k) || !Number.isFinite(n) || n < 0 || k < 0 || k > n || !Number.isInteger(k) || !Number.isInteger(n) || z <= 0) {
+    throw new RangeError("wilsonInterval requires integer counts with 0 <= k <= n and z > 0");
+  }
+  if (n === 0) return null;
+  const p = k / n;
+  const z2 = z * z;
+  const den = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / den;
+  const half = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n) / den;
+  return roundedInterval(center - half, center + half, p);
+}
+function katzLogRatioInterval(k1, n1, k2, n2) {
+  for (const [k, n] of [[k1, n1], [k2, n2]]) {
+    if (!Number.isInteger(k) || !Number.isInteger(n) || n < 0 || k < 0 || k > n) {
+      throw new RangeError("katzLogRatioInterval requires integer counts with 0 <= k <= n");
+    }
+  }
+  const corrected = [k1, n1 - k1, k2, n2 - k2].some((x) => x === 0);
+  const a = k1 + (corrected ? 0.5 : 0);
+  const b = n1 - k1 + (corrected ? 0.5 : 0);
+  const c = k2 + (corrected ? 0.5 : 0);
+  const d = n2 - k2 + (corrected ? 0.5 : 0);
+  const ratio3 = a / (a + b) / (c / (c + d));
+  const se = Math.sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d));
+  const low = Math.exp(Math.log(ratio3) - 1.959964 * se);
+  const high = Math.exp(Math.log(ratio3) + 1.959964 * se);
+  const r = round42(ratio3);
+  return { ratio: r, low: Math.min(r, round42(low)), high: Math.max(r, round42(high)) };
+}
+function nearestRankQuartiles(sorted) {
+  if (!sorted.length) return null;
+  for (let i = 0; i < sorted.length; i++) {
+    if (!Number.isFinite(sorted[i]) || i > 0 && sorted[i] < sorted[i - 1]) {
+      throw new RangeError("nearestRankQuartiles requires finite ascending values");
+    }
+  }
+  const at2 = (q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  return [at2(0.25), at2(0.5), at2(0.75)];
+}
+function quartileOf(value, cuts) {
+  if (!Number.isFinite(value) || cuts.some((n, i) => !Number.isFinite(n) || i > 0 && n < cuts[i - 1])) {
+    throw new RangeError("quartileOf requires finite values and ascending cuts");
+  }
+  return value <= cuts[0] ? "q1" : value <= cuts[1] ? "q2" : value <= cuts[2] ? "q3" : "q4";
+}
+
+// src/corpus/calibration.ts
+var CALIBRATION_SAMPLER_VERSION = "1.0.0";
+var CALIBRATION_STRATA = ["revert", "repair_reference", "regression_issue", "szz_strong", "szz_weak", "rejected", "negative"];
+function parseCalibrationPlan(raw) {
+  const plan = raw;
+  if (!plan || typeof plan !== "object") throw new Error("plan must be an object");
+  const allocation = plan.allocation;
+  if (!allocation || typeof allocation !== "object") throw new Error("plan.allocation is required");
+  for (const stratum of CALIBRATION_STRATA) {
+    if (!Number.isInteger(allocation[stratum]) || allocation[stratum] < 0) throw new Error(`plan.allocation.${stratum} must be a non-negative integer`);
+  }
+  const extra = Object.keys(allocation).filter((k) => !CALIBRATION_STRATA.includes(k));
+  if (extra.length) throw new Error(`plan.allocation has unknown strata: ${extra.join(", ")}`);
+  const num2 = (key, ok) => {
+    const v = plan[key];
+    if (typeof v !== "number" || !ok(v)) throw new Error(`plan.${key} is out of range`);
+    return v;
+  };
+  if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
+  return {
+    plan_version: plan.plan_version,
+    horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
+    allocation,
+    double_label_share: num2("double_label_share", (v) => v >= 0 && v <= 1),
+    human_audit_share: num2("human_audit_share", (v) => v > 0 && v <= 1),
+    labellers: parseLabellers(plan.labellers),
+    min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
+    szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
+    kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
+    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
+  };
+}
+function parseLabellers(raw) {
+  const l = raw;
+  if (!l || typeof l.a !== "string" || typeof l.b !== "string" || !l.a || !l.b) throw new Error("plan.labellers needs model IDs for a and b");
+  if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
+  return { a: l.a, b: l.b };
+}
+var sha2562 = (...parts) => createHash7("sha256").update(parts.join("\0")).digest("hex");
+function seededOrder(list, key) {
+  return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
+}
+var STRATUM_PRIORITY = ["revert", "repair_reference", "regression_issue", "szz"];
+function classifyCalibrationRepo(input) {
+  const horizonSeconds = input.horizonDays * 86400;
+  const byOriginal = /* @__PURE__ */ new Map();
+  for (const c of input.candidates) {
+    if (c.lag_seconds > horizonSeconds) continue;
+    const list = byOriginal.get(c.original.pr_url) ?? [];
+    list.push({
+      candidate_id: c.candidate_id,
+      proxy: c.proxy,
+      status: c.status,
+      exclusion_code: c.exclusion_code,
+      fix_url: c.fix.pr_url ?? `https://github.com/${input.repo}/commit/${c.fix.sha}`,
+      lag_days: Math.round(c.lag_seconds / 86400 * 10) / 10,
+      blamed_lines: c.evidence.find((e) => e.kind === "blamed_lines")?.count ?? null,
+      revert_reason: c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? null
+    });
+    byOriginal.set(c.original.pr_url, list);
+  }
+  const units = [];
+  for (const row of input.correctiveRows) {
+    if (row.horizon_days !== input.horizonDays || row.corrective === null) continue;
+    const candidates = (byOriginal.get(row.prUrl) ?? []).sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
+    const accepted2 = new Set(row.repair_pair_ids);
+    const acceptedCandidates = candidates.filter((c) => accepted2.has(c.candidate_id));
+    const proxies = [...new Set(acceptedCandidates.map((c) => c.proxy))].filter((p) => ADMITTED_PROXIES.includes(p)).sort();
+    let stratum;
+    if (row.corrective) {
+      const top = STRATUM_PRIORITY.find((p) => proxies.includes(p));
+      if (!top) throw new Error(`${row.prUrl}: corrective row without an accepted pair within ${input.horizonDays} days`);
+      if (top === "szz") {
+        const lines = Math.max(...acceptedCandidates.filter((c) => c.proxy === "szz").map((c) => c.blamed_lines ?? 0));
+        stratum = lines >= input.szzStrongMinLines ? "szz_strong" : "szz_weak";
+      } else stratum = top;
+    } else stratum = candidates.length ? "rejected" : "negative";
+    units.push({ repo: input.repo, pr_url: row.prUrl, stratum, proxies, candidates });
+  }
+  return units;
+}
+function drawCalibrationSample(units, plan, seed) {
+  const items = [];
+  const cells = /* @__PURE__ */ new Map();
+  const shortfalls = [];
+  for (const stratum of CALIBRATION_STRATA) {
+    const byRepo = /* @__PURE__ */ new Map();
+    for (const u of units) {
+      if (u.stratum !== stratum) continue;
+      const list = byRepo.get(u.repo);
+      if (list) list.push(u);
+      else byRepo.set(u.repo, [u]);
+    }
+    for (const [repo, list] of byRepo) {
+      byRepo.set(repo, seededOrder(list, (u) => sha2562(seed, stratum, u.pr_url)));
+      cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
+    }
+    const repos = seededOrder([...byRepo.keys()], (repo) => sha2562(seed, "repo", stratum, repo));
+    const want = plan.allocation[stratum];
+    const picked = [];
+    for (let round = 0; picked.length < want; round++) {
+      let any = false;
+      for (const repo of repos) {
+        const unit = byRepo.get(repo)[round];
+        if (!unit || picked.length >= want) continue;
+        picked.push(unit);
+        cells.get(`${repo}\0${stratum}`).sampled++;
+        any = true;
+      }
+      if (!any) break;
+    }
+    if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
+    const doubles = new Set(
+      seededOrder(picked, (u) => sha2562(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
+    );
+    const audited = new Set(
+      seededOrder(picked, (u) => sha2562(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
+    );
+    for (const unit of picked) items.push({ ...unit, item_id: sha2562(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
+  }
+  return {
+    items: seededOrder(items, (i) => sha2562(seed, "order", i.item_id)),
+    cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
+    shortfalls
+  };
+}
+var SHEET_COLUMNS = ["item_id", "pr_url", "candidate_fixes", "related_prs", "corrective", "cause_code", "exclusion_code", "notes"];
+var csvCell = (value) => /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+function renderLabelSheet(items, related = /* @__PURE__ */ new Map(), filled = /* @__PURE__ */ new Map()) {
+  const rows = items.map((item) => {
+    const row = {
+      item_id: item.item_id,
+      pr_url: item.pr_url,
+      candidate_fixes: [...new Set(item.candidates.map((c) => c.fix_url))].sort().join(" "),
+      related_prs: (related.get(item.item_id) ?? []).join(" "),
+      ...filled.get(item.item_id)
+    };
+    return SHEET_COLUMNS.map((c) => row[c] ?? "");
+  });
+  return `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
+`;
+}
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell2 = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell2 += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell2 += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {
+      row.push(cell2);
+      cell2 = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell2);
+      rows.push(row);
+      row = [];
+      cell2 = "";
+    } else cell2 += ch;
+  }
+  if (cell2 || row.length) {
+    row.push(cell2);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((c) => c.trim()));
+}
+function parseLabelSheet(text, items) {
+  const [header, ...rows] = parseCsv(text);
+  const col = (name) => header?.indexOf(name) ?? -1;
+  const errors = [];
+  const missing = ["item_id", "corrective", "cause_code", "exclusion_code"].filter((c) => col(c) < 0);
+  if (missing.length) return { labels: /* @__PURE__ */ new Map(), unlabelled: [], errors: [`missing columns: ${missing.join(", ")}`] };
+  const labels = /* @__PURE__ */ new Map();
+  const unlabelled = [];
+  const causes = CAUSE_CODES;
+  const exclusions = HUMAN_EXCLUSION_CODES;
+  for (const r of rows) {
+    const get = (name) => (r[col(name)] ?? "").trim().toLowerCase();
+    const id2 = (r[col("item_id")] ?? "").trim();
+    const item = items.get(id2);
+    if (!item) {
+      errors.push(`${id2 || "(blank)"}: not in the sample`);
+      continue;
+    }
+    if (labels.has(id2)) {
+      errors.push(`${id2}: labelled twice on one sheet`);
+      continue;
+    }
+    const verdict = get("corrective");
+    const cause = get("cause_code");
+    const exclusion = get("exclusion_code") || null;
+    if (!verdict) {
+      unlabelled.push(id2);
+      continue;
+    }
+    if (!CALIBRATION_VERDICTS.includes(verdict)) {
+      errors.push(`${id2}: corrective must be yes, no or unclear, not "${verdict}"`);
+      continue;
+    }
+    if (verdict === "yes") {
+      if (!causes.includes(cause) || cause === "not_rework") errors.push(`${id2}: a yes needs a cause code other than not_rework`);
+      if (exclusion) errors.push(`${id2}: a yes takes no exclusion code`);
+      labels.set(id2, { verdict, cause_code: cause, exclusion_code: null });
+    } else if (verdict === "no") {
+      if (cause && cause !== "not_rework") errors.push(`${id2}: a no takes cause not_rework (or blank)`);
+      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
+      if (!exclusion && item.candidates.length) errors.push(`${id2}: a no on an item with candidate fixes needs an exclusion code`);
+      labels.set(id2, { verdict, cause_code: "not_rework", exclusion_code: exclusion });
+    } else {
+      if (cause && cause !== "unclear") errors.push(`${id2}: an unclear takes cause unclear (or blank)`);
+      if (exclusion && !exclusions.includes(exclusion)) errors.push(`${id2}: unknown exclusion code "${exclusion}"`);
+      labels.set(id2, { verdict: "unclear", cause_code: "unclear", exclusion_code: exclusion });
+    }
+  }
+  return { labels, unlabelled, errors };
+}
+function cohensKappa(pairs) {
+  if (!pairs.length) return null;
+  const n = pairs.length;
+  const a = /* @__PURE__ */ new Map();
+  const b = /* @__PURE__ */ new Map();
+  let agree = 0;
+  for (const [x, y] of pairs) {
+    if (x === y) agree++;
+    a.set(x, (a.get(x) ?? 0) + 1);
+    b.set(y, (b.get(y) ?? 0) + 1);
+  }
+  const po = agree / n;
+  let pe = 0;
+  for (const [k, count] of a) pe += count / n * ((b.get(k) ?? 0) / n);
+  if (pe === 1) return null;
+  return round43((po - pe) / (1 - pe));
+}
+function kappaWithCodes(pairs, codes, floor) {
+  const per_code = {};
+  for (const code of codes) {
+    const used = pairs.filter(([x, y]) => x === code || y === code).length;
+    const kappa = used ? cohensKappa(pairs.map(([x, y]) => [String(x === code), String(y === code)])) : null;
+    per_code[code] = { used, kappa, verdict: !used ? "not_observed" : kappa === null ? "undefined" : kappa >= floor ? "pass" : "below_floor" };
+  }
+  return { pairs: pairs.length, kappa: cohensKappa(pairs), per_code };
+}
+function agreementBetween(items, x, y, floor) {
+  const both = items.filter((i) => x.has(i.item_id) && y.has(i.item_id));
+  const pairs = (pick) => both.flatMap((i) => {
+    const a = pick(x.get(i.item_id));
+    const b = pick(y.get(i.item_id));
+    return a !== null && b !== null ? [[a, b]] : [];
+  });
+  return {
+    corrective: kappaWithCodes(pairs((l) => l.verdict), CALIBRATION_VERDICTS, floor),
+    cause_code: kappaWithCodes(pairs((l) => l.cause_code), CAUSE_CODES, floor),
+    exclusion_code: kappaWithCodes(pairs((l) => l.verdict === "no" ? l.exclusion_code ?? "(none)" : null), HUMAN_EXCLUSION_CODES, floor)
+  };
+}
+var round43 = (x) => Math.round(x * 1e4) / 1e4;
+function definitionVariants(plan) {
+  const strongSzz = (c) => c.proxy !== "szz" || (c.blamed_lines ?? 0) >= plan.szz_strong_min_lines;
+  const notInternal = (c) => c.proxy !== "revert" || c.revert_reason !== "internal_build";
+  return [
+    { name: "cr-0.1.0", description: "all admitted proxies (P1\u2013P4)", keep: () => true },
+    { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
+    { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
+    { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
+    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
+  ];
+}
+var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
+var precisionOf = (positive) => (rows) => {
+  let num2 = 0;
+  let den = 0;
+  for (const r of rows) {
+    if (!positive(r.item)) continue;
+    den += r.weight;
+    if (r.label.verdict === "yes") num2 += r.weight;
+  }
+  return den ? num2 / den : null;
+};
+var recallOf = (positive) => (rows) => {
+  let num2 = 0;
+  let den = 0;
+  for (const r of rows) {
+    if (r.label.verdict !== "yes") continue;
+    den += r.weight;
+    if (positive(r.item)) num2 += r.weight;
+  }
+  return den ? num2 / den : null;
+};
+function prng(seed) {
+  let a = parseInt(sha2562(seed, "bootstrap").slice(0, 8), 16) >>> 0;
+  return () => {
+    a = a + 1831565813 >>> 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function bootstrap(rows, estimator, relevant, seed, resamples) {
+  const estimate = estimator(rows);
+  const n = rows.filter(relevant).length;
+  if (estimate === null) return { estimate: null, ci95: null, n };
+  const cells = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    const key = `${r.item.repo}\0${r.item.stratum}`;
+    const cell2 = cells.get(key);
+    if (cell2) cell2.push(r);
+    else cells.set(key, [r]);
+  }
+  const groups = [...cells.values()];
+  const rand = prng(seed);
+  const values = [];
+  for (let b = 0; b < resamples; b++) {
+    const resampled = [];
+    for (const g of groups) for (let i = 0; i < g.length; i++) resampled.push(g[Math.floor(rand() * g.length)]);
+    const v = estimator(resampled);
+    if (v !== null) values.push(v);
+  }
+  values.sort((x, y) => x - y);
+  const at2 = (q) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
+  return { estimate: round43(estimate), ci95: values.length ? { low: round43(at2(0.025)), high: round43(at2(0.975)) } : null, n };
+}
+function scoreCalibration(input) {
+  const { plan, items, sheetA, sheetB, seed } = input;
+  const resamples = input.resamples ?? 2e3;
+  const decided2 = (id2) => {
+    const l = sheetA.get(id2);
+    return l && l.verdict !== "unclear" ? l : null;
+  };
+  const decidedPerCell = /* @__PURE__ */ new Map();
+  for (const item of items) if (decided2(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
+  const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
+  const rows = items.flatMap((item) => {
+    const label2 = decided2(item.item_id);
+    const key = `${item.repo}\0${item.stratum}`;
+    return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
+  });
+  const unrepresented = input.cells.filter((c) => !decidedPerCell.get(`${c.repo}\0${c.stratum}`)).reduce((s, c) => s + c.population, 0);
+  const est = (name, estimator, relevant, subset = rows) => bootstrap(subset, estimator, relevant, `${seed}\0${name}`, resamples);
+  const strata = CALIBRATION_STRATA.map((stratum) => {
+    const inStratum = items.filter((i) => i.stratum === stratum);
+    const count = (v) => inStratum.filter((i) => sheetA.get(i.item_id)?.verdict === v).length;
+    const yes = count("yes");
+    const no = count("no");
+    return {
+      stratum,
+      sampled: inStratum.length,
+      yes,
+      no,
+      unclear: count("unclear"),
+      unlabelled: inStratum.filter((i) => !sheetA.has(i.item_id)).length,
+      yes_rate: yes + no ? round43(yes / (yes + no)) : null,
+      yes_rate_ci95: wilsonInterval(yes, yes + no)
+    };
+  });
+  const proxies = {};
+  for (const proxy of ADMITTED_PROXIES) {
+    const fired = (item) => item.proxies.includes(proxy);
+    proxies[proxy] = {
+      precision: est(`p:${proxy}`, precisionOf(fired), (r) => fired(r.item)),
+      recall: est(`r:${proxy}`, recallOf(fired), (r) => r.label.verdict === "yes")
+    };
+  }
+  const definitions = definitionVariants(plan).map((d) => {
+    const positive = (item) => accepted(item).some(d.keep);
+    return {
+      name: d.name,
+      description: d.description,
+      precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
+      recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
+    };
+  });
+  let chosen = null;
+  for (const d of definitions) {
+    if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
+    if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
+  }
+  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha2562(seed, "pseudonym", repo));
+  const anyProxy = (item) => item.proxies.length > 0;
+  const repos = repoNames.map((repo, i) => {
+    const subset = rows.filter((r) => r.item.repo === repo);
+    return {
+      repo,
+      pseudonym: `R${i + 1}`,
+      sampled: items.filter((it) => it.repo === repo).length,
+      precision: est(`rp:${repo}`, precisionOf(anyProxy), (r) => anyProxy(r.item), subset),
+      recall: est(`rr:${repo}`, recallOf(anyProxy), (r) => r.label.verdict === "yes", subset)
+    };
+  });
+  const rejected = items.filter((i) => i.stratum === "rejected");
+  const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
+  const rejDecided = rejected.filter((i) => decided2(i.item_id)).length;
+  const by_code = {};
+  for (const item of rejected) {
+    const label2 = sheetA.get(item.item_id);
+    if (label2?.verdict !== "no") continue;
+    const human = label2.exclusion_code ?? "(none)";
+    for (const auto of new Set(item.candidates.map((c) => c.exclusion_code ?? "(accepted)"))) {
+      by_code[auto] ??= {};
+      by_code[auto][human] = (by_code[auto][human] ?? 0) + 1;
+    }
+  }
+  const linkage_error = {};
+  for (const proxy of ADMITTED_PROXIES) {
+    const nos = items.filter((i) => i.proxies.includes(proxy) && sheetA.get(i.item_id)?.verdict === "no");
+    const linkage = nos.filter((i) => sheetA.get(i.item_id)?.exclusion_code === "linkage_error").length;
+    linkage_error[proxy] = { no: nos.length, linkage_error: linkage, rate: nos.length ? round43(linkage / nos.length) : null };
+  }
+  const raw = {};
+  const weighted = {};
+  let yesWeight = 0;
+  for (const item of items) {
+    const label2 = sheetA.get(item.item_id);
+    if (label2?.verdict === "yes") raw[label2.cause_code] = (raw[label2.cause_code] ?? 0) + 1;
+  }
+  for (const r of rows) {
+    if (r.label.verdict !== "yes") continue;
+    weighted[r.label.cause_code] = (weighted[r.label.cause_code] ?? 0) + r.weight;
+    yesWeight += r.weight;
+  }
+  const weighted_share = Object.fromEntries(Object.entries(weighted).map(([k, v]) => [k, round43(v / yesWeight)]));
+  const agreement = agreementBetween(items, sheetA, sheetB, plan.kappa_floor);
+  return {
+    sampler_version: CALIBRATION_SAMPLER_VERSION,
+    plan,
+    items: items.length,
+    labelled: sheetA.size,
+    unlabelled: items.length - sheetA.size,
+    unclear: [...sheetA.values()].filter((l) => l.verdict === "unclear").length,
+    unrepresented_population: unrepresented,
+    strata,
+    proxies,
+    definitions,
+    chosen_definition: chosen?.name ?? null,
+    repos,
+    rejections: { wrongly_rejected: { yes: rejYes, decided: rejDecided, rate: rejDecided ? round43(rejYes / rejDecided) : null, ci95: wilsonInterval(rejYes, rejDecided) }, by_code },
+    linkage_error,
+    causes: { raw, weighted_share },
+    agreement
+  };
+}
+function scoreCalibrationRun(input) {
+  const { plan, items, cells, sheets, seed, resamples } = input;
+  const model = scoreCalibration({ plan, items, cells, sheetA: sheets.a, sheetB: sheets.b, seed, resamples });
+  const audited = items.filter((i) => i.audit);
+  const human = scoreCalibration({ plan, items: audited, cells, sheetA: sheets.h, sheetB: sheets.a, seed, resamples });
+  const kappa = human.agreement.corrective.kappa;
+  const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
+  const primary = models_stand_in ? model : human;
+  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
+  return {
+    plan,
+    model,
+    human,
+    human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
+    models_stand_in,
+    primary: models_stand_in ? "model" : "human",
+    chosen_definition: primary.chosen_definition,
+    gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
+  };
+}
+var pct = (x) => x === null || x === void 0 ? "\u2014" : `${(x * 100).toFixed(1)}%`;
+var estCell = (e) => e.estimate === null ? "\u2014" : `${pct(e.estimate)} (${pct(e.ci95?.low)}\u2013${pct(e.ci95?.high)})`;
+var kappaCell = (k) => k === null ? "\u2014" : k.toFixed(2);
+function renderAgreement(lines, title, agreement, floor) {
+  lines.push("", `### ${title} (floor \u03BA \u2265 ${floor})`, "");
+  for (const [field, k] of Object.entries(agreement)) {
+    lines.push(`**${field}:** \u03BA = ${kappaCell(k.kappa)} over ${k.pairs} pairs`, "", "| Code | Used | \u03BA | Verdict |", "| --- | --- | --- | --- |");
+    for (const [code, c] of Object.entries(k.per_code)) lines.push(`| ${code} | ${c.used} | ${kappaCell(c.kappa)} | ${c.verdict} |`);
+    lines.push("");
+  }
+}
+function renderEstimates(lines, r) {
+  lines.push("", `${r.items} items \xB7 ${r.labelled} labelled \xB7 ${r.unclear} unclear \xB7 ${r.repos.length} repos`);
+  if (r.unrepresented_population) lines.push("", `${r.unrepresented_population} population PRs sit in cells with no decided item and are not covered by these estimates.`);
+  lines.push("", "### Definitions", "", "| Definition | Precision | Recall |", "| --- | --- | --- |");
+  for (const d of r.definitions) lines.push(`| ${d.name}: ${d.description} | ${estCell(d.precision)} | ${estCell(d.recall)} |`);
+  lines.push("", `Pick under the plan (highest recall with precision \u2265 ${pct(r.plan.definition_precision_floor)}): **${r.chosen_definition ?? "none qualifies"}**`);
+  lines.push("", "### Proxies", "", "| Proxy | Precision | n | Recall |", "| --- | --- | --- | --- |");
+  for (const [proxy, e] of Object.entries(r.proxies)) lines.push(`| ${proxy} | ${estCell(e.precision)} | ${e.precision.n} | ${estCell(e.recall)} |`);
+  lines.push("", "### Strata (unweighted)", "", "| Stratum | Sampled | Yes | No | Unclear | Yes rate (Wilson 95%) |", "| --- | --- | --- | --- | --- | --- |");
+  for (const st of r.strata) lines.push(`| ${st.stratum} | ${st.sampled} | ${st.yes} | ${st.no} | ${st.unclear} | ${pct(st.yes_rate)} (${pct(st.yes_rate_ci95?.low)}\u2013${pct(st.yes_rate_ci95?.high)}) |`);
+  lines.push("", "### Repos (pseudonymized)", "", "| Repo | Sampled | Precision (any proxy) | Recall |", "| --- | --- | --- | --- |");
+  for (const repo of r.repos) lines.push(`| ${repo.pseudonym} | ${repo.sampled} | ${estCell(repo.precision)} | ${estCell(repo.recall)} |`);
+  const w = r.rejections.wrongly_rejected;
+  lines.push("", "### Rejections", "", `Wrongly rejected (judged corrective): ${w.yes} of ${w.decided} (${pct(w.rate)}, Wilson ${pct(w.ci95?.low)}\u2013${pct(w.ci95?.high)}).`);
+  const labelCodes = [...new Set(Object.values(r.rejections.by_code).flatMap((m) => Object.keys(m)))].sort();
+  if (labelCodes.length) {
+    lines.push("", `| Automatic code \\ labelled code | ${labelCodes.join(" | ")} |`, `| --- |${labelCodes.map(() => " --- |").join("")}`);
+    for (const [auto, m] of Object.entries(r.rejections.by_code).sort()) lines.push(`| ${auto} | ${labelCodes.map((h) => m[h] ?? 0).join(" | ")} |`);
+  }
+  lines.push("", "| Proxy | Labelled no | linkage_error | Rate |", "| --- | --- | --- | --- |");
+  for (const [proxy, l] of Object.entries(r.linkage_error)) lines.push(`| ${proxy} | ${l.no} | ${l.linkage_error} | ${pct(l.rate)} |`);
+  lines.push("", "### Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
+  for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
+}
+function renderCalibrationMarkdown(run) {
+  const { plan, model, human } = run;
+  const lines = [];
+  const complete = model.unlabelled === 0 && human.unlabelled === 0;
+  lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
+  lines.push(`Horizon ${plan.horizon_days} days \xB7 plan ${plan.plan_version} \xB7 sampler ${CALIBRATION_SAMPLER_VERSION} \xB7 labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
+  lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
+  const k = human.agreement.corrective.kappa;
+  lines.push("", "## Verdict", "");
+  lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
+  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
+  lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
+  lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
+  renderEstimates(lines, model);
+  lines.push("", `## Human audit${run.primary === "human" ? " (primary)" : ""}`);
+  renderEstimates(lines, human);
+  lines.push("", "## Agreement");
+  renderAgreement(lines, "Person vs model A (audit subset)", human.agreement, plan.kappa_floor);
+  renderAgreement(lines, "Person vs model B (audit subset)", run.human_vs_b, plan.kappa_floor);
+  renderAgreement(lines, "Model A vs model B", model.agreement, plan.kappa_floor);
+  return `${lines.join("\n").trimEnd()}
+`;
+}
+
+// src/corpus/calibration-evidence.ts
+var EVIDENCE_DIFF_MAX_CHARS = 6e4;
+var EVIDENCE_RELATED_MAX = 15;
+var EVIDENCE_RELATED_MAX_FILES = 50;
+function git(runGit3, args) {
+  const result = runGit3(args);
+  if (result.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim().split("\n").pop()}`);
+  return result.stdout;
+}
+function cap(diff) {
+  return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
+[diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
+}
+function change(runGit3, url, from, to, pr2) {
+  const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
+  return {
+    url,
+    title: pr2?.title ?? null,
+    body: pr2?.body ?? null,
+    merged_at: pr2?.merged_at ?? null,
+    files,
+    ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
+  };
+}
+function buildItemEvidence(item, context, runGit3) {
+  const pr2 = context.prs.get(item.pr_url);
+  if (!pr2) throw new Error(`${item.item_id}: original not in the enumeration cache`);
+  const original = change(runGit3, pr2.pr_url, pr2.base_sha, pr2.merge_sha, pr2);
+  const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
+  const fixes = fixUrls.map((url) => {
+    const fixPr = context.prs.get(url);
+    if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
+    const sha2 = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
+    if (!sha2) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
+    return change(runGit3, url, `${sha2}^`, sha2, void 0);
+  });
+  const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
+  const since = new Date(pr2.merged_at);
+  const until = new Date(since.getTime() + context.horizonDays * 864e5);
+  const related = [];
+  if (searched.length) {
+    const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
+    const seen = /* @__PURE__ */ new Set([pr2.pr_url, ...fixUrls]);
+    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr2.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
+    for (const r of later) {
+      if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
+      seen.add(r.pr_url);
+      related.push({ url: r.pr_url, title: r.title, merged_at: r.merged_at });
+    }
+  }
+  return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
+}
+
 // src/corpus/pr-refs.ts
 var SQUASH = /\(#(\d+)\)\s*$/;
 var MERGE_PR = /^merge pull request #(\d+)\b/i;
@@ -13277,19 +14835,19 @@ var BORS_AUTO = /^(?:auto merge|rollup merge) of #(\d+)\b/i;
 var BORS_BATCH = /^merge((?:\s+#\d+)+)\s*$/i;
 function extractCorpusPrNumbers(subject, body, repo) {
   const found = [];
-  const add = (value) => {
+  const add2 = (value) => {
     const n = Number(value);
     if (Number.isInteger(n) && n > 0 && !found.includes(n)) found.push(n);
   };
   const trimmed = subject.trim();
   const batch = trimmed.match(BORS_BATCH);
   if (batch) {
-    for (const match of batch[1].matchAll(/#(\d+)/g)) add(match[1]);
+    for (const match of batch[1].matchAll(/#(\d+)/g)) add2(match[1]);
   } else {
-    add((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
+    add2((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
   }
   const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp3(repo)}/pull/(\\d+)\\s*$`, "im");
-  add(body.match(trailer)?.[1]);
+  add2(body.match(trailer)?.[1]);
   return found;
 }
 function escapeRegExp3(value) {
@@ -13311,9 +14869,9 @@ var SEARCH_QUERY = `query($q:String!,$after:String){
 }`;
 var COUNT_QUERY = `query($q:String!){ search(type:ISSUE, query:$q, first:1){ issueCount } }`;
 var SEARCH_CAP = 1e3;
-var DAY_MS = 864e5;
-var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-var isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+var DAY_MS2 = 864e5;
+var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var isoDay = (ms2) => new Date(ms2).toISOString().slice(0, 10);
 function enumerateCorpusRepo(target, deps) {
   const commits = readFirstParent(target, deps.runGit);
   const rollups = readRollupMembers(target, deps.runGit, commits);
@@ -13403,7 +14961,7 @@ function enumerateCorpusRepo(target, deps) {
       const members = i - first + 1;
       const record = toRecord(pr2, commit, {
         merge_sha: commit.sha,
-        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA2,
+        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA3,
         member_commits: members,
         landed_by: !viaSha.includes(pr2) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
         batched
@@ -13464,8 +15022,8 @@ function readFirstParent(target, runGit3) {
   const seen = /* @__PURE__ */ new Set();
   const start = target.from.getTime();
   const end = target.until.getTime();
-  for (let lo = start; lo < end; lo += 30 * DAY_MS) {
-    const hi = Math.min(lo + 30 * DAY_MS, end);
+  for (let lo = start; lo < end; lo += 30 * DAY_MS2) {
+    const hi = Math.min(lo + 30 * DAY_MS2, end);
     const result = runGit3([
       "log",
       "--first-parent",
@@ -13476,8 +15034,8 @@ function readFirstParent(target, runGit3) {
       target.branch
     ]);
     if (result.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target.branch}: ${result.stderr.trim()}`);
-    for (const entry of result.stdout.split("")) {
-      const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
+    for (const entry2 of result.stdout.split("")) {
+      const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
       if (!/^[0-9a-f]{40}$/.test(sha2) || seen.has(sha2)) continue;
       const epoch = Number.parseInt(epochText, 10);
       if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
@@ -13494,15 +15052,15 @@ function readRollupMembers(target, runGit3, commits) {
   const result = runGit3([
     "log",
     "--grep=^Rollup merge of #",
-    `--since=${new Date(target.from.getTime() - 30 * DAY_MS).toISOString()}`,
+    `--since=${new Date(target.from.getTime() - 30 * DAY_MS2).toISOString()}`,
     `--until=${target.until.toISOString()}`,
     "--pretty=format:%H%x1f%P%x1f%s%x1e",
     target.branch
   ]);
   if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
   const bySha = /* @__PURE__ */ new Map();
-  for (const entry of result.stdout.split("")) {
-    const [sha2 = "", parents = "", subject = ""] = entry.replace(/^\n/, "").split("");
+  for (const entry2 of result.stdout.split("")) {
+    const [sha2 = "", parents = "", subject = ""] = entry2.replace(/^\n/, "").split("");
     const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
     const parentSha = parents.trim().split(/\s+/)[0];
     if (/^[0-9a-f]{40}$/.test(sha2) && parentSha && Number.isInteger(prNumber)) bySha.set(sha2, { sha: sha2, parentSha, prNumber });
@@ -13516,7 +15074,7 @@ function readRollupMembers(target, runGit3, commits) {
 }
 function fetchMergedPrs(target, deps) {
   const out = /* @__PURE__ */ new Map();
-  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS]];
+  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS2]];
   while (pending.length) {
     const [lo, hi] = pending.shift();
     const range = `${isoDay(lo)}..${isoDay(hi)}`;
@@ -13530,8 +15088,8 @@ function fetchMergedPrs(target, deps) {
     const count = deps.graphql(COUNT_QUERY, { q }).search.issueCount;
     if (count > SEARCH_CAP) {
       if (hi <= lo) throw new Error(`corpus: more than ${SEARCH_CAP} PRs merged on ${isoDay(lo)}; cannot slice further`);
-      const mid = lo + Math.floor((hi - lo) / DAY_MS / 2) * DAY_MS;
-      pending.unshift([lo, mid], [mid + DAY_MS, hi]);
+      const mid = lo + Math.floor((hi - lo) / DAY_MS2 / 2) * DAY_MS2;
+      pending.unshift([lo, mid], [mid + DAY_MS2, hi]);
       continue;
     }
     const slice = [];
@@ -13648,9 +15206,9 @@ function parseCohortManifest(input) {
   if (Date.parse(m.window.merged_from) >= Date.parse(m.window.merged_until)) fail2("window must be non-empty");
   for (const key of ["repos", "alternates"]) {
     if (!Array.isArray(m[key])) fail2(`${key} must be an array`);
-    for (const entry of m[key]) {
-      if (!REPO.test(entry?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry?.repo)}`);
-      if (typeof entry.status !== "string") fail2(`${entry.repo}: status is required`);
+    for (const entry2 of m[key]) {
+      if (!REPO.test(entry2?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry2?.repo)}`);
+      if (typeof entry2.status !== "string") fail2(`${entry2.repo}: status is required`);
     }
   }
   return m;
@@ -13658,9 +15216,9 @@ function parseCohortManifest(input) {
 function runnableRepos(manifest, only) {
   const all = [...manifest.repos, ...manifest.alternates];
   if (only) {
-    const entry = all.find((r) => r.repo === only);
-    if (!entry) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
-    return [entry];
+    const entry2 = all.find((r) => r.repo === only);
+    if (!entry2) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
+    return [entry2];
   }
   return all.filter((r) => RUNNABLE_STATUSES.includes(r.status));
 }
@@ -13858,7 +15416,8 @@ var OPTIONS = {
   plan: { type: "string" },
   "exclude-slice": { type: "string" },
   seed: { type: "string" },
-  sample: { type: "string" }
+  sample: { type: "string" },
+  step: { type: "string" }
 };
 var CORPUS_COMMANDS = [
   "corpus-enumerate",
@@ -13867,7 +15426,10 @@ var CORPUS_COMMANDS = [
   "corpus-report",
   "corpus-calibration-sample",
   "corpus-calibration-evidence",
-  "corpus-calibration-score"
+  "corpus-calibration-score",
+  "corpus-feature-audit",
+  "corpus-features",
+  "corpus-feature-replay"
 ];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -13877,8 +15439,8 @@ function secondsUntilReset() {
   if (result.exitCode !== 0 || !Number.isFinite(reset) || reset === 0) return 60;
   return Math.max(30, reset - Math.floor(Date.now() / 1e3) + 5);
 }
-var blockingSleep = (ms) => {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+var blockingSleep = (ms2) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms2);
 };
 function createGhGraphql(sleep, log) {
   return (query, variables) => {
@@ -13938,7 +15500,7 @@ function createGhPullsForCommit(repo, sleep, log) {
 }
 var GZIP_MEMBER_BYTES = 32 * 1024 * 1024;
 function writeJsonl(path4, rows, options = {}) {
-  const fd = openSync2(path4, "w");
+  const fd = openSync3(path4, "w");
   let bytes = 0;
   let writtenBytes = 0;
   let largestRowBytes = 0;
@@ -13946,7 +15508,7 @@ function writeJsonl(path4, rows, options = {}) {
   let pendingBytes = 0;
   const flush = () => {
     if (pendingBytes === 0) return;
-    const chunk = gzipSync(Buffer.concat(pending));
+    const chunk = gzipSync2(Buffer.concat(pending));
     writeSync2(fd, chunk);
     writtenBytes += chunk.length;
     pending = [];
@@ -13969,25 +15531,25 @@ function writeJsonl(path4, rows, options = {}) {
     }
     flush();
   } finally {
-    closeSync2(fd);
+    closeSync3(fd);
   }
   return { bytes, writtenBytes, largestRowBytes };
 }
 function fileCache(dir) {
-  mkdirSync2(dir, { recursive: true });
-  const path4 = (key) => join7(dir, `${createHash4("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  mkdirSync5(dir, { recursive: true });
+  const path4 = (key) => join10(dir, `${createHash8("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
-    get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync3(path4(key), "utf8")) : void 0,
-    set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
+    get: (key) => existsSync7(path4(key)) ? JSON.parse(readFileSync7(path4(key), "utf8")) : void 0,
+    set: (key, value) => writeFileSync5(path4(key), JSON.stringify(value))
   };
 }
 function syncClone(repo, dir, defaultBranch) {
   const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  for (let attempt2 = 1; !existsSync4(join7(dir, "HEAD")); attempt2++) {
+  for (let attempt2 = 1; !existsSync7(join10(dir, "HEAD")); attempt2++) {
     const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
     if (cloned.exitCode === 0) break;
-    rmSync2(dir, { recursive: true, force: true });
+    rmSync3(dir, { recursive: true, force: true });
     if (attempt2 >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
   }
   const fetched = runGit3(["fetch", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
@@ -14000,12 +15562,13 @@ function runCorpusCli(command, argv, io) {
 `);
     return { exitCode: 2 };
   }
+  if (command === "corpus-feature-audit") return runFeatureAudit(argv, io);
   let values;
   let entries;
   let manifestBytes;
   let window;
   try {
-    ({ values } = parseArgs2({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
+    ({ values } = parseArgs3({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -14016,11 +15579,11 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: corpus-calibration-score needs --sample <dir>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationScore(resolve4(io.cwd, values.sample), io);
+    return runCalibrationScore(resolve5(io.cwd, values.sample), io);
   }
   try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
-    manifestBytes = readFileSync3(resolve4(io.cwd, values.manifest));
+    manifestBytes = readFileSync7(resolve5(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
     entries = runnableRepos(manifest, values.repo);
     window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
@@ -14040,14 +15603,14 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log);
+    return runCalibrationSample(entries, manifestBytes, resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.plan), resolve5(io.cwd, values["exclude-slice"]), resolve5(io.cwd, values.out), values.seed, io, log);
   }
   if (command === "corpus-calibration-evidence") {
     if (!values.sample) {
       io.writeStderr("error: corpus-calibration-evidence needs --sample <dir>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationEvidence(resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.sample), io, log);
+    return runCalibrationEvidence(resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.sample), io, log);
   }
   if (command === "corpus-report") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : null;
@@ -14058,7 +15621,7 @@ function runCorpusCli(command, argv, io) {
     let notes = { notes: [], convention_findings: [] };
     try {
       if (values.notes) {
-        const parsed = JSON.parse(readFileSync3(resolve4(io.cwd, values.notes), "utf8"));
+        const parsed = JSON.parse(readFileSync7(resolve5(io.cwd, values.notes), "utf8"));
         notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
       }
     } catch (error) {
@@ -14066,10 +15629,56 @@ function runCorpusCli(command, argv, io) {
 `);
       return { exitCode: 2 };
     }
-    return runReport(entries, resolve4(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve4(io.cwd, values.out), io, log);
+    return runReport(entries, resolve5(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve5(io.cwd, values.out), io, log);
+  }
+  if (command === "corpus-feature-replay") {
+    if (!values["exclude-slice"] || !values.out) {
+      io.writeStderr("error: corpus-feature-replay needs --exclude-slice <slice manifest> and --out <private dir>\n");
+      return { exitCode: 2 };
+    }
+    if (values.seed !== void 0 && !/^[0-9a-f]{64}$/.test(values.seed)) {
+      io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
+      return { exitCode: 2 };
+    }
+    return runFeatureReplay({
+      entries,
+      cacheRoot: resolve5(io.cwd, values["cache-dir"]),
+      slicePath: resolve5(io.cwd, values["exclude-slice"]),
+      outDir: resolve5(io.cwd, values.out),
+      ...values.seed ? { seed: values.seed } : {},
+      cuts: 6,
+      perCut: 8,
+      io,
+      log
+    });
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
-  const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
+  const cacheRoot = resolve5(io.cwd, values["cache-dir"]);
+  if (command === "corpus-features") {
+    const step = values.step;
+    if (!step || !FEATURE_STEPS.includes(step)) {
+      io.writeStderr(`error: corpus-features needs --step ${FEATURE_STEPS.join("|")}
+`);
+      return { exitCode: 2 };
+    }
+    if (step === "manifest" && !values.out) {
+      io.writeStderr("error: corpus-features --step manifest needs --out <file>\n");
+      return { exitCode: 2 };
+    }
+    return runCorpusFeatures({
+      step,
+      entries,
+      cacheRoot,
+      cohortSha256: createHash8("sha256").update(manifestBytes).digest("hex"),
+      ...values.out ? { out: resolve5(io.cwd, values.out) } : {},
+      graphql,
+      writeRows: (path4, rows) => {
+        writeJsonl(path4, rows, { gzip: true });
+      },
+      io,
+      log
+    });
+  }
   if (command === "corpus-label" || command === "corpus-corrective") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : /* @__PURE__ */ new Date();
     if (!Number.isFinite(asOf.getTime())) {
@@ -14080,61 +15689,61 @@ function runCorpusCli(command, argv, io) {
     return runLabel(entries, cacheRoot, asOf, graphql, io, log);
   }
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
-      mkdirSync2(repoDir, { recursive: true });
+      mkdirSync5(repoDir, { recursive: true });
       const meta = graphql("query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }", { owner, name });
       const branch = meta.repository.defaultBranchRef?.name;
       if (!branch) throw new Error("repository has no default branch");
-      log(`info: ${entry.repo}: syncing clone of ${branch}`);
-      const runGit3 = syncClone(entry.repo, join7(repoDir, "repo.git"), branch);
+      log(`info: ${entry2.repo}: syncing clone of ${branch}`);
+      const runGit3 = syncClone(entry2.repo, join10(repoDir, "repo.git"), branch);
       const { records, stats } = enumerateCorpusRepo(
-        { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], ...window },
-        { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry.repo, io.sleep ?? blockingSleep, log) }
+        { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], ...window },
+        { runGit: runGit3, graphql, cache: fileCache(join10(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
       );
-      writeJsonl(join7(repoDir, "prs.jsonl"), records);
-      writeFileSync2(join7(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
+      writeJsonl(join10(repoDir, "prs.jsonl"), records);
+      writeFileSync5(join10(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(stats)}
 `);
-      log(`info: ${entry.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
+      log(`info: ${entry2.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const statsPath = join7(repoDir, "enumeration.json");
-      if (!existsSync4(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
-      const { branch } = JSON.parse(readFileSync3(statsPath, "utf8"));
-      const records = readFileSync3(join7(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
-      const gitDir = join7(repoDir, "repo.git");
+      const statsPath = join10(repoDir, "enumeration.json");
+      if (!existsSync7(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+      const { branch } = JSON.parse(readFileSync7(statsPath, "utf8"));
+      const records = readFileSync7(join10(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      log(`info: ${entry.repo}: backfilling blobs`);
+      log(`info: ${entry2.repo}: backfilling blobs`);
       const backfill = runGit3(["backfill"]);
       if (backfill.exitCode !== 0) throw new Error(`git backfill failed: ${backfill.stderr.trim().split("\n").pop()}`);
-      log(`info: ${entry.repo}: prefetching cross-references for ${records.length} PRs`);
-      const crossReferences = prefetchCrossReferences(entry.repo, records.map((r) => r.pr_number), graphql, fileCache(join7(repoDir, "graphql")));
-      log(`info: ${entry.repo}: labelling`);
+      log(`info: ${entry2.repo}: prefetching cross-references for ${records.length} PRs`);
+      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join10(repoDir, "graphql")));
+      log(`info: ${entry2.repo}: labelling`);
       const { rows, failed } = labelCorpusRepo(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
-      const written = writeJsonl(join7(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
+      const written = writeJsonl(join10(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         as_of: asOf.toISOString(),
         prs: records.length,
         rows: rows.length,
@@ -14144,27 +15753,27 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         s2_gzip_bytes: written.writtenBytes,
         largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
-        base_rates: summarizeLabels(entry.repo, rows)
+        base_rates: summarizeLabels(entry2.repo, rows)
       };
-      writeFileSync2(join7(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
       if (failed.length) failures++;
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function readJsonl2(path4) {
-  return readFileSync3(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return readFileSync7(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 function* readGzipJsonlMembers(path4) {
-  const raw = readFileSync3(path4);
+  const raw = readFileSync7(path4);
   for (let offset = 0; offset < raw.length; ) {
     if (raw[offset] !== 31 || raw[offset + 1] !== 139 || raw[offset + 3] !== 0) throw new Error(`${path4}: unexpected gzip member header at byte ${offset}`);
     const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true });
@@ -14174,80 +15783,80 @@ function* readGzipJsonlMembers(path4) {
 }
 function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const s2Path = join7(repoDir, "s2.jsonl.gz");
-      if (!existsSync4(s2Path)) throw new Error("not labelled yet; run corpus-label first");
-      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
-      const originals = readJsonl2(join7(repoDir, "prs.jsonl"));
-      const gitDir = join7(repoDir, "repo.git");
+      const s2Path = join10(repoDir, "s2.jsonl.gz");
+      if (!existsSync7(s2Path)) throw new Error("not labelled yet; run corpus-label first");
+      const { branch } = JSON.parse(readFileSync7(join10(repoDir, "enumeration.json"), "utf8"));
+      const originals = readJsonl2(join10(repoDir, "prs.jsonl"));
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      const cache = fileCache(join7(repoDir, "graphql"));
-      const laterPath = join7(repoDir, "fix-prs.jsonl");
+      const cache = fileCache(join10(repoDir, "graphql"));
+      const laterPath = join10(repoDir, "fix-prs.jsonl");
       let laterPrs = [];
-      if (existsSync4(laterPath)) laterPrs = readJsonl2(laterPath);
+      if (existsSync7(laterPath)) laterPrs = readJsonl2(laterPath);
       else if (window.until < asOf) {
-        log(`info: ${entry.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
+        log(`info: ${entry2.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
         ({ records: laterPrs } = enumerateCorpusRepo(
-          { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], from: window.until, until: asOf },
+          { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], from: window.until, until: asOf },
           { runGit: runGit3, graphql, cache, onDiagnostic: log }
         ));
         writeJsonl(laterPath, laterPrs);
       }
-      log(`info: ${entry.repo}: loading cross-references and S2 rows`);
-      const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
+      log(`info: ${entry2.repo}: loading cross-references and S2 rows`);
+      const crossReferences = prefetchCrossReferences(entry2.repo, originals.map((r) => r.pr_number), graphql, cache);
       const closing = [...originals, ...laterPrs].flatMap((pr2) => pr2.closing_issues);
-      log(`info: ${entry.repo}: fetching labels for ${new Set(closing).size} closed issues`);
-      const issues = prefetchIssueMeta(entry.repo, closing, graphql, cache);
+      log(`info: ${entry2.repo}: fetching labels for ${new Set(closing).size} closed issues`);
+      const issues = prefetchIssueMeta(entry2.repo, closing, graphql, cache);
       const s2Rows = readGzipJsonlMembers(s2Path);
       const result = correctiveCorpusRepo(
-        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
+        { repo: entry2.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
       );
-      writeJsonl(join7(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
-      writeJsonl(join7(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
-      writeJsonl(join7(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
+      writeJsonl(join10(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
+      writeJsonl(join10(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
+      writeJsonl(join10(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         as_of: asOf.toISOString(),
         later_prs: laterPrs.length,
         ...summarizeCorrective(result, originals.length),
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3)
       };
-      writeFileSync2(join7(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
       if (result.failedPairs.length || result.szz.failed) failures++;
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha2562 = (bytes) => createHash4("sha256").update(bytes).digest("hex");
+  const sha2563 = (bytes) => createHash8("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
   const day = asOf.toISOString().slice(0, 10);
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
-      for (const file of REPORT_INPUTS) if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      for (const file of REPORT_INPUTS) if (!existsSync7(join10(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
       const counted = (file, onRow) => {
-        const path4 = join7(repoDir, file);
-        const bytes = readFileSync3(path4);
-        const record = { repo: entry.repo, file, sha256: sha2562(bytes), bytes: bytes.length, rows: 0 };
+        const path4 = join10(repoDir, file);
+        const bytes = readFileSync7(path4);
+        const record = { repo: entry2.repo, file, sha256: sha2563(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
           for (const row of readGzipJsonlMembers(path4)) {
@@ -14269,12 +15878,12 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
       const pairs = counted("repair_pairs.jsonl.gz", () => {
       })[Symbol.iterator]();
       while (!pairs.next().done) ;
-      const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
+      const summary = summarizeCorpusRepo({ repo: entry2.repo, tier: entry2.tier ?? null, mergeConvention: entry2.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
       repos.push(summary);
-      log(`info: ${entry.repo}: summarized`);
+      log(`info: ${entry2.repo}: summarized`);
     } catch (error) {
       failures++;
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   if (failures) return { exitCode: 3 };
@@ -14284,75 +15893,69 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
-    cohort_manifest_sha256: sha2562(manifestBytes),
+    cohort_manifest_sha256: sha2563(manifestBytes),
     label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
     inputs
   };
-  const run_id = sha2562(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
-  mkdirSync2(outDir, { recursive: true });
-  writeFileSync2(join7(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
+  const run_id = sha2563(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  mkdirSync5(outDir, { recursive: true });
+  writeFileSync5(join10(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
+  writeFileSync5(join10(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
+  writeFileSync5(join10(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
 `);
   return { exitCode: unresolved ? 1 : 0 };
 }
-function insideGitWorkTree(path4) {
-  for (let dir = path4; ; dir = dirname(dir)) {
-    if (existsSync4(join7(dir, ".git"))) return true;
-    if (dirname(dir) === dir) return false;
-  }
-}
 function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log) {
-  const sha2562 = (bytes2) => createHash4("sha256").update(bytes2).digest("hex");
+  const sha2563 = (bytes2) => createHash8("sha256").update(bytes2).digest("hex");
   let plan;
   let planBytes;
   let sliceBytes;
   let sliceRepos;
   try {
-    planBytes = readFileSync3(planPath);
+    planBytes = readFileSync7(planPath);
     plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
-    sliceBytes = readFileSync3(slicePath);
+    sliceBytes = readFileSync7(slicePath);
     const slice = JSON.parse(sliceBytes.toString("utf8"));
     if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
-    if (existsSync4(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    if (existsSync7(outDir) && readdirSync2(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
     return { exitCode: 2 };
   }
   const development = entries.filter((e) => !sliceRepos.has(e.repo));
-  const seed = seedArg ?? randomBytes(32).toString("hex");
+  const seed = seedArg ?? randomBytes2(32).toString("hex");
   const units = [];
   const inputs = [];
   let failures = 0;
-  for (const entry of development) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of development) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
       const files = ["candidates.jsonl.gz", "corrective.jsonl.gz"];
       for (const file2 of files) {
-        const path4 = join7(repoDir, file2);
-        if (!existsSync4(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
-        inputs.push({ repo: entry.repo, file: file2, sha256: sha2562(readFileSync3(path4)) });
+        const path4 = join10(repoDir, file2);
+        if (!existsSync7(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
+        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2563(readFileSync7(path4)) });
       }
       units.push(
         ...classifyCalibrationRepo({
-          repo: entry.repo,
+          repo: entry2.repo,
           horizonDays: plan.horizon_days,
           szzStrongMinLines: plan.szz_strong_min_lines,
-          candidates: readGzipJsonlMembers(join7(repoDir, files[0])),
-          correctiveRows: readGzipJsonlMembers(join7(repoDir, files[1]))
+          candidates: readGzipJsonlMembers(join10(repoDir, files[0])),
+          correctiveRows: readGzipJsonlMembers(join10(repoDir, files[1]))
         })
       );
     } catch (error) {
       failures++;
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   if (failures) return { exitCode: 3 };
@@ -14367,22 +15970,22 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     procedure: "hok-3269-calibration-sample",
     sampler_version: CALIBRATION_SAMPLER_VERSION,
     plan,
-    plan_sha256: sha2562(planBytes),
-    cohort_manifest_sha256: sha2562(manifestBytes),
-    excluded_slice_sha256: sha2562(sliceBytes),
+    plan_sha256: sha2563(planBytes),
+    cohort_manifest_sha256: sha2563(manifestBytes),
+    excluded_slice_sha256: sha2563(sliceBytes),
     seed,
     inputs,
     cells: sample.cells,
     items: sample.items,
     drawn_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  mkdirSync2(outDir, { recursive: true, mode: 448 });
+  mkdirSync5(outDir, { recursive: true, mode: 448 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
 `, "utf8");
-  writeFileSync2(join7(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
+  writeFileSync5(join10(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
   const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
   io.writeStdout(
-    `${JSON.stringify({ sample_sha256: sha2562(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
+    `${JSON.stringify({ sample_sha256: sha2563(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
 `
   );
   return { exitCode: 0 };
@@ -14391,12 +15994,12 @@ function runCalibrationScore(sampleDir, io) {
   let sample;
   let sheets;
   try {
-    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
     sheets = {
-      a: readFileSync3(join7(sampleDir, "sheet-a.csv"), "utf8"),
-      b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8"),
-      h: readFileSync3(join7(sampleDir, "sheet-h.csv"), "utf8")
+      a: readFileSync7(join10(sampleDir, "sheet-a.csv"), "utf8"),
+      b: readFileSync7(join10(sampleDir, "sheet-b.csv"), "utf8"),
+      h: readFileSync7(join10(sampleDir, "sheet-h.csv"), "utf8")
     };
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -14414,11 +16017,11 @@ function runCalibrationScore(sampleDir, io) {
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync2(join7(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
+  writeFileSync5(join10(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
 `, { mode: 384 });
-  writeFileSync2(join7(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
+  writeFileSync5(join10(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join7(sampleDir, "calibration-table.md") })}
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join10(sampleDir, "calibration-table.md") })}
 `
   );
   return { exitCode: 0 };
@@ -14426,9 +16029,9 @@ function runCalibrationScore(sampleDir, io) {
 function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   let sample;
   try {
-    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync4(join7(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
+    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync7(join10(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -14437,14 +16040,14 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   const evidence3 = [];
   let failures = 0;
   for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
-    const repoDir = join7(cacheRoot, repo.replace("/", "__"));
+    const repoDir = join10(cacheRoot, repo.replace("/", "__"));
     try {
-      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
-      const records = [...readJsonl2(join7(repoDir, "prs.jsonl")), ...existsSync4(join7(repoDir, "fix-prs.jsonl")) ? readJsonl2(join7(repoDir, "fix-prs.jsonl")) : []];
+      const { branch } = JSON.parse(readFileSync7(join10(repoDir, "enumeration.json"), "utf8"));
+      const records = [...readJsonl2(join10(repoDir, "prs.jsonl")), ...existsSync7(join10(repoDir, "fix-prs.jsonl")) ? readJsonl2(join10(repoDir, "fix-prs.jsonl")) : []];
       const prs = new Map(records.map((r) => [r.pr_url, r]));
       const bySha = /* @__PURE__ */ new Map();
       for (const r of records) for (const sha2 of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha2)) bySha.set(sha2, r);
-      const gitDir = join7(repoDir, "repo.git");
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       for (const item of sample.items.filter((i) => i.repo === repo)) evidence3.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
     } catch (error) {
@@ -14455,10 +16058,10 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   if (failures) return { exitCode: 3 };
   const order = new Map(sample.items.map((i, n) => [i.item_id, n]));
   evidence3.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
-  writeJsonl(join7(sampleDir, "evidence.jsonl"), evidence3);
-  chmodSync(join7(sampleDir, "evidence.jsonl"), 384);
+  writeJsonl(join10(sampleDir, "evidence.jsonl"), evidence3);
+  chmodSync(join10(sampleDir, "evidence.jsonl"), 384);
   const related = new Map(evidence3.map((e) => [e.item_id, e.related.map((r) => r.url)]));
-  writeFileSync2(join7(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
+  writeFileSync5(join10(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
   const truncated = evidence3.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
   io.writeStdout(`${JSON.stringify({ items: evidence3.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence3.filter((e) => e.related.length).length })}
 `);
@@ -14870,6 +16473,13 @@ var unique = (values) => [...new Set(values)];
 var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some((signature) => value.toLowerCase().startsWith(signature));
 function attributePullRequest(pr2, config = {}) {
   const metadata = extractMetadataBlock(pr2.body);
+  const markers = detectAgentMarkers({
+    authorLogin: pr2.authorLogin,
+    authorType: pr2.authorType,
+    headRef: pr2.headRef,
+    commits: pr2.commitMessages.map((message) => ({ message })),
+    body: pr2.body
+  });
   const agentMethods = [];
   const harnessMethods = [];
   const modelMethods = [];
@@ -14890,13 +16500,13 @@ function attributePullRequest(pr2, config = {}) {
     identifiedAgent = true;
     agentMethods.push(configuredBot ? "owner_config" : "bot_author");
   }
-  if (pr2.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
+  if (markers.coAuthorTrailer) {
     identifiedAgent = true;
     agentMethods.push("co_authored_by_trailer");
   }
   const configuredPrefix = config.branchPrefixes?.find((value) => pr2.headRef.startsWith(value));
   const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr2.headRef.startsWith(value));
-  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr2.headRef);
+  const builtInPrefix = branchAgentFamily(pr2.headRef) !== null;
   if (configuredPrefix || ownerPrefix || builtInPrefix) {
     identifiedAgent = true;
     agentMethods.push(ownerPrefix ? "owner_config" : "branch_prefix");
@@ -14906,15 +16516,15 @@ function attributePullRequest(pr2, config = {}) {
     identifiedAgent = true;
     agentMethods.push("pr_label");
   }
-  const signatureMatches = pr2.commitMessages.join("\n").match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
-  const signatureModels = [...new Set(signatureMatches.map((value) => value.toLowerCase()))];
-  if (signatureModels.length) {
+  const signatureModels = markers.modelIds;
+  if (markers.signature) {
     identifiedAgent = true;
     agentMethods.push("commit_signature");
   }
   const metadataHarness = typeof metadata?.["harness"] === "string" ? metadata["harness"].toLowerCase() : null;
   const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
-  const prefixHarness = builtInPrefix ? pr2.headRef.split("/")[0]?.toLowerCase() ?? null : null;
+  const prefixFamily = branchAgentFamily(pr2.headRef);
+  const prefixHarness = prefixFamily === "claude" ? "claude-code" : prefixFamily;
   const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value) => !!value);
   const harnessIds = [...new Set(harnessEvidence.filter((value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)))];
   const harness = harnessIds.length === 1 ? harnessIds[0] : null;
@@ -14936,7 +16546,7 @@ function toReportAttribution(value) {
 }
 
 // src/orchestrate/enumerate.ts
-var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var EMPTY_TREE_SHA4 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 function enumerateWindow(options) {
   const { runGit: runGit3, branch, from, to, cursor = null, maxPrs = Number.MAX_SAFE_INTEGER } = options;
   const cutoff = Math.floor(from.getTime() / 1e3);
@@ -14960,7 +16570,7 @@ function enumerateWindow(options) {
     const epoch = Number.parseInt(epochText, 10);
     if (!Number.isFinite(epoch) || epoch < cutoff || epoch > end) continue;
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
-    const parentSha = parents[0] ?? EMPTY_TREE_SHA3;
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA4;
     const subject = subjectParts.join("	");
     merges.push({ mergeSha: sha2, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha2 });
   }
@@ -14971,9 +16581,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash5("sha256").update(stableJson(config)).digest("hex");
+  return createHash9("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -15147,8 +16757,8 @@ ${pr2.body ?? ""}` });
           const checkoutParent = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
           const checkoutDir = path3.join(checkoutParent, "checkout");
           try {
-            const add = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
-            if (add.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
+            const add2 = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
+            if (add2.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
             for (const args of [["-C", checkoutDir, "update-ref", "HEAD", merge.mergeSha], ["-C", checkoutDir, "checkout", "-f"]]) {
               if (deps.runGit(args).exitCode !== 0) throw new Error("Unable to check out PR merge");
             }
@@ -15340,6 +16950,12 @@ corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
+                 (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
+corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slice <slice.json> --out <private dir> [--seed <hex>]
+                 (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
+corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
+                 (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -15406,7 +17022,7 @@ function runScanCli(argv, io) {
     }
     let values;
     try {
-      ({ values } = parseArgs3({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
+      ({ values } = parseArgs4({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -15464,9 +17080,9 @@ function runScanCli(argv, io) {
     if (outSpec === "-") {
       io.writeStdout(output);
     } else {
-      outputPath = resolve5(outSpec);
-      mkdirSync4(dirname3(outputPath), { recursive: true });
-      writeFileSync4(outputPath, output);
+      outputPath = resolve6(outSpec);
+      mkdirSync7(dirname4(outputPath), { recursive: true });
+      writeFileSync7(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -15499,7 +17115,7 @@ async function runReportCli(argv, io) {
   try {
     let parsed;
     try {
-      parsed = parseArgs3({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
+      parsed = parseArgs4({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -15521,7 +17137,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join10(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync3(join13(tmpdir3(), "hokusai-report-"));
       const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -15578,7 +17194,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync5(resolve5(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync9(resolve6(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -15589,7 +17205,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join10(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join13(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -15603,14 +17219,14 @@ async function runReportCli(argv, io) {
     }, ...stateDir ? { stateDir } : {} });
     const output = emitReport(draft);
     const outSpec = values.out ?? "-";
-    const outputPath = outSpec === "-" ? null : resolve5(outSpec);
+    const outputPath = outSpec === "-" ? null : resolve6(outSpec);
     if (values.contribute === true) {
       const built = buildContributionPayload(JSON.parse(output));
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync4(dirname3(outputPath), { recursive: true });
-          writeFileSync4(outputPath, built.body);
+          mkdirSync7(dirname4(outputPath), { recursive: true });
+          writeFileSync7(outputPath, built.body);
         }
       } else {
         const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
@@ -15619,14 +17235,14 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync4(dirname3(outputPath), { recursive: true });
-          writeFileSync4(outputPath, output);
+          mkdirSync7(dirname4(outputPath), { recursive: true });
+          writeFileSync7(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync4(dirname3(outputPath), { recursive: true });
-      writeFileSync4(outputPath, output);
+      mkdirSync7(dirname4(outputPath), { recursive: true });
+      writeFileSync7(outputPath, output);
     }
     try {
       saveState?.();
@@ -15647,7 +17263,7 @@ async function runReportCli(argv, io) {
     diag.error(`unexpected: ${error.message}`);
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   } finally {
-    if (temporaryRepo) rmSync4(temporaryRepo, { recursive: true, force: true });
+    if (temporaryRepo) rmSync5(temporaryRepo, { recursive: true, force: true });
   }
 }
 function parsePositiveInteger(value, fallback, name, maximum) {
@@ -15663,8 +17279,8 @@ function parseGithubTarget(value) {
   return { owner: match[1], repo: match[2], url: `https://github.com/${match[1]}/${match[2]}.git` };
 }
 function resolveRepoDir(raw) {
-  const repoDir = resolve5(validateRepoDir(raw));
-  if (!existsSync6(repoDir) || !statSync4(repoDir).isDirectory()) {
+  const repoDir = resolve6(validateRepoDir(raw));
+  if (!existsSync9(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);

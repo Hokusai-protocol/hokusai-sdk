@@ -6,6 +6,7 @@ export type AttributionMethod =
   | 'pr_label'
   | 'commit_signature'
   | 'owner_config';
+import { branchAgentFamily, detectAgentMarkers } from './agent-markers.js';
 import { extractMetadataBlock } from './metadata-block.js';
 
 export interface AttributionPrInput {
@@ -60,6 +61,13 @@ const recognizedModel = (value: string | null): boolean => !!value && MODEL_SIGN
 /** Evidence conflicts remain unknown; only a verified coder route is execution evidence. */
 export function attributePullRequest(pr: AttributionPrInput, config: AttributionConfig = {}): PrAttribution {
   const metadata = extractMetadataBlock(pr.body);
+  const markers = detectAgentMarkers({
+    authorLogin: pr.authorLogin,
+    authorType: pr.authorType,
+    headRef: pr.headRef,
+    commits: pr.commitMessages.map((message) => ({ message })),
+    body: pr.body,
+  });
   const agentMethods: AttributionMethod[] = [];
   const harnessMethods: AttributionMethod[] = [];
   const modelMethods: AttributionMethod[] = [];
@@ -81,14 +89,14 @@ export function attributePullRequest(pr: AttributionPrInput, config: Attribution
     identifiedAgent = true;
     agentMethods.push(configuredBot ? 'owner_config' : 'bot_author');
   }
-  if (pr.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
+  if (markers.coAuthorTrailer) {
     identifiedAgent = true;
     agentMethods.push('co_authored_by_trailer');
   }
 
   const configuredPrefix = config.branchPrefixes?.find((value) => pr.headRef.startsWith(value));
   const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr.headRef.startsWith(value));
-  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr.headRef);
+  const builtInPrefix = branchAgentFamily(pr.headRef) !== null;
   if (configuredPrefix || ownerPrefix || builtInPrefix) {
     identifiedAgent = true;
     agentMethods.push(ownerPrefix ? 'owner_config' : 'branch_prefix');
@@ -96,13 +104,14 @@ export function attributePullRequest(pr: AttributionPrInput, config: Attribution
   const matchedLabel = pr.labels.find((label) => config.labels?.[label] !== undefined);
   if (matchedLabel) { identifiedAgent = true; agentMethods.push('pr_label'); }
 
-  const signatureMatches = pr.commitMessages.join('\n').match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
-  const signatureModels = [...new Set(signatureMatches.map((value) => value.toLowerCase()))];
-  if (signatureModels.length) { identifiedAgent = true; agentMethods.push('commit_signature'); }
+  const signatureModels = markers.modelIds;
+  // The report's closed method list has one name for a tool signature in commits or the body.
+  if (markers.signature) { identifiedAgent = true; agentMethods.push('commit_signature'); }
 
   const metadataHarness = typeof metadata?.['harness'] === 'string' ? metadata['harness'].toLowerCase() : null;
   const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
-  const prefixHarness = builtInPrefix ? pr.headRef.split('/')[0]?.toLowerCase() ?? null : null;
+  const prefixFamily = branchAgentFamily(pr.headRef);
+  const prefixHarness = prefixFamily === 'claude' ? 'claude-code' : prefixFamily;
   const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value): value is string => !!value);
   const harnessIds = [...new Set(harnessEvidence.filter((value): value is string => typeof value === 'string' && HARNESS_REGISTRY.includes(value)))];
   const harness = harnessIds.length === 1 ? harnessIds[0]! : null;
