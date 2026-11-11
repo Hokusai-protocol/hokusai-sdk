@@ -12,14 +12,14 @@ Every arm in the [pre-registered backtest](./rework-risk-preregistration.md) see
 
 Each row has an `as_of`, and each manifest entry declares where its evidence comes from.
 
-| Source | Evidence | How it stops at `as_of` |
-| --- | --- | --- |
-| `git_diff_base_to_merge` | The diff from `base_sha` to `merge_sha` | Both commits are fixed |
-| `git_ancestors_of_base` | Commits reachable from `base_sha` | Reachability; commit dates only set the length of a window |
-| `github_events_until_as_of` | Timestamped reviews, label events, renames and edits | Each event is checked against `as_of` |
-| `pr_commits_at_merge` | The PR's commits up to its head at merge, plus the landing commit | Commits are fixed by SHA |
-| `immutable_pr_fact` | Facts that cannot change after PR creation | They cannot change |
-| `harness_contract` | Task-contract data from an instrumented harness | Written before merge |
+| Source                      | Evidence                                                          | How it stops at `as_of`                                    |
+| --------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| `git_diff_base_to_merge`    | The diff from `base_sha` to `merge_sha`                           | Both commits are fixed                                     |
+| `git_ancestors_of_base`     | Commits reachable from `base_sha`                                 | Reachability; commit dates only set the length of a window |
+| `github_events_until_as_of` | Timestamped reviews, label events, renames and edits              | Each event is checked against `as_of`                      |
+| `pr_commits_at_merge`       | The PR's commits up to its head at merge, plus the landing commit | Commits are fixed by SHA                                   |
+| `immutable_pr_fact`         | Facts that cannot change after PR creation                        | They cannot change                                         |
+| `harness_contract`          | Task-contract data from an instrumented harness                   | Written before merge                                       |
 
 `github_current_state`, `git_history_after_merge`, `label_store` and `wall_clock` always fail the audit.
 
@@ -30,18 +30,18 @@ Each row has an `as_of`, and each manifest entry declares where its evidence com
 
 ## What is in the set
 
-| Group | Fields | Role |
-| --- | --- | --- |
-| `feature.shape` | Diff size, tests changed, complexity change | Arm input |
-| `feature.history` | Churn, authors and fix-shaped commits on the changed files | Arm input |
-| `feature.author` | The author's prior commits; whether the author is a bot | Arm input |
-| `feature.agent` | Evidence that an agent tool worked on the PR: whether a marker exists, which tool, and the share of commits marked | Arm input |
-| `feature.process` | Reviews by merge; labels, title and body as they were at merge | Arm input |
-| `feature.content` | Hashes of the private diff, title and body that content arms read | Arm input |
-| `segment.agent` | The exact model a commit names, and where each marker was found | Reported separately |
-| `segment.author` | Whether the author is a dependency bot | Reported separately |
-| `segment.provenance` | The five instrumented-agent fields | Reported separately; null elsewhere |
-| `segment.ci` | CI results finished by merge | Reported separately; 2025Q4 onward only |
+| Group                | Fields                                                                                                             | Role                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| `feature.shape`      | Diff size, tests changed, complexity change                                                                        | Arm input                               |
+| `feature.history`    | Churn, authors and fix-shaped commits on the changed files                                                         | Arm input                               |
+| `feature.author`     | The author's prior commits; whether the author is a bot                                                            | Arm input                               |
+| `feature.agent`      | Evidence that an agent tool worked on the PR: whether a marker exists, which tool, and the share of commits marked | Arm input                               |
+| `feature.process`    | Reviews by merge; labels, title and body as they were at merge                                                     | Arm input                               |
+| `feature.content`    | Hashes of the private diff, title and body that content arms read                                                  | Arm input                               |
+| `segment.agent`      | The exact model a commit names, and where each marker was found                                                    | Reported separately                     |
+| `segment.author`     | Whether the author is a dependency bot                                                                             | Reported separately                     |
+| `segment.provenance` | The five instrumented-agent fields                                                                                 | Reported separately; null elsewhere     |
+| `segment.ci`         | CI results finished by merge                                                                                       | Reported separately; 2025Q4 onward only |
 
 `hokusai-scan corpus-feature-audit --print-manifest` prints every field with its source and null meaning.
 
@@ -54,14 +54,14 @@ Left out of v1:
 
 `feature.author.is_bot` only says that GitHub reports the author account as a bot. A person who uses Claude Code and opens the PR themselves is not a bot, so agent use is detected separately, by `detectAgentMarkers` in `@hokusai/scan`.
 
-| Evidence | Examples |
-| --- | --- |
-| Co-author trailer or commit author | `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`, or an organization's own agent account such as `acme-claude-bot` (a tool word and a bot or agent word) |
-| `Assisted-by` trailer, as AI-use policies ask for | `Assisted-by: codex (gpt-5.5)` |
-| Footer, model tag or authorship statement in a commit | `Generated with Claude Code`, `model: gpt-4o`, `Test was written by Claude` |
-| Footer, session link or authorship statement in the PR body at `as_of` | `Generated with Claude Code`, a Devin session link, `Authored by Claude Code (Opus 4.8)` |
-| Head branch prefix | `claude/`, `copilot/`, `cursor/`; not `bot/`, which release automation uses |
-| Bot account | `copilot-swe-agent`, `devin-ai-integration` |
+| Evidence                                                               | Examples                                                                                                                                                          |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Co-author trailer or commit author                                     | `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`, or an organization's own agent account such as `acme-claude-bot` (a tool word and a bot or agent word) |
+| `Assisted-by` trailer, as AI-use policies ask for                      | `Assisted-by: codex (gpt-5.5)`                                                                                                                                    |
+| Footer, model tag or authorship statement in a commit                  | `Generated with Claude Code`, `model: gpt-4o`, `Test was written by Claude`                                                                                       |
+| Footer, session link or authorship statement in the PR body at `as_of` | `Generated with Claude Code`, a Devin session link, `Authored by Claude Code (Opus 4.8)`                                                                          |
+| Head branch prefix                                                     | `claude/`, `copilot/`, `cursor/`; not `bot/`, which release automation uses                                                                                       |
+| Bot account                                                            | `copilot-swe-agent`, `devin-ai-integration`                                                                                                                       |
 
 An authorship statement needs a verb such as authored, co-authored, built, written or implemented, then by, with, using or via, then the tool within four words on the same line, with the tool's own capitalization. So "cursor-based pagination" and "not authored by Claude Code" do not count.
 
@@ -86,17 +86,17 @@ Before the freeze, the audit reviews a sample from development repos by hand and
 
 `scripts/corpus/probe-merge-time-coverage.mjs` sampled 6,448 merged PRs across all 18 repos and 25 months, with no failed queries. `fixtures/arbiter/corpus/hok-3023-merge-time-coverage.json` holds the aggregate counts, measured on 2026-11-09. The sample takes up to 15 PRs per month, from days 10–16, in creation order.
 
-| Quarter | PRs | CI usable at merge | Reviews after merge | Label events after merge | Body edits after merge |
-| --- | --: | --: | --: | --: | --: |
-| 2024Q3 | 779 | 0% | 102 | 511 | 43 |
-| 2024Q4 | 778 | 0% | 81 | 473 | 87 |
-| 2025Q1 | 786 | 0% | 118 | 560 | 84 |
-| 2025Q2 | 763 | 0% | 77 | 708 | 71 |
-| 2025Q3 | 776 | 0% | 46 | 684 | 49 |
-| 2025Q4 | 767 | 91% | 73 | 695 | 49 |
-| 2026Q1 | 785 | 100% | 77 | 669 | 74 |
-| 2026Q2 | 771 | 100% | 45 | 525 | 79 |
-| 2026Q3 (July) | 243 | 100% | 22 | 166 | 29 |
+| Quarter       | PRs | CI usable at merge | Reviews after merge | Label events after merge | Body edits after merge |
+| ------------- | --: | -----------------: | ------------------: | -----------------------: | ---------------------: |
+| 2024Q3        | 779 |                 0% |                 102 |                      511 |                     43 |
+| 2024Q4        | 778 |                 0% |                  81 |                      473 |                     87 |
+| 2025Q1        | 786 |                 0% |                 118 |                      560 |                     84 |
+| 2025Q2        | 763 |                 0% |                  77 |                      708 |                     71 |
+| 2025Q3        | 776 |                 0% |                  46 |                      684 |                     49 |
+| 2025Q4        | 767 |                91% |                  73 |                      695 |                     49 |
+| 2026Q1        | 785 |               100% |                  77 |                      669 |                     74 |
+| 2026Q2        | 771 |               100% |                  45 |                      525 |                     79 |
+| 2026Q3 (July) | 243 |               100% |                  22 |                      166 |                     29 |
 
 "CI usable" means at least one CI result on the PR's head commit finished by merge.
 
@@ -125,13 +125,13 @@ The coverage probe above is the one exception. It reports evidence availability 
 
 `hokusai-scan corpus-features` builds the rows, one step at a time per repo:
 
-| Step | Output | Published? |
-| --- | --- | --- |
-| `--step ci` | CI results on each PR's head commit, from `feature-evidence/ci/` | No, local only |
-| `--step evidence` | Timestamped reviews, body versions and commits, in `feature-evidence/evidence/` | No, holds raw text |
-| `--step timeline` | Label, rename and review-dismissal events, in `feature-evidence/timeline/` | No, holds raw text |
-| `--step extract` | `features.jsonl.gz` and `features.summary.json` | Yes, derived values and hashes only |
-| `--step manifest --out <file>` | The run manifest: file hashes and row counts per repo | Yes |
+| Step                           | Output                                                                          | Published?                          |
+| ------------------------------ | ------------------------------------------------------------------------------- | ----------------------------------- |
+| `--step ci`                    | CI results on each PR's head commit, from `feature-evidence/ci/`                | No, local only                      |
+| `--step evidence`              | Timestamped reviews, body versions and commits, in `feature-evidence/evidence/` | No, holds raw text                  |
+| `--step timeline`              | Label, rename and review-dismissal events, in `feature-evidence/timeline/`      | No, holds raw text                  |
+| `--step extract`               | `features.jsonl.gz` and `features.summary.json`                                 | Yes, derived values and hashes only |
+| `--step manifest --out <file>` | The run manifest: file hashes and row counts per repo                           | Yes                                 |
 
 Capture resumes where it stopped. `extract` reads no network or clock, so it can be repeated from the same evidence.
 
@@ -146,7 +146,7 @@ Capture resumes where it stopped. `extract` reads no network or clock, so it can
 - **CI capture:** only PRs merged from 2025-07-01 are requested, a quarter earlier than the first retained results the probe found. A CI failure means `FAILURE`, `TIMED_OUT`, `STARTUP_FAILURE` or `ERROR`; a cancelled run usually means it was superseded.
 - **Branch updates:** merge commits from updating a PR's branch don't count toward `marked_commit_share`.
 
-`fixtures/arbiter/corpus/hok-3023-feature-run-manifest.json` holds the current run's counts and file hashes, and the rows are in `s3://hokusai-pipeline-data-development/arbiter-corpus/hok-3023/`. The first run, at commit b49a1d9 with manifest 0.3.0, was replaced: its label counts, titles and review states could be wrong wherever GitHub had truncated a batch's timeline.
+`fixtures/arbiter/corpus/hok-3023-feature-run-manifest.json` holds the current run's counts and file hashes, and the rows are in `s3://hokusai-pipeline-data-development/arbiter-corpus/hok-3023/`. The first run, at commit b49a1d9 with manifest 0.3.0, was replaced: its label counts, titles and review states could be wrong wherever GitHub had truncated a batch's timeline. The leakage audit of the current run is in [merge-time-leakage-audit.md](merge-time-leakage-audit.md).
 
 ## Using the validator
 
@@ -158,8 +158,8 @@ hokusai-scan corpus-feature-audit --columns columns.json
 
 `columns.json` is a JSON array of column names. Pass feature columns only, not row identity or the target. Add `--allow-segments` only when reporting a segment.
 
-| Exit code | Meaning |
-| --- | --- |
-| 0 | The columns pass |
-| 1 | Leakage found; the errors are in the JSON on stdout |
-| 2 | Usage or input error |
+| Exit code | Meaning                                             |
+| --------- | --------------------------------------------------- |
+| 0         | The columns pass                                    |
+| 1         | Leakage found; the errors are in the JSON on stdout |
+| 2         | Usage or input error                                |
