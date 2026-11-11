@@ -2509,7 +2509,7 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
 );
 
 // ../core/src/rework-risk-features.ts
-var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/0.4.0";
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/1.0.0";
 var FEATURE_AS_OF_SOURCES = [
   /** The diff between `base_sha` and `merge_sha`. */
   "git_diff_base_to_merge",
@@ -2549,7 +2549,7 @@ var NO_EVENTS = "GitHub returned no timeline for this PR.";
 var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
 var NO_COMMITS = "The PR's commits could not be read.";
 var NO_MARKER_EVIDENCE = "No marker was found, and the commits or the body at as_of could not be read.";
-var NO_AUTHOR = "The author account no longer exists.";
+var NO_AUTHOR = "The author account no longer exists, or the PR was found from a `(#N)` reference in its landing commit and its author type was not recorded.";
 var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
 var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
   manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,

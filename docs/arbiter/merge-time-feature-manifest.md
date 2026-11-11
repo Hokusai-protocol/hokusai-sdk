@@ -1,6 +1,6 @@
 # Merge-time feature manifest (HOK-3023)
 
-**Status:** draft, `rr-merge-features/0.4.0`. It becomes frozen at 1.0.0 once the leakage audit passes.
+**Status:** frozen, `rr-merge-features/1.0.0`, after the [leakage audit](./merge-time-leakage-audit.md). Any change to an entry or rule needs a new version and a new audit.
 
 Every arm in the [pre-registered backtest](./rework-risk-preregistration.md) sees the same information: what was knowable when the PR merged. The manifest declares that set, and one validator enforces it.
 

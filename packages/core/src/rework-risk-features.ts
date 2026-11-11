@@ -20,8 +20,11 @@
 
 import type { HokusaiFieldError } from './schemas.js';
 
-/** Any change to the entries or the rules below bumps this version. */
-export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/0.4.0' as const;
+/**
+ * Frozen at 1.0.0 by the HOK-3023 leakage audit. Any change to the entries or the rules below
+ * bumps this version, and a new version needs its own audit before an arm may use it.
+ */
+export const REWORK_RISK_FEATURE_MANIFEST_VERSION = 'rr-merge-features/1.0.0' as const;
 
 /** Sources whose evidence is fixed at or before `as_of`. */
 export const FEATURE_AS_OF_SOURCES = [
@@ -98,7 +101,7 @@ const NO_EVENTS = 'GitHub returned no timeline for this PR.';
 const NOT_INSTRUMENTED = 'The PR did not come from an instrumented agent harness.';
 const NO_COMMITS = "The PR's commits could not be read.";
 const NO_MARKER_EVIDENCE = 'No marker was found, and the commits or the body at as_of could not be read.';
-const NO_AUTHOR = 'The author account no longer exists.';
+const NO_AUTHOR = 'The author account no longer exists, or the PR was found from a `(#N)` reference in its landing commit and its author type was not recorded.';
 
 const entry = (
   name: string,
