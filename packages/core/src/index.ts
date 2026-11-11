@@ -314,6 +314,9 @@ export {
 export { ARBITER_SURVIVAL_LABEL_V1_JSON_SCHEMA } from './arbiter-survival-label-schema.js';
 export {
   ADMITTED_PROXIES,
+  CORRECTIVE_REWORK_DEFINITIONS,
+  admittedProxiesFor,
+  type AdmittableProxy,
   ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
   CORRECTIVE_PROXIES,
   CORRECTIVE_REASON_CODES,

@@ -41,8 +41,8 @@ export const ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION = '1.1.0';
 
 /**
  * Version of the corrective-rework *definition*: which proxies are admitted
- * and at what confidence. cr-0.1.0 is HOK-3020 (R7)'s starting proposal;
- * calibration (HOK-3269) produces cr-0.2.0.
+ * and at what confidence. cr-0.1.0 is HOK-3020 (R7)'s starting proposal and
+ * stays the default until HOK-3269 pins a definition for HOK-3028.
  */
 export const CORRECTIVE_REWORK_DEFINITION_VERSION = 'cr-0.1.0';
 
@@ -79,6 +79,32 @@ export const PROXY_CONFIDENCE: Readonly<Record<CorrectiveProxy, CorrectiveConfid
 
 /** Proxies admitted as positives under cr-0.1.0. `abnormal_churn` stays disabled until calibration admits it. */
 export const ADMITTED_PROXIES = ['revert', 'repair_reference', 'szz', 'regression_issue'] as const satisfies readonly CorrectiveProxy[];
+
+/**
+ * Every definition the derivation knows, by `definition_version`. A definition
+ * only filters accepted repair pairs by proxy; detection and linkage are shared,
+ * so each version can be derived from the same candidates without re-running them.
+ *
+ * - `cr-0.1.0`: every admitted proxy (P1–P4).
+ * - `cr-0.2.0`: P1 `revert` and P2 `repair_reference` only, the `high_precision`
+ *   variant scored by HOK-3269 calibration. It is a candidate, not the pin: it
+ *   becomes HOK-3028's target only if the HOK-3269 top-up audit clears the
+ *   precision bar on the auditor's labels.
+ */
+/** A proxy any definition may admit: the schema's positive reason codes. */
+export type AdmittableProxy = (typeof ADMITTED_PROXIES)[number];
+
+export const CORRECTIVE_REWORK_DEFINITIONS: Readonly<Record<string, { admitted: readonly AdmittableProxy[]; description: string }>> = Object.freeze({
+  'cr-0.1.0': { admitted: ADMITTED_PROXIES, description: 'all admitted proxies (P1–P4)' },
+  'cr-0.2.0': { admitted: ['revert', 'repair_reference'], description: 'P1 revert and P2 repair_reference only (high_precision)' },
+});
+
+/** The proxies a definition admits. Throws on a version the derivation does not know. */
+export function admittedProxiesFor(definitionVersion: string): readonly AdmittableProxy[] {
+  const definition = CORRECTIVE_REWORK_DEFINITIONS[definitionVersion];
+  if (!definition) throw new Error(`unknown corrective-rework definition ${definitionVersion}`);
+  return definition.admitted;
+}
 
 /**
  * Why a candidate was rejected. The first six are the shared human taxonomy
@@ -278,8 +304,9 @@ export interface DeriveCorrectiveInput {
 
 /**
  * Derive a corrective row from accepted repair pairs. The original is
- * corrective at horizon H iff an admitted pair's fix merged in
- * (merge, merge + H days]. Pure and deterministic.
+ * corrective at horizon H iff a pair whose proxy the envelope's
+ * `definition_version` admits had its fix merge in (merge, merge + H days].
+ * Pure and deterministic.
  */
 export function deriveCorrectiveLabel(input: DeriveCorrectiveInput): CorrectiveReworkLabelV1 {
   const envelope: CorrectiveEnvelope = { ...input.envelope, schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION };
@@ -291,11 +318,12 @@ export function deriveCorrectiveLabel(input: DeriveCorrectiveInput): CorrectiveR
     label_provenance: 'harvested' as const,
     base_label_hash: input.base_label_hash,
   };
+  const admittedList = admittedProxiesFor(input.envelope.definition_version);
   if (!input.base_label_present) {
     return { ...base, corrective: null, confidence: null, reason_codes: ['base_label_missing'], repair_pair_ids: [], envelope };
   }
   const horizonSeconds = input.horizon_days * 86_400;
-  const admitted = new Set<string>(ADMITTED_PROXIES);
+  const admitted = new Set<string>(admittedList);
   const within = input.repair_pairs.filter(
     (p) => p.original.pr_url === input.prUrl && admitted.has(p.proxy) && p.lag_seconds > 0 && p.lag_seconds <= horizonSeconds,
   );
@@ -311,7 +339,7 @@ export function deriveCorrectiveLabel(input: DeriveCorrectiveInput): CorrectiveR
     ...base,
     corrective: true,
     confidence,
-    reason_codes: ADMITTED_PROXIES.filter((p) => proxies.has(p)),
+    reason_codes: admittedList.filter((p) => proxies.has(p)),
     repair_pair_ids: [...new Set(within.map((p) => p.candidate_id))].sort(),
     envelope,
   };

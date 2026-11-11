@@ -6662,6 +6662,15 @@ var PROXY_CONFIDENCE = Object.freeze({
   abnormal_churn: "low"
 });
 var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
+var CORRECTIVE_REWORK_DEFINITIONS = Object.freeze({
+  "cr-0.1.0": { admitted: ADMITTED_PROXIES, description: "all admitted proxies (P1\u2013P4)" },
+  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" }
+});
+function admittedProxiesFor(definitionVersion) {
+  const definition = CORRECTIVE_REWORK_DEFINITIONS[definitionVersion];
+  if (!definition) throw new Error(`unknown corrective-rework definition ${definitionVersion}`);
+  return definition.admitted;
+}
 var CORRECTIVE_REASON_CODES = [...ADMITTED_PROXIES, "no_accepted_fix", "base_label_missing"];
 function correctiveCandidateId(original, fix, proxy) {
   return createHash2("sha256").update([original.pr_url, fix.pr_url ?? fix.sha, proxy].join("\0"), "utf-8").digest("hex");
@@ -6677,11 +6686,12 @@ function deriveCorrectiveLabel(input) {
     label_provenance: "harvested",
     base_label_hash: input.base_label_hash
   };
+  const admittedList = admittedProxiesFor(input.envelope.definition_version);
   if (!input.base_label_present) {
     return { ...base, corrective: null, confidence: null, reason_codes: ["base_label_missing"], repair_pair_ids: [], envelope };
   }
   const horizonSeconds = input.horizon_days * 86400;
-  const admitted = new Set(ADMITTED_PROXIES);
+  const admitted = new Set(admittedList);
   const within = input.repair_pairs.filter(
     (p) => p.original.pr_url === input.prUrl && admitted.has(p.proxy) && p.lag_seconds > 0 && p.lag_seconds <= horizonSeconds
   );
@@ -6697,7 +6707,7 @@ function deriveCorrectiveLabel(input) {
     ...base,
     corrective: true,
     confidence,
-    reason_codes: ADMITTED_PROXIES.filter((p) => proxies.has(p)),
+    reason_codes: admittedList.filter((p) => proxies.has(p)),
     repair_pair_ids: [...new Set(within.map((p) => p.candidate_id))].sort(),
     envelope
   };
