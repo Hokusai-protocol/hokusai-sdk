@@ -113,4 +113,4 @@ The published rows were rebuilt at 1.0.0 from the same captured evidence. All 36
 identical to the audited 0.4.0 rows except `manifest_version`, so these results hold for 1.0.0.
 
 - Auditor: Claude Code, 2026-11-11, on commit f889ce3 data
-- Owner: not yet signed
+- Owner: Tim Ogilvie, 2026-11-11
