@@ -133,7 +133,8 @@ Titles, bodies, comments and diffs are read on the machine running the labeller,
 | Definition | Admits | Status |
 | --- | --- | --- |
 | `cr-0.1.0` | P1–P4: `revert`, `repair_reference`, `szz`, `regression_issue` | Default |
-| `cr-0.2.0` | P1 `revert` and P2 `repair_reference` only (the HOK-3269 `high_precision` variant) | Candidate. It becomes HOK-3028's target only if the HOK-3269 top-up audit clears the precision bar on the auditor's labels |
+| `cr-0.2.0` | P1 `revert` and P2 `repair_reference` only (the HOK-3269 `high_precision` variant) | HOK-3028 target, read as "reverted or explicitly repaired" (pin in hokusai-sdk#135) |
+| `cr-0.3.0` | P2 `repair_reference` and P4 `regression_issue` only | The defect-repair number. Reported alongside the target, never gates |
 
 Records are append-only. For each key, the newest `computed_at` wins.
 

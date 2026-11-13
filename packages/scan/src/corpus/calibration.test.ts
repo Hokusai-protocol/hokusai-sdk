@@ -363,6 +363,18 @@ describe('corpus-calibration CLI', () => {
     expect(run('corpus-calibration-sample', dir, sampleArgs('private')).exitCode).toBe(2);
   });
 
+  it('leaves the PRs of an earlier sample out of a new draw and records which sample', () => {
+    const dir = corpus();
+    expect(run('corpus-calibration-sample', dir, sampleArgs('first')).exitCode).toBe(0);
+    const first = JSON.parse(readFileSync(join(dir, 'first', 'sample.json'), 'utf8')) as { items: SampleItem[] };
+    const second = run('corpus-calibration-sample', dir, [...sampleArgs('second'), '--exclude-sample', 'first/sample.json']);
+    expect(second.exitCode).toBe(0);
+    const drawn = JSON.parse(readFileSync(join(dir, 'second', 'sample.json'), 'utf8')) as { items: SampleItem[]; excluded_samples: { items: number }[] };
+    const earlier = new Set(first.items.map((i) => i.pr_url));
+    expect(drawn.items.some((i) => earlier.has(i.pr_url))).toBe(false);
+    expect(drawn.excluded_samples).toEqual([{ sample_sha256: expect.stringMatching(/^[0-9a-f]{64}$/), items: first.items.length }]);
+  });
+
   it('refuses an output directory inside a git work tree', () => {
     const dir = corpus();
     mkdirSync(join(dir, '.git'));

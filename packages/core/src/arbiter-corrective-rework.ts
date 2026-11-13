@@ -90,6 +90,9 @@ export const ADMITTED_PROXIES = ['revert', 'repair_reference', 'szz', 'regressio
  *   variant scored by HOK-3269 calibration. It is a candidate, not the pin: it
  *   becomes HOK-3028's target only if the HOK-3269 top-up audit clears the
  *   precision bar on the auditor's labels.
+ * - `cr-0.3.0`: P2 `repair_reference` and P4 `regression_issue` only, the
+ *   defect-repair number: a later PR or issue says this PR's change was broken.
+ *   Reported alongside the HOK-3028 target; it does not gate.
  */
 /** A proxy any definition may admit: the schema's positive reason codes. */
 export type AdmittableProxy = (typeof ADMITTED_PROXIES)[number];
@@ -97,6 +100,7 @@ export type AdmittableProxy = (typeof ADMITTED_PROXIES)[number];
 export const CORRECTIVE_REWORK_DEFINITIONS: Readonly<Record<string, { admitted: readonly AdmittableProxy[]; description: string }>> = Object.freeze({
   'cr-0.1.0': { admitted: ADMITTED_PROXIES, description: 'all admitted proxies (P1–P4)' },
   'cr-0.2.0': { admitted: ['revert', 'repair_reference'], description: 'P1 revert and P2 repair_reference only (high_precision)' },
+  'cr-0.3.0': { admitted: ['repair_reference', 'regression_issue'], description: 'P2 repair_reference and P4 regression_issue only (defect repair; reported, not gated)' },
 });
 
 /** The proxies a definition admits. Throws on a version the derivation does not know. */
