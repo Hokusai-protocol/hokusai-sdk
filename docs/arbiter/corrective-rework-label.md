@@ -171,6 +171,7 @@ For each row of the sheet, open the PR, every URL in `candidate_fixes`, and the 
 Ask: within 30 days of this PR merging, did someone do unplanned work to repair a defect it introduced?
 
 - **`yes`:** a fix within 30 days repairs a defect this PR introduced. Reverting the PR because it broke something counts, including builds or tests you can't see.
+- **Several candidate fixes:** answer `yes` if any one of them repairs a defect this PR introduced. Name that fix in `notes` and say why the others aren't repairs. Leave `candidate_fixes` as issued.
 - **`no`:** nothing within 30 days was a repair of this PR. This includes when the candidate fixes are planned follow-ups, requirement changes, unrelated, refactors, or non-defect reverts.
 - **`unclear`:** you can't tell within the time box.
 
@@ -287,14 +288,24 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
 
 ## 6. Results
 
-_To be filled in from `calibration-table.md` once labelling is complete._
+Plan 1.1.0, scored 2026-11-13: 170 items, model labels on all of them, and 81 audited by the person (53 at 1.0.0, 28 in the top-up). Weighted estimates with 95% stratified-bootstrap intervals.
 
-- Whether model labels stand in, with the person-vs-model κ.
-- Validation table: precision and recall per proxy, per definition variant and per repo (pseudonymized).
-- Agreement: κ for the verdict, cause codes and exclusion codes, and what happened to each code below the floor.
-- Cause distribution, with counts.
-- Rejections: the wrongly-rejected rate and the automatic-versus-labelled exclusion-code table. Also the `linkage_error` rate per proxy, reported separately.
-- The `cr-0.2.0` pick under §3.4, the §6 label precision, and the target-pin commit for HOK-3028 §2.
+- **Audit check:** 14 of 15 hidden known-answer items right (12 needed). Accepted.
+- **Model labels stand in:** person vs model A κ = 0.69 on the verdict (floor 0.6). Model B: 0.58. Model A vs B: 0.83.
+- **Precision of `corrective` on the person's labels (defect question, §4):**
+
+  | Definition | Person | Model A |
+  | --- | --- | --- |
+  | `cr-0.1.0` (P1–P4) | 63.4% (43.3%–83.1%) | 81.4% |
+  | `high_precision` = `cr-0.2.0` (P1, P2) | 68.8% (45.7%–92.3%) | 92.9% |
+  | `szz_min_3` | 66.3% | 87.1% |
+
+  By proxy, on the person's labels: revert 62.4% (n 20), repair_reference 82.8% (20), SZZ 32.2% (20), regression_issue 96.0% (5).
+- **Pick under §3.4 / §3.6:** none qualifies.
+- **Why reverts miss:** 7 of the 20 audited reverts undid work the person judged not to be a defect. The revert itself was real in every case: no `linkage_error` on revert or repair-reference items. Requiring breakage words in the revert text kept 6 defect reverts and 2 others and dropped 7 defect reverts; model A's verdict was right on 10 of the 13 reverts it called `yes`. These were measured on the audited items, so they are optimistic.
+- **Event reading** (HOK-3028 change log, 2026-11-13): counting a revert as right when it happened, whatever the reason, `cr-0.2.0` scores 94.5% (91.3%–97.8%) on the person's labels and 97.8% on model A's. To reproduce: for items with an accepted revert candidate, recode `no` with exclusion `revert_non_defect`, `planned_iteration`, `requirement_change` or `refactor` to `yes` in every sheet, and score again.
+- **Agreement below the floor:** cause codes (κ 0.43 with model A) are not usable as targets yet. Exclusion codes reach 0.68.
+- **Target pin:** HOK-3028 §2 `definition_version = cr-0.2.0`, read as "reverted or explicitly repaired within 30 days".
 
 ## 7. Change log
 
@@ -303,3 +314,4 @@ _To be filled in from `calibration-table.md` once labelling is complete._
 - 2026-10-29: plan 1.0.0 frozen, before the sample draw.
 - 2026-11-01: auditor checks added (§3.5): a screening test and 10 hidden known-answer items. This was done after the draw and before any labelling, and changes no plan parameter, sample item or estimate.
 - 2026-11-11: plan 1.1.0 (§3.6), decided on HOK-3020 after the 1.0.0 audit was scored and before any HOK-3028 arm was scored. The pick must also clear 0.80 on the person's labels, and the person labels every drawn `revert` and `repair_reference` item (28 more). The draw and every 1.0.0 parameter are unchanged.
+- 2026-11-13: results (§6). No definition clears 0.80 on the person's labels under the defect question. The owner pinned `cr-0.2.0` under the event reading recorded in the HOK-3028 change log. The top-up sheet's one edited `candidate_fixes` cell was restored to the issued value before scoring. Rule clarified for the auditor: with several candidate fixes, answer `yes` if any one repairs a defect this PR introduced, and name it in `notes`.

@@ -1,6 +1,6 @@
 # Rework Risk backtest: pre-registered decision gate (HOK-3028)
 
-**Status:** FROZEN (gate), 2026-10-28. §3–§8 and the holdout commitment are fixed. The only field still open is `definition_version` in §2, which the target-pin commit sets.
+**Status:** FROZEN (gate), 2026-10-28. Target pinned 2026-11-13: `definition_version = cr-0.2.0` (§2). §3–§8 and the holdout commitment are fixed.
 **Owner:** Tim Ogilvie
 **Freeze rule:** freezing happens in two dated commits, and both must land before any arm is scored on the evaluation slice (§4):
 
@@ -20,7 +20,7 @@ Every arm is scored on the same rows. A result is valid only if all of these are
 | Input | Pinned to |
 | --- | --- |
 | Corpus | `fixtures/arbiter/corpus/hok-3022-cohort.json`, after the HOK-3268 sanity pass (repo drops recorded there, **before** any arm is scored) |
-| Target | `corrective_rework`, `definition_version` pinned by the target-pin commit at the end of HOK-3269 calibration (decided 2026-10-28: wait for calibration rather than default to `cr-0.1.0`). `definition_version = <TBD at target pin>` |
+| Target | `corrective_rework`, `definition_version` pinned by the target-pin commit at the end of HOK-3269 calibration (decided 2026-10-28: wait for calibration rather than default to `cr-0.1.0`). `definition_version = cr-0.2.0`: positive when, within the horizon, the PR was reverted (P1 `revert`) or a later PR explicitly repaired it (P2 `repair_reference`). SZZ (P3) and regression issues (P4) are not admitted. See the 2026-11-13 change-log entry for how the §6 label-noise diagnostic reads the human labels for this definition. |
 | Primary horizon | 30 days. 14 and 60 days are secondary. |
 | Features | HOK-3023 frozen merge-time manifest (version recorded). Every arm consumes only this set. |
 | Exclusions | Dependency-bot PRs are segmented out of the primary analysis and reported separately. Rows with `corrective = null` are excluded and counted, never imputed. |
@@ -97,7 +97,7 @@ Let **Δ** = macro top-decile capture (arm 5) − macro top-decile capture (arm 
 ## 9. Outputs
 
 * A results write-up with the §6 outcome stated in the first line.
-* The demo line, with real numbers: "N merged PRs later needed corrective work. Rework Risk placed X in its top-risk decile. A frontier decision model with no outcome history placed Y."
+* The demo line, with real numbers: "N merged PRs were later reverted or repaired. Rework Risk placed X in its top-risk decile. A frontier decision model with no outcome history placed Y."
 * A Decision Log entry in the Arbiter Program Brief.
 
 ## Change log
@@ -105,3 +105,10 @@ Let **Δ** = macro top-decile capture (arm 5) − macro top-decile capture (arm 
 * 2026-10-28: first draft (HOK-3028). Owner decisions: lift bar Δ ≥ 10 pp and ≥ 1.25×; target version pinned after HOK-3269; document lives in `hokusai-sdk/docs/arbiter/`.
 * 2026-10-28: slice selection is mechanical (§4, `draw-evaluation-slice.mjs`). The draw happens after per-repo S2 and P1/P2 corrective base rates were posted on HOK-3268 and HOK-3267, but before any arm was built or scored. The seeded draw, and the published salt after the result, let anyone check that those rates did not choose the slice. Whoever builds or tunes arms does not see the manifest.
 * 2026-10-28: **gate frozen.** The owner accepted the remaining defaults (minimum power, ⅔ repo consistency, calibration margins, label precision 0.80) and committed the holdout hash. Pre-scoring power check: the evaluation slice has ≥ 500 corrective positives at 30 days under the current labels. Only counts were examined; no arm was scored.
+* 2026-11-11: **disclosure, no amendment.** The session that built the HOK-2818 dataset assembly and the HOK-3024 baselines (arms 1–2) read the evaluation slice manifest while writing the code that excludes slice repos. Arms 1–2 use hyperparameters fixed in code before they ran, were not tuned, and were run on development repos only. No arm has been scored on the evaluation slice. To keep §4's rule for the arms that involve design choices, arms 3–6 are built and frozen in separate sessions that have not seen the manifest. §2–§8 are unchanged.
+* 2026-11-13: **target pin, with a disclosed deviation in how §6 reads the human labels.** Decided by the owner on HOK-3020, after the HOK-3269 audit was scored and before any arm was scored on the evaluation slice.
+  * **Pin.** `definition_version = cr-0.2.0` (reverts and repair references). The mechanical pick in HOK-3269 §3.4 is overridden: the reasons and numbers are below.
+  * **Why not `cr-0.1.0`.** On the person's audit labels, precision is 63.4% under `cr-0.1.0` and 68.8% under `cr-0.2.0`, both below 0.80. Almost all of the misses are of one kind: about a third of reverts undo work that was not a defect (not ready for release, a workaround no longer needed, a migration split in two). Text rules and model judgment did not separate those from defect reverts on the audited items (75% and 77%), and many reverts give no reason.
+  * **Why not a defect-only definition.** Repair references plus regression issues give 426 slice positives at 30 days, below the 500 minimum, and 0 in one slice repo. Reverts are about 70% of the usable signal. Count-only check; no arm was scored.
+  * **Deviation: how §6 reads the human labels.** The pinned target is an event, "reverted or explicitly repaired within 30 days", not a defect claim. So the §6 diagnostic counts a positive as right when the person confirms the event: for a revert, the PR was in fact reverted, whatever the reason (a `no` with exclusion `revert_non_defect`, `planned_iteration`, `requirement_change` or `refactor` counts as right; `linkage_error` or `unrelated_edit` counts as wrong); for a repair reference, the person judged it a repair (`yes`). Under this reading, `cr-0.2.0` scores 94.5% (91.3%–97.8%) on the person's labels and 97.8% on model A's. The person flagged no wrongly linked revert or repair reference. The §6 text and threshold are unchanged. §8.3 forbids amendments after the freeze; this entry discloses the reading rather than relying on the pin alone, so readers can judge it.
+  * **Consequence for claims.** Results and the §9 demo line describe PRs that were later reverted or repaired, not PRs that had defects. A defect-only rate is reported as a secondary number and does not gate.
