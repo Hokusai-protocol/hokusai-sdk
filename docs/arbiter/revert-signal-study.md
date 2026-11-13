@@ -46,10 +46,19 @@ A rule **succeeds** when, on the person's labels, its weighted precision is ≥ 
 
 Intervals are reported throughout. With 60 items, a precision near 0.80 carries an interval of roughly ±10 points, so a borderline pass is reported as borderline.
 
-## 6. Results
+## 6. Running it
+
+1. `corpus-calibration-sample` with this plan, `--exclude-slice` and `--exclude-sample <HOK-3269 sample.json>`, then `corpus-calibration-evidence`.
+2. `corpus-calibration-gold --gold gold-rs-1.0.0.json`: the study's own hidden items only, so the auditor sees none twice.
+3. `node scripts/corpus/revert-signals.mjs --sample <dir>` writes `signals.jsonl`. Run it before the sheet comes back, and post its SHA-256.
+4. The model labellers (`label-calibration.mjs --sheet a` and `--sheet b`), and the person's sheet.
+5. `corpus-calibration-score`, then the §4 rules against the person's labels.
+
+## 7. Results
 
 _To be filled in once the sheet is back._
 
-## 7. Change log
+## 8. Change log
 
 - 2026-11-13: plan `rs-1.0.0` frozen before the draw. Decided on HOK-3020 after the HOK-3269 top-up audit.
+- 2026-11-13: drawn (60 reverts, 12 repos), with 6 hidden items (3 defect, 3 non-defect reverts; 3 more candidates were dropped as debatable by the blind second labeller). Signals were collected before any label existed. `ci_red_after_merge` is available for only 14 of 60 items, because GitHub no longer returns checks or statuses for most of the older merge commits. The rules that use it are scored on what is available, and the coverage is reported with them.
