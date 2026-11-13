@@ -255,6 +255,13 @@ describe('corrective-rework — definitions (HOK-3269)', () => {
     expect(validate(row), JSON.stringify(validate.errors)).toBe(true);
   });
 
+  it('cr-0.3.0 admits repair references and regression issues only', () => {
+    expect(admittedProxiesFor('cr-0.3.0')).toEqual(['repair_reference', 'regression_issue']);
+    expect(derive('cr-0.3.0', [pair('revert', 'a'), pair('szz', 'b')]).corrective).toBe(false);
+    expect(derive('cr-0.3.0', [pair('revert', 'a'), pair('regression_issue', 'b')]).corrective).toBe(true);
+    expect(derive('cr-0.3.0', [pair('repair_reference', 'a')]).envelope.definition_version).toBe('cr-0.3.0');
+  });
+
   it('the same pairs give a cr-0.1.0 positive and a cr-0.2.0 negative when only SZZ links them', () => {
     expect(derive('cr-0.1.0', [pair('szz', 'a')]).corrective).toBe(true);
     expect(derive('cr-0.2.0', [pair('szz', 'a')]).corrective).toBe(false);

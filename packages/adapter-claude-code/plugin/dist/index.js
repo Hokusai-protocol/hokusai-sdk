@@ -6664,7 +6664,8 @@ var PROXY_CONFIDENCE = Object.freeze({
 var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
 var CORRECTIVE_REWORK_DEFINITIONS = Object.freeze({
   "cr-0.1.0": { admitted: ADMITTED_PROXIES, description: "all admitted proxies (P1\u2013P4)" },
-  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" }
+  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" },
+  "cr-0.3.0": { admitted: ["repair_reference", "regression_issue"], description: "P2 repair_reference and P4 regression_issue only (defect repair; reported, not gated)" }
 });
 function admittedProxiesFor(definitionVersion) {
   const definition = CORRECTIVE_REWORK_DEFINITIONS[definitionVersion];

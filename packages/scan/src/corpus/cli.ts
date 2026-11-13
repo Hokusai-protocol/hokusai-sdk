@@ -113,6 +113,7 @@ const OPTIONS = {
   notes: { type: 'string' },
   plan: { type: 'string' },
   'exclude-slice': { type: 'string' },
+  'exclude-sample': { type: 'string', multiple: true },
   seed: { type: 'string' },
   sample: { type: 'string' },
   gold: { type: 'string' },
@@ -290,7 +291,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     io.writeStderr(`error: unknown corpus command ${command}; expected one of ${CORPUS_COMMANDS.join(', ')}\n`);
     return { exitCode: 2 };
   }
-  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string; gold?: string; sheet?: string; definition?: string };
+  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; 'exclude-sample'?: string[]; seed?: string; sample?: string; gold?: string; sheet?: string; definition?: string };
   let values: Values;
   let entries: CohortRepo[];
   let manifestBytes: Buffer;
@@ -362,7 +363,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
       io.writeStderr('error: --seed must be 64 lowercase hex characters\n');
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve(io.cwd, values['cache-dir']), resolve(io.cwd, values.plan), resolve(io.cwd, values['exclude-slice']), resolve(io.cwd, values.out), values.seed, io, log);
+    return runCalibrationSample(entries, manifestBytes, resolve(io.cwd, values['cache-dir']), resolve(io.cwd, values.plan), resolve(io.cwd, values['exclude-slice']), resolve(io.cwd, values.out), values.seed, io, log, (values['exclude-sample'] ?? []).map((p) => resolve(io.cwd, p)));
   }
   if (command === 'corpus-calibration-evidence') {
     if (!values.sample) {
@@ -733,6 +734,8 @@ interface SampleFile {
   cells: SampleCell[];
   items: SampleItem[];
   drawn_at: string;
+  /** Earlier samples whose PRs were left out of this draw (`--exclude-sample`); absent when none. */
+  excluded_samples?: { sample_sha256: string; items: number }[];
   /** Audit top-ups applied after the draw (plan ≥ 1.1.0); absent when none. */
   audit_topups?: { plan_version: string; from_plan_version: string; added: number; gold_item_ids: string[]; at: string }[];
 }
@@ -747,8 +750,11 @@ function runCalibrationSample(
   seedArg: string | undefined,
   io: CorpusCliIO,
   log: (line: string) => void,
+  excludeSamplePaths: readonly string[] = [],
 ): { exitCode: number } {
   const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const excludedUrls = new Set<string>();
+  const excludedSamples: NonNullable<SampleFile['excluded_samples']> = [];
   let plan: CalibrationPlan;
   let planBytes: Buffer;
   let sliceBytes: Buffer;
@@ -762,6 +768,13 @@ function runCalibrationSample(
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error('--out must be outside any git work tree; the sample and its labels stay private');
     if (existsSync(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    for (const path of excludeSamplePaths) {
+      const bytes = readFileSync(path);
+      const prior = JSON.parse(bytes.toString('utf8')) as Partial<SampleFile>;
+      if (!Array.isArray(prior.items) || !prior.items.length) throw new Error(`--exclude-sample ${path} has no items`);
+      for (const item of prior.items) excludedUrls.add(item.pr_url);
+      excludedSamples.push({ sample_sha256: sha256(bytes), items: prior.items.length });
+    }
   } catch (error) {
     io.writeStderr(`error: ${(error as Error).message}\n`);
     return { exitCode: 2 };
@@ -796,7 +809,8 @@ function runCalibrationSample(
     }
   }
   if (failures) return { exitCode: 3 };
-  const sample = drawCalibrationSample(units, plan, seed);
+  // Earlier samples' PRs leave the population before the draw, so their labels are never reused as fresh evidence.
+  const sample = drawCalibrationSample(excludedUrls.size ? units.filter((u) => !excludedUrls.has(u.pr_url)) : units, plan, seed);
   const repos = new Set(sample.items.map((i) => i.repo)).size;
   if (repos < plan.min_repos) {
     io.writeStderr(`error: the sample spans ${repos} repos; the plan needs at least ${plan.min_repos}\n`);
@@ -814,6 +828,7 @@ function runCalibrationSample(
     cells: sample.cells,
     items: sample.items,
     drawn_at: new Date().toISOString(),
+    ...(excludedSamples.length && { excluded_samples: excludedSamples }),
   };
   mkdirSync(outDir, { recursive: true, mode: 0o700 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}\n`, 'utf8');

@@ -119,7 +119,7 @@ corpus-corrective-derive --manifest <cohort.json> --cache-dir <path> --definitio
                  (corrective rows under another definition, from existing repair pairs; HOK-3269)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo × horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
-corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> [--exclude-sample <sample.json> ...] --out <private dir>
                  (stratified calibration sample, evaluation slice excluded; HOK-3269)
 corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample <private dir>
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)

@@ -1839,7 +1839,8 @@ var PROXY_CONFIDENCE = Object.freeze({
 var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
 var CORRECTIVE_REWORK_DEFINITIONS = Object.freeze({
   "cr-0.1.0": { admitted: ADMITTED_PROXIES, description: "all admitted proxies (P1\u2013P4)" },
-  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" }
+  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" },
+  "cr-0.3.0": { admitted: ["repair_reference", "regression_issue"], description: "P2 repair_reference and P4 regression_issue only (defect repair; reported, not gated)" }
 });
 function admittedProxiesFor(definitionVersion) {
   const definition = CORRECTIVE_REWORK_DEFINITIONS[definitionVersion];
@@ -9524,7 +9525,13 @@ function definitionVariants(plan) {
     { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
     { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
     { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
-    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
+    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) },
+    {
+      name: "defect_repair",
+      description: "P2 repair_reference and P4 regression_issue only (cr-0.3.0; reported, never picked)",
+      keep: (c) => c.proxy === "repair_reference" || c.proxy === "regression_issue",
+      reported_only: true
+    }
   ];
 }
 var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
@@ -9628,12 +9635,14 @@ function scoreCalibration(input) {
     return {
       name: d.name,
       description: d.description,
+      ...d.reported_only && { reported_only: true },
       precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
       recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
     };
   });
   let chosen = null;
   for (const d of definitions) {
+    if (d.reported_only) continue;
     if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
     if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
   }
@@ -9719,6 +9728,7 @@ function scoreCalibrationRun(input) {
     };
     let best = null;
     for (const d of model.definitions) {
+      if (d.reported_only) continue;
       if (!clears(model, d.name) || !clears(human, d.name)) continue;
       if (!best || (d.recall.estimate ?? 0) > (best.recall.estimate ?? 0)) best = d;
     }
@@ -11212,6 +11222,7 @@ var OPTIONS = {
   notes: { type: "string" },
   plan: { type: "string" },
   "exclude-slice": { type: "string" },
+  "exclude-sample": { type: "string", multiple: true },
   seed: { type: "string" },
   sample: { type: "string" },
   gold: { type: "string" },
@@ -11437,7 +11448,7 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log);
+    return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log, (values["exclude-sample"] ?? []).map((p) => resolve4(io.cwd, p)));
   }
   if (command === "corpus-calibration-evidence") {
     if (!values.sample) {
@@ -11750,8 +11761,10 @@ function insideGitWorkTree(path4) {
     if (dirname(dir) === dir) return false;
   }
 }
-function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log) {
+function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log, excludeSamplePaths = []) {
   const sha2562 = (bytes2) => createHash5("sha256").update(bytes2).digest("hex");
+  const excludedUrls = /* @__PURE__ */ new Set();
+  const excludedSamples = [];
   let plan;
   let planBytes;
   let sliceBytes;
@@ -11765,6 +11778,13 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
     if (existsSync4(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    for (const path4 of excludeSamplePaths) {
+      const bytes2 = readFileSync3(path4);
+      const prior = JSON.parse(bytes2.toString("utf8"));
+      if (!Array.isArray(prior.items) || !prior.items.length) throw new Error(`--exclude-sample ${path4} has no items`);
+      for (const item of prior.items) excludedUrls.add(item.pr_url);
+      excludedSamples.push({ sample_sha256: sha2562(bytes2), items: prior.items.length });
+    }
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -11800,7 +11820,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     }
   }
   if (failures) return { exitCode: 3 };
-  const sample = drawCalibrationSample(units, plan, seed);
+  const sample = drawCalibrationSample(excludedUrls.size ? units.filter((u) => !excludedUrls.has(u.pr_url)) : units, plan, seed);
   const repos = new Set(sample.items.map((i) => i.repo)).size;
   if (repos < plan.min_repos) {
     io.writeStderr(`error: the sample spans ${repos} repos; the plan needs at least ${plan.min_repos}
@@ -11818,7 +11838,8 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     inputs,
     cells: sample.cells,
     items: sample.items,
-    drawn_at: (/* @__PURE__ */ new Date()).toISOString()
+    drawn_at: (/* @__PURE__ */ new Date()).toISOString(),
+    ...excludedSamples.length && { excluded_samples: excludedSamples }
   };
   mkdirSync2(outDir, { recursive: true, mode: 448 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
@@ -12916,7 +12937,7 @@ corpus-corrective-derive --manifest <cohort.json> --cache-dir <path> --definitio
                  (corrective rows under another definition, from existing repair pairs; HOK-3269)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo \xD7 horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
-corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> [--exclude-sample <sample.json> ...] --out <private dir>
                  (stratified calibration sample, evaluation slice excluded; HOK-3269)
 corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample <private dir>
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)

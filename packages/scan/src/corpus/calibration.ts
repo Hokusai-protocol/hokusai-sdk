@@ -500,6 +500,8 @@ export interface DefinitionVariant {
   name: string;
   description: string;
   keep: (c: UnitCandidate) => boolean;
+  /** Scored and shown, but never picked: added after a plan froze, so it cannot change that plan's pick. */
+  reported_only?: boolean;
 }
 
 export function definitionVariants(plan: CalibrationPlan): DefinitionVariant[] {
@@ -511,6 +513,12 @@ export function definitionVariants(plan: CalibrationPlan): DefinitionVariant[] {
     { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need ≥${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
     { name: 'no_internal_build', description: 'reverts for internal-build breakage excluded', keep: notInternal },
     { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: 'both of the above', keep: (c) => strongSzz(c) && notInternal(c) },
+    {
+      name: 'defect_repair',
+      description: 'P2 repair_reference and P4 regression_issue only (cr-0.3.0; reported, never picked)',
+      keep: (c) => c.proxy === 'repair_reference' || c.proxy === 'regression_issue',
+      reported_only: true,
+    },
   ];
 }
 
@@ -617,7 +625,7 @@ export interface CalibrationResults {
   unrepresented_population: number;
   strata: StratumResult[];
   proxies: Record<string, { precision: Estimate; recall: Estimate }>;
-  definitions: { name: string; description: string; precision: Estimate; recall: Estimate }[];
+  definitions: { name: string; description: string; reported_only?: boolean; precision: Estimate; recall: Estimate }[];
   /** The pre-registered pick: highest recall among variants with precision ≥ the plan's floor, earlier variants winning ties; null if none qualifies. */
   chosen_definition: string | null;
   repos: { repo: string; pseudonym: string; sampled: number; precision: Estimate; recall: Estimate }[];
@@ -692,6 +700,7 @@ export function scoreCalibration(input: {
     return {
       name: d.name,
       description: d.description,
+      ...(d.reported_only && { reported_only: true }),
       precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
       recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === 'yes'),
     };
@@ -699,6 +708,7 @@ export function scoreCalibration(input: {
 
   let chosen: (typeof definitions)[number] | null = null;
   for (const d of definitions) {
+    if (d.reported_only) continue;
     if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
     if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
   }
@@ -819,6 +829,7 @@ export function scoreCalibrationRun(input: {
     };
     let best: CalibrationResults['definitions'][number] | null = null;
     for (const d of model.definitions) {
+      if (d.reported_only) continue;
       if (!clears(model, d.name) || !clears(human, d.name)) continue;
       if (!best || (d.recall.estimate ?? 0) > (best.recall.estimate ?? 0)) best = d;
     }
