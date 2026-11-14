@@ -58,14 +58,24 @@ import { parseArgs } from 'node:util';
 import { gzipSync, inflateRawSync } from 'node:zlib';
 import { execArgvCommand } from '../shell-utils.js';
 import { GIT_OUTPUT_MAX_BUFFER, type GitRunner } from '../survival-labeller.js';
-import { HORIZONS, type ArbiterSurvivalLabelV1, type CorrectiveCandidateV1, type CorrectiveReworkLabelV1 } from '@hokusai/core';
+import {
+  CORRECTIVE_REWORK_DEFINITION_VERSION,
+  CORRECTIVE_REWORK_DEFINITIONS,
+  HORIZONS,
+  type ArbiterSurvivalLabelV1,
+  type CorrectiveCandidateV1,
+  type CorrectiveReworkLabelV1,
+  type RepairPairV1,
+} from '@hokusai/core';
 import { summarizeLabels } from '../survival-labeller.js';
 import {
   CALIBRATION_SAMPLER_VERSION,
   CALIBRATION_STRATA,
   classifyCalibrationRepo,
   drawCalibrationSample,
+  extendAudit,
   parseCalibrationPlan,
+  parseCsv,
   parseLabelSheet,
   renderCalibrationMarkdown,
   renderLabelSheet,
@@ -76,7 +86,8 @@ import {
   type SampleItem,
 } from './calibration.js';
 import { buildItemEvidence, type ItemEvidence } from './calibration-evidence.js';
-import { correctiveCorpusRepo, summarizeCorrective } from './corrective.js';
+import { GOLD_PASS_SHARE, insertGoldRows, parseGoldSet, renderGoldSheet, scoreGold, splitGoldRows, type GoldResult } from './calibration-gold.js';
+import { correctiveCorpusRepo, deriveCorrectiveRows, summarizeCorrective } from './corrective.js';
 import { prefetchIssueMeta } from './corrective-szz.js';
 import { enumerateCorpusRepo, type CorpusPrRecord, type GraphqlRunner } from './enumerate.js';
 import { labelCorpusRepo, prefetchCrossReferences, prefetchedGithubClient } from './label.js';
@@ -105,8 +116,12 @@ const OPTIONS = {
   notes: { type: 'string' },
   plan: { type: 'string' },
   'exclude-slice': { type: 'string' },
+  'exclude-sample': { type: 'string', multiple: true },
   seed: { type: 'string' },
   sample: { type: 'string' },
+  gold: { type: 'string' },
+  sheet: { type: 'string' },
+  definition: { type: 'string' },
   step: { type: 'string' },
 } as const;
 
@@ -114,10 +129,14 @@ export const CORPUS_COMMANDS = [
   'corpus-enumerate',
   'corpus-label',
   'corpus-corrective',
+  'corpus-corrective-derive',
   'corpus-report',
   'corpus-calibration-sample',
   'corpus-calibration-evidence',
   'corpus-calibration-score',
+  'corpus-calibration-gold',
+  'corpus-calibration-screen',
+  'corpus-calibration-topup',
   'corpus-feature-audit',
   'corpus-features',
   'corpus-feature-replay',
@@ -280,7 +299,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     return { exitCode: 2 };
   }
   if (command === 'corpus-feature-audit') return runFeatureAudit(argv, io);
-  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; seed?: string; sample?: string; step?: string };
+  type Values = { manifest?: string; 'cache-dir'?: string; repo?: string; 'as-of'?: string; out?: string; notes?: string; plan?: string; 'exclude-slice'?: string; 'exclude-sample'?: string[]; seed?: string; sample?: string; gold?: string; sheet?: string; definition?: string; step?: string };
   let values: Values;
   let entries: CohortRepo[];
   let manifestBytes: Buffer;
@@ -298,6 +317,27 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
     }
     return runCalibrationScore(resolve(io.cwd, values.sample), io);
   }
+  if (command === 'corpus-calibration-gold') {
+    if (!values.sample || !values.gold) {
+      io.writeStderr('error: corpus-calibration-gold needs --sample <dir> and --gold <gold.json>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationGold(resolve(io.cwd, values.sample), resolve(io.cwd, values.gold), io);
+  }
+  if (command === 'corpus-calibration-topup') {
+    if (!values.sample || !values.plan || !values.gold) {
+      io.writeStderr('error: corpus-calibration-topup needs --sample <dir>, --plan <plan.json> and --gold <gold.json>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationTopup(resolve(io.cwd, values.sample), resolve(io.cwd, values.plan), resolve(io.cwd, values.gold), io);
+  }
+  if (command === 'corpus-calibration-screen') {
+    if (!values.gold || !!values.out === !!values.sheet) {
+      io.writeStderr('error: corpus-calibration-screen needs --gold <gold.json> and either --out <blank sheet> or --sheet <filled sheet>\n');
+      return { exitCode: 2 };
+    }
+    return runCalibrationScreen(resolve(io.cwd, values.gold), values.out ? resolve(io.cwd, values.out) : undefined, values.sheet ? resolve(io.cwd, values.sheet) : undefined, io);
+  }
   try {
     if (!values.manifest || !values['cache-dir']) throw new Error('--manifest and --cache-dir are required');
     manifestBytes = readFileSync(resolve(io.cwd, values.manifest));
@@ -310,6 +350,18 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
   }
 
   const log = (line: string) => io.writeStderr(`${line}\n`);
+  if (command === 'corpus-corrective-derive') {
+    const definition = values.definition;
+    if (!definition || !CORRECTIVE_REWORK_DEFINITIONS[definition]) {
+      io.writeStderr(`error: corpus-corrective-derive needs --definition <one of ${Object.keys(CORRECTIVE_REWORK_DEFINITIONS).join(', ')}>\n`);
+      return { exitCode: 2 };
+    }
+    if (definition === CORRECTIVE_REWORK_DEFINITION_VERSION) {
+      io.writeStderr(`error: ${definition} is the default definition; corpus-corrective already writes it to corrective.jsonl.gz\n`);
+      return { exitCode: 2 };
+    }
+    return runCorrectiveDerive(entries, resolve(io.cwd, values['cache-dir']), definition, io, log);
+  }
   if (command === 'corpus-calibration-sample') {
     if (!values.plan || !values['exclude-slice'] || !values.out) {
       io.writeStderr('error: corpus-calibration-sample needs --plan <json>, --exclude-slice <slice manifest> and --out <private dir>\n');
@@ -319,7 +371,7 @@ export function runCorpusCli(command: string, argv: readonly string[], io: Corpu
       io.writeStderr('error: --seed must be 64 lowercase hex characters\n');
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve(io.cwd, values['cache-dir']), resolve(io.cwd, values.plan), resolve(io.cwd, values['exclude-slice']), resolve(io.cwd, values.out), values.seed, io, log);
+    return runCalibrationSample(entries, manifestBytes, resolve(io.cwd, values['cache-dir']), resolve(io.cwd, values.plan), resolve(io.cwd, values['exclude-slice']), resolve(io.cwd, values.out), values.seed, io, log, (values['exclude-sample'] ?? []).map((p) => resolve(io.cwd, p)));
   }
   if (command === 'corpus-calibration-evidence') {
     if (!values.sample) {
@@ -579,6 +631,60 @@ function runCorrective(
   return { exitCode: failures ? 3 : 0 };
 }
 
+/**
+ * `corpus-corrective-derive` (HOK-3269): corrective rows under another
+ * definition, derived from the repair pairs `corpus-corrective` already wrote.
+ * Detection is not re-run, so the new rows differ from `corrective.jsonl.gz`
+ * only in which proxies count. The envelope keeps the default rows' branch,
+ * as-of and labeller version and changes `definition_version`.
+ *
+ * Writes `corrective.<definition>.jsonl.gz` and `corrective.<definition>.summary.json`.
+ */
+function runCorrectiveDerive(entries: CohortRepo[], cacheRoot: string, definition: string, io: CorpusCliIO, log: (line: string) => void): { exitCode: number } {
+  let failures = 0;
+  for (const entry of entries) {
+    const [owner, name] = entry.repo.split('/') as [string, string];
+    const repoDir = join(cacheRoot, `${owner}__${name}`);
+    try {
+      for (const file of ['s2.jsonl.gz', 'repair_pairs.jsonl.gz', 'corrective.jsonl.gz']) {
+        if (!existsSync(join(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      }
+      const first = readGzipJsonlMembers<CorrectiveReworkLabelV1>(join(repoDir, 'corrective.jsonl.gz')).next();
+      if (first.done) throw new Error('corrective.jsonl.gz is empty');
+      const { labeller_version, integration_branch, as_of } = first.value.envelope;
+      const envelope = { definition_version: definition, labeller_version, integration_branch, as_of, computed_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') };
+      const pairs = [...readGzipJsonlMembers<RepairPairV1>(join(repoDir, 'repair_pairs.jsonl.gz'))];
+      const rows = deriveCorrectiveRows(readGzipJsonlMembers<ArbiterSurvivalLabelV1>(join(repoDir, 's2.jsonl.gz')), pairs, envelope);
+      const written = writeJsonl(join(repoDir, `corrective.${definition}.jsonl.gz`), rows, { gzip: true });
+      const byHorizon: Record<string, { rows: number; true: number; false: number; null: number; true_share: number | null }> = {};
+      for (const row of rows) {
+        const h = (byHorizon[String(row.horizon_days)] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null });
+        h.rows++;
+        h[row.corrective === null ? 'null' : row.corrective ? 'true' : 'false']++;
+      }
+      for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round((h.true / (h.true + h.false)) * 10_000) / 10_000 : null;
+      const summary = {
+        repo: entry.repo,
+        definition_version: definition,
+        derived_from: 'repair_pairs.jsonl.gz',
+        as_of: envelope.as_of,
+        repair_pairs: pairs.length,
+        corrective_by_horizon: byHorizon,
+        file: `corrective.${definition}.jsonl.gz`,
+        sha256: createHash('sha256').update(readFileSync(join(repoDir, `corrective.${definition}.jsonl.gz`))).digest('hex'),
+        bytes: written.writtenBytes,
+      };
+      writeFileSync(join(repoDir, `corrective.${definition}.summary.json`), `${JSON.stringify(summary, null, 2)}\n`);
+      io.writeStdout(`${JSON.stringify(summary)}\n`);
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: (error as Error).message })}\n`);
+      log(`error: ${entry.repo}: ${(error as Error).message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+
 const REPORT_INPUTS = ['s2.jsonl.gz', 'candidates.jsonl.gz', 'repair_pairs.jsonl.gz', 'corrective.jsonl.gz'] as const;
 
 function runReport(
@@ -671,6 +777,10 @@ interface SampleFile {
   cells: SampleCell[];
   items: SampleItem[];
   drawn_at: string;
+  /** Earlier samples whose PRs were left out of this draw (`--exclude-sample`); absent when none. */
+  excluded_samples?: { sample_sha256: string; items: number }[];
+  /** Audit top-ups applied after the draw (plan ≥ 1.1.0); absent when none. */
+  audit_topups?: { plan_version: string; from_plan_version: string; added: number; gold_item_ids: string[]; at: string }[];
 }
 
 function runCalibrationSample(
@@ -683,8 +793,11 @@ function runCalibrationSample(
   seedArg: string | undefined,
   io: CorpusCliIO,
   log: (line: string) => void,
+  excludeSamplePaths: readonly string[] = [],
 ): { exitCode: number } {
   const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const excludedUrls = new Set<string>();
+  const excludedSamples: NonNullable<SampleFile['excluded_samples']> = [];
   let plan: CalibrationPlan;
   let planBytes: Buffer;
   let sliceBytes: Buffer;
@@ -698,6 +811,13 @@ function runCalibrationSample(
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error('--out must be outside any git work tree; the sample and its labels stay private');
     if (existsSync(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    for (const path of excludeSamplePaths) {
+      const bytes = readFileSync(path);
+      const prior = JSON.parse(bytes.toString('utf8')) as Partial<SampleFile>;
+      if (!Array.isArray(prior.items) || !prior.items.length) throw new Error(`--exclude-sample ${path} has no items`);
+      for (const item of prior.items) excludedUrls.add(item.pr_url);
+      excludedSamples.push({ sample_sha256: sha256(bytes), items: prior.items.length });
+    }
   } catch (error) {
     io.writeStderr(`error: ${(error as Error).message}\n`);
     return { exitCode: 2 };
@@ -732,7 +852,8 @@ function runCalibrationSample(
     }
   }
   if (failures) return { exitCode: 3 };
-  const sample = drawCalibrationSample(units, plan, seed);
+  // Earlier samples' PRs leave the population before the draw, so their labels are never reused as fresh evidence.
+  const sample = drawCalibrationSample(excludedUrls.size ? units.filter((u) => !excludedUrls.has(u.pr_url)) : units, plan, seed);
   const repos = new Set(sample.items.map((i) => i.repo)).size;
   if (repos < plan.min_repos) {
     io.writeStderr(`error: the sample spans ${repos} repos; the plan needs at least ${plan.min_repos}\n`);
@@ -750,6 +871,7 @@ function runCalibrationSample(
     cells: sample.cells,
     items: sample.items,
     drawn_at: new Date().toISOString(),
+    ...(excludedSamples.length && { excluded_samples: excludedSamples }),
   };
   mkdirSync(outDir, { recursive: true, mode: 0o700 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}\n`, 'utf8');
@@ -765,6 +887,7 @@ function runCalibrationSample(
 function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: number } {
   let sample: SampleFile;
   let sheets: { a: string; b: string; h: string };
+  let topupBack = false;
   try {
     sample = JSON.parse(readFileSync(join(sampleDir, 'sample.json'), 'utf8')) as SampleFile;
     if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
@@ -773,9 +896,29 @@ function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: nu
       b: readFileSync(join(sampleDir, 'sheet-b.csv'), 'utf8'),
       h: readFileSync(join(sampleDir, 'sheet-h.csv'), 'utf8'),
     };
+    // A returned audit top-up (corpus-calibration-topup) is scored with the first audit sheet.
+    const topup = join(sampleDir, TOPUP_SHEET);
+    topupBack = existsSync(topup);
+    if (topupBack) sheets.h = appendSheetRows(sheets.h, readFileSync(topup, 'utf8'));
   } catch (error) {
     io.writeStderr(`error: ${(error as Error).message}\n`);
     return { exitCode: 2 };
+  }
+  // Hidden known-answer rows (corpus-calibration-gold) only decide whether the audit is accepted.
+  let auditCheck: GoldResult | undefined;
+  const goldPath = join(sampleDir, 'gold.json');
+  if (existsSync(goldPath)) {
+    try {
+      // A top-up's hidden rows count only once its sheet is back; until then its items are just unlabelled.
+      const pending = new Set(topupBack ? [] : (sample.audit_topups ?? []).flatMap((t) => t.gold_item_ids));
+      const hidden = parseGoldSet(JSON.parse(readFileSync(goldPath, 'utf8'))).items.filter((g) => g.use === 'hidden' && !pending.has(g.item_id));
+      const split = splitGoldRows(sheets.h, new Set(hidden.map((g) => g.item_id)));
+      auditCheck = scoreGold(split.gold, hidden, GOLD_PASS_SHARE.hidden);
+      sheets.h = split.rest;
+    } catch (error) {
+      io.writeStderr(`error: gold.json: ${(error as Error).message}\n`);
+      return { exitCode: 2 };
+    }
   }
   const subset = (keep: (i: SampleItem) => boolean) => new Map(sample.items.filter(keep).map((i) => [i.item_id, i]));
   const a = parseLabelSheet(sheets.a, subset(() => true));
@@ -787,12 +930,143 @@ function runCalibrationScore(sampleDir: string, io: CorpusCliIO): { exitCode: nu
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync(join(sampleDir, 'calibration-results.json'), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}\n`, { mode: 0o600 });
-  writeFileSync(join(sampleDir, 'calibration-table.md'), renderCalibrationMarkdown(run), { mode: 0o600 });
+  writeFileSync(join(sampleDir, 'calibration-results.json'), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run, ...(auditCheck && { audit_check: auditCheck }) }, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(join(sampleDir, 'calibration-table.md'), renderCalibrationMarkdown(run, auditCheck), { mode: 0o600 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join(sampleDir, 'calibration-table.md') })}\n`,
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, ...(auditCheck && { audit_check: { correct: auditCheck.correct, items: auditCheck.items, passed: auditCheck.passed } }), table: join(sampleDir, 'calibration-table.md') })}\n`,
   );
   return { exitCode: 0 };
+}
+
+function runCalibrationGold(sampleDir: string, goldPath: string, io: CorpusCliIO): { exitCode: number } {
+  try {
+    const sample = JSON.parse(readFileSync(join(sampleDir, 'sample.json'), 'utf8')) as SampleFile;
+    if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const goldBytes = readFileSync(goldPath);
+    const hidden = parseGoldSet(JSON.parse(goldBytes.toString('utf8'))).items.filter((g) => g.use === 'hidden');
+    if (!hidden.length) throw new Error('the gold set has no hidden items');
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item ID`);
+    const sheetPath = join(sampleDir, 'sheet-h.csv');
+    const sheet = insertGoldRows(readFileSync(sheetPath, 'utf8'), hidden, sample.seed);
+    // wx: a second run fails here, before the sheet is touched.
+    writeFileSync(join(sampleDir, 'gold.json'), goldBytes, { mode: 0o600, flag: 'wx' });
+    writeFileSync(sheetPath, sheet, { mode: 0o600 });
+    io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash('sha256').update(goldBytes).digest('hex') })}\n`);
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+}
+
+/** The returned top-up sheet; the command writes the blank as `sheet-h-topup.blank.csv`. */
+const TOPUP_SHEET = 'sheet-h-topup.csv';
+
+/** `extra`'s data rows appended to `sheet`; both must have the sheet header. */
+function appendSheetRows(sheet: string, extra: string): string {
+  const header = parseCsv(sheet)[0]?.join(',');
+  const extraRows = parseCsv(extra);
+  if (extraRows[0]?.join(',') !== header) throw new Error(`${TOPUP_SHEET} does not have the sheet-h header`);
+  const body = extra.replace(/^\uFEFF?[^\r\n]*\r?\n/, '');
+  return `${sheet.replace(/\s*$/, '\n')}${body}`;
+}
+
+/** Plan fields an audit top-up may change; every other field must equal the plan the sample was drawn under. */
+const TOPUP_PLAN_FIELDS = new Set(['plan_version', 'human_audit_share_by_stratum', 'pick_needs_human_precision']);
+
+/**
+ * Audit top-up (plan ≥ 1.1.0): re-derives the audit flags under the new plan,
+ * so the added items are the next ones in each stratum's seeded audit order,
+ * and writes them, with the gold set's new hidden items mixed in, to a blank
+ * `sheet-h-topup.blank.csv`. The prior sample.json and gold.json are kept
+ * beside the new ones. A second run fails before anything is written.
+ */
+function runCalibrationTopup(sampleDir: string, planPath: string, goldPath: string, io: CorpusCliIO): { exitCode: number } {
+  try {
+    const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+    const samplePath = join(sampleDir, 'sample.json');
+    const sample = JSON.parse(readFileSync(samplePath, 'utf8')) as SampleFile;
+    if (sample.procedure !== 'hok-3269-calibration-sample') throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const planBytes = readFileSync(planPath);
+    const plan = parseCalibrationPlan(JSON.parse(planBytes.toString('utf8')));
+    if (plan.plan_version === sample.plan.plan_version) throw new Error(`the sample is already on plan ${plan.plan_version}`);
+    const fields = new Set([...Object.keys(plan), ...Object.keys(sample.plan)]);
+    for (const field of fields) {
+      if (TOPUP_PLAN_FIELDS.has(field)) continue;
+      if (JSON.stringify((plan as unknown as Record<string, unknown>)[field]) !== JSON.stringify((sample.plan as unknown as Record<string, unknown>)[field])) {
+        throw new Error(`plan.${field} differs from the plan the sample was drawn under; a top-up may change only ${[...TOPUP_PLAN_FIELDS].join(', ')}`);
+      }
+    }
+    const items = extendAudit(sample.items, plan, sample.seed);
+    const added = items.filter((i, n) => i.audit && !sample.items[n]!.audit);
+    if (!added.length) throw new Error('the new plan audits no item that was not already audited');
+
+    const goldBytes = readFileSync(goldPath);
+    const gold = parseGoldSet(JSON.parse(goldBytes.toString('utf8')));
+    const priorGoldPath = join(sampleDir, 'gold.json');
+    const prior = existsSync(priorGoldPath) ? parseGoldSet(JSON.parse(readFileSync(priorGoldPath, 'utf8'))) : undefined;
+    const priorIds = new Set(prior?.items.map((g) => g.item_id) ?? []);
+    for (const g of prior?.items ?? []) {
+      const same = gold.items.find((x) => x.item_id === g.item_id);
+      if (!same || JSON.stringify(same) !== JSON.stringify(g)) throw new Error(`${g.item_id}: the new gold set must keep every prior gold item unchanged`);
+    }
+    if (prior && gold.gold_version === prior.gold_version) throw new Error(`the gold set is already at ${gold.gold_version}`);
+    const hidden = gold.items.filter((g) => g.use === 'hidden' && !priorIds.has(g.item_id));
+    if (!hidden.length) throw new Error('the gold set has no new hidden items for the top-up');
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const sampleUrls = new Set(sample.items.map((i) => i.pr_url));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id) || sampleUrls.has(g.pr_url));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item`);
+
+    const evidence = readJsonl<ItemEvidence>(join(sampleDir, 'evidence.jsonl'));
+    const related = new Map([...evidence].map((e) => [e.item_id, e.related.map((r) => r.url)]));
+    const sheet = insertGoldRows(renderLabelSheet(added, related), hidden, sample.seed);
+
+    const tag = (v: string) => v.replace(/[^0-9A-Za-z.]/g, '_');
+    // wx throughout: a second run fails here, before sample.json or gold.json changes.
+    const blankPath = join(sampleDir, 'sheet-h-topup.blank.csv');
+    writeFileSync(blankPath, sheet, { mode: 0o600, flag: 'wx' });
+    writeFileSync(join(sampleDir, `sample.plan-${tag(sample.plan.plan_version)}.json`), readFileSync(samplePath), { mode: 0o600, flag: 'wx' });
+    if (prior) writeFileSync(join(sampleDir, `gold.${tag(prior.gold_version)}.json`), readFileSync(priorGoldPath), { mode: 0o600, flag: 'wx' });
+    const next: SampleFile = {
+      ...sample,
+      plan,
+      plan_sha256: sha256(planBytes),
+      items,
+      audit_topups: [...(sample.audit_topups ?? []), { plan_version: plan.plan_version, from_plan_version: sample.plan.plan_version, added: added.length, gold_item_ids: hidden.map((g) => g.item_id), at: new Date().toISOString() }],
+    };
+    const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    writeFileSync(samplePath, bytes, { mode: 0o600 });
+    writeFileSync(priorGoldPath, goldBytes, { mode: 0o600 });
+    const strata: Record<string, number> = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, added.filter((i) => i.stratum === s).length] as const).filter(([, n]) => n > 0));
+    io.writeStdout(
+      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha256(bytes), gold_sha256: sha256(goldBytes) })}\n`,
+    );
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
+}
+
+/** Writes the blank screening sheet (`out`), or grades a candidate's filled one (`sheet`). */
+function runCalibrationScreen(goldPath: string, out: string | undefined, sheetPath: string | undefined, io: CorpusCliIO): { exitCode: number } {
+  try {
+    const screening = parseGoldSet(JSON.parse(readFileSync(goldPath, 'utf8'))).items.filter((g) => g.use === 'screening');
+    if (!screening.length) throw new Error('the gold set has no screening items');
+    if (out) {
+      writeFileSync(out, renderGoldSheet(screening), { flag: 'wx' });
+      io.writeStdout(`${JSON.stringify({ screening: screening.length, sheet: out })}\n`);
+    } else {
+      io.writeStdout(`${JSON.stringify(scoreGold(readFileSync(sheetPath!, 'utf8'), screening, GOLD_PASS_SHARE.screening), null, 2)}\n`);
+    }
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${(error as Error).message}\n`);
+    return { exitCode: 2 };
+  }
 }
 
 function runCalibrationEvidence(cacheRoot: string, sampleDir: string, io: CorpusCliIO, log: (line: string) => void): { exitCode: number } {

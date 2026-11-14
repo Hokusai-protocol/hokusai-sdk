@@ -115,14 +115,22 @@ corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name
                  (S2 v1.1.0 rows per enumerated PR × 14/30/60 into <cache>/<repo>/s2.jsonl)
 corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
+corpus-corrective-derive --manifest <cohort.json> --cache-dir <path> --definition <cr-x.y.z> [--repo <owner/name>]
+                 (corrective rows under another definition, from existing repair pairs; HOK-3269)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo × horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
-corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> [--exclude-sample <sample.json> ...] --out <private dir>
                  (stratified calibration sample, evaluation slice excluded; HOK-3269)
 corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample <private dir>
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-calibration-gold --sample <private dir> --gold <gold.json>
+                 (mix hidden known-answer rows into the blank human-audit sheet; HOK-3269)
+corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <filled sheet>)
+                 (write or grade the auditor screening test; HOK-3269)
+corpus-calibration-topup --sample <private dir> --plan <plan.json> --gold <gold.json>
+                 (audit top-up under a later plan: re-derive audit flags, write the blank top-up sheet with new hidden rows; HOK-3269)
 corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
                  (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
 corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slice <slice.json> --out <private dir> [--seed <hex>]

@@ -1,0 +1,30 @@
+{
+  "issue": "HOK-3269",
+  "plan_version": "1.1.0",
+  "status": "FROZEN 2026-11-11: audit top-up and pick rule, decided on HOK-3020 after the 1.0.0 audit was scored and before any HOK-3028 arm was scored. Every 1.0.0 field is unchanged, so the draw is the same; see the change log in docs/arbiter/corrective-rework-label.md",
+  "horizon_days": 30,
+  "allocation": {
+    "revert": 20,
+    "repair_reference": 20,
+    "regression_issue": 15,
+    "szz_strong": 25,
+    "szz_weak": 25,
+    "rejected": 25,
+    "negative": 40
+  },
+  "double_label_share": 1.0,
+  "human_audit_share": 0.3,
+  "min_repos": 5,
+  "szz_strong_min_lines": 3,
+  "kappa_floor": 0.6,
+  "definition_precision_floor": 0.8,
+  "labellers": {
+    "a": "claude-opus-5-5",
+    "b": "claude-sonnet-5-5"
+  },
+  "human_audit_share_by_stratum": {
+    "revert": 1.0,
+    "repair_reference": 1.0
+  },
+  "pick_needs_human_precision": true
+}

@@ -1,6 +1,6 @@
 # Corrective-rework label: definition and calibration (HOK-3269)
 
-**Status:** Plan FROZEN on 2026-10-29, before the sample was drawn. The calibration plan (§3) and `hok-3269-calibration-plan.json` change only with a new `plan_version` and a change-log entry. §6 is filled in from the scored sheets, and `cr-0.2.0` is pinned from §6 by the rule in §3.4.
+**Status:** Plan 1.0.0 FROZEN on 2026-10-29, before the sample was drawn. Plan 1.1.0 FROZEN on 2026-11-11, after the 1.0.0 audit was scored and before any HOK-3028 arm was scored (§3.6). The calibration plan (§3) and its JSON change only with a new `plan_version` and a change-log entry. §6 is filled in from the scored sheets, and `cr-0.2.0` is pinned from §6 by the rule in §3.4.
 **Internal.** The public excerpt is [corrective-rework-label-public.md](corrective-rework-label-public.md).
 
 ## 1. Definition
@@ -45,7 +45,7 @@ The definition is detected by the proxies, confidences and exclusion codes in [c
 
 ## 3. Pre-registered plan
 
-The plan is `fixtures/arbiter/corpus/hok-3269-calibration-plan.json`. Changing it after any item is labelled needs a new sample.
+The plan is `fixtures/arbiter/corpus/hok-3269-calibration-plan.json` (1.0.0, the draw) and `hok-3269-calibration-plan-1.1.0.json` (the audit top-up and pick rule, §3.6). Changing anything that affects the draw after any item is labelled needs a new sample. Plan 1.1.0 changes only who labels which drawn items and how the pick is made, so the 1.0.0 draw stands.
 
 ### 3.1 Sample
 
@@ -121,8 +121,41 @@ The scorer evaluates five definition variants:
 
 `cr-0.2.0` is the variant with the highest estimated recall among those whose estimated precision is **≥ 0.80**, computed on the primary labels (§3.2). On ties, the earlier variant in the list wins. The 0.80 is the HOK-3028 gate's own label-precision bar, so the target meets the bar the gate will check it against.
 
+- **Plan 1.1.0: the person's labels must agree.** When model labels stand in, a variant also needs estimated precision ≥ 0.80 on the person's labels (the human audit). This is the same bar, on the same labels, that the HOK-3028 §6 diagnostic applies to the pinned target. Recall still comes from the primary labels. See §3.6 for why.
 - **No variant qualifies.** Then no `cr-0.2.0` is pinned. HOK-3020 decides whether to fix the pipeline or redefine the target. HOK-3028 §6 treats precision < 0.80 as "labels too noisy".
 - **Confidence tiers.** A proxy whose precision interval lies wholly at or above 0.90 becomes `high`. Every other admitted proxy is `medium`.
+
+### 3.5 Auditor checks
+
+The person's labels check the models, so a careless auditor, or one who pastes items into an LLM, would make the models look better validated than they are. Known-answer ("gold") items guard against that. This section was added on 2026-11-01, after the sample draw and before any labelling. It changes no plan parameter, sample item or estimate.
+
+- **Gold items.** PRs from public repositories outside the cohort, each with an answer settled from public evidence. Each was found by one agent and confirmed by a blind second one. Items are dropped if their answer is debatable. The answer key is private (this repository is public), and its SHA-256 is posted on HOK-3269 before labelling starts.
+- **Kinds.** Reverts for a defect, explicit repairs, repairs only findable in `related_prs`, non-defect reverts, planned follow-ups, links to bugs the PR didn't cause, and clean negatives.
+- **Screening.** Before hiring, a candidate labels 8 screening items, a paid test of about an hour. They pass with at least 75% of verdicts right and a rationale on every row that names specific evidence.
+- **Hidden items.** 10 other gold items are mixed into `sheet-h.csv` at positions keyed by the private seed. They look like sample rows. The scorer removes them before any estimate.
+- **Pass rule.** The audit is accepted if at least 80% of hidden verdicts are right. `unclear` and blank count as wrong, because gold items are chosen to be clear.
+  - A labeller who is right 90% of the time fails about 7% of the time.
+  - One who is right 60% of the time passes about 17% of the time.
+- **On failure.** Every result that uses the person's labels is void. Another auditor labels the subset. The same hidden items can be reused, because no auditor sees the answers.
+- **What gold items don't catch.** An LLM that gets the gold items right passes. A mid-audit call in which the auditor walks through two of their labels is the check for that.
+
+### 3.6 Plan 1.1.0: audit top-up and pick rule
+
+Decided on HOK-3020 on 2026-11-11, after the 1.0.0 audit was scored. No HOK-3028 arm had been scored, so the evaluation is still blind. This is a change made after seeing calibration results, and is recorded as one.
+
+**What 1.0.0 found.** Model labels stood in (κ 0.69), and the 1.0.0 rule picked `cr-0.1.0` at 81.4% precision on model A's labels. On the person's labels, `cr-0.1.0` was 56.6% precise. Picking it would have pinned a target the HOK-3028 §6 diagnostic all but certainly fails.
+
+**Most of that gap is the small sample, not disagreement.** On the same 53 audited items, model A's labels give `cr-0.1.0` 66.9% precision, not 81.4%. The rest of the gap is the person rejecting more SZZ links than model A. For `high_precision` (P1 and P2 only), model A and the person agree: 77.6% and 77.8% on the same items. But only 12 audited items carry those proxies, so 77.8% has an interval of about 66–89%.
+
+**What 1.1.0 changes.**
+
+- **The pick rule** (§3.4): a variant must clear 0.80 on the person's labels as well as on the primary labels.
+- **The audit covers all of `revert` and `repair_reference`** (`human_audit_share_by_stratum`: 1.0 in both). The audit order within a stratum is seeded, so the 12 items already audited stay audited, and the person labels the other 28. Every other stratum stays at 30%.
+- **Nothing else changes:** allocation, strata, weights, κ floor, precision floor, labellers, seed and sample items. The scorer refuses a top-up plan that differs in any other field.
+
+**Why this top-up.** The `high_precision` estimate on the person's labels rests on those two strata, and it sits within noise of the bar. Labelling every drawn item in them settles it. Dropping SZZ costs little: on model A's labels, recall falls from 19.2% to 17.2%. The HOK-3028 evaluation slice has 1,397 corrective positives at 30 days under `high_precision` (1,788 under `cr-0.1.0`), against the gate's 500 minimum. Only counts were examined.
+
+**Hidden items.** The top-up sheet carries new hidden gold items (gold set 1.1.0). The 1.0.0 items stay in the set, unchanged, and are not reused on the top-up sheet. The pass rule (§3.5) applies to all hidden items together, once the top-up sheet is back.
 
 ## 4. Labelling guide
 
@@ -138,6 +171,7 @@ For each row of the sheet, open the PR, every URL in `candidate_fixes`, and the 
 Ask: within 30 days of this PR merging, did someone do unplanned work to repair a defect it introduced?
 
 - **`yes`:** a fix within 30 days repairs a defect this PR introduced. Reverting the PR because it broke something counts, including builds or tests you can't see.
+- **Several candidate fixes:** answer `yes` if any one of them repairs a defect this PR introduced. Name that fix in `notes` and say why the others aren't repairs. Leave `candidate_fixes` as issued.
 - **`no`:** nothing within 30 days was a repair of this PR. This includes when the candidate fixes are planned follow-ups, requirement changes, unrelated, refactors, or non-defect reverts.
 - **`unclear`:** you can't tell within the time box.
 
@@ -204,8 +238,24 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
    ```
 
    This writes `evidence.jsonl` and the blank `sheet-h.csv`.
-3. **Send `sheet-h.csv` and §4 of this doc to the auditor.** They label it blind.
-4. **Run the model labellers.** This needs `ANTHROPIC_API_KEY` and costs about $25–40 in all. Responses are cached per item, so an interrupted run resumes free.
+3. **Hide the gold items** in the audit sheet (§3.5) before it goes out:
+
+   ```sh
+   node packages/scan/dist/cli.js corpus-calibration-gold \
+     --sample ~/.hokusai-private/hok-3269-sample \
+     --gold ~/.hokusai-private/hok-3269-gold/gold.json
+   ```
+
+   It refuses a sheet with labels in it, or a second run. stdout gives the gold set's SHA-256: post it on HOK-3269.
+4. **Screen candidate auditors.** Write the blank screening sheet once, send it with §1 and §4, and grade each returned copy:
+
+   ```sh
+   node packages/scan/dist/cli.js corpus-calibration-screen --gold ~/.hokusai-private/hok-3269-gold/gold.json --out ~/.hokusai-private/hok-3269-gold/screening.csv
+   node packages/scan/dist/cli.js corpus-calibration-screen --gold ~/.hokusai-private/hok-3269-gold/gold.json --sheet <returned copy>
+   ```
+
+5. **Send `sheet-h.csv` and §1 and §4 of this doc to the hired auditor.** They label it blind.
+6. **Run the model labellers.** This needs `ANTHROPIC_API_KEY` and costs about $25–40 in all. Responses are cached per item, so an interrupted run resumes free.
 
    ```sh
    node scripts/corpus/label-calibration.mjs --sample ~/.hokusai-private/hok-3269-sample --sheet a
@@ -213,7 +263,7 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
    ```
 
    `--limit 3` runs a cheap trial first.
-5. **Score** once `sheet-h.csv` is back:
+7. **Score** once `sheet-h.csv` is back:
 
    ```sh
    node packages/scan/dist/cli.js corpus-calibration-score --sample ~/.hokusai-private/hok-3269-sample
@@ -221,21 +271,47 @@ Every step runs on the owner's machine. Whoever builds or tunes the HOK-3028 arm
 
    - Invalid labels exit 2 and list the item IDs.
    - Partial sheets still score, but the table is marked INCOMPLETE.
+   - With gold items present, stdout and the table give the audit check, and a failed check marks the person's results void.
    - Post `calibration-table.md` on HOK-3269. Keep `calibration-results.json` private, because it has repo names.
+8. **Audit top-up (plan 1.1.0, §3.6).** Add the new hidden items to a copy of the gold set as `gold_version` 1.1.0, keeping every 1.0.0 item unchanged. Then:
+
+   ```sh
+   node packages/scan/dist/cli.js corpus-calibration-topup \
+     --sample ~/.hokusai-private/hok-3269-sample \
+     --plan fixtures/arbiter/corpus/hok-3269-calibration-plan-1.1.0.json \
+     --gold ~/.hokusai-private/hok-3269-gold/gold-1.1.0.json
+   ```
+
+   - This writes `sheet-h-topup.blank.csv`, with the added audit items and the new hidden rows mixed in. It updates `sample.json` (plan and audit flags only) and `gold.json`, and keeps the prior copies as `sample.plan-1.0.0.json` and `gold.1.0.0.json`. A second run fails before anything is written.
+   - stdout gives the new sample and gold SHA-256s: post them on HOK-3269 before the sheet goes out.
+   - Send the blank to the same auditor. Save the returned copy as `sheet-h-topup.csv` and score again (step 7). The scorer reads both audit sheets. Until the top-up is back, its items count as unlabelled and its hidden rows are not scored.
 
 ## 6. Results
 
-_To be filled in from `calibration-table.md` once labelling is complete._
+Plan 1.1.0, scored 2026-11-13: 170 items, model labels on all of them, and 81 audited by the person (53 at 1.0.0, 28 in the top-up). Weighted estimates with 95% stratified-bootstrap intervals.
 
-- Whether model labels stand in, with the person-vs-model κ.
-- Validation table: precision and recall per proxy, per definition variant and per repo (pseudonymized).
-- Agreement: κ for the verdict, cause codes and exclusion codes, and what happened to each code below the floor.
-- Cause distribution, with counts.
-- Rejections: the wrongly-rejected rate and the automatic-versus-labelled exclusion-code table. Also the `linkage_error` rate per proxy, reported separately.
-- The `cr-0.2.0` pick under §3.4, the §6 label precision, and the target-pin commit for HOK-3028 §2.
+- **Audit check:** 14 of 15 hidden known-answer items right (12 needed). Accepted.
+- **Model labels stand in:** person vs model A κ = 0.69 on the verdict (floor 0.6). Model B: 0.58. Model A vs B: 0.83.
+- **Precision of `corrective` on the person's labels (defect question, §4):**
+
+  | Definition | Person | Model A |
+  | --- | --- | --- |
+  | `cr-0.1.0` (P1–P4) | 63.4% (43.3%–83.1%) | 81.4% |
+  | `high_precision` = `cr-0.2.0` (P1, P2) | 68.8% (45.7%–92.3%) | 92.9% |
+  | `szz_min_3` | 66.3% | 87.1% |
+
+  By proxy, on the person's labels: revert 62.4% (n 20), repair_reference 82.8% (20), SZZ 32.2% (20), regression_issue 96.0% (5).
+- **Pick under §3.4 / §3.6:** none qualifies.
+- **Why reverts miss:** 7 of the 20 audited reverts undid work the person judged not to be a defect. The revert itself was real in every case: no `linkage_error` on revert or repair-reference items. Requiring breakage words in the revert text kept 6 defect reverts and 2 others and dropped 7 defect reverts; model A's verdict was right on 10 of the 13 reverts it called `yes`. These were measured on the audited items, so they are optimistic.
+- **Event reading** (HOK-3028 change log, 2026-11-13): counting a revert as right when it happened, whatever the reason, `cr-0.2.0` scores 94.5% (91.3%–97.8%) on the person's labels and 97.8% on model A's. To reproduce: for items with an accepted revert candidate, recode `no` with exclusion `revert_non_defect`, `planned_iteration`, `requirement_change` or `refactor` to `yes` in every sheet, and score again.
+- **Agreement below the floor:** cause codes (κ 0.43 with model A) are not usable as targets yet. Exclusion codes reach 0.68.
+- **Target pin:** HOK-3028 §2 `definition_version = cr-0.2.0`, read as "reverted or explicitly repaired within 30 days".
 
 ## 7. Change log
 
 - 2026-10-29: first draft.
 - 2026-10-29: labelling moves to two model labellers plus a paid human audit (53 items). Each item gets an evidence bundle with related PRs. Model labels stand in only if the person agrees with model A at κ ≥ 0.6. The defaults are kept and their rationale recorded: κ 0.6, precision floor 0.80 (HOK-3028's bar), 40 negatives, SZZ split at 3 lines.
 - 2026-10-29: plan 1.0.0 frozen, before the sample draw.
+- 2026-11-01: auditor checks added (§3.5): a screening test and 10 hidden known-answer items. This was done after the draw and before any labelling, and changes no plan parameter, sample item or estimate.
+- 2026-11-11: plan 1.1.0 (§3.6), decided on HOK-3020 after the 1.0.0 audit was scored and before any HOK-3028 arm was scored. The pick must also clear 0.80 on the person's labels, and the person labels every drawn `revert` and `repair_reference` item (28 more). The draw and every 1.0.0 parameter are unchanged.
+- 2026-11-13: results (§6). No definition clears 0.80 on the person's labels under the defect question. The owner pinned `cr-0.2.0` under the event reading recorded in the HOK-3028 change log. The top-up sheet's one edited `candidate_fixes` cell was restored to the issued value before scoring. Rule clarified for the auditor: with several candidate fixes, answer `yes` if any one repairs a defect this PR introduced, and name it in `notes`.

@@ -1837,6 +1837,16 @@ var PROXY_CONFIDENCE = Object.freeze({
   abnormal_churn: "low"
 });
 var ADMITTED_PROXIES = ["revert", "repair_reference", "szz", "regression_issue"];
+var CORRECTIVE_REWORK_DEFINITIONS = Object.freeze({
+  "cr-0.1.0": { admitted: ADMITTED_PROXIES, description: "all admitted proxies (P1\u2013P4)" },
+  "cr-0.2.0": { admitted: ["revert", "repair_reference"], description: "P1 revert and P2 repair_reference only (high_precision)" },
+  "cr-0.3.0": { admitted: ["repair_reference", "regression_issue"], description: "P2 repair_reference and P4 regression_issue only (defect repair; reported, not gated)" }
+});
+function admittedProxiesFor(definitionVersion) {
+  const definition = CORRECTIVE_REWORK_DEFINITIONS[definitionVersion];
+  if (!definition) throw new Error(`unknown corrective-rework definition ${definitionVersion}`);
+  return definition.admitted;
+}
 var CORRECTIVE_REASON_CODES = [...ADMITTED_PROXIES, "no_accepted_fix", "base_label_missing"];
 function correctiveCandidateId(original, fix, proxy) {
   return createHash2("sha256").update([original.pr_url, fix.pr_url ?? fix.sha, proxy].join("\0"), "utf-8").digest("hex");
@@ -1852,11 +1862,12 @@ function deriveCorrectiveLabel(input) {
     label_provenance: "harvested",
     base_label_hash: input.base_label_hash
   };
+  const admittedList = admittedProxiesFor(input.envelope.definition_version);
   if (!input.base_label_present) {
     return { ...base, corrective: null, confidence: null, reason_codes: ["base_label_missing"], repair_pair_ids: [], envelope };
   }
   const horizonSeconds = input.horizon_days * 86400;
-  const admitted = new Set(ADMITTED_PROXIES);
+  const admitted = new Set(admittedList);
   const within = input.repair_pairs.filter(
     (p) => p.original.pr_url === input.prUrl && admitted.has(p.proxy) && p.lag_seconds > 0 && p.lag_seconds <= horizonSeconds
   );
@@ -1872,7 +1883,7 @@ function deriveCorrectiveLabel(input) {
     ...base,
     corrective: true,
     confidence,
-    reason_codes: ADMITTED_PROXIES.filter((p) => proxies.has(p)),
+    reason_codes: admittedList.filter((p) => proxies.has(p)),
     repair_pair_ids: [...new Set(within.map((p) => p.candidate_id))].sort(),
     envelope
   };
@@ -14179,7 +14190,7 @@ function runFeatureReplay(input) {
 }
 
 // src/corpus/cli.ts
-import { createHash as createHash8, randomBytes as randomBytes2 } from "node:crypto";
+import { createHash as createHash9, randomBytes as randomBytes2 } from "node:crypto";
 import { chmodSync, closeSync as closeSync3, existsSync as existsSync7, mkdirSync as mkdirSync5, openSync as openSync3, readdirSync as readdirSync2, readFileSync as readFileSync7, rmSync as rmSync3, writeFileSync as writeFileSync5, writeSync as writeSync2 } from "node:fs";
 import { join as join10, resolve as resolve5 } from "node:path";
 import { parseArgs as parseArgs3 } from "node:util";
@@ -14267,6 +14278,15 @@ function parseCalibrationPlan(raw) {
     return v;
   };
   if (typeof plan.plan_version !== "string") throw new Error("plan.plan_version is required");
+  const byStratum = plan.human_audit_share_by_stratum;
+  if (byStratum !== void 0) {
+    if (!byStratum || typeof byStratum !== "object") throw new Error("plan.human_audit_share_by_stratum must be an object");
+    for (const [stratum, share] of Object.entries(byStratum)) {
+      if (!CALIBRATION_STRATA.includes(stratum)) throw new Error(`plan.human_audit_share_by_stratum has unknown stratum ${stratum}`);
+      if (typeof share !== "number" || !(share > 0 && share <= 1)) throw new Error(`plan.human_audit_share_by_stratum.${stratum} is out of range`);
+    }
+  }
+  if (plan.pick_needs_human_precision !== void 0 && typeof plan.pick_needs_human_precision !== "boolean") throw new Error("plan.pick_needs_human_precision must be a boolean");
   return {
     plan_version: plan.plan_version,
     horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
@@ -14277,8 +14297,25 @@ function parseCalibrationPlan(raw) {
     min_repos: num2("min_repos", (v) => Number.isInteger(v) && v >= 1),
     szz_strong_min_lines: num2("szz_strong_min_lines", (v) => Number.isInteger(v) && v >= 1),
     kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
-    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1)
+    definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1),
+    ...byStratum !== void 0 && { human_audit_share_by_stratum: plan.human_audit_share_by_stratum },
+    ...plan.pick_needs_human_precision !== void 0 && { pick_needs_human_precision: plan.pick_needs_human_precision }
   };
+}
+function auditShare(plan, stratum) {
+  return plan.human_audit_share_by_stratum?.[stratum] ?? plan.human_audit_share;
+}
+function auditedUrls(picked, plan, stratum, seed) {
+  return new Set(
+    seededOrder(picked, (u) => sha2562(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * auditShare(plan, stratum))).map((u) => u.pr_url)
+  );
+}
+function extendAudit(items, plan, seed) {
+  const audited = /* @__PURE__ */ new Set();
+  for (const stratum of CALIBRATION_STRATA) for (const url of auditedUrls(items.filter((i) => i.stratum === stratum), plan, stratum, seed)) audited.add(url);
+  const dropped = items.find((i) => i.audit && !audited.has(i.pr_url));
+  if (dropped) throw new Error(`${dropped.item_id}: the new plan would drop an audited item`);
+  return items.map((i) => ({ ...i, audit: audited.has(i.pr_url) }));
 }
 function parseLabellers(raw) {
   const l = raw;
@@ -14363,9 +14400,7 @@ function drawCalibrationSample(units, plan, seed) {
     const doubles = new Set(
       seededOrder(picked, (u) => sha2562(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
     );
-    const audited = new Set(
-      seededOrder(picked, (u) => sha2562(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * plan.human_audit_share)).map((u) => u.pr_url)
-    );
+    const audited = auditedUrls(picked, plan, stratum, seed);
     for (const unit of picked) items.push({ ...unit, item_id: sha2562(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   return {
@@ -14519,7 +14554,13 @@ function definitionVariants(plan) {
     { name: "high_precision", description: "P1 revert and P2 repair_reference only", keep: (c) => c.proxy === "revert" || c.proxy === "repair_reference" },
     { name: `szz_min_${plan.szz_strong_min_lines}`, description: `SZZ links need \u2265${plan.szz_strong_min_lines} blamed lines`, keep: strongSzz },
     { name: "no_internal_build", description: "reverts for internal-build breakage excluded", keep: notInternal },
-    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) }
+    { name: `szz_min_${plan.szz_strong_min_lines}+no_internal_build`, description: "both of the above", keep: (c) => strongSzz(c) && notInternal(c) },
+    {
+      name: "defect_repair",
+      description: "P2 repair_reference and P4 regression_issue only (cr-0.3.0; reported, never picked)",
+      keep: (c) => c.proxy === "repair_reference" || c.proxy === "regression_issue",
+      reported_only: true
+    }
   ];
 }
 var accepted = (item) => item.candidates.filter((c) => c.status === "accepted" && item.proxies.includes(c.proxy));
@@ -14623,12 +14664,14 @@ function scoreCalibration(input) {
     return {
       name: d.name,
       description: d.description,
+      ...d.reported_only && { reported_only: true },
       precision: est(`dp:${d.name}`, precisionOf(positive), (r) => positive(r.item)),
       recall: est(`dr:${d.name}`, recallOf(positive), (r) => r.label.verdict === "yes")
     };
   });
   let chosen = null;
   for (const d of definitions) {
+    if (d.reported_only) continue;
     if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
     if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
   }
@@ -14704,7 +14747,23 @@ function scoreCalibrationRun(input) {
   const kappa = human.agreement.corrective.kappa;
   const models_stand_in = kappa !== null && kappa >= plan.kappa_floor;
   const primary = models_stand_in ? model : human;
-  const gateDefinition = primary.chosen_definition ?? "cr-0.1.0";
+  const pick_rule = models_stand_in && plan.pick_needs_human_precision ? "primary_and_human" : "primary";
+  let chosen_definition = primary.chosen_definition;
+  if (pick_rule === "primary_and_human") {
+    const floor = plan.definition_precision_floor;
+    const clears = (r, name) => {
+      const p = r.definitions.find((d) => d.name === name).precision.estimate;
+      return p !== null && p >= floor;
+    };
+    let best = null;
+    for (const d of model.definitions) {
+      if (d.reported_only) continue;
+      if (!clears(model, d.name) || !clears(human, d.name)) continue;
+      if (!best || (d.recall.estimate ?? 0) > (best.recall.estimate ?? 0)) best = d;
+    }
+    chosen_definition = best?.name ?? null;
+  }
+  const gateDefinition = chosen_definition ?? "cr-0.1.0";
   return {
     plan,
     model,
@@ -14712,7 +14771,8 @@ function scoreCalibrationRun(input) {
     human_vs_b: agreementBetween(audited, sheets.h, sheets.b, plan.kappa_floor),
     models_stand_in,
     primary: models_stand_in ? "model" : "human",
-    chosen_definition: primary.chosen_definition,
+    chosen_definition,
+    pick_rule,
     gate_label_precision: { definition: gateDefinition, precision: human.definitions.find((d) => d.name === gateDefinition).precision }
   };
 }
@@ -14751,17 +14811,20 @@ function renderEstimates(lines, r) {
   lines.push("", "### Causes (items labelled yes)", "", "| Cause | Count | Weighted share |", "| --- | --- | --- |");
   for (const code of CAUSE_CODES) if (r.causes.raw[code]) lines.push(`| ${code} | ${r.causes.raw[code]} | ${pct(r.causes.weighted_share[code])} |`);
 }
-function renderCalibrationMarkdown(run) {
+function renderCalibrationMarkdown(run, auditCheck) {
   const { plan, model, human } = run;
   const lines = [];
   const complete = model.unlabelled === 0 && human.unlabelled === 0;
   lines.push(`# HOK-3269 calibration results${complete ? "" : " (INCOMPLETE)"}`, "");
+  if (auditCheck && !auditCheck.passed) lines.push(`**Audit rejected:** the person got ${auditCheck.correct} of ${auditCheck.items} known-answer items right (needs ${auditCheck.min_correct}). Every result below that uses the person's labels is void until another auditor relabels the subset.`, "");
   lines.push(`Horizon ${plan.horizon_days} days \xB7 plan ${plan.plan_version} \xB7 sampler ${CALIBRATION_SAMPLER_VERSION} \xB7 labellers: A ${plan.labellers.a}, B ${plan.labellers.b}, H a person (audit subset)`);
   lines.push("", "Estimates are reweighted by cell (repo \xD7 stratum) population; 95% intervals are a stratified bootstrap. `unclear` labels are left out of rates.");
   const k = human.agreement.corrective.kappa;
   lines.push("", "## Verdict", "");
+  if (auditCheck) lines.push(`- Audit check: the person got ${auditCheck.correct} of ${auditCheck.items} hidden known-answer items right (needs ${auditCheck.min_correct}); audit ${auditCheck.passed ? "accepted" : "**rejected**"}.`);
   lines.push(`- Person vs model A on the verdict: \u03BA = ${kappaCell(k)} over ${human.agreement.corrective.pairs} items (floor ${plan.kappa_floor}). Model labels ${run.models_stand_in ? "**stand in** for the full sample" : "**do not** stand in; estimates come from the human audit alone"}.`);
-  lines.push(`- cr-0.2.0 pick (from the ${run.primary} labels): **${run.chosen_definition ?? "none qualifies"}**`);
+  const pickFrom = run.pick_rule === "primary_and_human" ? `precision \u2265 ${pct(plan.definition_precision_floor)} on the model labels and on the person's` : `from the ${run.primary} labels`;
+  lines.push(`- cr-0.2.0 pick (${pickFrom}): **${run.chosen_definition ?? "none qualifies"}**`);
   lines.push(`- HOK-3028 \xA76 label precision (${run.gate_label_precision.definition} against the person's labels): ${estCell(run.gate_label_precision.precision)}; the diagnostic's bar is 80%.`);
   lines.push("", `## Full sample, model A labels${run.primary === "model" ? " (primary)" : ""}`);
   renderEstimates(lines, model);
@@ -14826,6 +14889,90 @@ function buildItemEvidence(item, context, runGit3) {
     }
   }
   return { item_id: item.item_id, original, fixes, related, related_files_dropped: original.files.length - searched.length };
+}
+
+// src/corpus/calibration-gold.ts
+import { createHash as createHash8 } from "node:crypto";
+var GOLD_PROCEDURE = "hok-3269-gold";
+var GOLD_KINDS = ["revert_defect", "repair_ref", "missed_fix", "revert_non_defect", "planned_followup", "linkage_trap", "negative"];
+var GOLD_PASS_SHARE = { screening: 0.75, hidden: 0.8 };
+var PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/;
+function parseGoldSet(raw) {
+  const set = raw;
+  if (set?.procedure !== GOLD_PROCEDURE) throw new Error("not a hok-3269-gold file");
+  if (typeof set.gold_version !== "string" || !Array.isArray(set.items) || !set.items.length) throw new Error("gold set needs gold_version and items");
+  const ids = /* @__PURE__ */ new Set();
+  for (const item of set.items) {
+    const where = item?.item_id ?? "(no id)";
+    if (!/^[0-9a-f]{12}$/.test(item.item_id ?? "")) throw new Error(`${where}: item_id must be 12 lowercase hex characters`);
+    if (ids.has(item.item_id)) throw new Error(`${where}: duplicate item_id`);
+    ids.add(item.item_id);
+    if (item.use !== "screening" && item.use !== "hidden") throw new Error(`${where}: use must be screening or hidden`);
+    if (!GOLD_KINDS.includes(item.kind)) throw new Error(`${where}: unknown kind ${String(item.kind)}`);
+    if (!PR_URL.test(item.pr_url)) throw new Error(`${where}: pr_url is not a PR URL`);
+    if (![...item.candidate_fixes, ...item.related_prs].every((u) => PR_URL.test(u))) throw new Error(`${where}: candidate_fixes and related_prs must be PR URLs`);
+    const { corrective, exclusion_code } = item.expected ?? {};
+    if (corrective !== "yes" && corrective !== "no") throw new Error(`${where}: expected.corrective must be yes or no`);
+    if (corrective === "yes" && exclusion_code) throw new Error(`${where}: a yes takes no exclusion code`);
+    if (corrective === "no" && item.candidate_fixes.length && !HUMAN_EXCLUSION_CODES.includes(exclusion_code)) throw new Error(`${where}: a no with candidate fixes needs a human exclusion code`);
+  }
+  return set;
+}
+var renderRows = (rows) => `${[SHEET_COLUMNS, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}
+`;
+var blankRow = (g) => SHEET_COLUMNS.map((c) => c === "item_id" ? g.item_id : c === "pr_url" ? g.pr_url : c === "candidate_fixes" ? g.candidate_fixes.join(" ") : c === "related_prs" ? g.related_prs.join(" ") : "");
+function renderGoldSheet(items) {
+  return renderRows(items.map(blankRow));
+}
+function sheetBody(text) {
+  const [header, ...rows] = parseCsv(text);
+  if (!header || header.join(",") !== SHEET_COLUMNS.join(",")) throw new Error(`sheet header must be ${SHEET_COLUMNS.join(",")}`);
+  return rows;
+}
+function insertGoldRows(sheet, hidden, seed) {
+  const rows = sheetBody(sheet);
+  const labelCols = ["corrective", "cause_code", "exclusion_code", "notes"].map((c) => SHEET_COLUMNS.indexOf(c));
+  if (rows.some((r) => labelCols.some((i) => (r[i] ?? "").trim()))) throw new Error("the audit sheet already has labels; gold rows go in before labelling");
+  const ids = new Set(rows.map((r) => r[0]));
+  const urls = new Set(rows.map((r) => r[1]));
+  for (const g of hidden) {
+    if (ids.has(g.item_id)) throw new Error(`${g.item_id}: already in the sheet`);
+    if (urls.has(g.pr_url)) throw new Error(`${g.item_id}: its PR is a sample item`);
+  }
+  for (const g of hidden) {
+    const at2 = Number.parseInt(createHash8("sha256").update(`${seed}\0gold\0${g.item_id}`).digest("hex").slice(0, 8), 16) % (rows.length + 1);
+    rows.splice(at2, 0, blankRow(g));
+  }
+  return renderRows(rows);
+}
+function splitGoldRows(sheet, goldIds) {
+  const rows = sheetBody(sheet);
+  return { rest: renderRows(rows.filter((r) => !goldIds.has(r[0].trim()))), gold: renderRows(rows.filter((r) => goldIds.has(r[0].trim()))) };
+}
+function scoreGold(sheet, items, passShare) {
+  const rows = sheetBody(sheet);
+  const col = (name) => SHEET_COLUMNS.indexOf(name);
+  const byId = new Map(rows.map((r) => [r[col("item_id")].trim(), r]));
+  const result = { items: items.length, correct: 0, unlabelled: 0, min_correct: Math.ceil(passShare * items.length), passed: false, exclusion: { matched: 0, of: 0 }, missed_fix_cited: { cited: 0, of: 0 }, per_item: [] };
+  for (const g of items) {
+    const r = byId.get(g.item_id);
+    const get = (name) => (r?.[col(name)] ?? "").trim();
+    const got = get("corrective").toLowerCase();
+    if (!CALIBRATION_VERDICTS.includes(got)) result.unlabelled++;
+    const correct = got === g.expected.corrective;
+    if (correct) result.correct++;
+    if (correct && got === "no" && g.candidate_fixes.length) {
+      result.exclusion.of++;
+      if (get("exclusion_code").toLowerCase() === g.expected.exclusion_code) result.exclusion.matched++;
+    }
+    if (correct && g.kind === "missed_fix") {
+      result.missed_fix_cited.of++;
+      if (g.expected.fix_url && get("notes").includes(g.expected.fix_url)) result.missed_fix_cited.cited++;
+    }
+    result.per_item.push({ item_id: g.item_id, kind: g.kind, expected: g.expected.corrective, got: got || "(blank)", correct, notes: get("notes") });
+  }
+  result.passed = result.correct >= result.min_correct;
+  return result;
 }
 
 // src/corpus/pr-refs.ts
@@ -15415,18 +15562,26 @@ var OPTIONS = {
   notes: { type: "string" },
   plan: { type: "string" },
   "exclude-slice": { type: "string" },
+  "exclude-sample": { type: "string", multiple: true },
   seed: { type: "string" },
   sample: { type: "string" },
+  gold: { type: "string" },
+  sheet: { type: "string" },
+  definition: { type: "string" },
   step: { type: "string" }
 };
 var CORPUS_COMMANDS = [
   "corpus-enumerate",
   "corpus-label",
   "corpus-corrective",
+  "corpus-corrective-derive",
   "corpus-report",
   "corpus-calibration-sample",
   "corpus-calibration-evidence",
   "corpus-calibration-score",
+  "corpus-calibration-gold",
+  "corpus-calibration-screen",
+  "corpus-calibration-topup",
   "corpus-feature-audit",
   "corpus-features",
   "corpus-feature-replay"
@@ -15537,7 +15692,7 @@ function writeJsonl(path4, rows, options = {}) {
 }
 function fileCache(dir) {
   mkdirSync5(dir, { recursive: true });
-  const path4 = (key) => join10(dir, `${createHash8("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  const path4 = (key) => join10(dir, `${createHash9("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
     get: (key) => existsSync7(path4(key)) ? JSON.parse(readFileSync7(path4(key), "utf8")) : void 0,
     set: (key, value) => writeFileSync5(path4(key), JSON.stringify(value))
@@ -15581,6 +15736,27 @@ function runCorpusCli(command, argv, io) {
     }
     return runCalibrationScore(resolve5(io.cwd, values.sample), io);
   }
+  if (command === "corpus-calibration-gold") {
+    if (!values.sample || !values.gold) {
+      io.writeStderr("error: corpus-calibration-gold needs --sample <dir> and --gold <gold.json>\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationGold(resolve5(io.cwd, values.sample), resolve5(io.cwd, values.gold), io);
+  }
+  if (command === "corpus-calibration-topup") {
+    if (!values.sample || !values.plan || !values.gold) {
+      io.writeStderr("error: corpus-calibration-topup needs --sample <dir>, --plan <plan.json> and --gold <gold.json>\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationTopup(resolve5(io.cwd, values.sample), resolve5(io.cwd, values.plan), resolve5(io.cwd, values.gold), io);
+  }
+  if (command === "corpus-calibration-screen") {
+    if (!values.gold || !!values.out === !!values.sheet) {
+      io.writeStderr("error: corpus-calibration-screen needs --gold <gold.json> and either --out <blank sheet> or --sheet <filled sheet>\n");
+      return { exitCode: 2 };
+    }
+    return runCalibrationScreen(resolve5(io.cwd, values.gold), values.out ? resolve5(io.cwd, values.out) : void 0, values.sheet ? resolve5(io.cwd, values.sheet) : void 0, io);
+  }
   try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
     manifestBytes = readFileSync7(resolve5(io.cwd, values.manifest));
@@ -15594,6 +15770,20 @@ function runCorpusCli(command, argv, io) {
   }
   const log = (line) => io.writeStderr(`${line}
 `);
+  if (command === "corpus-corrective-derive") {
+    const definition = values.definition;
+    if (!definition || !CORRECTIVE_REWORK_DEFINITIONS[definition]) {
+      io.writeStderr(`error: corpus-corrective-derive needs --definition <one of ${Object.keys(CORRECTIVE_REWORK_DEFINITIONS).join(", ")}>
+`);
+      return { exitCode: 2 };
+    }
+    if (definition === CORRECTIVE_REWORK_DEFINITION_VERSION) {
+      io.writeStderr(`error: ${definition} is the default definition; corpus-corrective already writes it to corrective.jsonl.gz
+`);
+      return { exitCode: 2 };
+    }
+    return runCorrectiveDerive(entries, resolve5(io.cwd, values["cache-dir"]), definition, io, log);
+  }
   if (command === "corpus-calibration-sample") {
     if (!values.plan || !values["exclude-slice"] || !values.out) {
       io.writeStderr("error: corpus-calibration-sample needs --plan <json>, --exclude-slice <slice manifest> and --out <private dir>\n");
@@ -15603,7 +15793,7 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.plan), resolve5(io.cwd, values["exclude-slice"]), resolve5(io.cwd, values.out), values.seed, io, log);
+    return runCalibrationSample(entries, manifestBytes, resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.plan), resolve5(io.cwd, values["exclude-slice"]), resolve5(io.cwd, values.out), values.seed, io, log, (values["exclude-sample"] ?? []).map((p) => resolve5(io.cwd, p)));
   }
   if (command === "corpus-calibration-evidence") {
     if (!values.sample) {
@@ -15669,7 +15859,7 @@ function runCorpusCli(command, argv, io) {
       step,
       entries,
       cacheRoot,
-      cohortSha256: createHash8("sha256").update(manifestBytes).digest("hex"),
+      cohortSha256: createHash9("sha256").update(manifestBytes).digest("hex"),
       ...values.out ? { out: resolve5(io.cwd, values.out) } : {},
       graphql,
       writeRows: (path4, rows) => {
@@ -15840,9 +16030,56 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
   }
   return { exitCode: failures ? 3 : 0 };
 }
+function runCorrectiveDerive(entries, cacheRoot, definition, io, log) {
+  let failures = 0;
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
+    try {
+      for (const file of ["s2.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"]) {
+        if (!existsSync7(join10(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      }
+      const first = readGzipJsonlMembers(join10(repoDir, "corrective.jsonl.gz")).next();
+      if (first.done) throw new Error("corrective.jsonl.gz is empty");
+      const { labeller_version, integration_branch, as_of } = first.value.envelope;
+      const envelope = { definition_version: definition, labeller_version, integration_branch, as_of, computed_at: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z") };
+      const pairs = [...readGzipJsonlMembers(join10(repoDir, "repair_pairs.jsonl.gz"))];
+      const rows = deriveCorrectiveRows(readGzipJsonlMembers(join10(repoDir, "s2.jsonl.gz")), pairs, envelope);
+      const written = writeJsonl(join10(repoDir, `corrective.${definition}.jsonl.gz`), rows, { gzip: true });
+      const byHorizon = {};
+      for (const row of rows) {
+        const h = byHorizon[String(row.horizon_days)] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
+        h.rows++;
+        h[row.corrective === null ? "null" : row.corrective ? "true" : "false"]++;
+      }
+      for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
+      const summary = {
+        repo: entry2.repo,
+        definition_version: definition,
+        derived_from: "repair_pairs.jsonl.gz",
+        as_of: envelope.as_of,
+        repair_pairs: pairs.length,
+        corrective_by_horizon: byHorizon,
+        file: `corrective.${definition}.jsonl.gz`,
+        sha256: createHash9("sha256").update(readFileSync7(join10(repoDir, `corrective.${definition}.jsonl.gz`))).digest("hex"),
+        bytes: written.writtenBytes
+      };
+      writeFileSync5(join10(repoDir, `corrective.${definition}.summary.json`), `${JSON.stringify(summary, null, 2)}
+`);
+      io.writeStdout(`${JSON.stringify(summary)}
+`);
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
+`);
+      log(`error: ${entry2.repo}: ${error.message}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha2563 = (bytes) => createHash8("sha256").update(bytes).digest("hex");
+  const sha2563 = (bytes) => createHash9("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
@@ -15909,8 +16146,10 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
 `);
   return { exitCode: unresolved ? 1 : 0 };
 }
-function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log) {
-  const sha2563 = (bytes2) => createHash8("sha256").update(bytes2).digest("hex");
+function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log, excludeSamplePaths = []) {
+  const sha2563 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
+  const excludedUrls = /* @__PURE__ */ new Set();
+  const excludedSamples = [];
   let plan;
   let planBytes;
   let sliceBytes;
@@ -15924,6 +16163,13 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
     if (existsSync7(outDir) && readdirSync2(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    for (const path4 of excludeSamplePaths) {
+      const bytes2 = readFileSync7(path4);
+      const prior = JSON.parse(bytes2.toString("utf8"));
+      if (!Array.isArray(prior.items) || !prior.items.length) throw new Error(`--exclude-sample ${path4} has no items`);
+      for (const item of prior.items) excludedUrls.add(item.pr_url);
+      excludedSamples.push({ sample_sha256: sha2563(bytes2), items: prior.items.length });
+    }
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -15959,7 +16205,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     }
   }
   if (failures) return { exitCode: 3 };
-  const sample = drawCalibrationSample(units, plan, seed);
+  const sample = drawCalibrationSample(excludedUrls.size ? units.filter((u) => !excludedUrls.has(u.pr_url)) : units, plan, seed);
   const repos = new Set(sample.items.map((i) => i.repo)).size;
   if (repos < plan.min_repos) {
     io.writeStderr(`error: the sample spans ${repos} repos; the plan needs at least ${plan.min_repos}
@@ -15977,7 +16223,8 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     inputs,
     cells: sample.cells,
     items: sample.items,
-    drawn_at: (/* @__PURE__ */ new Date()).toISOString()
+    drawn_at: (/* @__PURE__ */ new Date()).toISOString(),
+    ...excludedSamples.length && { excluded_samples: excludedSamples }
   };
   mkdirSync5(outDir, { recursive: true, mode: 448 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
@@ -15993,6 +16240,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
 function runCalibrationScore(sampleDir, io) {
   let sample;
   let sheets;
+  let topupBack = false;
   try {
     sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
@@ -16001,10 +16249,28 @@ function runCalibrationScore(sampleDir, io) {
       b: readFileSync7(join10(sampleDir, "sheet-b.csv"), "utf8"),
       h: readFileSync7(join10(sampleDir, "sheet-h.csv"), "utf8")
     };
+    const topup = join10(sampleDir, TOPUP_SHEET);
+    topupBack = existsSync7(topup);
+    if (topupBack) sheets.h = appendSheetRows(sheets.h, readFileSync7(topup, "utf8"));
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
     return { exitCode: 2 };
+  }
+  let auditCheck;
+  const goldPath = join10(sampleDir, "gold.json");
+  if (existsSync7(goldPath)) {
+    try {
+      const pending = new Set(topupBack ? [] : (sample.audit_topups ?? []).flatMap((t) => t.gold_item_ids));
+      const hidden = parseGoldSet(JSON.parse(readFileSync7(goldPath, "utf8"))).items.filter((g) => g.use === "hidden" && !pending.has(g.item_id));
+      const split = splitGoldRows(sheets.h, new Set(hidden.map((g) => g.item_id)));
+      auditCheck = scoreGold(split.gold, hidden, GOLD_PASS_SHARE.hidden);
+      sheets.h = split.rest;
+    } catch (error) {
+      io.writeStderr(`error: gold.json: ${error.message}
+`);
+      return { exitCode: 2 };
+    }
   }
   const subset = (keep) => new Map(sample.items.filter(keep).map((i) => [i.item_id, i]));
   const a = parseLabelSheet(sheets.a, subset(() => true));
@@ -16017,14 +16283,131 @@ function runCalibrationScore(sampleDir, io) {
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync5(join10(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run }, null, 2)}
+  writeFileSync5(join10(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run, ...auditCheck && { audit_check: auditCheck } }, null, 2)}
 `, { mode: 384 });
-  writeFileSync5(join10(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run), { mode: 384 });
+  writeFileSync5(join10(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run, auditCheck), { mode: 384 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, table: join10(sampleDir, "calibration-table.md") })}
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, ...auditCheck && { audit_check: { correct: auditCheck.correct, items: auditCheck.items, passed: auditCheck.passed } }, table: join10(sampleDir, "calibration-table.md") })}
 `
   );
   return { exitCode: 0 };
+}
+function runCalibrationGold(sampleDir, goldPath, io) {
+  try {
+    const sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
+    if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const goldBytes = readFileSync7(goldPath);
+    const hidden = parseGoldSet(JSON.parse(goldBytes.toString("utf8"))).items.filter((g) => g.use === "hidden");
+    if (!hidden.length) throw new Error("the gold set has no hidden items");
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item ID`);
+    const sheetPath = join10(sampleDir, "sheet-h.csv");
+    const sheet = insertGoldRows(readFileSync7(sheetPath, "utf8"), hidden, sample.seed);
+    writeFileSync5(join10(sampleDir, "gold.json"), goldBytes, { mode: 384, flag: "wx" });
+    writeFileSync5(sheetPath, sheet, { mode: 384 });
+    io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash9("sha256").update(goldBytes).digest("hex") })}
+`);
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+}
+var TOPUP_SHEET = "sheet-h-topup.csv";
+function appendSheetRows(sheet, extra) {
+  const header = parseCsv(sheet)[0]?.join(",");
+  const extraRows = parseCsv(extra);
+  if (extraRows[0]?.join(",") !== header) throw new Error(`${TOPUP_SHEET} does not have the sheet-h header`);
+  const body = extra.replace(/^\uFEFF?[^\r\n]*\r?\n/, "");
+  return `${sheet.replace(/\s*$/, "\n")}${body}`;
+}
+var TOPUP_PLAN_FIELDS = /* @__PURE__ */ new Set(["plan_version", "human_audit_share_by_stratum", "pick_needs_human_precision"]);
+function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
+  try {
+    const sha2563 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
+    const samplePath = join10(sampleDir, "sample.json");
+    const sample = JSON.parse(readFileSync7(samplePath, "utf8"));
+    if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
+    const planBytes = readFileSync7(planPath);
+    const plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
+    if (plan.plan_version === sample.plan.plan_version) throw new Error(`the sample is already on plan ${plan.plan_version}`);
+    const fields = /* @__PURE__ */ new Set([...Object.keys(plan), ...Object.keys(sample.plan)]);
+    for (const field of fields) {
+      if (TOPUP_PLAN_FIELDS.has(field)) continue;
+      if (JSON.stringify(plan[field]) !== JSON.stringify(sample.plan[field])) {
+        throw new Error(`plan.${field} differs from the plan the sample was drawn under; a top-up may change only ${[...TOPUP_PLAN_FIELDS].join(", ")}`);
+      }
+    }
+    const items = extendAudit(sample.items, plan, sample.seed);
+    const added = items.filter((i, n) => i.audit && !sample.items[n].audit);
+    if (!added.length) throw new Error("the new plan audits no item that was not already audited");
+    const goldBytes = readFileSync7(goldPath);
+    const gold = parseGoldSet(JSON.parse(goldBytes.toString("utf8")));
+    const priorGoldPath = join10(sampleDir, "gold.json");
+    const prior = existsSync7(priorGoldPath) ? parseGoldSet(JSON.parse(readFileSync7(priorGoldPath, "utf8"))) : void 0;
+    const priorIds = new Set(prior?.items.map((g) => g.item_id) ?? []);
+    for (const g of prior?.items ?? []) {
+      const same = gold.items.find((x) => x.item_id === g.item_id);
+      if (!same || JSON.stringify(same) !== JSON.stringify(g)) throw new Error(`${g.item_id}: the new gold set must keep every prior gold item unchanged`);
+    }
+    if (prior && gold.gold_version === prior.gold_version) throw new Error(`the gold set is already at ${gold.gold_version}`);
+    const hidden = gold.items.filter((g) => g.use === "hidden" && !priorIds.has(g.item_id));
+    if (!hidden.length) throw new Error("the gold set has no new hidden items for the top-up");
+    const sampleIds = new Set(sample.items.map((i) => i.item_id));
+    const sampleUrls = new Set(sample.items.map((i) => i.pr_url));
+    const clash = hidden.find((g) => sampleIds.has(g.item_id) || sampleUrls.has(g.pr_url));
+    if (clash) throw new Error(`${clash.item_id}: collides with a sample item`);
+    const evidence3 = readJsonl2(join10(sampleDir, "evidence.jsonl"));
+    const related = new Map([...evidence3].map((e) => [e.item_id, e.related.map((r) => r.url)]));
+    const sheet = insertGoldRows(renderLabelSheet(added, related), hidden, sample.seed);
+    const tag = (v) => v.replace(/[^0-9A-Za-z.]/g, "_");
+    const blankPath = join10(sampleDir, "sheet-h-topup.blank.csv");
+    writeFileSync5(blankPath, sheet, { mode: 384, flag: "wx" });
+    writeFileSync5(join10(sampleDir, `sample.plan-${tag(sample.plan.plan_version)}.json`), readFileSync7(samplePath), { mode: 384, flag: "wx" });
+    if (prior) writeFileSync5(join10(sampleDir, `gold.${tag(prior.gold_version)}.json`), readFileSync7(priorGoldPath), { mode: 384, flag: "wx" });
+    const next = {
+      ...sample,
+      plan,
+      plan_sha256: sha2563(planBytes),
+      items,
+      audit_topups: [...sample.audit_topups ?? [], { plan_version: plan.plan_version, from_plan_version: sample.plan.plan_version, added: added.length, gold_item_ids: hidden.map((g) => g.item_id), at: (/* @__PURE__ */ new Date()).toISOString() }]
+    };
+    const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}
+`, "utf8");
+    writeFileSync5(samplePath, bytes, { mode: 384 });
+    writeFileSync5(priorGoldPath, goldBytes, { mode: 384 });
+    const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, added.filter((i) => i.stratum === s).length]).filter(([, n]) => n > 0));
+    io.writeStdout(
+      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha2563(bytes), gold_sha256: sha2563(goldBytes) })}
+`
+    );
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+}
+function runCalibrationScreen(goldPath, out, sheetPath, io) {
+  try {
+    const screening = parseGoldSet(JSON.parse(readFileSync7(goldPath, "utf8"))).items.filter((g) => g.use === "screening");
+    if (!screening.length) throw new Error("the gold set has no screening items");
+    if (out) {
+      writeFileSync5(out, renderGoldSheet(screening), { flag: "wx" });
+      io.writeStdout(`${JSON.stringify({ screening: screening.length, sheet: out })}
+`);
+    } else {
+      io.writeStdout(`${JSON.stringify(scoreGold(readFileSync7(sheetPath, "utf8"), screening, GOLD_PASS_SHARE.screening), null, 2)}
+`);
+    }
+    return { exitCode: 0 };
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
 }
 function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   let sample;
@@ -16581,9 +16964,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash9("sha256").update(stableJson(config)).digest("hex");
+  return createHash10("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -16942,14 +17325,22 @@ corpus-label     --manifest <cohort.json> --cache-dir <path> [--repo <owner/name
                  (S2 v1.1.0 rows per enumerated PR \xD7 14/30/60 into <cache>/<repo>/s2.jsonl)
 corpus-corrective --manifest <cohort.json> --cache-dir <path> [--repo <owner/name>] [--as-of <iso>]
                  (corrective-rework candidates, repair pairs and rows per labelled repo; HOK-3267)
+corpus-corrective-derive --manifest <cohort.json> --cache-dir <path> --definition <cr-x.y.z> [--repo <owner/name>]
+                 (corrective rows under another definition, from existing repair pairs; HOK-3269)
 corpus-report    --manifest <cohort.json> --cache-dir <path> --as-of <iso> --out <dir> [--notes <flag-notes.json>]
                  (per repo \xD7 horizon sanity report, flags and run manifest from persisted outputs; HOK-3268)
-corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> --out <private dir>
+corpus-calibration-sample --manifest <cohort.json> --cache-dir <path> --plan <plan.json> --exclude-slice <slice.json> [--exclude-sample <sample.json> ...] --out <private dir>
                  (stratified calibration sample, evaluation slice excluded; HOK-3269)
 corpus-calibration-evidence --manifest <cohort.json> --cache-dir <path> --sample <private dir>
                  (per-item diffs, candidate fixes and related later PRs, plus the blank human-audit sheet; HOK-3269)
 corpus-calibration-score --sample <private dir>
                  (precision, recall, kappa and cause distribution from the model and human-audit sheets; HOK-3269)
+corpus-calibration-gold --sample <private dir> --gold <gold.json>
+                 (mix hidden known-answer rows into the blank human-audit sheet; HOK-3269)
+corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <filled sheet>)
+                 (write or grade the auditor screening test; HOK-3269)
+corpus-calibration-topup --sample <private dir> --plan <plan.json> --gold <gold.json>
+                 (audit top-up under a later plan: re-derive audit flags, write the blank top-up sheet with new hidden rows; HOK-3269)
 corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
                  (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
 corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slice <slice.json> --out <private dir> [--seed <hex>]
