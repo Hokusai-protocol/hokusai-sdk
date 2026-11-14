@@ -15,7 +15,9 @@ import {
   buildRouteContextProjection,
   parseRouteContext,
 } from './plugin-commands/commands.js';
-import type { RouteContextProjection } from './plugin-commands/types.js';
+import type { MeasureStage, RouteContextProjection } from './plugin-commands/types.js';
+import type { CostBaselineSnapshot } from './session-usage.js';
+import type { StageCostInput } from './contribution/builder.js';
 import type { ContributionAcceptedResponse } from './client.js';
 import { buildOutcomeReport } from './outcome.js';
 import {
@@ -70,6 +72,12 @@ export interface ExecuteRouteCommandInput {
   metadata?: Record<string, string> | undefined;
   clock?: (() => Date) | undefined;
   previewOnly?: boolean | undefined;
+  /**
+   * Local-only session baseline (session id, route time) persisted in the
+   * stored route context so the report step can measure the route's own
+   * session. Never sent to Hokusai.
+   */
+  sessionBaseline?: CostBaselineSnapshot | undefined;
   store: LocalStore;
   profile: HarnessRoutingProfile;
 }
@@ -85,7 +93,12 @@ export interface RouteCommandValue {
 }
 
 export interface PreviewOutcomeCommandInput {
+  /**
+   * The route this outcome belongs to: its correlation id, or else its task id.
+   * One is required. There is no "newest route" fallback (HOK-3364).
+   */
   correlationId?: string | undefined;
+  taskId?: string | undefined;
   currentModelId?: string | undefined;
   input: Omit<OutcomeReportInput, 'correlationId' | 'recommendedModel'> &
     Partial<Pick<OutcomeReportInput, 'recommendedModel'>>;
@@ -95,6 +108,8 @@ export interface PreviewOutcomeCommandInput {
 
 export interface PreviewOutcomeCommandValue {
   correlationId: string;
+  /** The routed task this outcome belongs to (from the stored route). */
+  taskId: string;
   report: ReturnType<HarnessRoutingProfile['buildOutcomeReport']>;
   resolvedRecommendedModel: string;
   previewLines: string[];
@@ -112,6 +127,11 @@ export interface SubmitOutcomeCommandInput extends PreviewOutcomeCommandInput {
    */
   actualCostUsd?: number | undefined;
   wallClockSeconds?: number | undefined;
+  /** Measures the routed session so the row carries a measured `task_cost`. */
+  measureStage?: MeasureStage | undefined;
+  /** The measured session's model is the executed model (Codex). */
+  executedModelFromSession?: boolean | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
 }
 
 export interface SubmitOutcomeCommandValue extends PreviewOutcomeCommandValue {
@@ -514,7 +534,10 @@ export async function executeRouteCommand(
   const routeContext = buildRouteContextProjection(
     input.metadata,
     taskInput.modelConstraints,
-    { taskText },
+    {
+      taskText,
+      ...(input.sessionBaseline ? { costBaseline: input.sessionBaseline } : {}),
+    },
   );
 
   await input.profile.storeCorrelationMetadata?.({
@@ -545,9 +568,15 @@ export async function executeRouteCommand(
   });
 }
 
+/**
+ * The stored route for exactly this key: a correlation id, else a task id (the
+ * newest route of that task, if it was relaunched), else the newest route of
+ * all when `newest` is asked for explicitly (route inspection only, never
+ * outcome linking).
+ */
 async function resolveCorrelationRecord(
   store: LocalStore,
-  correlationId?: string,
+  key: { correlationId?: string | undefined; taskId?: string | undefined; newest?: true },
 ): Promise<{
   correlationId: string;
   taskId: string;
@@ -556,13 +585,19 @@ async function resolveCorrelationRecord(
 } | undefined> {
   const records = await store.listCorrelations();
   const sorted = records.slice().sort((left, right) => right.createdAt - left.createdAt);
+  const correlationId = key.correlationId?.trim();
+  const taskId = key.taskId?.trim();
   const match = correlationId
     ? sorted.find(
         (record) =>
           record.correlationId === normalizeCorrelationId(correlationId) ||
           record.metadata?.originalCorrelationId === correlationId,
       )
-    : sorted[0];
+    : taskId
+      ? sorted.find((record) => record.metadata?.taskId === taskId)
+      : key.newest
+        ? sorted[0]
+        : undefined;
 
   if (!match) {
     return undefined;
@@ -598,12 +633,29 @@ function buildOutcomePreviewLines(
 export async function previewOutcomeCommand(
   input: PreviewOutcomeCommandInput,
 ): Promise<HarnessCommandResult<PreviewOutcomeCommandValue>> {
-  const resolved = await resolveCorrelationRecord(input.store, input.correlationId);
+  if (!input.correlationId?.trim() && !input.taskId?.trim()) {
+    return fail(
+      'E_INVALID_INPUT',
+      'An outcome must name the route it belongs to.',
+      'Pass correlationId or taskId. Outcomes link only to the route recorded for the same task.',
+    );
+  }
+  const resolved = await resolveCorrelationRecord(input.store, {
+    correlationId: input.correlationId,
+    taskId: input.taskId,
+  });
   if (!resolved) {
     return fail(
       'E_NOT_FOUND',
-      'No stored route was found for outcome reporting.',
-      'Route a task first or pass an explicit correlationId.',
+      'No stored route matches this correlationId or taskId.',
+      'Route the task first, or check the correlationId / taskId.',
+    );
+  }
+  if (input.taskId?.trim() && resolved.taskId !== input.taskId.trim()) {
+    return fail(
+      'E_INVALID_INPUT',
+      `Correlation ${resolved.correlationId} belongs to task ${resolved.taskId}, not ${input.taskId.trim()}.`,
+      'Pass the correlationId and taskId of the same routed task.',
     );
   }
 
@@ -627,6 +679,7 @@ export async function previewOutcomeCommand(
     const report = input.profile.buildOutcomeReport(reportInput);
     return ok({
       correlationId: resolved.correlationId,
+      taskId: resolved.taskId,
       report,
       resolvedRecommendedModel: recommendedModel.trim(),
       previewLines: buildOutcomePreviewLines(resolved.correlationId, report),
@@ -650,7 +703,11 @@ async function loadRoutedTask(
   store: LocalStore,
   correlationId: string,
 ): Promise<
-  | { routeContext: RouteContextProjection | undefined; inferenceLogId?: string }
+  | {
+      routeContext: RouteContextProjection | undefined;
+      inferenceLogId?: string;
+      recommendedModelId?: string;
+    }
   | undefined
 > {
   const record =
@@ -664,9 +721,11 @@ async function loadRoutedTask(
   }
 
   const inferenceLogId = record.metadata?.inferenceLogId;
+  const recommendedModelId = record.metadata?.recommendedModelId;
   return {
     routeContext: parseRouteContext(record.metadata?.routeContext),
     ...(inferenceLogId ? { inferenceLogId } : {}),
+    ...(recommendedModelId ? { recommendedModelId } : {}),
   };
 }
 
@@ -713,12 +772,30 @@ export async function submitOutcomeCommand(
     input.store,
     preview.value.correlationId,
   );
+  const observedAt = new Date(timestamp).toISOString();
+  let stageCost: StageCostInput | undefined;
+  try {
+    stageCost = await input.measureStage?.({
+      taskId: preview.value.taskId,
+      executedModel: preview.value.report.actualModel,
+      routeContext: routed?.routeContext,
+      endedAt: observedAt,
+      env: input.env,
+    });
+  } catch {
+    // A measurer must not block a report: the stage is reported unmeasured.
+    stageCost = undefined;
+  }
   const rowResult = buildReportContributionRow({
     report: preview.value.report,
     routeContext: routed?.routeContext,
     inferenceLogId: routed?.inferenceLogId,
+    recommendedModelId: routed?.recommendedModelId,
     harness: input.profile.harnessName,
-    observedAt: new Date(timestamp).toISOString(),
+    observedAt,
+    taskId: preview.value.taskId,
+    stageCost,
+    executedModelFromSession: input.executedModelFromSession,
     ...(input.actualCostUsd !== undefined
       ? { actualCostUsd: input.actualCostUsd }
       : {}),
@@ -783,10 +860,35 @@ export async function submitOutcomeCommand(
   }
 }
 
+/**
+ * The stored route for exactly this correlation id, or else task id. Use this,
+ * not `latestRouteCommand`, to attach an outcome to its route (HOK-3364).
+ */
+export async function routeForTaskCommand(
+  store: LocalStore,
+  key: { correlationId?: string | undefined; taskId?: string | undefined },
+): Promise<HarnessCommandResult<LatestRouteCommandValue>> {
+  if (!key.correlationId?.trim() && !key.taskId?.trim()) {
+    return fail(
+      'E_INVALID_INPUT',
+      'A route lookup needs a correlationId or taskId.',
+      'Pass the correlationId or taskId of the routed task.',
+    );
+  }
+  return routeCommandValue(store, await resolveCorrelationRecord(store, key));
+}
+
+/** The most recent stored route of any task. For route inspection only. */
 export async function latestRouteCommand(
   store: LocalStore,
 ): Promise<HarnessCommandResult<LatestRouteCommandValue>> {
-  const resolved = await resolveCorrelationRecord(store);
+  return routeCommandValue(store, await resolveCorrelationRecord(store, { newest: true }));
+}
+
+async function routeCommandValue(
+  store: LocalStore,
+  resolved: Awaited<ReturnType<typeof resolveCorrelationRecord>>,
+): Promise<HarnessCommandResult<LatestRouteCommandValue>> {
   if (!resolved) {
     return fail(
       'E_NOT_FOUND',

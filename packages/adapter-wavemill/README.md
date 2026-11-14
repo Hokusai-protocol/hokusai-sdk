@@ -58,7 +58,8 @@ await routeWithWavemill({
 // which patches an inference log and bypasses training and reward attribution
 // entirely — the row trains nothing and earns nothing. See
 // docs/reference-pattern.md. New integrations should build a contribution row
-// with `buildHarnessOutcomeRow()` and submit it via `client.submitContribution()`;
+// with `buildTechnicalTaskRouterRowV4()` (one `@hokusai/costs` report per stage;
+// the types are re-exported here) and submit it via `client.submitContribution()`;
 // `examples/reference-harness` shows the full loop.
 await reportWavemillOutcome({
   client,

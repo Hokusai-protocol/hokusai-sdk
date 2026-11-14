@@ -447,7 +447,7 @@ function normalizeRepoPath(path: string): string | null {
   return normalized;
 }
 
-function isTestFile(path: string): boolean {
+export function isTestFile(path: string): boolean {
   return TEST_FILE_PATTERN.test(path);
 }
 

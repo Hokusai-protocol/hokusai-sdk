@@ -177,11 +177,24 @@ These figures are **estimates, not invoices**:
   known models whose usage was unpriceable (see the cache-token note below).
   The priced subtotal stays visible in `estimatedUsd`/`actualUsd` as a lower
   bound.
-- Cache tokens: Anthropic and OpenAI models bill cache writes at 1.25× and
-  reads at 0.1× the input rate. Reported cache tokens on other models (e.g.
-  Gemini) are unpriceable from the built-in table — the event stays unpriced
+- Cache tokens: OpenAI models use their own cached-input rate from the
+  pricing page (the ratio to input varies by model: 0.05× for `gpt-6.1-sol`,
+  0.5× for `gpt-4o`). Anthropic models, and OpenAI rows the current page no
+  longer lists, bill cache writes at 1.25× and reads at 0.1× the input rate.
+  Cache tokens with no rate are unpriceable, and the event stays unpriced
   (`no_pricing_data`) unless an override sets `cacheWriteMultiplier` /
-  `cacheReadMultiplier`.
+  `cacheReadMultiplier`. That covers Gemini, OpenAI pro models, and gpt-6 /
+  gpt-5.6 cache writes, whose rate depends on a cache TTL the usage does not
+  record.
+- Long context: OpenAI bills a request with more than 272K input tokens
+  (cached included) at its long-context rates. The engine applies them per
+  event, treating each `delta` event as one provider request. Pass
+  `aggregate: true` on a `recordUsage` record that sums several requests (a
+  session total); it, and any `cumulative` snapshot, is billed at the
+  standard rates.
+- Codex service tier: only Standard (`service_tier: "default"`) is in the
+  table. A response on another tier (Fast, Flex) is left unpriced with an
+  `unpriced_service_tier` diagnostic rather than billed at Standard rates.
 - `pricing.revision` is the latest price revision used and
   `pricing.revisions` lists all of them; more than one implies a
   `stale_pricing_revision` diagnostic.
@@ -205,10 +218,16 @@ both optional and never called by this package):
 ```ts
 await route.reportOutcome({
   status: 'succeeded',
-  // A null (partial) total must be passed as ABSENT — never as 0.
-  ...(cost.totalUsd !== null ? { actualCostUsd: cost.totalUsd } : {}),
+  // The whole report: it becomes the contribution row's per-stage task_cost
+  // (technical_task_router_row/v4), and its total, when it resolved, is the
+  // reported cost. A null total is never sent as 0.
+  cost,
 });
 ```
+
+The same report shape (`{ summaries }`) is what `buildTechnicalTaskRouterRowV4`
+takes per stage in `@hokusai/core`, so any host that measures with this
+package produces v4 rows without writing its own token handling.
 
 ## Routing and contribution are optional
 
@@ -216,7 +235,7 @@ Measurement is a standalone, local feature. This package never imports the
 router, never constructs a Hokusai client, and needs no `HOKUSAI_API_KEY`.
 Routing (`@hokusai/router`) and outcome contribution remain entirely opt-in,
 separate steps — nothing measured here is submitted anywhere unless _you_
-pass a total to `reportOutcome` yourself.
+pass the report to `reportOutcome` yourself.
 
 ---
 

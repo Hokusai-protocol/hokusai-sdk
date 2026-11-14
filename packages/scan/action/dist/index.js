@@ -66,10 +66,10 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname3, join as join10, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readFileSync as readFileSync9, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname4, join as join13, resolve as resolve6 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-import { parseArgs as parseArgs3 } from "node:util";
+import { parseArgs as parseArgs4 } from "node:util";
 
 // src/candidate-features.ts
 import { statSync as statSync2 } from "node:fs";
@@ -506,9 +506,9 @@ function normalizeText(text) {
 function classifyTaskFamily(input) {
   const haystack = [input.text, ...input.hints ?? []].join("\n");
   const matches = /* @__PURE__ */ new Set();
-  for (const entry of FAMILY_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
-      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
+  for (const entry2 of FAMILY_KEYWORDS) {
+    if (entry2.patterns.some((pattern) => pattern.test(haystack))) {
+      matches.add(entry2.family === "bug" ? "bugfix" : entry2.family);
     }
   }
   if (matches.size > 1) {
@@ -2519,6 +2519,216 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/rework-risk-features.ts
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/1.0.0";
+var FEATURE_AS_OF_SOURCES = [
+  /** The diff between `base_sha` and `merge_sha`. */
+  "git_diff_base_to_merge",
+  /** Commits reachable from `base_sha`; windows are measured back from `as_of`. */
+  "git_ancestors_of_base",
+  /** Timestamped GitHub events, each at or before `as_of`. */
+  "github_events_until_as_of",
+  /** The PR's commits up to its head at merge, plus the landing commit; fixed by SHA. */
+  "pr_commits_at_merge",
+  /** A PR fact that cannot change after creation. */
+  "immutable_pr_fact",
+  /** Task-contract data written by an instrumented harness before merge. */
+  "harness_contract"
+];
+var POST_MERGE_SOURCES = [
+  "github_current_state",
+  "git_history_after_merge",
+  "label_store",
+  "wall_clock"
+];
+var AGENT_TOOL_FAMILIES = [
+  "none",
+  "claude",
+  "copilot",
+  "cursor",
+  "codex",
+  "devin",
+  "gemini",
+  "aider",
+  "openhands",
+  "other",
+  "multiple"
+];
+var NO_DIFF = "The diff between base_sha and merge_sha could not be read.";
+var NO_HISTORY = "Ancestor history of base_sha could not be read.";
+var NO_EVENTS = "GitHub returned no timeline for this PR.";
+var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
+var NO_COMMITS = "The PR's commits could not be read.";
+var NO_MARKER_EVIDENCE = "No marker was found, and the commits or the body at as_of could not be read.";
+var NO_AUTHOR = "The author account no longer exists, or the PR was found from a `(#N)` reference in its landing commit and its author type was not recorded.";
+var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
+var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
+  manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+  as_of: "merged_at, or the landing commit time when GitHub reports none; see AS_OF_BASES.",
+  entries: Object.freeze([
+    entry("feature.shape.files_touched", "git_diff_base_to_merge", "integer", "Files changed.", NO_DIFF),
+    entry("feature.shape.lines_added", "git_diff_base_to_merge", "integer", "Lines added.", NO_DIFF),
+    entry("feature.shape.lines_deleted", "git_diff_base_to_merge", "integer", "Lines deleted.", NO_DIFF),
+    entry("feature.shape.loc_touched", "git_diff_base_to_merge", "integer", "Lines added plus deleted.", NO_DIFF),
+    entry("feature.shape.tests_changed", "git_diff_base_to_merge", "boolean", "A test file changed.", NO_DIFF),
+    entry("feature.shape.diff_uncertain", "git_diff_base_to_merge", "boolean", "The diff may include other PRs, as in a batched merge.", NO_DIFF),
+    entry("feature.shape.member_commits", "git_diff_base_to_merge", "integer", "First-parent commits the PR contributed.", NO_DIFF),
+    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha, over changed files of 2 MiB or less.", "No changed file has a supported language, or a file could not be read."),
+    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files that landed at or before base_sha, within the 90 days before as_of. Paths match exactly, without rename following.", NO_HISTORY),
+    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct author emails on those commits.", NO_HISTORY),
+    entry("feature.history.file_fix_commits_90d", "git_ancestors_of_base", "integer", "Those commits with a fix-shaped subject. Never read from label tables.", NO_HISTORY),
+    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Days since the newest changed file that already existed first landed.", "Every changed file is new, or history could not be read."),
+    entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
+    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "Commits among ancestors of base_sha from the email addresses on the author's commits in this PR.", NO_HISTORY),
+    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "Those commits that touch the changed files.", NO_HISTORY),
+    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", NO_AUTHOR),
+    entry("feature.agent.marker_present", "github_events_until_as_of", "boolean", "The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.", NO_MARKER_EVIDENCE),
+    { ...entry("feature.agent.tool_family", "github_events_until_as_of", "category", "The agent tool the markers name.", NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
+    entry("feature.agent.marked_commit_share", "pr_commits_at_merge", "number", "Share of the PR's commits that carry a marker.", NO_COMMITS),
+    entry("feature.process.review_count", "github_events_until_as_of", "integer", "Reviews submitted by as_of.", NO_EVENTS),
+    entry("feature.process.approvals", "github_events_until_as_of", "integer", "Approvals submitted by as_of.", NO_EVENTS),
+    entry("feature.process.changes_requested", "github_events_until_as_of", "integer", "Change requests submitted by as_of, for any PR. Distinct from segment.provenance.change_requests.", NO_EVENTS),
+    entry("feature.process.distinct_reviewers", "github_events_until_as_of", "integer", "Distinct reviewers by as_of.", NO_EVENTS),
+    entry("feature.process.hours_open", "github_events_until_as_of", "number", "Hours from PR creation to as_of.", NO_EVENTS),
+    entry("feature.process.hours_to_first_review", "github_events_until_as_of", "number", "Hours from PR creation to the first review by as_of.", "No review was submitted by as_of."),
+    entry("feature.process.github_label_count", "github_events_until_as_of", "integer", "Labels on the PR at as_of, replayed from label events.", NO_EVENTS),
+    entry("feature.process.title_chars", "github_events_until_as_of", "integer", "Title length at as_of, replayed from rename events.", NO_EVENTS),
+    entry("feature.process.body_chars", "github_events_until_as_of", "integer", "Body length at as_of, replayed from edit history.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("feature.content.diff_sha256", "git_diff_base_to_merge", "content_sha256", "Hash of the private diff that content arms read.", NO_DIFF),
+    entry("feature.content.title_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private title at as_of.", NO_EVENTS),
+    entry("feature.content.body_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private body at as_of.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.provenance.agent_iterations", "harness_contract", "integer", "Agent rework iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.self_review_iterations", "harness_contract", "integer", "Agent self-review iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.human_intervention_count", "harness_contract", "integer", "Human interventions during the run.", NOT_INSTRUMENTED),
+    entry("segment.provenance.review_rounds", "harness_contract", "integer", "Review rounds the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.provenance.change_requests", "harness_contract", "integer", "Change requests the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.agent.exact_model", "pr_commits_at_merge", "category", "The model a commit names, when exactly one is named. Most markers name only a tool.", "No commit names exactly one model, or the commits could not be read."),
+    entry("segment.agent.marked_by_account", "immutable_pr_fact", "boolean", "The PR author is a known agent bot account.", NO_AUTHOR),
+    entry("segment.agent.marked_by_branch", "immutable_pr_fact", "boolean", "The PR's head branch has an agent tool's prefix.", "GitHub reports no head branch for this PR."),
+    entry("segment.agent.marked_by_commit", "pr_commits_at_merge", "boolean", "A commit has an agent author, co-author trailer, footer or model tag.", NO_COMMITS),
+    entry("segment.agent.marked_by_body", "github_events_until_as_of", "boolean", "The body at as_of has an agent footer or session link.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.author.dependency_bot", "immutable_pr_fact", "boolean", "The PR author is a dependency bot. Pre-registration section 2 reports these PRs separately.", NO_AUTHOR),
+    {
+      ...entry("segment.ci.checks_completed_by_merge", "github_events_until_as_of", "integer", "CI results completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    },
+    {
+      ...entry("segment.ci.checks_failed_by_merge", "github_events_until_as_of", "integer", "CI failures completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    }
+  ])
+});
+var LEAKAGE_DENYLIST = Object.freeze([
+  // Corrective-rework and S2 outcome fields.
+  "corrective",
+  "horizon_days",
+  "report_outcome",
+  "reason_codes",
+  "label_provenance",
+  "labeller_version",
+  "normalization_version",
+  "definition_version",
+  "base_label_hash",
+  // Repair pairs and candidates.
+  "record_type",
+  "candidate_id",
+  "repair_pair_ids",
+  "proxy",
+  "confidence",
+  "lag_seconds",
+  "fix",
+  "fix_only",
+  "original_only",
+  "fix_preexisting",
+  "fix_tests",
+  "line_survival",
+  "graph_distance",
+  "original_review",
+  "evidence",
+  "status",
+  // Exclusion and cause codes.
+  "exclusion_code",
+  "exclusion_codes",
+  "cause_code",
+  "cause_codes",
+  "verdict",
+  // Corpus record fields that hold post-merge or enumeration-time state.
+  "relanded_merge_shas",
+  "closing_issues",
+  "labels",
+  "title",
+  "body"
+]);
+var FIELD_NAME = /^(feature|segment)\.[a-z_]+\.[a-z0-9_]+$/;
+var isLabelField = (name) => name === "label" || name.startsWith("label.");
+var isDenied = (name) => LEAKAGE_DENYLIST.includes(name.split(".").at(-1) ?? name);
+function nameError(path4, name) {
+  if (isLabelField(name)) return { path: path4, code: "label_field", message: `${name} is label-side and can never be a feature.` };
+  if (isDenied(name)) return { path: path4, code: "denied_field", message: `${name} is label-side or captured after merge.` };
+  return null;
+}
+function validateFeatureManifest(manifest) {
+  const errors = [];
+  if (typeof manifest.manifest_version !== "string" || !/^rr-merge-features\/\d+\.\d+\.\d+$/.test(manifest.manifest_version)) {
+    errors.push({ path: "manifest_version", code: "invalid_manifest_version", message: "manifest_version must be rr-merge-features/<semver>." });
+  }
+  const seen = /* @__PURE__ */ new Set();
+  (manifest.entries ?? []).forEach((raw, index) => {
+    const item = raw;
+    const path4 = `entries[${index}]`;
+    const name = typeof item.name === "string" ? item.name : "";
+    if (seen.has(name)) errors.push({ path: path4, code: "duplicate_entry", message: `${name} is declared twice.` });
+    seen.add(name);
+    const denied = nameError(path4, name);
+    if (denied) errors.push(denied);
+    else if (!FIELD_NAME.test(name)) errors.push({ path: path4, code: "invalid_namespace", message: `${name} must be feature.<group>.<field> or segment.<group>.<field>.` });
+    if (item.segment !== name.startsWith("segment.")) {
+      errors.push({ path: path4, code: "segment_flag_mismatch", message: `${name}: the segment flag must match the namespace.` });
+    }
+    if (item.kind === "category" && !item.segment && !(Array.isArray(item.categories) && item.categories.length > 0)) {
+      errors.push({ path: path4, code: "open_category_in_arm_input", message: `${name}: an arm input needs a closed list of categories.` });
+    }
+    const source = item.as_of_source;
+    if (source === void 0 || source === null || source === "") {
+      errors.push({ path: path4, code: "missing_as_of_source", message: `${name} declares no as_of source.` });
+    } else if (POST_MERGE_SOURCES.includes(source)) {
+      errors.push({ path: path4, code: "post_merge_as_of_source", message: `${name}: ${JSON.stringify(source)} can see past as_of.` });
+    } else if (!FEATURE_AS_OF_SOURCES.includes(source)) {
+      errors.push({ path: path4, code: "unknown_as_of_source", message: `${name}: ${JSON.stringify(source)} is not a declared as_of source.` });
+    }
+  });
+  return errors;
+}
+function validateFeatureColumns(columns, options = {}) {
+  const manifest = options.manifest ?? REWORK_RISK_FEATURE_MANIFEST;
+  const declared = new Map(manifest.entries.map((item) => [item.name, item]));
+  const errors = validateFeatureManifest(manifest);
+  columns.forEach((column, index) => {
+    const path4 = `columns[${index}]`;
+    const denied = nameError(path4, column);
+    if (denied) {
+      errors.push(denied);
+      return;
+    }
+    const item = declared.get(column);
+    if (!item) errors.push({ path: path4, code: "undeclared_column", message: `${column} is not in ${manifest.manifest_version}.` });
+    else if (item.segment && !options.allowSegments) errors.push({ path: path4, code: "segment_in_arm_input", message: `${column} is a segment feature and cannot be an arm input.` });
+  });
+  return errors;
+}
+function validateEvidenceAsOf(events17, asOf) {
+  const cutoff = Date.parse(asOf);
+  if (!Number.isFinite(cutoff)) return [{ path: "as_of", code: "invalid_as_of", message: `${asOf} is not a timestamp.` }];
+  const errors = [];
+  events17.forEach((event17, index) => {
+    const path4 = `events[${index}]`;
+    const at2 = Date.parse(event17.at);
+    if (!Number.isFinite(at2)) errors.push({ path: path4, code: "invalid_event_timestamp", message: `${event17.source} has no readable timestamp.` });
+    else if (at2 > cutoff) errors.push({ path: path4, code: "event_after_as_of", message: `${event17.source} at ${event17.at} is after as_of ${asOf}.` });
+  });
+  return errors;
+}
+
 // ../core/src/arbiter-calibration-label.ts
 var CALIBRATION_VERDICTS = ["yes", "no", "unclear"];
 var CAUSE_CODES = [
@@ -3059,42 +3269,42 @@ function structural(schema, value, path4, errors, root) {
 }
 function invariant(report) {
   const errors = [];
-  const add = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
+  const add2 = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
   if (report.scan.horizons_days.some(
     (horizon2, index) => index > 0 && horizon2 <= report.scan.horizons_days[index - 1]
   ))
-    add("horizons_not_ascending", "scan.horizons_days");
+    add2("horizons_not_ascending", "scan.horizons_days");
   const checkCell = (c, path4, basis2) => {
     if (c.suppressed && (c.value !== null || c.ci !== null || !c.suppression_reasons.length))
-      add("suppressed_cell_has_value", path4);
+      add2("suppressed_cell_has_value", path4);
     if (!c.suppressed && (c.value === null || c.suppression_reasons.length))
-      add("shown_cell_missing_value", path4);
+      add2("shown_cell_missing_value", path4);
     if (c.ci && c.value !== null && !(c.ci.low <= c.value && c.value <= c.ci.high))
-      add("ci_out_of_order", path4);
+      add2("ci_out_of_order", path4);
     if (basis2 && c.basis !== basis2)
-      add("descriptive_section_with_prediction_cell", path4);
+      add2("descriptive_section_with_prediction_cell", path4);
     if (c.basis === "out_of_sample_prediction" && !report.model_provenance)
-      add("prediction_without_provenance", path4);
+      add2("prediction_without_provenance", path4);
   };
   const sections = report.aggregates;
   for (const [name, s] of Object.entries(sections)) {
     if (s.basis === "out_of_sample_prediction" && !report.model_provenance)
-      add("prediction_without_provenance", `aggregates.${name}`);
+      add2("prediction_without_provenance", `aggregates.${name}`);
     if (s.status === "suppressed" && !s.suppression_reasons.length)
-      add("section_status_mismatch", `aggregates.${name}`);
+      add2("section_status_mismatch", `aggregates.${name}`);
     s.rows.forEach((row, i) => {
       for (const [k, v] of Object.entries(row))
         if (k === "cell" || k.endsWith("_rate") || k === "ratio") {
           const c = v;
           checkCell(c, `aggregates.${name}.rows[${i}].${k}`, s.basis);
           if (s.status === "suppressed" && !c.suppressed)
-            add(
+            add2(
               "section_status_mismatch",
               `aggregates.${name}.rows[${i}].${k}`
             );
         }
       if (typeof row.horizon_days === "number" && !report.scan.horizons_days.includes(row.horizon_days))
-        add(
+        add2(
           "horizon_not_declared",
           `aggregates.${name}.rows[${i}].horizon_days`
         );
@@ -3103,37 +3313,37 @@ function invariant(report) {
   report.aggregates.risk_ratios.rows.forEach((row, index) => {
     const allowed = REPORT_FEATURE_BUCKETS[row.feature];
     if (!allowed || !allowed.includes(row.bucket))
-      add(
+      add2(
         "feature_bucket_mismatch",
         `aggregates.risk_ratios.rows[${index}].bucket`
       );
   });
   if (report.eligibility.model_routing_cta && !report.eligibility.exact_model_table)
-    add("cta_without_exact_model", "eligibility.model_routing_cta");
+    add2("cta_without_exact_model", "eligibility.model_routing_cta");
   for (const [flag, name] of [
     ["exact_model_table", "survival_by_model"],
     ["harness_table", "survival_by_harness"],
     ["cost_adjusted_by_model", "cost_adjusted_survival_by_model"]
   ])
     if (!report.eligibility[flag] && report.aggregates[name].status === "shown")
-      add("model_table_ineligible_but_shown", `aggregates.${name}`);
+      add2("model_table_ineligible_but_shown", `aggregates.${name}`);
   if (report.eligibility.cost_adjusted_by_model && (!report.cost || report.cost.actual.suppressed))
-    add(
+    add2(
       "cost_adjusted_needs_actual_cost",
       "eligibility.cost_adjusted_by_model"
     );
   if (report.prs.length !== report.coverage.prs_enumerated || report.coverage.attribution.agent.identified_agent + report.coverage.attribution.agent.identified_human_signal + report.coverage.attribution.agent.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.harness.identified + report.coverage.attribution.harness.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.exact_model.identified + report.coverage.attribution.exact_model.unknown !== report.coverage.prs_enumerated)
-    add("coverage_sum_mismatch", "coverage");
-  report.prs.forEach((pr, i) => {
-    if (pr.prediction && !report.model_provenance)
-      add("prediction_without_provenance", `prs[${i}].prediction`);
-    if (pr.labels.length !== report.scan.horizons_days.length || new Set(pr.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
-      add("labels_horizon_mismatch", `prs[${i}].labels`);
-    pr.labels.forEach((l, j) => {
+    add2("coverage_sum_mismatch", "coverage");
+  report.prs.forEach((pr2, i) => {
+    if (pr2.prediction && !report.model_provenance)
+      add2("prediction_without_provenance", `prs[${i}].prediction`);
+    if (pr2.labels.length !== report.scan.horizons_days.length || new Set(pr2.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr2.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
+      add2("labels_horizon_mismatch", `prs[${i}].labels`);
+    pr2.labels.forEach((l, j) => {
       if (!report.scan.horizons_days.includes(l.horizon_days))
-        add("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
+        add2("horizon_not_declared", `prs[${i}].labels[${j}].horizon_days`);
       if (l.outcome.report_outcome !== deriveReportOutcome(l.outcome))
-        add(
+        add2(
           "label_outcome_inconsistent",
           `prs[${i}].labels[${j}].outcome.report_outcome`
         );
@@ -3141,7 +3351,7 @@ function invariant(report) {
   });
   if (report.retrospective) {
     if (!report.model_provenance)
-      add("prediction_without_provenance", "retrospective");
+      add2("prediction_without_provenance", "retrospective");
     for (const k of ["precision", "recall", "flagged_share"])
       checkCell(
         report.retrospective[k],
@@ -3149,7 +3359,7 @@ function invariant(report) {
         report.retrospective.basis
       );
     if (!report.eligibility.retrospective && !report.retrospective.suppressed)
-      add("model_table_ineligible_but_shown", "retrospective");
+      add2("model_table_ineligible_but_shown", "retrospective");
   }
   return errors;
 }
@@ -3699,20 +3909,119 @@ var ANTHROPIC_MODEL_PRICING = {
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
+var OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272e3;
+function openAiLong(inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd) {
+  return {
+    thresholdInputTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+    inputPerMTokUsd,
+    cachedInputPerMTokUsd,
+    outputPerMTokUsd
+  };
+}
 var OPENAI_MODEL_PRICING = {
-  "gpt-5.5": { inputPerMTokUsd: 5, outputPerMTokUsd: 30 },
-  "gpt-5": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
-  "gpt-5-mini": { inputPerMTokUsd: 0.25, outputPerMTokUsd: 2 },
+  "gpt-6-astra": {
+    inputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 1,
+    outputPerMTokUsd: 50,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(20, 2, 75)
+  },
+  "gpt-6.1-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.1,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.2, 15)
+  },
+  "gpt-6.1-terra": {
+    inputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: 0.05,
+    outputPerMTokUsd: 5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(2, 0.1, 7.5)
+  },
+  "gpt-6-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 15)
+  },
+  "gpt-6-luna": {
+    inputPerMTokUsd: 0.1,
+    cachedInputPerMTokUsd: 0.01,
+    outputPerMTokUsd: 0.5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.2, 0.02, 0.75)
+  },
+  // Promotional pricing "through at least 2026-11-21": re-verify after then.
+  "gpt-5.6-sol": {
+    inputPerMTokUsd: 4,
+    cachedInputPerMTokUsd: 0.4,
+    outputPerMTokUsd: 20,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(8, 0.8, 30)
+  },
+  "gpt-5.6-terra": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 12,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 18)
+  },
+  "gpt-5.6-luna": {
+    inputPerMTokUsd: 0.2,
+    cachedInputPerMTokUsd: 0.02,
+    outputPerMTokUsd: 1.2,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.4, 0.04, 1.8)
+  },
+  "gpt-5.5": {
+    inputPerMTokUsd: 5,
+    cachedInputPerMTokUsd: 0.5,
+    outputPerMTokUsd: 30,
+    longContext: openAiLong(10, 1, 45)
+  },
+  "gpt-5.5-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4": {
+    inputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 0.25,
+    outputPerMTokUsd: 15,
+    longContext: openAiLong(5, 0.5, 22.5)
+  },
+  "gpt-5.4-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4-mini": { inputPerMTokUsd: 0.75, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 4.5 },
+  "gpt-5.4-nano": { inputPerMTokUsd: 0.2, cachedInputPerMTokUsd: 0.02, outputPerMTokUsd: 1.25 },
+  "gpt-5.3-codex": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2-pro": { inputPerMTokUsd: 21, cachedInputPerMTokUsd: null, outputPerMTokUsd: 168 },
+  "gpt-5.1": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5-mini": { inputPerMTokUsd: 0.25, cachedInputPerMTokUsd: 0.025, outputPerMTokUsd: 2 },
+  "gpt-5-nano": { inputPerMTokUsd: 0.05, cachedInputPerMTokUsd: 5e-3, outputPerMTokUsd: 0.4 },
+  "gpt-5-pro": { inputPerMTokUsd: 15, cachedInputPerMTokUsd: null, outputPerMTokUsd: 120 },
+  "gpt-4.1": { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, cachedInputPerMTokUsd: 0.1, outputPerMTokUsd: 1.6 },
+  "gpt-4o": { inputPerMTokUsd: 2.5, cachedInputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "gpt-4o-mini": { inputPerMTokUsd: 0.15, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 0.6 },
+  o3: { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "o3-pro": { inputPerMTokUsd: 20, cachedInputPerMTokUsd: null, outputPerMTokUsd: 80 },
+  // Not on the current page: earlier per-model pages, legacy cache multipliers.
   "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
   "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
-  "gpt-4o": { inputPerMTokUsd: 2.5, outputPerMTokUsd: 10 },
-  "gpt-4o-mini": { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.6 },
-  "gpt-4.1": { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
-  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, outputPerMTokUsd: 1.6 },
   "gpt-4-turbo": { inputPerMTokUsd: 10, outputPerMTokUsd: 30 },
   o1: { inputPerMTokUsd: 15, outputPerMTokUsd: 60 },
   "o1-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
-  o3: { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
   "o3-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
   "o4-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 }
 };
@@ -3727,7 +4036,6 @@ var MODEL_PRICING = {
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
-var MODEL_PRICING_AS_OF = "2026-07-15";
 
 // ../core/src/session-usage.ts
 var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
@@ -4169,7 +4477,7 @@ function requireDiagnostics(value, label2) {
 }
 function requireStringArray(value, label2, item) {
   if (!Array.isArray(value)) fail(`${label2} must be an array`);
-  return value.map((entry, index) => item(entry, `${label2}[${index}]`));
+  return value.map((entry2, index) => item(entry2, `${label2}[${index}]`));
 }
 function requireTokenUsage(value, label2) {
   const record = requireObject(value, label2);
@@ -4257,9 +4565,9 @@ function validateTaskCostSummaryV1(value) {
   requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "summary.provider_contract_version");
   requireStringArray(record.models, "summary.models", requireModel);
   if (!Array.isArray(record.model_segments)) fail("summary.model_segments must be an array");
-  for (const [index, entry] of record.model_segments.entries()) {
+  for (const [index, entry2] of record.model_segments.entries()) {
     const label2 = `summary.model_segments[${index}]`;
-    const segment = requireObject(entry, label2);
+    const segment = requireObject(entry2, label2);
     requireModel(segment.model, `${label2}.model`);
     requireCount(segment.turn_count, `${label2}.turn_count`);
     requireTokenUsage(segment.usage, `${label2}.usage`);
@@ -4288,8 +4596,8 @@ function validateTaskCostSummaryV1(value) {
   requireEnum(record.join_confidence, TASK_COST_JOIN_CONFIDENCES, "summary.join_confidence");
   requireTimestamp(record.collected_at, "summary.collected_at");
   const eventCount = requireCount(record.event_count, "summary.event_count");
-  const eventIds = requireStringArray(record.event_ids, "summary.event_ids", requireId);
-  if (eventIds.length !== eventCount) fail("summary.event_count must equal event_ids.length");
+  const eventIds2 = requireStringArray(record.event_ids, "summary.event_ids", requireId);
+  if (eventIds2.length !== eventCount) fail("summary.event_count must equal event_ids.length");
   requireDiagnostics(record.diagnostics, "summary.diagnostics");
 }
 function validateTaskCostLedgerV1(value) {
@@ -4805,11 +5113,1354 @@ var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/task-cost/queue-lifecycle.ts
+var QUEUE_LIFECYCLE_EVENT_WRITE_CLASS = Object.freeze({
+  enqueued: "control",
+  candidate_prepared: "control",
+  check_run_completed: "evidence",
+  ejected: "control",
+  rerun_requested: "control",
+  rebase_performed: "evidence",
+  repair_commit_pushed: "evidence",
+  recovery_decision: "control",
+  merged: "control",
+  dequeued: "control",
+  abandoned: "control",
+  review_round_started: "control",
+  review_round_completed: "evidence"
+});
+var QUEUE_LIFECYCLE_EVENT_SCOPES = Object.freeze({
+  enqueued: ["pr"],
+  candidate_prepared: ["candidate"],
+  check_run_completed: ["pr", "candidate"],
+  ejected: ["pr"],
+  rerun_requested: ["pr", "candidate"],
+  rebase_performed: ["pr"],
+  repair_commit_pushed: ["pr"],
+  recovery_decision: ["pr", "candidate"],
+  merged: ["pr"],
+  dequeued: ["pr"],
+  abandoned: ["pr"],
+  review_round_started: ["pr"],
+  review_round_completed: ["pr"]
+});
+
+// ../core/src/task-cost/queue-lifecycle-schema.ts
+var QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "queue-lifecycle-event.v1.schema.json",
+    "title": "QueueLifecycleEventV1",
+    "description": "Queue, CI and repair lifecycle events for the task-cost contract (queue_lifecycle_event/v1, contract 1.2.0, HOK-3338 / MQ-1.2). Identity is task_attempt/v1: every event names its attempt (PR scope) or attempt_refs (candidate scope); event_id and candidate_id are minted idempotency keys. Control events (enqueued, candidate_prepared, ejected, rerun_requested, recovery_decision, merged, dequeued, abandoned, review_round_started) are accepted only for the current, unsettled run; evidence events (check_run_completed, rebase_performed, repair_commit_pushed, review_round_completed) are always accepted against their own attempt. Facts only: durations, failure classes and time-to-land are derived elsewhere. Absent means not reported; null is not used. Single-record shape only: cross-record rules are in reduceQueueLifecycleLog. Rules: packages/core/src/task-cost/queue-lifecycle.md. Readers ignore unknown fields.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/enqueued"
+      },
+      {
+        "$ref": "#/$defs/candidate_prepared"
+      },
+      {
+        "$ref": "#/$defs/check_run_completed"
+      },
+      {
+        "$ref": "#/$defs/ejected"
+      },
+      {
+        "$ref": "#/$defs/rerun_requested"
+      },
+      {
+        "$ref": "#/$defs/rebase_performed"
+      },
+      {
+        "$ref": "#/$defs/repair_commit_pushed"
+      },
+      {
+        "$ref": "#/$defs/recovery_decision"
+      },
+      {
+        "$ref": "#/$defs/merged"
+      },
+      {
+        "$ref": "#/$defs/dequeued"
+      },
+      {
+        "$ref": "#/$defs/abandoned"
+      },
+      {
+        "$ref": "#/$defs/review_round_started"
+      },
+      {
+        "$ref": "#/$defs/review_round_completed"
+      }
+    ],
+    "$defs": {
+      "schemaVersion": {
+        "const": "queue_lifecycle_event/v1"
+      },
+      "mintedId": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+        "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID. Minted, never a hash of anything."
+      },
+      "identifier": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      },
+      "slug": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "harness": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "model": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+      },
+      "version": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+      },
+      "checkKey": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+      },
+      "providerId": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+      },
+      "gitSha": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+      },
+      "positiveInt": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "probability": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "recoveryAction": {
+        "enum": [
+          "retry",
+          "rebase",
+          "fix",
+          "split",
+          "wait_for_predecessor",
+          "escalate"
+        ]
+      },
+      "propensitySource": {
+        "enum": [
+          "exact",
+          "deterministic",
+          "none"
+        ]
+      },
+      "attemptRef": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "run_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "stage_attempt_id": {
+            "$ref": "#/$defs/mintedId"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "description": "TaskAttemptRef from task_attempt/v1. Never a parallel run id."
+      },
+      "policy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/slug"
+          },
+          "version": {
+            "$ref": "#/$defs/version"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      },
+      "modelAttribution": {
+        "description": "Intended and observed models are separate. executed_model is present iff executed_model_evidence is not not_observed.",
+        "type": "object",
+        "properties": {
+          "harness": {
+            "$ref": "#/$defs/harness"
+          },
+          "intended_model": {
+            "$ref": "#/$defs/model"
+          },
+          "executed_model_evidence": {
+            "enum": [
+              "provider_response",
+              "harness_session",
+              "not_observed"
+            ]
+          },
+          "executed_model": {
+            "$ref": "#/$defs/model"
+          }
+        },
+        "required": [
+          "harness",
+          "executed_model_evidence"
+        ],
+        "if": {
+          "properties": {
+            "executed_model_evidence": {
+              "const": "not_observed"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "executed_model"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "executed_model"
+          ]
+        }
+      },
+      "actor": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/$defs/modelAttribution"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "agent"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "operator"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "description": "A human. Carries no identity.",
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "tend",
+                  "monitor"
+                ]
+              },
+              "component": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "github"
+              },
+              "app": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          }
+        ]
+      },
+      "anyModelField": {
+        "anyOf": [
+          {
+            "required": [
+              "harness"
+            ]
+          },
+          {
+            "required": [
+              "intended_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model_evidence"
+            ]
+          }
+        ]
+      },
+      "prScope": {
+        "description": "An event about one PR of one run.",
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "pr_number": {
+            "$ref": "#/$defs/positiveInt"
+          },
+          "head_sha": {
+            "$ref": "#/$defs/gitSha"
+          }
+        },
+        "required": [
+          "attempt",
+          "pr_number",
+          "head_sha"
+        ],
+        "not": {
+          "required": [
+            "attempt_refs"
+          ]
+        }
+      },
+      "candidateScope": {
+        "description": "An event about a merge candidate: one ref per run, predecessors first. A candidate is not a run.",
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/attemptRef"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "candidate_id",
+          "attempt_refs"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "attempt"
+              ]
+            },
+            {
+              "required": [
+                "pr_number"
+              ]
+            }
+          ]
+        }
+      },
+      "noCandidateLink": {
+        "not": {
+          "required": [
+            "candidate_id"
+          ]
+        }
+      },
+      "base": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "event_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "event_type": {
+            "enum": [
+              "enqueued",
+              "candidate_prepared",
+              "check_run_completed",
+              "ejected",
+              "rerun_requested",
+              "rebase_performed",
+              "repair_commit_pushed",
+              "recovery_decision",
+              "merged",
+              "dequeued",
+              "abandoned",
+              "review_round_started",
+              "review_round_completed"
+            ]
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "actor": {
+            "$ref": "#/$defs/actor"
+          }
+        },
+        "required": [
+          "schema_version",
+          "event_id",
+          "event_type",
+          "observed_at",
+          "actor"
+        ]
+      },
+      "enqueued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "enqueued"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "queue_depth": {
+                "$ref": "#/$defs/count"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run's PR entered the queue."
+      },
+      "candidate_prepared": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "candidate_prepared"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pr_number": {
+                      "$ref": "#/$defs/positiveInt"
+                    },
+                    "head_sha": {
+                      "$ref": "#/$defs/gitSha"
+                    }
+                  },
+                  "required": [
+                    "pr_number",
+                    "head_sha"
+                  ]
+                },
+                "minItems": 1
+              },
+              "candidate_sha": {
+                "$ref": "#/$defs/gitSha"
+              }
+            },
+            "required": [
+              "event_type",
+              "base_sha",
+              "entries"
+            ]
+          },
+          {
+            "$ref": "#/$defs/candidateScope"
+          }
+        ],
+        "description": "Control. The composition of a merge candidate; entries[i] is the PR of attempt_refs[i] (alignment is a validator rule)."
+      },
+      "check_run_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "check_run_completed"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "trigger": {
+                "enum": [
+                  "pull_request",
+                  "merge_group",
+                  "push",
+                  "other"
+                ]
+              },
+              "conclusion": {
+                "enum": [
+                  "success",
+                  "failure",
+                  "neutral",
+                  "cancelled",
+                  "skipped",
+                  "timed_out",
+                  "action_required",
+                  "stale",
+                  "startup_failure"
+                ]
+              },
+              "started_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              },
+              "completed_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt",
+              "head_sha",
+              "trigger",
+              "conclusion",
+              "completed_at"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Evidence. One completed check run attempt, verbatim from the provider."
+      },
+      "ejected": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "ejected"
+              },
+              "trigger": {
+                "enum": [
+                  "check_failed",
+                  "merge_conflict",
+                  "predecessor_ejected",
+                  "base_moved",
+                  "operator",
+                  "timeout",
+                  "policy",
+                  "unknown"
+                ]
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR left the queue or a candidate involuntarily. trigger is what the queue reported, not a failure class."
+      },
+      "rerun_requested": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rerun_requested"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Control. A check run attempt was re-run; the rerun is a later check_run_completed."
+      },
+      "rebase_performed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rebase_performed"
+              },
+              "previous_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "previous_base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "method": {
+                "enum": [
+                  "rebase",
+                  "merge"
+                ]
+              },
+              "had_conflicts": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "event_type",
+              "previous_head_sha",
+              "base_sha",
+              "method"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A head move onto a new base. Not a new attempt."
+      },
+      "repair_commit_pushed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "repair_commit_pushed"
+              },
+              "parent_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "commits_pushed": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              },
+              "cost_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/identifier"
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "parent_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A repair push; actor is the commit author."
+      },
+      "recovery_decision": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "recovery_decision"
+              },
+              "policy": {
+                "$ref": "#/$defs/policy"
+              },
+              "context": {
+                "type": "object",
+                "properties": {
+                  "as_of": {
+                    "$ref": "#/$defs/utcTimestamp"
+                  },
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "uniqueItems": true
+                  },
+                  "failing_check_keys": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/checkKey"
+                    }
+                  },
+                  "failure_class": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "$ref": "#/$defs/slug"
+                      },
+                      "labeler_version": {
+                        "$ref": "#/$defs/version"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "labeler_version"
+                    ]
+                  },
+                  "attempt_number": {
+                    "$ref": "#/$defs/positiveInt"
+                  },
+                  "base_moved_since_candidate": {
+                    "type": "boolean"
+                  },
+                  "queue_depth": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "properties": {
+                      "harness": {
+                        "$ref": "#/$defs/harness"
+                      },
+                      "executed_model": {
+                        "$ref": "#/$defs/model"
+                      },
+                      "task_type": {
+                        "$ref": "#/$defs/slug"
+                      }
+                    },
+                    "required": []
+                  },
+                  "flake_history": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "check_key": {
+                          "$ref": "#/$defs/checkKey"
+                        },
+                        "window_runs": {
+                          "$ref": "#/$defs/count"
+                        },
+                        "window_failures": {
+                          "$ref": "#/$defs/count"
+                        }
+                      },
+                      "required": [
+                        "check_key",
+                        "window_runs",
+                        "window_failures"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "as_of",
+                  "event_ids"
+                ],
+                "description": "Frozen decision-time snapshot. as_of <= observed_at and every event_id precedes the decision (validator and reducer rules)."
+              },
+              "available_actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/recoveryAction"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "chosen_action": {
+                "$ref": "#/$defs/recoveryAction"
+              },
+              "propensity_source": {
+                "$ref": "#/$defs/propensitySource"
+              },
+              "propensities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "$ref": "#/$defs/recoveryAction"
+                    },
+                    "probability": {
+                      "$ref": "#/$defs/probability"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "probability"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "event_type",
+              "policy",
+              "context",
+              "available_actions",
+              "chosen_action",
+              "propensity_source"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          },
+          {
+            "if": {
+              "properties": {
+                "propensity_source": {
+                  "const": "none"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "propensities"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "propensities"
+              ]
+            }
+          }
+        ],
+        "description": "Control. A self-contained recovery decision. propensities cover exactly available_actions and sum to 1 (validator rule); absent iff propensity_source is none."
+      },
+      "merged": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "merged"
+              },
+              "merge_commit_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "method": {
+                "enum": [
+                  "merge",
+                  "squash",
+                  "rebase"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "merge_commit_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR landed."
+      },
+      "dequeued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "dequeued"
+              },
+              "trigger": {
+                "enum": [
+                  "pr_closed",
+                  "head_changed",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Left the queue; the run may enqueue again."
+      },
+      "abandoned": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "abandoned"
+              },
+              "trigger": {
+                "enum": [
+                  "retry_budget_exhausted",
+                  "superseded",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run stops trying to land this PR."
+      },
+      "review_round_started": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_started"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage_attempt_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "harness": {
+                      "$ref": "#/$defs/harness"
+                    },
+                    "intended_model": {
+                      "$ref": "#/$defs/model"
+                    },
+                    "challenge": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "reviewer_key",
+                    "stage"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "executed_model"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "executed_model_evidence"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "minItems": 1
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "$ref": "#/$defs/policy"
+                  },
+                  "propensity_source": {
+                    "$ref": "#/$defs/propensitySource"
+                  },
+                  "propensity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "policy",
+                  "propensity_source"
+                ],
+                "if": {
+                  "properties": {
+                    "propensity_source": {
+                      "const": "none"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "propensity"
+                    ]
+                  }
+                },
+                "else": {
+                  "required": [
+                    "propensity"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "reviewers"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Which reviewers a round runs (intent) and the policy that chose them."
+      },
+      "review_round_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_completed"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "first_round_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/modelAttribution"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reviewer_key": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage_attempt_id": {
+                          "$ref": "#/$defs/mintedId"
+                        }
+                      },
+                      "required": [
+                        "reviewer_key",
+                        "stage"
+                      ]
+                    }
+                  ]
+                },
+                "minItems": 1
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "finding_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "blocking": {
+                      "type": "boolean"
+                    },
+                    "location": {
+                      "enum": [
+                        "first_round",
+                        "changed_since_first_round",
+                        "unchanged_since_first_round",
+                        "unknown"
+                      ]
+                    },
+                    "reflag_of": {
+                      "$ref": "#/$defs/mintedId"
+                    }
+                  },
+                  "required": [
+                    "finding_id",
+                    "reviewer_key",
+                    "blocking",
+                    "location"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "first_round_head_sha",
+              "reviewers",
+              "findings"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          },
+          {
+            "if": {
+              "properties": {
+                "round": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "round"
+              ]
+            },
+            "then": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "enum": [
+                          "first_round",
+                          "unknown"
+                        ]
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "reflag_of"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "not": {
+                          "const": "first_round"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Evidence. What a round's reviewers found; findings: [] is an observed clean round."
+      }
+    }
+  }
+);
+
 // ../core/src/fixtures/task-cost/builders.ts
 var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 var FIXTURE_TASK_ID = "task-0001";
 var FIXTURE_SESSION_ID = "session-0001";
-var FIXTURE_PRICING_REVISION = MODEL_PRICING_AS_OF;
+var FIXTURE_PRICING_REVISION = "2026-07-15";
 function isoAt(offsetSeconds) {
   return new Date(FIXTURE_EPOCH_MS + offsetSeconds * 1e3).toISOString().replace(".000Z", "Z");
 }
@@ -6128,11 +7779,11 @@ function derivedResult(derivedId, inputs, t, supersedes) {
     ...supersedes !== void 0 ? { supersedes } : {}
   };
 }
-function decision(index, entry, value, reasons2) {
-  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+function decision(index, entry2, value, reasons2) {
+  const key = entry2.record_type === "attempt" ? entry2.id : entry2.record_type === "derived" ? entry2.derived_id : entry2.write_id;
   return {
     index,
-    record_type: entry.record_type,
+    record_type: entry2.record_type,
     key,
     decision: value,
     ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
@@ -6520,7 +8171,7 @@ var comparisonRecomputed = (() => {
       }
     ],
     expected: {
-      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      decisions: log.map((entry2, index) => decision(index, entry2, "accepted")),
       attempts: [
         state(pair, { current: true }),
         state(primary, { current: true }),
@@ -6592,7 +8243,1276 @@ var twoPrMergeCandidate = (() => {
   };
 })();
 
+// ../core/src/fixtures/task-cost/queue/builders.ts
+function sha(n) {
+  return `c0de${n.toString(16).padStart(36, "0")}`;
+}
+var TEND = { kind: "tend", component: "merge-lane" };
+var WATCHDOG = { kind: "monitor", component: "ready-watchdog" };
+var GITHUB = { kind: "github", app: "merge-queue" };
+var ACTIONS = { kind: "github", app: "actions" };
+var OPERATOR = { kind: "operator" };
+function agent(executed, intended = executed, harness = "claude-code") {
+  return {
+    kind: "agent",
+    harness,
+    intended_model: intended,
+    executed_model_evidence: "provider_response",
+    executed_model: executed
+  };
+}
+function qe(input) {
+  const { t, ...rest } = input;
+  return { schema_version: "queue_lifecycle_event/v1", observed_at: at(t), ...rest };
+}
+function pr(attempt2, prNumber, headSha) {
+  return { attempt: attempt2, pr_number: prNumber, head_sha: headSha };
+}
+function decided(index, event17, decision2, reasons2) {
+  if (event17.schema_version !== "queue_lifecycle_event/v1") {
+    throw new TypeError(`stream entry ${index} is not a queue event`);
+  }
+  return {
+    index,
+    event_id: event17.event_id,
+    event_type: event17.event_type,
+    decision: decision2,
+    ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
+  };
+}
+function decisionsFor(stream, overrides = {}) {
+  const out = [];
+  for (const [index, entry2] of stream.entries()) {
+    if (entry2.schema_version !== "queue_lifecycle_event/v1") continue;
+    const [decision2, reasons2] = overrides[index] ?? ["accepted"];
+    out.push(decided(index, entry2, decision2, reasons2));
+  }
+  return out;
+}
+function eventIds(...events17) {
+  return events17.map((event17) => event17.event_id);
+}
+
+// ../core/src/fixtures/task-cost/queue/fixtures.ts
+var BASE2 = sha(100);
+function candidateState(candidate, ejected = [], merged = []) {
+  const prepared = candidate;
+  return {
+    candidate_id: prepared.candidate_id,
+    base_sha: prepared.base_sha,
+    attempt_refs: prepared.attempt_refs,
+    entries: prepared.entries,
+    ejected_run_ids: ejected,
+    merged_run_ids: merged
+  };
+}
+var cleanMerge = (() => {
+  const run = attempt({ kind: "run", id: mint(1001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(1101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 101, sha(1)),
+    base_sha: BASE2,
+    queue_depth: 0
+  });
+  const candidate = qe({
+    event_id: mint(1102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 101, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const check = qe({
+    event_id: mint(1103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    head_sha: sha(2),
+    check_run_id: "5001",
+    check_key: "ci-test",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const merged = qe({
+    event_id: mint(1104),
+    event_type: "merged",
+    t: 95,
+    actor: GITHUB,
+    ...pr(runRef, 101, sha(1)),
+    merge_commit_sha: sha(2),
+    base_sha: BASE2,
+    candidate_id: mint(1201),
+    method: "merge"
+  });
+  const settled = outcome(mint(1301), runRef, "succeeded", 100);
+  const stream = [run, enqueued, candidate, check, merged, settled];
+  return {
+    name: "clean-merge",
+    description: "One PR is enqueued, prepared as a single-entry candidate, passes its merge_group check and merges. The run settles after the merge.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, check, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var flakeRerun = (() => {
+  const run = attempt({ kind: "run", id: mint(2001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const candidateId = mint(2201);
+  const scope = { candidate_id: candidateId, attempt_refs: [runRef] };
+  const enqueued = qe({
+    event_id: mint(2101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 102, sha(1)),
+    base_sha: BASE2
+  });
+  const candidate = qe({
+    event_id: mint(2102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    ...scope,
+    base_sha: BASE2,
+    entries: [{ pr_number: 102, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const unit = qe({
+    event_id: mint(2103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(25),
+    completed_at: at(80)
+  });
+  const e2eFailed = qe({
+    event_id: mint(2104),
+    event_type: "check_run_completed",
+    t: 121,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(25),
+    completed_at: at(120)
+  });
+  const decision2 = qe({
+    event_id: mint(2105),
+    event_type: "recovery_decision",
+    t: 125,
+    actor: TEND,
+    ...scope,
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(121),
+      event_ids: [e2eFailed.event_id],
+      failing_check_keys: ["ci-e2e"],
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 0,
+      flake_history: [{ check_key: "ci-e2e", window_runs: 20, window_failures: 3 }]
+    },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "retry",
+    propensity_source: "exact",
+    propensities: [
+      { action: "retry", probability: 0.8 },
+      { action: "rebase", probability: 0.2 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rerun = qe({
+    event_id: mint(2106),
+    event_type: "rerun_requested",
+    t: 126,
+    actor: TEND,
+    ...scope,
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    run_attempt: 1
+  });
+  const e2ePassed = qe({
+    event_id: mint(2107),
+    event_type: "check_run_completed",
+    t: 231,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6003",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 2,
+    conclusion: "success",
+    started_at: at(130),
+    completed_at: at(230)
+  });
+  const merged = qe({
+    event_id: mint(2108),
+    event_type: "merged",
+    t: 240,
+    actor: GITHUB,
+    ...pr(runRef, 102, sha(1)),
+    merge_commit_sha: sha(2),
+    candidate_id: candidateId
+  });
+  const settled = outcome(mint(2301), runRef, "succeeded", 250);
+  const stream = [run, enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged, settled];
+  return {
+    name: "flake-rerun",
+    description: "A merge_group e2e check fails on attempt 1. A randomized (exact-propensity) recovery decision chooses retry over rebase; the rerun is attempt 2 of the same check_key with a new check_run_id, passes, and the PR merges. Both attempts stay as facts.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var baseDriftRebase = (() => {
+  const run = attempt({ kind: "run", id: mint(3001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(3101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(3102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(3201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 103, head_sha: sha(1) }]
+  });
+  const ejected = qe({
+    event_id: mint(3103),
+    event_type: "ejected",
+    t: 60,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    trigger: "base_moved",
+    candidate_id: mint(3201)
+  });
+  const decision2 = qe({
+    event_id: mint(3104),
+    event_type: "recovery_decision",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: { as_of: at(60), event_ids: [ejected.event_id], attempt_number: 1, base_moved_since_candidate: true },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "rebase",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "rebase", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rebased = qe({
+    event_id: mint(3105),
+    event_type: "rebase_performed",
+    t: 70,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    previous_head_sha: sha(1),
+    previous_base_sha: BASE2,
+    base_sha: sha(101),
+    method: "rebase",
+    had_conflicts: false
+  });
+  const requeued = qe({
+    event_id: mint(3106),
+    event_type: "enqueued",
+    t: 75,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    base_sha: sha(101)
+  });
+  const second = qe({
+    event_id: mint(3107),
+    event_type: "candidate_prepared",
+    t: 80,
+    actor: TEND,
+    candidate_id: mint(3202),
+    attempt_refs: [runRef],
+    base_sha: sha(101),
+    entries: [{ pr_number: 103, head_sha: sha(3) }]
+  });
+  const check = qe({
+    event_id: mint(3108),
+    event_type: "check_run_completed",
+    t: 141,
+    actor: ACTIONS,
+    ...pr(runRef, 103, sha(3)),
+    check_run_id: "7001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(140)
+  });
+  const merged = qe({
+    event_id: mint(3109),
+    event_type: "merged",
+    t: 150,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    merge_commit_sha: sha(4),
+    base_sha: sha(101),
+    candidate_id: mint(3202),
+    method: "squash"
+  });
+  const settled = outcome(mint(3301), runRef, "succeeded", 160);
+  const stream = [run, enqueued, first, ejected, decision2, rebased, requeued, second, check, merged, settled];
+  return {
+    name: "base-drift-rebase",
+    description: "The base moves under a prepared candidate, so the PR is ejected (trigger base_moved). A deterministic decision rebases it; the head move is a rebase_performed evidence fact on the same run, not a new attempt. It re-enters in a new candidate on the new base and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, ejected, decision2, rebased, requeued, second, check, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var realFailureRepair = (() => {
+  const run = attempt({ kind: "run", id: mint(4001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(4101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(4102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(4201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(1) }]
+  });
+  const failed = qe({
+    event_id: mint(4103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(1)),
+    check_run_id: "8001",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const ejected = qe({
+    event_id: mint(4104),
+    event_type: "ejected",
+    t: 92,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    trigger: "check_failed",
+    candidate_id: mint(4201),
+    cause_event_ids: [failed.event_id]
+  });
+  const decision2 = qe({
+    event_id: mint(4105),
+    event_type: "recovery_decision",
+    t: 95,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(92),
+      event_ids: [failed.event_id, ejected.event_id],
+      failing_check_keys: ["ci-unit"],
+      failure_class: { label: "test-assertion", labeler_version: "mq-0.2.0" },
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 2,
+      provenance: { harness: "claude-code", executed_model: "claude-sonnet-5-5", task_type: "bugfix" },
+      flake_history: [{ check_key: "ci-unit", window_runs: 40, window_failures: 0 }]
+    },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "fix",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const repair = attempt({ kind: "stage_attempt", id: mint(4002), parent: run.id, stage: "repair", t: 100 });
+  const repairRef = ref2(run.id, repair.id);
+  const pushed = qe({
+    event_id: mint(4106),
+    event_type: "repair_commit_pushed",
+    t: 300,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(repairRef, 104, sha(5)),
+    parent_sha: sha(1),
+    commits_pushed: 1,
+    cause_event_ids: [decision2.event_id],
+    cost_event_ids: ["evt-repair-0001", "evt-repair-0002"]
+  });
+  const repairDone = outcome(mint(4301), repairRef, "succeeded", 301);
+  const requeued = qe({
+    event_id: mint(4107),
+    event_type: "enqueued",
+    t: 310,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    base_sha: BASE2
+  });
+  const second = qe({
+    event_id: mint(4108),
+    event_type: "candidate_prepared",
+    t: 320,
+    actor: TEND,
+    candidate_id: mint(4202),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(5) }]
+  });
+  const passed = qe({
+    event_id: mint(4109),
+    event_type: "check_run_completed",
+    t: 391,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(5)),
+    check_run_id: "8002",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(330),
+    completed_at: at(390)
+  });
+  const merged = qe({
+    event_id: mint(4110),
+    event_type: "merged",
+    t: 400,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    merge_commit_sha: sha(6),
+    candidate_id: mint(4202),
+    method: "squash"
+  });
+  const settled = outcome(mint(4302), runRef, "succeeded", 410);
+  const stream = [
+    run,
+    enqueued,
+    first,
+    failed,
+    ejected,
+    decision2,
+    repair,
+    pushed,
+    repairDone,
+    requeued,
+    second,
+    passed,
+    merged,
+    settled
+  ];
+  return {
+    name: "real-failure-repair",
+    description: "A unit check fails for real; the PR is ejected with the failed check as cause. A recovery decision snapshots only what preceded it and chooses fix. A repair stage attempt pushes a commit attributed to the agent with its provider-observed model and the cost events of the repair; the PR re-enters and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, failed, ejected, decision2, pushed, requeued, second, passed, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var cumulativePredecessorEjects = (() => {
+  const runA = attempt({ kind: "run", id: mint(5001), parent: TASK, t: 0 });
+  const runB = attempt({ kind: "run", id: mint(5002), parent: OTHER_TASK, task: OTHER_TASK, t: 1 });
+  const refA = ref2(runA.id);
+  const refB = ref2(runB.id, void 0, OTHER_TASK);
+  const enqA = qe({ event_id: mint(5101), event_type: "enqueued", t: 10, actor: TEND, ...pr(refA, 105, sha(1)), queue_depth: 0 });
+  const enqB = qe({ event_id: mint(5102), event_type: "enqueued", t: 11, actor: TEND, ...pr(refB, 106, sha(2)), queue_depth: 1 });
+  const c1 = mint(5201);
+  const cumulative = qe({
+    event_id: mint(5103),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 105, head_sha: sha(1) }, { pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(3)
+  });
+  const failed = qe({
+    event_id: mint(5104),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    head_sha: sha(3),
+    check_run_id: "9001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(90)
+  });
+  const ejectA = qe({
+    event_id: mint(5105),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refA, 105, sha(1)),
+    trigger: "check_failed",
+    candidate_id: c1,
+    cause_event_ids: [failed.event_id]
+  });
+  const ejectB = qe({
+    event_id: mint(5106),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    trigger: "predecessor_ejected",
+    candidate_id: c1,
+    cause_event_ids: [ejectA.event_id]
+  });
+  const wrongComposition = qe({
+    event_id: mint(5107),
+    event_type: "check_run_completed",
+    t: 95,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refB],
+    head_sha: sha(3),
+    check_run_id: "9002",
+    check_key: "ci-lint",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(94)
+  });
+  const c2 = mint(5202);
+  const alone = qe({
+    event_id: mint(5108),
+    event_type: "candidate_prepared",
+    t: 100,
+    actor: GITHUB,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(4)
+  });
+  const passed = qe({
+    event_id: mint(5109),
+    event_type: "check_run_completed",
+    t: 171,
+    actor: ACTIONS,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    head_sha: sha(4),
+    check_run_id: "9003",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(170)
+  });
+  const staleMerge = qe({
+    event_id: mint(5110),
+    event_type: "merged",
+    t: 175,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(3),
+    candidate_id: c1
+  });
+  const merged = qe({
+    event_id: mint(5111),
+    event_type: "merged",
+    t: 176,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(4),
+    candidate_id: c2
+  });
+  const settled = outcome(mint(5301), refB, "succeeded", 180);
+  const stream = [
+    runA,
+    runB,
+    enqA,
+    enqB,
+    cumulative,
+    failed,
+    ejectA,
+    ejectB,
+    wrongComposition,
+    alone,
+    passed,
+    staleMerge,
+    merged,
+    settled
+  ];
+  return {
+    name: "cumulative-candidate-predecessor-ejects",
+    description: "Two PRs from two tasks form one cumulative candidate (B is tested on top of A). The candidate check fails; A is ejected for the failure and B because its predecessor was ejected. B lands alone in a new candidate. A check naming a different composition under the old candidate id is rejected, as is a merge claimed under the candidate B was ejected from.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(wrongComposition)]: ["rejected", ["candidate_mismatch"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["ejected_from_candidate"]]
+      }),
+      accepted_event_ids: eventIds(enqA, enqB, cumulative, failed, ejectA, ejectB, alone, passed, merged),
+      candidates: [candidateState(cumulative, [runA.id, runB.id]), candidateState(alone, [], [runB.id])]
+    }
+  };
+})();
+var operatorManualCommit = (() => {
+  const run = attempt({ kind: "run", id: mint(6001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({ event_id: mint(6101), event_type: "enqueued", t: 10, actor: TEND, ...pr(runRef, 107, sha(1)) });
+  const failed = qe({
+    event_id: mint(6102),
+    event_type: "check_run_completed",
+    t: 61,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(1)),
+    check_run_id: "10001",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(60)
+  });
+  const dequeued = qe({
+    event_id: mint(6103),
+    event_type: "dequeued",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 107, sha(1)),
+    trigger: "policy"
+  });
+  const escalate = qe({
+    event_id: mint(6104),
+    event_type: "recovery_decision",
+    t: 65,
+    actor: WATCHDOG,
+    ...pr(runRef, 107, sha(1)),
+    policy: { name: "ready-watchdog", version: "3.2.0" },
+    context: { as_of: at(62), event_ids: [failed.event_id, dequeued.event_id], failing_check_keys: ["ci-typecheck"], attempt_number: 3 },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "escalate",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 0 },
+      { action: "escalate", probability: 1 }
+    ]
+  });
+  const manual = qe({
+    event_id: mint(6105),
+    event_type: "repair_commit_pushed",
+    t: 900,
+    actor: OPERATOR,
+    ...pr(runRef, 107, sha(7)),
+    parent_sha: sha(1),
+    commits_pushed: 2,
+    cause_event_ids: [escalate.event_id]
+  });
+  const requeued = qe({ event_id: mint(6106), event_type: "enqueued", t: 910, actor: OPERATOR, ...pr(runRef, 107, sha(7)) });
+  const passed = qe({
+    event_id: mint(6107),
+    event_type: "check_run_completed",
+    t: 961,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(7)),
+    check_run_id: "10002",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(960)
+  });
+  const merged = qe({
+    event_id: mint(6108),
+    event_type: "merged",
+    t: 970,
+    actor: TEND,
+    ...pr(runRef, 107, sha(7)),
+    merge_commit_sha: sha(8)
+  });
+  const settled = outcome(mint(6301), runRef, "succeeded", 980);
+  const stream = [run, enqueued, failed, dequeued, escalate, manual, requeued, passed, merged, settled];
+  return {
+    name: "operator-manual-commit",
+    description: "The watchdog escalates after a third failure. A human pushes the fix: the repair commit is attributed to the operator (no model, no stage attempt), so the agent is never credited with it. The PR then lands without a merge candidate.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, failed, dequeued, escalate, manual, requeued, passed, merged),
+      candidates: []
+    }
+  };
+})();
+var crashResumeDuplicate = (() => {
+  const run1 = attempt({ kind: "run", id: mint(7001), parent: TASK, t: 0 });
+  const ref1 = ref2(run1.id);
+  const enqueued = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 1
+  });
+  const candidate = qe({
+    event_id: mint(7102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(7201),
+    attempt_refs: [ref1],
+    base_sha: BASE2,
+    entries: [{ pr_number: 108, head_sha: sha(1) }]
+  });
+  const check = qe({
+    event_id: mint(7103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(80)
+  });
+  const replayEnqueued = { ...enqueued };
+  const replayCandidate = JSON.parse(JSON.stringify(candidate));
+  const reorderedCheck = Object.fromEntries(Object.entries(check).reverse());
+  const conflicting = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 85,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 0
+  });
+  const run2 = attempt({ kind: "run", id: mint(7002), parent: TASK, t: 100 });
+  const ref22 = ref2(run2.id);
+  const staleMerge = qe({
+    event_id: mint(7104),
+    event_type: "merged",
+    t: 110,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    merge_commit_sha: sha(2)
+  });
+  const lateCheck = qe({
+    event_id: mint(7105),
+    event_type: "check_run_completed",
+    t: 111,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11002",
+    check_key: "ci-lint",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(79)
+  });
+  const enqueued2 = qe({ event_id: mint(7106), event_type: "enqueued", t: 200, actor: TEND, ...pr(ref22, 108, sha(9)) });
+  const merged2 = qe({
+    event_id: mint(7107),
+    event_type: "merged",
+    t: 260,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    merge_commit_sha: sha(10)
+  });
+  const settled = outcome(mint(7301), ref22, "succeeded", 270);
+  const lateDequeue = qe({
+    event_id: mint(7108),
+    event_type: "dequeued",
+    t: 280,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    trigger: "pr_closed"
+  });
+  const stream = [
+    run1,
+    enqueued,
+    candidate,
+    check,
+    replayEnqueued,
+    replayCandidate,
+    reorderedCheck,
+    conflicting,
+    run2,
+    staleMerge,
+    lateCheck,
+    enqueued2,
+    merged2,
+    settled,
+    lateDequeue
+  ];
+  return {
+    name: "crash-resume-duplicate",
+    description: "After a crash the writer re-emits three events (one with reordered keys): each is a duplicate by event_id and changes nothing. A different fact under a reused event_id is rejected, never overwriting. After a relaunch, a control write from the old run is stale while its late check-run evidence is kept; once run 2 settles, a late dequeue is rejected.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(replayEnqueued)]: ["duplicate"],
+        [stream.indexOf(replayCandidate)]: ["duplicate"],
+        [stream.indexOf(reorderedCheck)]: ["duplicate"],
+        [stream.indexOf(conflicting)]: ["rejected", ["event_id_conflict"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["stale_run"]],
+        [stream.indexOf(lateDequeue)]: ["rejected", ["settled"]]
+      }),
+      accepted_event_ids: eventIds(enqueued, candidate, check, lateCheck, enqueued2, merged2),
+      candidates: [candidateState(candidate)]
+    }
+  };
+})();
+var multiRoundReview = (() => {
+  const run = attempt({ kind: "run", id: mint(8001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const reviewFlow = { kind: "monitor", component: "review-flow" };
+  const r1Correctness = attempt({ kind: "stage_attempt", id: mint(8002), parent: run.id, stage: "review", t: 10 });
+  const r1Security = attempt({ kind: "stage_attempt", id: mint(8003), parent: run.id, stage: "security-review", t: 10 });
+  const started1 = qe({
+    event_id: mint(8101),
+    event_type: "review_round_started",
+    t: 11,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    reviewers: [
+      { reviewer_key: "correctness", stage: "review", stage_attempt_id: r1Correctness.id, harness: "codex", intended_model: "gpt-5.5" },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        challenge: true
+      }
+    ],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "exact", propensity: 0.25 }
+  });
+  const f1 = mint(8401);
+  const f2 = mint(8402);
+  const completed1 = qe({
+    event_id: mint(8102),
+    event_type: "review_round_completed",
+    t: 200,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r1Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        executed_model_evidence: "not_observed"
+      }
+    ],
+    findings: [
+      { finding_id: f1, reviewer_key: "correctness", blocking: true, location: "first_round" },
+      { finding_id: f2, reviewer_key: "security", blocking: false, location: "first_round" }
+    ]
+  });
+  const fix1 = qe({
+    event_id: mint(8103),
+    event_type: "repair_commit_pushed",
+    t: 400,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(11)),
+    parent_sha: sha(1),
+    cause_event_ids: [completed1.event_id]
+  });
+  const r2Correctness = attempt({ kind: "stage_attempt", id: mint(8004), parent: run.id, stage: "review", t: 410 });
+  const started2 = qe({
+    event_id: mint(8104),
+    event_type: "review_round_started",
+    t: 411,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r2Correctness.id, harness: "codex", intended_model: "gpt-5.5" }],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "deterministic", propensity: 1 }
+  });
+  const completed2 = qe({
+    event_id: mint(8105),
+    event_type: "review_round_completed",
+    t: 600,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r2Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: [
+      { finding_id: mint(8403), reviewer_key: "correctness", blocking: true, location: "unchanged_since_first_round", reflag_of: f2 },
+      { finding_id: mint(8404), reviewer_key: "correctness", blocking: false, location: "unchanged_since_first_round" },
+      { finding_id: mint(8405), reviewer_key: "correctness", blocking: true, location: "changed_since_first_round" }
+    ]
+  });
+  const fix2 = qe({
+    event_id: mint(8106),
+    event_type: "repair_commit_pushed",
+    t: 800,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(12)),
+    parent_sha: sha(11),
+    cause_event_ids: [completed2.event_id]
+  });
+  const r3Correctness = attempt({ kind: "stage_attempt", id: mint(8005), parent: run.id, stage: "review", t: 810 });
+  const started3 = qe({
+    event_id: mint(8107),
+    event_type: "review_round_started",
+    t: 811,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r3Correctness.id, harness: "codex", intended_model: "gpt-5.5" }]
+  });
+  const completed3 = qe({
+    event_id: mint(8108),
+    event_type: "review_round_completed",
+    t: 950,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r3Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: []
+  });
+  const stream = [
+    run,
+    r1Correctness,
+    r1Security,
+    started1,
+    completed1,
+    fix1,
+    r2Correctness,
+    started2,
+    completed2,
+    fix2,
+    r3Correctness,
+    started3,
+    completed3
+  ];
+  return {
+    name: "multi-round-review",
+    description: "Three review rounds. Round 1 runs two reviewers chosen with an exact propensity; the challenge reviewer has no observed model, so none is recorded. Round 2 re-flags a round-1 finding and raises a new one on code round 1 already saw (unchanged_since_first_round), plus one on changed lines. Round 3 is an observed clean round (findings: []).",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(started1, completed1, fix1, started2, completed2, fix2, started3, completed3),
+      candidates: []
+    }
+  };
+})();
+
+// ../core/src/fixtures/contribution-v4.ts
+var TASK_ID = "task-0001";
+var INFERENCE_LOG_ID = "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a80";
+var CONTRIBUTION_V4_CHALLENGE_PAIR_ID = "01a1a6d0-0000-7000-8000-000000000001";
+var descriptor = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-4-8", "gpt-5-codex"];
+function summaryOf(fixture) {
+  const [summary] = fixture.expectedSummaries;
+  if (!summary) throw new Error(`task-cost fixture ${fixture.name} has no summary`);
+  return summary;
+}
+function stage(name, executedModel, harness, source, modelEvidence = "session_telemetry") {
+  return {
+    stage: name,
+    executed_model: executedModel,
+    model_evidence: modelEvidence,
+    harness,
+    task_cost: summaryOf(source)
+  };
+}
+function v4Row(fields) {
+  return {
+    schema_version: "technical_task_router_row/v4",
+    task_descriptor: descriptor,
+    allowed_models: pool,
+    available_models: { planner_models: pool, coder_models: pool, reviewer_models: pool },
+    budget_usd: 5,
+    wall_clock_seconds: 1840,
+    success_under_budget: true,
+    completion_result: "success",
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool.length },
+    sparse_cell: {
+      cell_id: "bugfix-typescript",
+      descriptor_signature: "bugfix|typescript|backend",
+      observed_count: 41,
+      is_sparse: false
+    },
+    observed_at: "2026-11-04T18:00:00.000Z",
+    task_id: TASK_ID,
+    harness: "wavemill",
+    ...fields
+  };
+}
+var lowCostLabels = {
+  budget_label: "under_budget",
+  cost_label: "low",
+  time_label: "slow",
+  success_label: "success"
+};
+var singleHarnessV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  selected_models: { planner: "claude-sonnet-5", coder: "claude-sonnet-5", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("planning", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("coding", "claude-sonnet-5", "claude-code", claudeCodeModelSwitchFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.0489 + 0.1185 + 0.10925
+  actual_cost_usd: 0.27665,
+  outcome_labels: lowCostLabels
+});
+var mixedHarnessV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  selected_models: { planner: "claude-sonnet-5", coder: "claude-haiku-4-5", reviewer: "claude-sonnet-5" },
+  stage_executions: [
+    stage("planning", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("coding", "claude-haiku-4-5", "native", nativeSimpleFixture, "provider_response"),
+    stage("review", "claude-sonnet-5", "claude-code", claudeCodeRetryFixture)
+  ],
+  // 0.0489 + 0.0027 + 0.0399
+  actual_cost_usd: 0.0915,
+  outcome_labels: lowCostLabels
+});
+var challengePrimaryV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  comparison_group: { id: CONTRIBUTION_V4_CHALLENGE_PAIR_ID, role_varied: "coder" },
+  selected_models: { coder: "claude-sonnet-5", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.0489 + 0.10925
+  actual_cost_usd: 0.15815,
+  outcome_labels: lowCostLabels
+});
+var challengeChallengerV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [
+    { role: "coder", source: "challenge", from: "claude-sonnet-5", to: "gpt-5-codex", reason: "challenge_arm" }
+  ],
+  comparison_group: { id: CONTRIBUTION_V4_CHALLENGE_PAIR_ID, role_varied: "coder" },
+  selected_models: { coder: "gpt-5-codex", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "gpt-5-codex", "codex", codexSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.02125 + 0.10925
+  actual_cost_usd: 0.1305,
+  outcome_labels: lowCostLabels
+});
+var ciFixRepairV4Fixture = v4Row({
+  selected_models: { coder: "gpt-5-codex", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "gpt-5-codex", "codex", codexSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture),
+    stage("ci-fix", "gpt-5-codex", "codex", codexRealCacheFixture)
+  ],
+  // 0.02125 + 0.10925 + 0.605988
+  actual_cost_usd: 0.736488,
+  outcome_labels: lowCostLabels
+});
+
+// ../core/src/fixtures/routing-outcome.ts
+var descriptor2 = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool2 = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7", "glm-5.3-flash"];
+function routerRow(routing, success) {
+  return {
+    schema_version: "technical_task_router_row/v3",
+    task_descriptor: descriptor2,
+    allowed_models: pool2,
+    available_models: { planner_models: pool2, coder_models: pool2, reviewer_models: pool2 },
+    budget_usd: 5,
+    actual_cost_usd: 2.29,
+    wall_clock_seconds: 1840,
+    success_under_budget: success,
+    completion_result: success ? "success" : "failure",
+    outcome_labels: {
+      budget_label: "under_budget",
+      cost_label: "medium",
+      time_label: "slow",
+      success_label: success ? "success" : "failure"
+    },
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool2.length },
+    sparse_cell: { cell_id: "bugfix-typescript", descriptor_signature: "bugfix|typescript|backend", observed_count: 41, is_sparse: false },
+    observed_at: "2026-10-30T18:00:00.000Z",
+    harness: "wavemill",
+    ...routing
+  };
+}
+var followedRecommendationRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a70",
+    overrides: [],
+    selected_models: { planner: "claude-sonnet-4-6", coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" }
+  },
+  true
+);
+var escalationOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a71",
+    overrides: [
+      { role: "coder", source: "escalation", from: "claude-haiku-4-5", to: "glm-5.3-flash", reason: "stage_failed" }
+    ],
+    selected_models: { coder: "glm-5.3-flash", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var challengeOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a72",
+    overrides: [
+      { role: "coder", source: "challenge", from: "claude-opus-4-7", to: "claude-haiku-4-5", reason: "challenge_arm" }
+    ],
+    selected_models: { coder: "claude-haiku-4-5", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var operatorRerouteRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a73",
+    overrides: [
+      { role: "reviewer", source: "operator", from: "claude-haiku-4-5", to: "claude-opus-4-7", reason: "operator_reroute" }
+    ],
+    selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-opus-4-7" }
+  },
+  true
+);
+var unroutedTelemetryRoutingFixture = routerRow(
+  { selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" } },
+  true
+);
+
 // ../core/src/contribution/schema.ts
+var RECOMMENDATION_COPY_KEYS = Object.freeze([
+  "recommended_model",
+  "recommended_models",
+  "recommended_model_id",
+  "recommendation",
+  "recommendation_accepted",
+  "recommendedmodel",
+  "recommendedmodels",
+  "recommendationaccepted"
+]);
 var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "schema_version",
   "task_descriptor",
@@ -6609,6 +9529,78 @@ var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "observed_at",
   "harness_metadata"
 ]);
+var HARNESS_OUTCOME_ROW_V2_FIELDS = Object.freeze([
+  ...HARNESS_OUTCOME_ROW_FIELDS,
+  "overrides"
+]);
+var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+  "prompt",
+  "messages",
+  "task_text",
+  "raw_input",
+  "eval_record",
+  "originalprompt",
+  "original_prompt",
+  "description",
+  "issue_body"
+]);
+var STAGE_EXECUTION_BASE_STAGES = ["planning", "coding", "review"];
+var STAGE_EXECUTION_REPAIR_STAGES = [
+  "ci-fix",
+  "conflict-resolution",
+  "ready-remediation"
+];
+var STAGE_EXECUTION_STAGES = [
+  ...STAGE_EXECUTION_BASE_STAGES,
+  ...STAGE_EXECUTION_REPAIR_STAGES
+];
+var STAGE_TO_ROLE = Object.freeze({
+  planning: "planner",
+  coding: "coder",
+  review: "reviewer"
+});
+var RICH_ROUTER_ROW_FIELDS = [
+  "schema_version",
+  "task_descriptor",
+  "allowed_models",
+  "selected_models",
+  "available_models",
+  "budget_usd",
+  "actual_cost_usd",
+  "wall_clock_seconds",
+  "success_under_budget",
+  "completion_result",
+  "outcome_labels",
+  "candidate_pool",
+  "sparse_cell",
+  "scorer_ref",
+  "observed_at",
+  "task_id",
+  "harness"
+];
+var ROUTER_ROW_V3_EXTRA_FIELDS = ["inference_log_id", "overrides"];
+var ROUTER_ROW_V4_EXTRA_FIELDS = [
+  ...ROUTER_ROW_V3_EXTRA_FIELDS,
+  "stage_executions",
+  "comparison_group",
+  "integration",
+  "sdk_version"
+];
+var TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
+  ...RICH_ROUTER_ROW_FIELDS,
+  ...ROUTER_ROW_V4_EXTRA_FIELDS
+]);
+var STAGE_EXECUTION_FIELDS = Object.freeze([
+  "stage",
+  "executed_model",
+  "model_evidence",
+  "harness",
+  "task_cost"
+]);
+var CONTRIBUTION_FORBIDDEN_KEYS = Object.freeze([...FORBIDDEN_KEYS]);
+var RECOMMENDATION_COPY_KEY_SET = new Set(
+  RECOMMENDATION_COPY_KEYS.map((key) => key.replaceAll("_", ""))
+);
 
 // ../core/src/plugin-commands/cli.ts
 var CLI_EXIT_CODES = {
@@ -6739,9 +9731,9 @@ function sumEslintErrors(jsonText) {
   }
   if (!Array.isArray(parsed)) return null;
   let total = 0;
-  for (const entry of parsed) {
-    if (entry && typeof entry === "object" && "errorCount" in entry) {
-      const value = entry.errorCount;
+  for (const entry2 of parsed) {
+    if (entry2 && typeof entry2 === "object" && "errorCount" in entry2) {
+      const value = entry2.errorCount;
       if (typeof value === "number" && Number.isFinite(value)) total += value;
     }
   }
@@ -7294,16 +10286,16 @@ function collectReviewEvidence(prNumber, repoDir) {
 }
 function deriveIntent(contract, diffStats) {
   if (!contract) return nullIntent();
-  const descriptor = deriveTaskDescriptor({
+  const descriptor3 = deriveTaskDescriptor({
     taskText: contract.taskText,
     repositorySignals: contract.repositorySignals
   });
   const intent = nullIntent();
-  intent.task_type = normalizeTaskType(contract.intent?.task_type ?? descriptor.task_type);
-  intent.language = normalizeLanguage(contract.intent?.language ?? descriptor.language);
+  intent.task_type = normalizeTaskType(contract.intent?.task_type ?? descriptor3.task_type);
+  intent.language = normalizeLanguage(contract.intent?.language ?? descriptor3.language);
   intent.domain = normalizeDomain(contract.intent?.domain);
-  intent.complexity = normalizeComplexityValue(contract.intent?.complexity ?? descriptor.complexity);
-  intent.repo_size_bucket = normalizeRepoSizeBucket(contract.intent?.repo_size_bucket ?? descriptor.repo_size_bucket);
+  intent.complexity = normalizeComplexityValue(contract.intent?.complexity ?? descriptor3.complexity);
+  intent.repo_size_bucket = normalizeRepoSizeBucket(contract.intent?.repo_size_bucket ?? descriptor3.repo_size_bucket);
   intent.files_touched_bucket = normalizeFilesTouchedBucket(
     contract.intent?.files_touched_bucket ?? bucketFilesTouched(diffStats?.filesTouched)
   );
@@ -7456,7 +10448,7 @@ function parseNameStatusOutput(output) {
       path: path4,
       previousPath: normalizedStatus === "R" || normalizedStatus === "C" ? firstPath : void 0
     };
-  }).filter((entry) => entry.status && entry.path);
+  }).filter((entry2) => entry2.status && entry2.path);
 }
 function extractPrNumber(subject) {
   const match = subject.match(/merge pull request #(\d+)\b/i) ?? subject.match(/\(#(\d+)\)\s*$/i);
@@ -7495,19 +10487,19 @@ function enumerateMergedPrs(target, deps, options = {}) {
   const refs = [];
   for (const line of result.stdout.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const [sha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
+    const [sha2, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
     const subject = subjectParts.join("	").trim();
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
     const mergedAtEpoch = Number(epochText);
-    if (!sha || parents.length === 0 || !Number.isFinite(mergedAtEpoch)) continue;
+    if (!sha2 || parents.length === 0 || !Number.isFinite(mergedAtEpoch)) continue;
     const prNumber = extractPrNumber(subject);
     if (prNumber === null) continue;
     refs.push({
       prNumber,
       prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${prNumber}`,
-      mergeSha: sha,
+      mergeSha: sha2,
       parentSha: parents[0],
-      headSha: parents.length >= 2 ? parents[1] : sha,
+      headSha: parents.length >= 2 ? parents[1] : sha2,
       mergedAtEpoch,
       subject
     });
@@ -7544,17 +10536,17 @@ function resolveMergedPr(target, deps, prUrl, options = {}) {
     };
   }
   const info = deps.runGit(["log", "-1", "--pretty=format:%H%x09%P%x09%ct%x09%s", metadata.mergeCommitSha]);
-  const [sha, parentsText = "", epochText = "", ...subjectParts] = info.stdout.split("	");
+  const [sha2, parentsText = "", epochText = "", ...subjectParts] = info.stdout.split("	");
   const parents = parentsText.trim().split(/\s+/).filter(Boolean);
-  if (info.exitCode !== 0 || !sha || parents.length === 0) {
+  if (info.exitCode !== 0 || !sha2 || parents.length === 0) {
     return { prUrl, reason: "inaccessible_history", detail: "cannot read merge commit" };
   }
   return {
     prNumber: metadata.number,
     prUrl,
-    mergeSha: sha,
+    mergeSha: sha2,
     parentSha: parents[0],
-    headSha: metadata.headSha ?? (parents.length >= 2 ? parents[1] : sha),
+    headSha: metadata.headSha ?? (parents.length >= 2 ? parents[1] : sha2),
     mergedAtEpoch: Number(epochText),
     subject: subjectParts.join("	").trim() || metadata.title
   };
@@ -7605,7 +10597,7 @@ function parseZeroContextDiff(diffText) {
       });
     }
   }
-  return entries.filter((entry) => entry.oldPath !== null || entry.newPath !== null);
+  return entries.filter((entry2) => entry2.oldPath !== null || entry2.newPath !== null);
 }
 function rangeLineCount(range) {
   return range.end - range.start + 1;
@@ -7620,15 +10612,15 @@ function countCoveredLines(range, covered) {
   return count;
 }
 var WHITESPACE_DIFF_ARGS = ["-U0", "-w", "--ignore-blank-lines", "--find-renames", "--no-color"];
-function buildSubstrate(deps, pr) {
-  const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr.parentSha, pr.mergeSha]);
+function buildSubstrate(deps, pr2) {
+  const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr2.parentSha, pr2.mergeSha]);
   if (result.exitCode !== 0) return null;
   const files = [];
-  for (const entry of parseZeroContextDiff(result.stdout)) {
-    if (entry.hunks.length === 0) continue;
-    const path4 = entry.newPath ?? entry.oldPath;
+  for (const entry2 of parseZeroContextDiff(result.stdout)) {
+    if (entry2.hunks.length === 0) continue;
+    const path4 = entry2.newPath ?? entry2.oldPath;
     if (!path4) continue;
-    files.push({ path: path4, oldPath: entry.oldPath ?? path4, hunks: entry.hunks });
+    files.push({ path: path4, oldPath: entry2.oldPath ?? path4, hunks: entry2.hunks });
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const lineRanges = [];
@@ -7637,8 +10629,8 @@ function buildSubstrate(deps, pr) {
     for (const hunk of file.hunks) {
       lineRanges.push({
         path: file.path,
-        old: hunk.old ? { start: hunk.old.start, end: hunk.old.end, sha: pr.parentSha } : null,
-        new: hunk.new ? { start: hunk.new.start, end: hunk.new.end, sha: pr.mergeSha } : null
+        old: hunk.old ? { start: hunk.old.start, end: hunk.old.end, sha: pr2.parentSha } : null,
+        new: hunk.new ? { start: hunk.new.start, end: hunk.new.end, sha: pr2.mergeSha } : null
       });
       totalLines += hunk.new ? rangeLineCount(hunk.new) : hunk.old ? rangeLineCount(hunk.old) : 0;
     }
@@ -7646,28 +10638,28 @@ function buildSubstrate(deps, pr) {
   return { files, lineRanges, totalLines };
 }
 var LS_TREE_CHUNK = 400;
-function blobsAt(deps, sha, paths) {
+function blobsAt(deps, sha2, paths) {
   const out = new Map(paths.map((path4) => [path4, null]));
   const unique2 = [...new Set(paths)];
   for (let i = 0; i < unique2.length; i += LS_TREE_CHUNK) {
     const chunk = unique2.slice(i, i + LS_TREE_CHUNK);
-    const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha, "--", ...chunk]);
+    const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha2, "--", ...chunk]);
     if (result.exitCode !== 0) continue;
-    for (const entry of result.stdout.split("\0")) {
-      const tab = entry.indexOf("	");
+    for (const entry2 of result.stdout.split("\0")) {
+      const tab = entry2.indexOf("	");
       if (tab < 0) continue;
-      const oid = entry.slice(0, tab).split(" ")[2];
-      const path4 = entry.slice(tab + 1);
+      const oid = entry2.slice(0, tab).split(" ")[2];
+      const path4 = entry2.slice(tab + 1);
       if (oid && out.has(path4)) out.set(path4, oid);
     }
   }
   return out;
 }
-function forwardFate(deps, pr, substrate, terminalSha) {
+function forwardFate(deps, pr2, substrate, terminalSha) {
   const toFate = (stdout) => {
     const fate = /* @__PURE__ */ new Map();
-    for (const entry of parseNameStatusOutput(stdout)) {
-      fate.set(entry.previousPath ?? entry.path, { status: entry.status, newPath: entry.path });
+    for (const entry2 of parseNameStatusOutput(stdout)) {
+      fate.set(entry2.previousPath ?? entry2.path, { status: entry2.status, newPath: entry2.path });
     }
     return fate;
   };
@@ -7678,21 +10670,21 @@ function forwardFate(deps, pr, substrate, terminalSha) {
       "diff",
       "--name-status",
       "--no-renames",
-      pr.mergeSha,
+      pr2.mergeSha,
       terminalSha,
       "--",
       ...paths
     ]);
     if (scoped.exitCode !== 0) return null;
     const fate = toFate(scoped.stdout);
-    if (![...fate.values()].some((entry) => entry.status === "D")) return fate;
+    if (![...fate.values()].some((entry2) => entry2.status === "D")) return fate;
   }
-  const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr.mergeSha, terminalSha]);
+  const nameStatus = deps.runGit(["diff", "--name-status", "--find-renames", pr2.mergeSha, terminalSha]);
   if (nameStatus.exitCode !== 0) return null;
   return toFate(nameStatus.stdout);
 }
-function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
-  const fate = forwardFate(deps, pr, substrate, terminalSha);
+function analyseForward(deps, pr2, substrate, terminalSha, baseBlobs) {
+  const fate = forwardFate(deps, pr2, substrate, terminalSha);
   if (!fate) return null;
   const substratePathspec = /* @__PURE__ */ new Set();
   for (const file of substrate.files) {
@@ -7703,18 +10695,18 @@ function analyseForward(deps, pr, substrate, terminalSha, baseBlobs) {
   const unified = deps.runGit([
     "diff",
     ...WHITESPACE_DIFF_ARGS,
-    pr.mergeSha,
+    pr2.mergeSha,
     terminalSha,
     "--",
     ...[...substratePathspec].sort()
   ]);
   if (unified.exitCode !== 0) return null;
   const forwardByOldPath = /* @__PURE__ */ new Map();
-  for (const entry of parseZeroContextDiff(unified.stdout)) {
-    const key = entry.oldPath ?? entry.newPath;
+  for (const entry2 of parseZeroContextDiff(unified.stdout)) {
+    const key = entry2.oldPath ?? entry2.newPath;
     if (!key) continue;
     const ranges = forwardByOldPath.get(key) ?? [];
-    for (const hunk of entry.hunks) {
+    for (const hunk of entry2.hunks) {
       if (hunk.old) ranges.push(hunk.old);
     }
     forwardByOldPath.set(key, ranges);
@@ -7792,14 +10784,14 @@ function classifyCommitActor(commit) {
   }
   return author;
 }
-function attributeUndoers(deps, pr, terminalSha, touchedPaths, extraVotes) {
+function attributeUndoers(deps, pr2, terminalSha, touchedPaths, extraVotes) {
   const votes = new Set(extraVotes);
   if (touchedPaths.length > 0) {
     const result = deps.runGit([
       "log",
       "--no-merges",
       "--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e",
-      `${pr.landedSha ?? pr.mergeSha}..${terminalSha}`,
+      `${pr2.landedSha ?? pr2.mergeSha}..${terminalSha}`,
       "--",
       ...touchedPaths
     ]);
@@ -7866,9 +10858,9 @@ var REASON_CODE_ORDER = [
   "substantial_rewrite",
   "no_evidence"
 ];
-function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
+function missingLabel(pr2, target, deps, horizon2, reason, options = {}) {
   return buildArbiterSurvivalLabel({
-    prUrl: pr.prUrl,
+    prUrl: pr2.prUrl,
     horizon_days: horizon2,
     label_provenance: "harvested",
     line_ranges: options.lineRanges ?? [],
@@ -7883,9 +10875,9 @@ function missingLabel(pr, target, deps, horizon2, reason, options = {}) {
     envelope: {
       labeller_version: SURVIVAL_LABELLER_VERSION,
       normalization_version: SURVIVAL_NORMALIZATION_VERSION,
-      pr_head_sha: pr.headSha,
-      merge_sha: pr.mergeSha,
-      horizon_terminal_sha: options.terminalSha ?? pr.mergeSha,
+      pr_head_sha: pr2.headSha,
+      merge_sha: pr2.mergeSha,
+      horizon_terminal_sha: options.terminalSha ?? pr2.mergeSha,
       integration_branch: target.integrationBranch,
       integration_mode: target.integrationMode ?? "promotion",
       computed_at: deps.now().toISOString()
@@ -7899,11 +10891,11 @@ function buildHorizonTerminalIndex(deps, branch) {
   const prefixMin = [];
   let min = Number.POSITIVE_INFINITY;
   for (const line of result.stdout.split("\n")) {
-    const [sha, ct] = line.split(" ");
+    const [sha2, ct] = line.split(" ");
     const epoch = Number(ct);
-    if (!sha || !Number.isFinite(epoch)) continue;
+    if (!sha2 || !Number.isFinite(epoch)) continue;
     min = Math.min(min, epoch);
-    shas.push(sha);
+    shas.push(sha2);
     prefixMin.push(min);
   }
   return { shas, prefixMin };
@@ -7932,68 +10924,68 @@ function resolveHorizonTerminal(deps, target, cutoffEpoch, index) {
   if (result.exitCode !== 0) return null;
   return result.stdout.trim() || null;
 }
-function labelMergedPr(target, deps, pr, options = {}) {
+function labelMergedPr(target, deps, pr2, options = {}) {
   assertIntegrationBranch(target);
   const horizons = options.horizons ?? HORIZONS;
   const nowEpoch = Math.floor(deps.now().getTime() / 1e3);
-  const substrate = buildSubstrate(deps, pr);
+  const substrate = buildSubstrate(deps, pr2);
   let base = null;
   const baseBlobs = () => base ??= {
-    parent: blobsAt(deps, pr.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
-    merge: blobsAt(deps, pr.mergeSha, substrate?.files.map((file) => file.path) ?? [])
+    parent: blobsAt(deps, pr2.parentSha, substrate?.files.map((file) => file.oldPath) ?? []),
+    merge: blobsAt(deps, pr2.mergeSha, substrate?.files.map((file) => file.path) ?? [])
   };
   let crossReferences = null;
   const linkedReferencesAt = (cutoffEpoch) => {
     if (options.includeLinkedReferences === false) return false;
     if (crossReferences === null) {
       try {
-        crossReferences = deps.github.listCrossReferences(pr.prNumber);
+        crossReferences = deps.github.listCrossReferences(pr2.prNumber);
       } catch (error) {
-        deps.onDiagnostic?.(`cross-reference lookup failed for #${pr.prNumber}: ${String(error)}`);
+        deps.onDiagnostic?.(`cross-reference lookup failed for #${pr2.prNumber}: ${String(error)}`);
         crossReferences = [];
       }
     }
     return crossReferences.some(
-      (ref3) => ref3.createdAtEpoch > pr.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target)
+      (ref3) => ref3.createdAtEpoch > pr2.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target)
     );
   };
-  const issueKeys = extractIssueKeys(pr.subject);
+  const issueKeys = extractIssueKeys(pr2.subject);
   const redispatchAt = (cutoffEpoch) => {
     if (issueKeys.size === 0 || !options.allMergedPrs) return false;
     const index = redispatchIndex(options.allMergedPrs);
     return [...issueKeys].some(
       (key) => (index.get(key) ?? []).some(
-        (other) => other.mergeSha !== pr.mergeSha && other.epoch > pr.mergedAtEpoch && other.epoch <= cutoffEpoch
+        (other) => other.mergeSha !== pr2.mergeSha && other.epoch > pr2.mergedAtEpoch && other.epoch <= cutoffEpoch
       )
     );
   };
   const labels = [];
   for (const horizon2 of horizons) {
-    const cutoffEpoch = pr.mergedAtEpoch + horizon2 * DAY_SECONDS;
+    const cutoffEpoch = pr2.mergedAtEpoch + horizon2 * DAY_SECONDS;
     if (cutoffEpoch > nowEpoch) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "missing_horizon", {
+      labels.push(missingLabel(pr2, target, deps, horizon2, "missing_horizon", {
         lineRanges: substrate?.lineRanges
       }));
       continue;
     }
     if (!substrate) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history"));
+      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history"));
       continue;
     }
     if (substrate.totalLines === 0) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "insufficient_line_range_substrate"));
+      labels.push(missingLabel(pr2, target, deps, horizon2, "insufficient_line_range_substrate"));
       continue;
     }
     const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch, options.horizonTerminalIndex);
     if (!terminalSha) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
+      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history", {
         lineRanges: substrate.lineRanges
       }));
       continue;
     }
-    const analysis = analyseForward(deps, pr, substrate, terminalSha, baseBlobs);
+    const analysis = analyseForward(deps, pr2, substrate, terminalSha, baseBlobs);
     if (!analysis) {
-      labels.push(missingLabel(pr, target, deps, horizon2, "inaccessible_history", {
+      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history", {
         terminalSha,
         lineRanges: substrate.lineRanges
       }));
@@ -8007,7 +10999,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
     const survived = !(analysis.reverted || followup);
     const undoneBy = analysis.rangeFollowup || analysis.reverted || preMergeHumanEdit ? attributeUndoers(
       deps,
-      pr,
+      pr2,
       terminalSha,
       analysis.rangeFollowup || analysis.reverted ? analysis.touchedPaths : [],
       preMergeHumanEdit ? ["human"] : []
@@ -8023,7 +11015,7 @@ function labelMergedPr(target, deps, pr, options = {}) {
     }
     if (codes.size === 0) codes.add("no_evidence");
     labels.push(buildArbiterSurvivalLabel({
-      prUrl: pr.prUrl,
+      prUrl: pr2.prUrl,
       horizon_days: horizon2,
       label_provenance: "harvested",
       line_ranges: substrate.lineRanges,
@@ -8038,8 +11030,8 @@ function labelMergedPr(target, deps, pr, options = {}) {
       envelope: {
         labeller_version: SURVIVAL_LABELLER_VERSION,
         normalization_version: SURVIVAL_NORMALIZATION_VERSION,
-        pr_head_sha: pr.headSha,
-        merge_sha: pr.mergeSha,
+        pr_head_sha: pr2.headSha,
+        merge_sha: pr2.mergeSha,
         horizon_terminal_sha: terminalSha,
         integration_branch: target.integrationBranch,
         integration_mode: target.integrationMode ?? "promotion",
@@ -8223,9 +11215,9 @@ function createDefaultScanGitHubClient(target) {
       }
       return messages;
     },
-    async getCheckConclusion(sha) {
+    async getCheckConclusion(sha2) {
       await Promise.resolve();
-      const checks = parse(api(`repos/${target.owner}/${target.repo}/commits/${sha}/check-runs?per_page=100`));
+      const checks = parse(api(`repos/${target.owner}/${target.repo}/commits/${sha2}/check-runs?per_page=100`));
       const conclusions = (checks?.check_runs ?? []).map((check) => check.conclusion).filter((x) => typeof x === "string");
       if (!conclusions.length) return "none";
       if (conclusions.some((x) => x === "failure" || x === "timed_out" || x === "action_required")) return "failure";
@@ -8298,7 +11290,7 @@ function validateAsOf(value) {
 function validateHorizons(value) {
   if (value === void 0 || value === "") return [...HORIZONS];
   const parsed = value.split(",").map((part) => Number(part.trim()));
-  const invalid = parsed.filter((entry) => !HORIZONS.includes(entry));
+  const invalid = parsed.filter((entry2) => !HORIZONS.includes(entry2));
   if (invalid.length > 0) {
     throw new ScanInputError(
       `invalid horizons ${invalid.join(", ")}: allowed values are ${HORIZONS.join(", ")}`
@@ -8429,8 +11421,8 @@ var BASELINE_V0 = Object.freeze({
     if (features.build_ok === false) {
       z -= w.buildFailPenalty;
     }
-    const complexityDelta = features.complexity_delta ?? 0;
-    z -= w.complexityDeltaPenalty * clamp(complexityDelta, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
+    const complexityDelta2 = features.complexity_delta ?? 0;
+    z -= w.complexityDeltaPenalty * clamp(complexityDelta2, 0, w.complexityDeltaSaturation) / w.complexityDeltaSaturation;
     const changeRequests = features.change_requests ?? 0;
     z -= w.changeRequestsPenalty * Math.min(changeRequests, w.changeRequestsSaturation);
     const reviewRounds = features.review_rounds ?? 0;
@@ -8448,9 +11440,9 @@ import { join as join4 } from "node:path";
 
 // src/shadow/discover.ts
 var EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-function isAncestor(runGit3, sha, ref3) {
+function isAncestor(runGit3, sha2, ref3) {
   try {
-    const result = runGit3(["merge-base", "--is-ancestor", sha, ref3]);
+    const result = runGit3(["merge-base", "--is-ancestor", sha2, ref3]);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -9160,15 +12152,2052 @@ function runShadowCli(command, args, io) {
   }
 }
 
-// src/corpus/cli.ts
-import { createHash as createHash5, randomBytes } from "node:crypto";
-import { chmodSync, closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readdirSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
-import { dirname, join as join7, resolve as resolve4 } from "node:path";
+// src/corpus/feature-audit.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+import { resolve as resolve4 } from "node:path";
 import { parseArgs as parseArgs2 } from "node:util";
-import { gzipSync, inflateRawSync } from "node:zlib";
+function runFeatureAudit(argv, io) {
+  let values;
+  try {
+    ({ values } = parseArgs2({
+      args: [...argv],
+      options: {
+        columns: { type: "string" },
+        "allow-segments": { type: "boolean" },
+        "print-manifest": { type: "boolean" }
+      },
+      strict: true,
+      allowPositionals: false
+    }));
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (values["print-manifest"]) {
+    io.writeStdout(`${JSON.stringify(REWORK_RISK_FEATURE_MANIFEST, null, 2)}
+`);
+    return { exitCode: 0 };
+  }
+  if (!values.columns) {
+    io.writeStderr("error: corpus-feature-audit needs --columns <json array of names> or --print-manifest\n");
+    return { exitCode: 2 };
+  }
+  let columns;
+  try {
+    columns = JSON.parse(readFileSync3(resolve4(io.cwd, values.columns), "utf8"));
+  } catch (error) {
+    io.writeStderr(`error: --columns: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  if (!Array.isArray(columns) || columns.length === 0 || !columns.every((name) => typeof name === "string")) {
+    io.writeStderr("error: --columns must hold a non-empty JSON array of column names\n");
+    return { exitCode: 2 };
+  }
+  const errors = validateFeatureColumns(columns, { allowSegments: values["allow-segments"] === true });
+  io.writeStdout(`${JSON.stringify({ manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION, ok: errors.length === 0, errors }, null, 2)}
+`);
+  return { exitCode: errors.length === 0 ? 0 : 1 };
+}
+
+// src/corpus/feature-run.ts
+import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname, join as join8 } from "node:path";
+
+// src/corpus/feature-capture.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join7 } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
+
+// src/corpus/features.ts
+import { createHash as createHash3 } from "node:crypto";
+
+// src/attribution/agent-markers.ts
+var BOT_SUFFIX = String.raw`(?:\[bot\])?`;
+var IDENTITIES = [
+  {
+    family: "claude",
+    // A bare "Claude" needs the tool's email or the bot suffix: it is also a first name.
+    name: /^(?:claude\[bot\]|claude\s+(?:code|opus|sonnet|haiku|fable|\d)[\w.\s-]*(?:\([^)]*\))?)$/i,
+    email: /^(?:noreply|claude)@anthropic\.com$/i
+  },
+  { family: "copilot", name: new RegExp(`^(?:github )?copilot(?:-swe-agent|-autofix)?${BOT_SUFFIX}$`, "i"), email: /^(?:\d+\+)?copilot@users\.noreply\.github\.com$/i },
+  { family: "cursor", name: new RegExp(`^cursor(?:[ -]agent)?${BOT_SUFFIX}$`, "i"), email: /^cursoragent@cursor\.com$/i },
+  { family: "codex", name: new RegExp(`^(?:openai[ -])?codex${BOT_SUFFIX}$|^chatgpt-codex-connector${BOT_SUFFIX}$`, "i"), email: /^(?:codex|noreply)@openai\.com$/i },
+  { family: "devin", name: new RegExp(`^devin-ai-integration${BOT_SUFFIX}$|^devin ai$`, "i"), email: /devin-ai-integration/i },
+  { family: "gemini", name: new RegExp(`^(?:google[ -])?gemini(?:[ -](?:cli|code[ -]assist))?${BOT_SUFFIX}$`, "i") },
+  { family: "aider", name: /^aider(?:\s*\([^)]*\))?$|\(aider\)$/i, email: /^noreply@aider\.chat$/i },
+  { family: "openhands", name: new RegExp(`^openhands(?:-agent)?${BOT_SUFFIX}$`, "i"), email: /^openhands@all-hands\.dev$/i },
+  { family: "other", name: new RegExp(`^(?:ai|coding)[ _-]agent${BOT_SUFFIX}$`, "i") }
+];
+var CO_AUTHOR_TRAILER2 = /^[ \t]*co-authored-by:[ \t]*(.*?)[ \t]*<([^>]*)>/gim;
+var TOOL_WORDS = String.raw`Claude Code|Claude|GitHub Copilot|Copilot|Cursor|OpenAI Codex|Codex|Gemini CLI|Gemini|Devin|Aider|aider|OpenHands`;
+var toolFamily = (word) => FOOTER_TOOLS[word.toLowerCase()];
+var ASSISTED_TRAILER = new RegExp(String.raw`^[ \t]*(?:assisted|generated|co-developed)-by:[ \t]*.*?\b(${TOOL_WORDS})\b`, "gim");
+var AUTHORSHIP = new RegExp(
+  String.raw`(?<!\b(?:not|never|n't)[ \t]+)(?<!\bnot[ \t]+(?:been[ \t]+)?)\b(?:[Cc]o-?[Aa]uthored|[Aa]uthored|[Bb]uilt|[Ww]ritten|[Ii]mplemented|[Dd]eveloped)[ \t]+(?:by|with|using|via)\b[ \t]+(?:the[ \t]+)?(?:[\w-]+[ \t]+){0,3}?\(?(${TOOL_WORDS})\b`,
+  "gm"
+);
+var TOOL_TOKENS = {
+  claude: "claude",
+  copilot: "copilot",
+  cursor: "cursor",
+  codex: "codex",
+  devin: "devin",
+  gemini: "gemini",
+  aider: "aider",
+  openhands: "openhands"
+};
+var AGENT_TOKENS = /* @__PURE__ */ new Set(["bot", "agent", "ai"]);
+var FOOTER_TOOLS = {
+  "claude code": "claude",
+  claude: "claude",
+  "github copilot": "copilot",
+  copilot: "copilot",
+  cursor: "cursor",
+  "openai codex": "codex",
+  codex: "codex",
+  "gemini cli": "gemini",
+  gemini: "gemini",
+  devin: "devin",
+  aider: "aider",
+  openhands: "openhands"
+};
+var FOOTER = new RegExp(
+  String.raw`^\W*(?:generated|created|written|authored|made)\s+(?:with|by|using)\W+(${Object.keys(FOOTER_TOOLS).join("|")})\]?(?:\([^)\s]*\))?\W*$`,
+  "im"
+);
+var SESSION_LINKS = [
+  { family: "claude", link: /https:\/\/claude\.ai\/code\/session/i },
+  { family: "devin", link: /https:\/\/app\.devin\.ai\/sessions\//i },
+  { family: "codex", link: /https:\/\/chatgpt\.com\/codex\/tasks\//i },
+  { family: "cursor", link: /https:\/\/cursor\.com\/(?:agents|background-agent)/i }
+];
+var MODEL_TAG = /^[ \t]*model[ \t]*[=:][ \t]*((?:claude|gpt|gemini)-[\w.-]+|o[13](?:-[\w.-]+)?)[ \t]*$/gim;
+var BRANCH_FAMILIES = {
+  claude: "claude",
+  "claude-code": "claude",
+  copilot: "copilot",
+  cursor: "cursor",
+  codex: "codex",
+  devin: "devin",
+  // Not `bot/`: release and dependency automation use it (`bot/bump-version/...`).
+  gemini: "gemini",
+  aider: "aider",
+  openhands: "openhands",
+  agent: "other"
+};
+var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
+function isDependencyBotLogin(login) {
+  return !!login && DEPENDENCY_BOT.test(login);
+}
+function botAccountFamily(name, email) {
+  for (const text of [name, email.split("@")[0] ?? ""]) {
+    const tokens2 = text.toLowerCase().replace(/\[bot\]$/, "-bot").split(/[^a-z0-9]+/).filter(Boolean);
+    if (!tokens2.some((token) => AGENT_TOKENS.has(token))) continue;
+    const tool = tokens2.find((token) => token in TOOL_TOKENS);
+    if (tool) return TOOL_TOKENS[tool];
+  }
+  return null;
+}
+function identityFamily(name, email) {
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim();
+  return IDENTITIES.find((rule) => rule.name?.test(trimmedName) || rule.email?.test(trimmedEmail))?.family ?? botAccountFamily(trimmedName, trimmedEmail);
+}
+function branchAgentFamily(headRef) {
+  const prefix = headRef?.includes("/") ? headRef.split("/")[0]?.toLowerCase() : void 0;
+  return prefix ? BRANCH_FAMILIES[prefix] ?? null : null;
+}
+function modelFromIdentity(name) {
+  const aider = /^aider\s*\(([^)]+)\)/i.exec(name.trim());
+  const raw = aider ? aider[1].split("/").at(-1) : /^claude\s+\S/i.test(name.trim()) ? name.replace(/\([^)]*\)/g, "") : null;
+  if (!raw) return null;
+  const slug = raw.trim().toLowerCase().replace(/[\s.]+/g, "-");
+  if (slug === "claude-code") return null;
+  return /^(?:claude-|gpt-|gemini-|o[13](?:-|$))/.test(slug) ? slug : null;
+}
+function withoutQuotedText(text) {
+  return text.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/<!--[\s\S]*?-->/g, "").split("\n").filter((line) => !line.trimStart().startsWith(">")).join("\n");
+}
+function signatureMatches(text) {
+  const cleaned = withoutQuotedText(text);
+  const found = [];
+  const footer = FOOTER.exec(cleaned);
+  if (footer) found.push({ family: FOOTER_TOOLS[footer[1].toLowerCase()], rule: "footer", text: footer[0] });
+  for (const { family, link } of SESSION_LINKS) {
+    const match = link.exec(cleaned);
+    if (match) found.push({ family, rule: "session_link", text: match[0] });
+  }
+  for (const match of cleaned.matchAll(ASSISTED_TRAILER)) found.push({ family: toolFamily(match[1]), rule: "assisted_trailer", text: match[0] });
+  for (const match of cleaned.matchAll(AUTHORSHIP)) found.push({ family: toolFamily(match[1]), rule: "authorship", text: match[0] });
+  return found;
+}
+function signatureFamilies(text, evidence3, source = "signature") {
+  return signatureMatches(text).map((match) => {
+    evidence3?.push({ source, rule: match.rule, text: match.text.trim().slice(0, 200) });
+    return match.family;
+  });
+}
+function modelFamily(model) {
+  return model.startsWith("claude-") ? "claude" : model.startsWith("gemini-") ? "gemini" : "other";
+}
+function detectAgentMarkers(input) {
+  const families = /* @__PURE__ */ new Set();
+  const modelIds = /* @__PURE__ */ new Set();
+  const evidence3 = [];
+  let coAuthorTrailer = false;
+  let signature = false;
+  const login = input.authorLogin ?? "";
+  const isBotAccount = /\[bot\]$/i.test(login) || (input.authorType ?? "").toLowerCase() === "bot";
+  const accountFamily = isBotAccount ? identityFamily(`${login.replace(/\[bot\]$/i, "")}[bot]`, "") : null;
+  if (accountFamily) {
+    families.add(accountFamily);
+    evidence3.push({ source: "account", rule: "identity", text: login });
+  }
+  const branchFamily = branchAgentFamily(input.headRef);
+  if (branchFamily) {
+    families.add(branchFamily);
+    evidence3.push({ source: "branch", rule: "prefix", text: input.headRef ?? "" });
+  }
+  let markedCommits = 0;
+  for (const commit of input.commits ?? []) {
+    let marked = false;
+    const authorFamily = identityFamily(commit.authorName ?? "", commit.authorEmail ?? "");
+    if (authorFamily) {
+      families.add(authorFamily);
+      evidence3.push({ source: "commit_author", rule: "identity", text: `${commit.authorName ?? ""} <${commit.authorEmail ?? ""}>` });
+      marked = true;
+      const model = modelFromIdentity(commit.authorName ?? "");
+      if (model) modelIds.add(model);
+    }
+    for (const [, name = "", email = ""] of commit.message.matchAll(CO_AUTHOR_TRAILER2)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      evidence3.push({ source: "co_author", rule: "identity", text: `${name} <${email}>` });
+      coAuthorTrailer = true;
+      marked = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(commit.message, evidence3)) {
+      families.add(family);
+      signature = true;
+      marked = true;
+    }
+    for (const [, model = ""] of commit.message.matchAll(MODEL_TAG)) {
+      const normalized = model.toLowerCase();
+      modelIds.add(normalized);
+      families.add(modelFamily(normalized));
+      evidence3.push({ source: "model_tag", rule: "model_tag", text: model });
+      signature = true;
+      marked = true;
+    }
+    if (marked) markedCommits += 1;
+  }
+  let markedByLanding = false;
+  if (input.landingMessage) {
+    for (const [, name = "", email = ""] of input.landingMessage.matchAll(CO_AUTHOR_TRAILER2)) {
+      const family = identityFamily(name, email);
+      if (!family) continue;
+      families.add(family);
+      coAuthorTrailer = true;
+      markedByLanding = true;
+      const model = modelFromIdentity(name);
+      if (model) modelIds.add(model);
+    }
+    for (const family of signatureFamilies(input.landingMessage, evidence3, "landing")) {
+      families.add(family);
+      signature = true;
+      markedByLanding = true;
+    }
+  }
+  const bodyFamilies = input.bodyUnavailable ? [] : signatureFamilies(input.body ?? "", evidence3, "body");
+  for (const family of bodyFamilies) {
+    families.add(family);
+    signature = true;
+  }
+  const commitsKnown = input.commits !== null;
+  const specific = [...families].filter((family) => family !== "other");
+  const named = specific.length > 1 ? "multiple" : specific[0] ?? (families.has("other") ? "other" : "none");
+  const present2 = families.size > 0 ? true : commitsKnown && !input.bodyUnavailable ? false : null;
+  const models = [...modelIds];
+  return {
+    present: present2,
+    family: present2 === null ? null : named,
+    markedCommitShare: !commitsKnown ? null : input.commits.length === 0 ? 0 : markedCommits / input.commits.length,
+    modelIds: models,
+    exactModel: models.length === 1 ? models[0] : null,
+    markedByAccount: accountFamily !== null,
+    markedByBranch: branchFamily !== null,
+    markedByCommit: markedByLanding || markedCommits > 0 ? true : commitsKnown ? false : null,
+    markedByBody: input.bodyUnavailable ? null : bodyFamilies.length > 0,
+    coAuthorTrailer,
+    signature,
+    dependencyBot: isDependencyBotLogin(input.authorLogin),
+    evidence: evidence3
+  };
+}
+function agentMarkerColumns(markers) {
+  return {
+    "feature.agent.marker_present": markers.present,
+    "feature.agent.tool_family": markers.family,
+    "feature.agent.marked_commit_share": markers.markedCommitShare,
+    "segment.agent.exact_model": markers.exactModel,
+    "segment.agent.marked_by_account": markers.markedByAccount,
+    "segment.agent.marked_by_branch": markers.markedByBranch,
+    "segment.agent.marked_by_commit": markers.markedByCommit,
+    "segment.agent.marked_by_body": markers.markedByBody,
+    "segment.author.dependency_bot": markers.dependencyBot
+  };
+}
+
+// src/corpus/features.ts
+var MANIFEST_COLUMNS = REWORK_RISK_FEATURE_MANIFEST.entries.map((entry2) => entry2.name);
+var CI_FAILED_STATES = ["FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"];
+var sha256 = (text) => createHash3("sha256").update(text).digest("hex");
+var hours = (ms2) => Number((ms2 / 36e5).toFixed(4));
+function ms(at2) {
+  return Date.parse(at2);
+}
+function byTime(events17) {
+  return events17.map((event17, index) => ({ event: event17, index })).sort((a, b) => ms(a.event.at) - ms(b.event.at) || a.index - b.index).map(({ event: event17 }) => event17);
+}
+function titleAt(evidence3, asOf) {
+  const renames = byTime(evidence3.renames);
+  if (renames.length === 0) return evidence3.title;
+  const cutoff = ms(asOf);
+  const seen = renames.filter((rename) => ms(rename.at) <= cutoff);
+  return seen.at(-1)?.to ?? renames[0].from;
+}
+function bodyAt(evidence3, asOf) {
+  if (evidence3.body_edits.length === 0) return evidence3.body ?? "";
+  const cutoff = ms(asOf);
+  return byTime(evidence3.body_edits).filter((edit) => ms(edit.at) <= cutoff).at(-1)?.body ?? null;
+}
+function labelsAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const labels = /* @__PURE__ */ new Set();
+  for (const event17 of byTime(evidence3.label_events)) {
+    if (ms(event17.at) > cutoff) continue;
+    if (event17.label === null) return null;
+    if (event17.action === "added") labels.add(event17.label);
+    else labels.delete(event17.label);
+  }
+  return [...labels].sort();
+}
+function reviewsAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const dismissedLater = new Map(
+    evidence3.dismissals.filter((event17) => ms(event17.at) > cutoff && event17.review_id).map((event17) => [event17.review_id, event17.previous_state])
+  );
+  return evidence3.reviews.filter((review) => review.submitted_at !== null && ms(review.submitted_at) <= cutoff).map((review) => ({
+    state: dismissedLater.get(review.id) ?? review.state,
+    submitted_at: review.submitted_at,
+    author: review.author
+  }));
+}
+function assertReadableEvidence(evidence3, ci2, asOf) {
+  const events17 = [
+    { source: "created_at", at: evidence3.created_at },
+    ...evidence3.reviews.flatMap((review) => review.submitted_at ? [{ source: "review", at: review.submitted_at }] : []),
+    ...evidence3.dismissals.map((event17) => ({ source: "dismissal", at: event17.at })),
+    ...evidence3.label_events.map((event17) => ({ source: "label_event", at: event17.at })),
+    ...evidence3.renames.map((event17) => ({ source: "rename", at: event17.at })),
+    ...evidence3.body_edits.map((event17) => ({ source: "body_edit", at: event17.at })),
+    ...(ci2?.contexts ?? []).flatMap((context) => context.at ? [{ source: "ci", at: context.at }] : [])
+  ];
+  const errors = validateEvidenceAsOf(events17, asOf).filter((error) => error.code !== "event_after_as_of");
+  if (errors.length) throw new Error(`pr evidence: ${errors[0].message}`);
+}
+function processColumns(evidence3, ci2, asOf) {
+  const empty = {
+    "feature.process.review_count": null,
+    "feature.process.approvals": null,
+    "feature.process.changes_requested": null,
+    "feature.process.distinct_reviewers": null,
+    "feature.process.hours_open": null,
+    "feature.process.hours_to_first_review": null,
+    "feature.process.github_label_count": null,
+    "feature.process.title_chars": null,
+    "feature.process.body_chars": null,
+    "feature.content.title_sha256": null,
+    "feature.content.body_sha256": null
+  };
+  const ciColumns = {
+    "segment.ci.checks_completed_by_merge": null,
+    "segment.ci.checks_failed_by_merge": null
+  };
+  if (ci2) {
+    const cutoff = ms(asOf);
+    const finished = ci2.contexts.filter((context) => context.at !== null && ms(context.at) <= cutoff);
+    if (finished.length > 0) {
+      ciColumns["segment.ci.checks_completed_by_merge"] = finished.length;
+      ciColumns["segment.ci.checks_failed_by_merge"] = finished.filter((context) => context.failed).length;
+    }
+  }
+  if (!evidence3) return { ...empty, ...ciColumns };
+  const reviews = reviewsAt(evidence3, asOf);
+  const created = ms(evidence3.created_at);
+  const open = ms(asOf) - created;
+  const first = reviews.length ? Math.min(...reviews.map((review) => ms(review.submitted_at))) : null;
+  const labels = labelsAt(evidence3, asOf);
+  const title = titleAt(evidence3, asOf);
+  const body = bodyAt(evidence3, asOf);
+  return {
+    "feature.process.review_count": reviews.length,
+    "feature.process.approvals": reviews.filter((review) => review.state === "APPROVED").length,
+    "feature.process.changes_requested": reviews.filter((review) => review.state === "CHANGES_REQUESTED").length,
+    "feature.process.distinct_reviewers": new Set(reviews.flatMap((review) => review.author ? [review.author] : [])).size,
+    "feature.process.hours_open": open >= 0 ? hours(open) : null,
+    "feature.process.hours_to_first_review": first !== null && first >= created ? hours(first - created) : null,
+    "feature.process.github_label_count": labels ? labels.length : null,
+    "feature.process.title_chars": title.length,
+    "feature.process.body_chars": body === null ? null : body.length,
+    "feature.content.title_sha256": sha256(title),
+    "feature.content.body_sha256": body === null ? null : sha256(body),
+    ...ciColumns
+  };
+}
+var MERGE_SUBJECT = /^Merge (?:branch|remote-tracking branch|pull request|tag|commit)\b|^Merge .+ into .+/;
+function markerCommits(evidence3) {
+  if (!evidence3) return null;
+  return evidence3.commits.filter((commit) => !MERGE_SUBJECT.test(commit.message)).map((commit) => ({
+    message: commit.message,
+    ...commit.author_name ? { authorName: commit.author_name } : {},
+    ...commit.author_email ? { authorEmail: commit.author_email } : {}
+  }));
+}
+function extractPrFeatures(input) {
+  const { record, evidence: evidence3, ci: ci2, git: git2 } = input;
+  const asOf = record.merged_at;
+  if (evidence3) {
+    assertReadableEvidence(evidence3, ci2, asOf);
+    if (evidence3.pr_number !== record.pr_number) throw new Error(`evidence is for PR ${evidence3.pr_number}, not ${record.pr_number}`);
+    if (evidence3.merged_at !== null && ms(evidence3.merged_at) !== ms(asOf)) throw new Error(`PR ${record.pr_number}: GitHub's merge time disagrees with the corpus record`);
+  } else if (ci2) {
+    assertReadableEvidence({ pr_number: record.pr_number, created_at: asOf, merged_at: null, title: "", body: null, head_ref: null, reviews: [], dismissals: [], label_events: [], renames: [], body_edits: [], commits: [] }, ci2, asOf);
+  }
+  const body = evidence3 ? bodyAt(evidence3, asOf) : null;
+  const markers = detectAgentMarkers({
+    authorLogin: record.author_login,
+    authorType: record.author_type,
+    headRef: evidence3?.head_ref ?? null,
+    commits: markerCommits(evidence3),
+    body,
+    ...body === null ? { bodyUnavailable: true } : {},
+    ...input.landingMessage ? { landingMessage: input.landingMessage } : {}
+  });
+  const features = {
+    ...Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, null])),
+    "feature.shape.member_commits": record.member_commits,
+    "feature.shape.diff_uncertain": record.batched,
+    "feature.author.is_bot": record.author_type === null ? null : record.author_type === "Bot",
+    ...git2,
+    ...processColumns(evidence3, ci2, asOf),
+    ...agentMarkerColumns(markers)
+  };
+  const undeclared = Object.keys(features).filter((column) => !MANIFEST_COLUMNS.includes(column));
+  if (undeclared.length) throw new Error(`undeclared feature columns: ${undeclared.join(", ")}`);
+  return {
+    manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+    repo: record.repo,
+    pr_number: record.pr_number,
+    merge_sha: record.merge_sha,
+    base_sha: record.base_sha,
+    landed_by: record.landed_by,
+    as_of: asOf,
+    as_of_basis: evidence3 === null ? null : evidence3.merged_at !== null ? "github_merged_at" : "landing_commit_time",
+    features: Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, features[column] ?? null]))
+  };
+}
+function truncateEvidenceAt(evidence3, asOf) {
+  const cutoff = ms(asOf);
+  const before = (events17) => events17.filter((event17) => ms(event17.at) <= cutoff);
+  const body = bodyAt(evidence3, asOf);
+  const dismissedLater = new Map(
+    evidence3.dismissals.filter((event17) => ms(event17.at) > cutoff && event17.review_id).map((event17) => [event17.review_id, event17.previous_state])
+  );
+  return {
+    ...evidence3,
+    title: titleAt(evidence3, asOf),
+    body,
+    reviews: evidence3.reviews.filter((review) => review.submitted_at !== null && ms(review.submitted_at) <= cutoff).map((review) => ({ ...review, state: dismissedLater.get(review.id) ?? review.state })),
+    dismissals: before(evidence3.dismissals),
+    label_events: before(evidence3.label_events),
+    renames: before(evidence3.renames),
+    // With no version left, an empty history would read the rolled-back body, null, as ''.
+    body_edits: body === null ? [{ at: evidence3.created_at, body: null }] : before(evidence3.body_edits)
+  };
+}
+
+// src/corpus/feature-capture.ts
+var EVIDENCE_BATCH_SIZE = 25;
+var CI_CAPTURE_FROM = "2025-07-01T00:00:00Z";
+var TIMELINE_SPLIT_NODES = 150;
+var PAGE = "pageInfo{ hasNextPage endCursor }";
+var REVIEWS = `${PAGE} nodes{ id state submittedAt author{ login } }`;
+var TIMELINE = `${PAGE} nodes{ __typename
+  ... on LabeledEvent{ createdAt label{ name } }
+  ... on UnlabeledEvent{ createdAt label{ name } }
+  ... on RenamedTitleEvent{ createdAt previousTitle currentTitle }
+  ... on ReviewDismissedEvent{ createdAt previousReviewState review{ id } } }`;
+var TIMELINE_TYPES = "itemTypes:[LABELED_EVENT,UNLABELED_EVENT,RENAMED_TITLE_EVENT,REVIEW_DISMISSED_EVENT]";
+var EDITS = `${PAGE} nodes{ editedAt diff }`;
+var COMMITS = `${PAGE} nodes{ commit{ oid message author{ name email user{ login } } } }`;
+var CONTEXTS = `${PAGE} nodes{ __typename ... on CheckRun{ completedAt conclusion } ... on StatusContext{ createdAt state } }`;
+var EVIDENCE_FIELDS = `number createdAt mergedAt title body headRefName
+  reviews(first:100){ ${REVIEWS} }
+  userContentEdits(first:100){ ${EDITS} }
+  commits(first:100){ ${COMMITS} }`;
+var TIMELINE_FIELDS = `number timelineItems(first:100,${TIMELINE_TYPES}){ ${TIMELINE} }`;
+var CI_FIELDS = `number commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100){ ${CONTEXTS} } } } } }`;
+var FOLLOW_UPS = {
+  reviews: { args: "", nodes: REVIEWS },
+  userContentEdits: { args: "", nodes: EDITS },
+  commits: { args: "", nodes: COMMITS }
+};
+function runQuery(graphql, repo, fields) {
+  const [owner, name] = repo.split("/");
+  const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
+  return data.repository;
+}
+var TIMELINE_FOLLOW_UP = { timelineItems: { args: `${TIMELINE_TYPES},`, nodes: TIMELINE } };
+function drainConnections(pr2, repo, graphql, followUps = FOLLOW_UPS) {
+  for (const key of Object.keys(followUps)) {
+    const connection = pr2[key];
+    let info = connection.pageInfo;
+    while (info.hasNextPage) {
+      const follow = followUps[key];
+      const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ ${key}(${follow.args}first:100,after:${JSON.stringify(info.endCursor)}){ ${follow.nodes} } }`);
+      const next = page["pr"]?.[key];
+      if (!next) throw new Error(`PR ${pr2.number}: ${key} page disappeared`);
+      connection.nodes = [...connection.nodes ?? [], ...next.nodes ?? []];
+      info = next.pageInfo;
+    }
+  }
+}
+var present = (connection) => (connection.nodes ?? []).filter((node) => node !== null);
+function normalizeTimeline(pr2) {
+  const timeline = present(pr2["timelineItems"]);
+  return {
+    pr_number: pr2.number,
+    dismissals: timeline.filter((event17) => event17.__typename === "ReviewDismissedEvent").map((event17) => ({ at: event17.createdAt, previous_state: event17.previousReviewState ?? null, review_id: event17.review?.id ?? null })),
+    label_events: timeline.filter((event17) => event17.__typename === "LabeledEvent" || event17.__typename === "UnlabeledEvent").map((event17) => ({ at: event17.createdAt, action: event17.__typename === "LabeledEvent" ? "added" : "removed", label: event17.label?.name ?? null })),
+    renames: timeline.filter((event17) => event17.__typename === "RenamedTitleEvent").map((event17) => ({ at: event17.createdAt, from: event17.previousTitle ?? "", to: event17.currentTitle ?? "" }))
+  };
+}
+function normalizeEvidence(pr2) {
+  return {
+    pr_number: pr2.number,
+    created_at: pr2["createdAt"],
+    merged_at: pr2["mergedAt"] ?? null,
+    title: pr2["title"],
+    body: pr2["body"] ?? null,
+    head_ref: pr2["headRefName"] ?? null,
+    reviews: present(pr2["reviews"]).map((review) => ({ id: review.id, state: review.state, submitted_at: review.submittedAt, author: review.author?.login ?? null })),
+    dismissals: [],
+    label_events: [],
+    renames: [],
+    body_edits: present(pr2["userContentEdits"]).map((edit) => ({ at: edit.editedAt, body: edit.diff })),
+    commits: present(pr2["commits"]).map(({ commit }) => ({ oid: commit.oid, message: commit.message, author_name: commit.author?.name ?? null, author_email: commit.author?.email ?? null, author_login: commit.author?.user?.login ?? null }))
+  };
+}
+function normalizeCi(pr2) {
+  const head = pr2["commits"].nodes?.[0];
+  const rollup = head?.commit.statusCheckRollup;
+  if (!rollup) return null;
+  return {
+    pr_number: pr2.number,
+    contexts: present(rollup.contexts).map((context) => ({
+      at: context.completedAt ?? context.createdAt ?? null,
+      failed: CI_FAILED_STATES.includes(context.conclusion ?? context.state ?? "")
+    }))
+  };
+}
+function drainContexts(pr2, repo, graphql) {
+  const rollup = pr2["commits"].nodes?.[0]?.commit.statusCheckRollup;
+  if (!rollup) return;
+  let info = rollup.contexts.pageInfo;
+  while (info.hasNextPage) {
+    const page = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100,after:${JSON.stringify(info.endCursor)}){ ${CONTEXTS} } } } } } }`);
+    const next = page["pr"]?.["commits"]?.nodes[0]?.commit.statusCheckRollup?.contexts;
+    if (!next) break;
+    rollup.contexts.nodes = [...rollup.contexts.nodes ?? [], ...next.nodes ?? []];
+    info = next.pageInfo;
+  }
+}
+function fetchBatch(kind, repo, numbers, graphql, log) {
+  if (kind === "timeline") return fetchTimeline(repo, numbers, graphql, log);
+  try {
+    const fields = kind === "evidence" ? EVIDENCE_FIELDS : CI_FIELDS;
+    const repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${fields} }`).join("\n"));
+    return numbers.map((number) => {
+      const pr2 = repository[`pr${number}`];
+      if (!pr2) return { pr_number: number, value: null, error: "not_found" };
+      if (kind === "evidence") {
+        drainConnections(pr2, repo, graphql);
+        return { pr_number: number, value: normalizeEvidence(pr2), error: null };
+      }
+      drainContexts(pr2, repo, graphql);
+      return { pr_number: number, value: normalizeCi(pr2), error: null };
+    });
+  } catch (error) {
+    if (numbers.length > 1) {
+      const middle = numbers.length >>> 1;
+      return [...fetchBatch(kind, repo, numbers.slice(0, middle), graphql, log), ...fetchBatch(kind, repo, numbers.slice(middle), graphql, log)];
+    }
+    log(`warn: ${repo}: PR ${numbers[0]} ${kind} capture failed: ${error.message.slice(0, 160)}`);
+    return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
+  }
+}
+function fetchTimeline(repo, numbers, graphql, log) {
+  const split = () => {
+    const middle = numbers.length >>> 1;
+    return [...fetchTimeline(repo, numbers.slice(0, middle), graphql, log), ...fetchTimeline(repo, numbers.slice(middle), graphql, log)];
+  };
+  let repository;
+  try {
+    repository = runQuery(graphql, repo, numbers.map((number) => `pr${number}: pullRequest(number:${number}){ ${TIMELINE_FIELDS} }`).join("\n"));
+  } catch (error) {
+    if (numbers.length > 1) return split();
+    log(`warn: ${repo}: PR ${numbers[0]} timeline capture failed: ${error.message.slice(0, 160)}`);
+    return [{ pr_number: numbers[0], value: null, error: "capture_failed" }];
+  }
+  const nodes = numbers.reduce((sum, number) => sum + (repository[`pr${number}`]?.["timelineItems"]?.nodes ?? []).length, 0);
+  if (numbers.length > 1 && nodes >= TIMELINE_SPLIT_NODES) return split();
+  return numbers.map((number) => {
+    const pr2 = repository[`pr${number}`];
+    if (!pr2) return { pr_number: number, value: null, error: "not_found" };
+    try {
+      drainConnections(pr2, repo, graphql, TIMELINE_FOLLOW_UP);
+    } catch (error) {
+      log(`warn: ${repo}: PR ${number} timeline capture failed: ${error.message.slice(0, 160)}`);
+      return { pr_number: number, value: null, error: "capture_failed" };
+    }
+    return { pr_number: number, value: normalizeTimeline(pr2), error: null };
+  });
+}
+var captureDir = (repoDir, kind) => join7(repoDir, "feature-evidence", kind);
+var batchPath = (dir, numbers) => join7(dir, `${numbers[0]}-${numbers.at(-1)}.json.gz`);
+function chunkNumbers(numbers) {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const chunks = [];
+  for (let i = 0; i < sorted.length; i += EVIDENCE_BATCH_SIZE) chunks.push(sorted.slice(i, i + EVIDENCE_BATCH_SIZE));
+  return chunks;
+}
+function captureRepo(kind, repo, repoDir, numbers, graphql, log, now = () => /* @__PURE__ */ new Date()) {
+  const dir = captureDir(repoDir, kind);
+  mkdirSync2(dir, { recursive: true, mode: 448 });
+  const chunks = chunkNumbers(numbers);
+  let fetched = 0;
+  let failed = 0;
+  chunks.forEach((chunk, index) => {
+    const path4 = batchPath(dir, chunk);
+    if (existsSync4(path4)) return;
+    const items = fetchBatch(kind, repo, chunk, graphql, log);
+    failed += items.filter((item) => item.error === "capture_failed").length;
+    fetched += chunk.length;
+    const scratch = `${path4}.partial`;
+    writeFileSync2(scratch, gzipSync(JSON.stringify({ captured_at: now().toISOString(), items })), { mode: 384 });
+    renameSync2(scratch, path4);
+    if (index % 100 === 0) log(`info: ${repo}: ${kind} batch ${index + 1}/${chunks.length}`);
+  });
+  return { batches: chunks.length, fetched, failed };
+}
+function readCapturedBatch(repoDir, kind, chunk) {
+  const path4 = batchPath(captureDir(repoDir, kind), chunk);
+  if (!existsSync4(path4)) return null;
+  return JSON.parse(gunzipSync(readFileSync4(path4)).toString("utf8"));
+}
+
+// src/corpus/feature-git.ts
+import { spawnSync } from "node:child_process";
+import { closeSync as closeSync2, openSync as openSync2, readSync, rmSync as rmSync2 } from "node:fs";
+import { createHash as createHash4 } from "node:crypto";
+
+// src/corpus/corrective-szz.ts
+var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
+var GENERATED_PATH = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.(?:mod|sum)|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock)$|(?:^|\/)(?:__snapshots__|__generated__|generated|openapi-gen|testdata|translations)\/|\.(?:snap|pb\.go|pb\.cc|pb\.h|min\.js|png|jpe?g|gif|svg|ico)$|[._]generated\.[^/]+$/;
+var SZZ_MAX_FILES = 20;
+var SZZ_MAX_CHANGED_LINES = 500;
+var SZZ_SKIP_FILES = 100;
+var SZZ_SKIP_CHANGED_LINES = 5e3;
+var ISSUE_BATCH = 50;
+function prefetchIssueMeta(repo, numbers, graphql, cache) {
+  const [owner, name] = repo.split("/");
+  const out = /* @__PURE__ */ new Map();
+  const unique2 = [...new Set(numbers)].sort((a, b) => a - b);
+  for (let i = 0; i < unique2.length; i += ISSUE_BATCH) {
+    const batch = unique2.slice(i, i + ISSUE_BATCH);
+    const key = `issues1:${batch.join(",")}`;
+    let rows = cache?.get(key);
+    if (!rows) {
+      const fields = batch.map((n) => `i${n}: issueOrPullRequest(number:${n}){ __typename ... on Issue { url issueType{ name } labels(first:50){ nodes{ name } } } }`).join("\n");
+      const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
+      rows = batch.map((n) => {
+        const node = data.repository[`i${n}`];
+        if (!node || node.__typename !== "Issue" || !node.url) return [n, null];
+        return [n, { url: node.url, labels: (node.labels?.nodes ?? []).map((l) => l.name), type: node.issueType?.name ?? null }];
+      });
+      cache?.set(key, rows);
+    }
+    for (const [n, meta] of rows) if (meta) out.set(n, meta);
+  }
+  return out;
+}
+var BUG_LABEL = /^(?:(?:type|kind|t|c|issue|category)\s*[:/-]\s*)?bug$|^bug[- ]unreleased$|^potential bug$|^(?:(?:type|kind|c|i)\s*[:/-]\s*)?(?:crash|ice)$/i;
+var REGRESSION_LABEL = /regress|^incident\b/i;
+var NOT_REGRESSION = /\b(?:not|non)[- ]?(?:a[- ])?regression/i;
+function regressionLabels(issue) {
+  return issue.labels.filter((l) => REGRESSION_LABEL.test(l) && !NOT_REGRESSION.test(l));
+}
+function isBugIssue(issue) {
+  return issue.type === "Bug" || issue.labels.some((l) => BUG_LABEL.test(l)) || regressionLabels(issue).length > 0;
+}
+function diffHeaderPath(line) {
+  const name = line.slice(4).replace(/\t$/, "");
+  return name === "/dev/null" ? null : name.replace(/^[ab]\//, "");
+}
+function buildLandingIndex(runGit3, branch, originals) {
+  const owners = /* @__PURE__ */ new Map();
+  const own = (sha2, pr2) => {
+    const set = owners.get(sha2) ?? /* @__PURE__ */ new Set();
+    set.add(pr2);
+    owners.set(sha2, set);
+  };
+  const rebased = originals.filter((pr2) => pr2.member_commits > 1);
+  let position = null;
+  let order = [];
+  if (rebased.length) {
+    const result = runGit3(["rev-list", "--first-parent", "--reverse", branch]);
+    if (result.exitCode !== 0) throw new Error(`szz: cannot list ${branch}: ${result.stderr.trim()}`);
+    order = result.stdout.split("\n").filter(Boolean);
+    position = new Map(order.map((sha2, i) => [sha2, i]));
+  }
+  for (const pr2 of originals) {
+    if (pr2.landed_sha && pr2.landed_sha !== pr2.merge_sha) continue;
+    own(pr2.merge_sha, pr2);
+    for (const sha2 of pr2.relanded_merge_shas ?? []) own(sha2, pr2);
+    if (pr2.member_commits > 1 && position) {
+      const from = position.get(pr2.base_sha);
+      const to = position.get(pr2.merge_sha);
+      if (from !== void 0 && to !== void 0) for (let i = from + 1; i < to; i++) own(order[i], pr2);
+    }
+  }
+  const out = /* @__PURE__ */ new Map();
+  for (const [sha2, set] of owners) if (set.size === 1) out.set(sha2, [...set][0]);
+  return out;
+}
+function blameFix(runGit3, fix, landing, sinceEpoch) {
+  const diff = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", "--ignore-submodules", fix.parentSha, fix.tipSha]);
+  if (diff.exitCode !== 0) throw new Error(`szz: cannot diff ${fix.parentSha}..${fix.tipSha}: ${diff.stderr.trim()}`);
+  const ranges = /* @__PURE__ */ new Map();
+  let oldFile = null;
+  let anyFile = null;
+  let inHeader = false;
+  let changedLines = 0;
+  const touched = /* @__PURE__ */ new Set();
+  for (const line of diff.stdout.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      oldFile = anyFile = null;
+      inHeader = true;
+      continue;
+    }
+    if (inHeader && (line.startsWith("--- ") || line.startsWith("+++ "))) {
+      const path4 = diffHeaderPath(line);
+      if (path4 === null) continue;
+      if (line.startsWith("--- ")) oldFile = path4;
+      anyFile ??= path4;
+      continue;
+    }
+    const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/);
+    if (hunk) inHeader = false;
+    if (!hunk || !anyFile || TEST_PATH.test(anyFile) || GENERATED_PATH.test(anyFile)) continue;
+    const start = Number(hunk[1]);
+    const deleted = hunk[2] === void 0 ? 1 : Number(hunk[2]);
+    const added = hunk[3] === void 0 ? 1 : Number(hunk[3]);
+    touched.add(anyFile);
+    changedLines += deleted + added;
+    if (oldFile && deleted > 0) {
+      const list = ranges.get(oldFile) ?? [];
+      list.push([start, start + deleted - 1]);
+      ranges.set(oldFile, list);
+    }
+  }
+  const files = touched.size;
+  if (files > SZZ_SKIP_FILES || changedLines > SZZ_SKIP_CHANGED_LINES) return { status: "skipped", files, changedLines };
+  const blamed = /* @__PURE__ */ new Map();
+  for (const [path4, list] of ranges) {
+    const result = runGit3([
+      "blame",
+      "--first-parent",
+      "-w",
+      "-M",
+      "-C",
+      "--line-porcelain",
+      `--since=@${sinceEpoch}`,
+      ...list.flatMap(([a, b]) => ["-L", `${a},${b}`]),
+      fix.parentSha,
+      "--",
+      path4
+    ]);
+    if (result.exitCode !== 0) throw new Error(`szz: cannot blame ${path4} at ${fix.parentSha}: ${result.stderr.trim()}`);
+    let sha2 = null;
+    let boundary = false;
+    for (const line of result.stdout.split("\n")) {
+      const header = line.match(/^([0-9a-f]{40}) \d+ \d+(?: \d+)?$/);
+      if (header) {
+        sha2 = header[1];
+        boundary = false;
+      } else if (line === "boundary") {
+        boundary = true;
+      } else if (line.startsWith("	")) {
+        const original = sha2 && !boundary ? landing.get(sha2) : void 0;
+        if (original && line.slice(1).trim()) blamed.set(original, (blamed.get(original) ?? 0) + 1);
+        sha2 = null;
+      }
+    }
+  }
+  return { status: "blamed", tooLarge: files > SZZ_MAX_FILES || changedLines > SZZ_MAX_CHANGED_LINES, files, changedLines, blamed };
+}
+
+// src/corpus/corrective.ts
+var CORRECTIVE_LABELLER_VERSION = "1.0.0";
+var MAX_FIX_LAG_SECONDS = 60 * 86400;
+var LINE_SURVIVAL_MAX_LINES = 2e4;
+function readRevertCommits(runGit3, branch, from, until) {
+  const result = runGit3([
+    "log",
+    "--first-parent",
+    "--reverse",
+    "-i",
+    "-E",
+    "--grep=^revert\\b",
+    "--grep=^this reverts commit",
+    "--grep=^reverted https://",
+    `--since=${from.toISOString()}`,
+    `--until=${until.toISOString()}`,
+    "--pretty=format:%H%x1f%P%x1f%ct%x1f%s%x1f%b%x1e",
+    branch
+  ]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
+  const out = [];
+  for (const entry2 of result.stdout.split("")) {
+    const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
+    const epoch = Number.parseInt(epochText, 10);
+    if (!/^[0-9a-f]{40}$/.test(sha2) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
+    out.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
+  }
+  return out;
+}
+function collectFixEvents(fixPrs, revertCommits) {
+  const events17 = [];
+  const bySha = /* @__PURE__ */ new Map();
+  for (const pr2 of fixPrs) {
+    const event17 = {
+      pr: pr2,
+      sha: pr2.landed_sha ?? pr2.merge_sha,
+      parentSha: pr2.base_sha,
+      epoch: Math.floor(Date.parse(pr2.merged_at) / 1e3),
+      title: pr2.title,
+      body: pr2.body ?? "",
+      labels: pr2.labels,
+      closingIssues: pr2.closing_issues,
+      authorLogin: pr2.author_login
+    };
+    events17.push(event17);
+    bySha.set(pr2.merge_sha, event17);
+    if (pr2.landed_sha) bySha.set(pr2.landed_sha, event17);
+  }
+  for (const commit of revertCommits) {
+    const landed = bySha.get(commit.sha);
+    if (landed) {
+      landed.body = `${landed.body}
+${commit.subject}
+${commit.body}`;
+      continue;
+    }
+    events17.push({
+      pr: null,
+      sha: commit.sha,
+      parentSha: commit.parents[0] ?? commit.sha,
+      epoch: commit.epoch,
+      title: commit.subject,
+      body: commit.body,
+      labels: [],
+      closingIssues: [],
+      authorLogin: null
+    });
+  }
+  return events17;
+}
+var REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
+var REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
+var REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
+var FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
+var isFixSubject = (subject) => FIX_TITLE.test(subject);
+var FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
+var REGRESSION_CONTEXT = /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
+var MAX_ORIGINALS_PER_ISSUE = 3;
+var BACKPORT2 = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
+var REVERT_REASON = /\bdue to\b([^\n]*)/i;
+var NON_DEFECT_REASON = /merge conflict|conflicts? with|(?:to|in order to)(?: be able to)? (?:cleanly )?revert|dependen(?:cy|t) (?:of|on)|depends on|land ?race|stack (?:is )?in a (?:weird|bad|broken) state|wait(?:ing)? for .{0,40}(?:confirm|approv|review)|before merging|needs? to (?:be )?land(?:ed)? internally|ghfirst|diff train/i;
+function evidence2(kind, ref3 = null, count = null) {
+  return { kind, ref: ref3, count };
+}
+function escapeRegExp2(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+var OriginalIndex = class {
+  byNumber = /* @__PURE__ */ new Map();
+  byPrefix = /* @__PURE__ */ new Map();
+  constructor(originals) {
+    for (const pr2 of originals) {
+      this.byNumber.set(pr2.pr_number, pr2);
+      for (const sha2 of /* @__PURE__ */ new Set([pr2.merge_sha, pr2.landed_sha, pr2.head_sha, ...pr2.relanded_merge_shas ?? []])) {
+        if (!sha2) continue;
+        const bucket = this.byPrefix.get(sha2.slice(0, 7)) ?? [];
+        bucket.push({ sha: sha2, pr: pr2 });
+        this.byPrefix.set(sha2.slice(0, 7), bucket);
+      }
+    }
+  }
+  /** The one original a SHA or SHA prefix names; null when unknown or ambiguous. */
+  bySha(token) {
+    const hits = (this.byPrefix.get(token.slice(0, 7)) ?? []).filter((h) => h.sha.startsWith(token));
+    const prs = new Set(hits.map((h) => h.pr));
+    return prs.size === 1 ? hits[0] : null;
+  }
+};
+function citedNumbers(text, repo) {
+  const out = [];
+  const pattern = new RegExp(
+    `https://github\\.com/${escapeRegExp2(repo)}/(?:pull|issues)/(\\d+)|\\b${escapeRegExp2(repo)}#(\\d+)\\b|(?:^|[^\\w/.#-])#(\\d+)\\b`,
+    "gi"
+  );
+  for (const m of text.matchAll(pattern)) out.push({ n: Number(m[1] ?? m[2] ?? m[3]), index: m.index ?? 0 });
+  return out;
+}
+function shaTokens(text) {
+  const out = [];
+  for (const m of text.matchAll(/\b([0-9a-f]{7,40})\b/g)) if (/[a-f]/.test(m[1])) out.push({ token: m[1], index: m.index ?? 0 });
+  return out;
+}
+function detectCandidates(input) {
+  const index = new OriginalIndex(input.originals);
+  const drafts = /* @__PURE__ */ new Map();
+  const eventsById = /* @__PURE__ */ new Map();
+  const issueCiters = issueCitations(input.repo, input.originals, input.crossReferences);
+  const szzStats = { fixes: 0, skipped: 0, too_large: 0 };
+  const add2 = (original, event17, proxy, items, exclusion) => {
+    if (original.pr_url === event17.pr?.pr_url) return;
+    const lag = event17.epoch - Math.floor(Date.parse(original.merged_at) / 1e3);
+    if (lag < 1 || lag > MAX_FIX_LAG_SECONDS) return;
+    const id2 = correctiveCandidateId(original, { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha }, proxy);
+    eventsById.set(id2, event17);
+    const draft = drafts.get(id2);
+    if (!draft) {
+      drafts.set(id2, { original, event: event17, proxy, evidence: [...items], exclusion });
+      return;
+    }
+    for (const item of items) if (!draft.evidence.some((e) => e.kind === item.kind && e.ref === item.ref)) draft.evidence.push(item);
+    draft.exclusion ??= exclusion;
+  };
+  for (const event17 of input.events) {
+    const text = `${event17.title}
+${event17.body}`;
+    const common = commonExclusion(event17);
+    if (isRevert(event17)) {
+      const exclusion = common ?? revertExclusion(event17);
+      const reason = evidence2("revert_reason", revertReasonClass(event17));
+      for (const target of revertTargets(event17, text, input.repo, index)) {
+        const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
+        add2(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
+      }
+      continue;
+    }
+    const signals = [];
+    if (FIX_TITLE.test(event17.title)) signals.push(evidence2("fix_title_prefix"));
+    for (const label2 of event17.labels) if (FIX_LABEL.test(label2)) signals.push(evidence2("fix_label", label2));
+    const cited = /* @__PURE__ */ new Map();
+    const cite = (original, item, at2) => {
+      if (!REGRESSION_CONTEXT.test(text.slice(Math.max(0, at2 - 60), at2))) return;
+      const items = cited.get(original) ?? [];
+      items.push(item, evidence2("regression_in_marker"));
+      cited.set(original, items);
+    };
+    for (const { n, index: at2 } of citedNumbers(text, input.repo)) {
+      const original = index.byNumber.get(n);
+      if (original) cite(original, evidence2("cites_original_pr", original.pr_url), at2);
+    }
+    for (const { token, index: at2 } of shaTokens(text)) {
+      const hit = index.bySha(token);
+      if (hit) cite(hit.pr, evidence2("cites_original_sha", hit.sha), at2);
+    }
+    const fixShaped = signals.length > 0;
+    for (const issue of fixShaped ? event17.closingIssues : []) {
+      const citers = issueCiters.get(issue) ?? [];
+      if (citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
+      for (const { original, url } of citers) {
+        if (original.pr_url === event17.pr?.pr_url) continue;
+        const items = cited.get(original) ?? [];
+        items.push(evidence2("closes_issue_citing_original", url));
+        cited.set(original, items);
+      }
+    }
+    for (const [original, items] of cited) add2(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
+    const closed = event17.closingIssues.flatMap((n) => {
+      const issue = input.issues.get(n);
+      return issue ? [{ n, issue }] : [];
+    });
+    for (const { n, issue } of closed) {
+      const labels = regressionLabels(issue);
+      const citers = issueCiters.get(n) ?? [];
+      if (!labels.length || citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
+      for (const { original, url } of citers) {
+        add2(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
+      }
+    }
+    const bugs = closed.filter(({ issue }) => isBugIssue(issue));
+    if (!bugs.length || !input.blame || !event17.pr) continue;
+    const szz = input.blame(event17);
+    szzStats.fixes++;
+    if (szz.status === "skipped") {
+      szzStats.skipped++;
+      continue;
+    }
+    if (szz.tooLarge) szzStats.too_large++;
+    const bugEvidence = bugs.map(({ issue }) => evidence2("closes_bug_issue", issue.url));
+    for (const [original, lines] of szz.blamed) {
+      add2(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
+    }
+  }
+  const candidates = [...drafts.entries()].map(([id2, d]) => ({
+    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+    record_type: "candidate",
+    candidate_id: id2,
+    original: originalRef(d.original),
+    fix: fixRef(d.event),
+    lag_seconds: d.event.epoch - Math.floor(Date.parse(d.original.merged_at) / 1e3),
+    proxy: d.proxy,
+    confidence: PROXY_CONFIDENCE[d.proxy],
+    evidence: d.evidence,
+    status: d.exclusion ? "rejected" : "accepted",
+    exclusion_code: d.exclusion,
+    envelope: input.envelope
+  }));
+  candidates.sort((a, b) => a.original.merged_at.localeCompare(b.original.merged_at) || a.candidate_id.localeCompare(b.candidate_id));
+  return { candidates, events: eventsById, szz: szzStats };
+}
+function isRevert(event17) {
+  return REVERT_TITLE.test(event17.title) || /^\s*this reverts commit [0-9a-f]{7,40}/im.test(event17.body) || /^\s*reverts [\w.-]+\/[\w.-]+#\d+/im.test(event17.body);
+}
+function commonExclusion(event17) {
+  if (isDependencyBotLogin(event17.authorLogin)) return "dependency_bot";
+  if (BACKPORT2.test(`${event17.title}
+${event17.body}`)) return "backport";
+  return null;
+}
+var AUTOREVERT = /autorevert/i;
+var INTERNAL_BUILD = /internal(?:ly)?\b|internalfb|fbcode|\bD\d{7,}\b|\bdiff\b.{0,30}\b(?:reverted|backed out)/i;
+var PUBLIC_CI = /\b(?:ci|trunk|tests?|builds?|jobs?|lint|failures?|fail(?:s|ed|ing)?|break(?:s|ing)?|broke(?:n)?|red|flak\w*|timeouts?|timed out|segfaults?|crash\w*)\b|actions\/runs|hud\.pytorch/i;
+function revertReasonClass(event17) {
+  const reason = event17.body.match(REVERT_REASON)?.[1];
+  if (!reason) return AUTOREVERT.test(event17.body) ? "autorevert" : "unstated";
+  if (NON_DEFECT_REASON.test(reason)) return "collateral";
+  if (AUTOREVERT.test(reason)) return "autorevert";
+  if (INTERNAL_BUILD.test(reason)) return "internal_build";
+  if (PUBLIC_CI.test(reason)) return "public_ci";
+  return "other";
+}
+function revertExclusion(event17) {
+  if (REVERT_OF_REVERT.test(event17.title)) return "revert_of_revert";
+  const reason = event17.body.match(REVERT_REASON)?.[1];
+  if (reason && NON_DEFECT_REASON.test(reason)) return "revert_non_defect";
+  return null;
+}
+function revertTargets(event17, text, repo, index) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (original, item) => {
+    if (original && !seen.has(original)) {
+      seen.add(original);
+      out.push({ original, evidence: item });
+    }
+  };
+  for (const m of text.matchAll(REVERTS_COMMIT)) {
+    const hit = index.bySha(m[1]);
+    if (hit) push(hit.pr, evidence2("revert_message", hit.sha));
+  }
+  const prRef = new RegExp(`^\\s*reverts? ${escapeRegExp2(repo)}#(\\d+)|^\\s*reverted https://github\\.com/${escapeRegExp2(repo)}/pull/(\\d+)`, "gim");
+  for (const m of text.matchAll(prRef)) {
+    const original = index.byNumber.get(Number(m[1] ?? m[2]));
+    push(original, evidence2("reverts_pr_reference", original?.pr_url ?? null));
+  }
+  if (!out.length) {
+    for (const { token } of shaTokens(text)) {
+      const hit = index.bySha(token);
+      if (hit) push(hit.pr, evidence2("revert_message", hit.sha));
+    }
+  }
+  if (!out.length) {
+    const quoted = event17.title.match(/^\s*(?:\[[^\]]*\]\s*)?revert\s+"(.*)"/i)?.[1];
+    for (const { n } of quoted ? citedNumbers(quoted, repo) : []) {
+      const original = index.byNumber.get(n);
+      push(original, evidence2("reverts_pr_reference", original?.pr_url ?? null));
+    }
+  }
+  return out;
+}
+function issueCitations(repo, originals, crossReferences) {
+  const out = /* @__PURE__ */ new Map();
+  const issuePrefix = `https://github.com/${repo}/issues/`;
+  for (const original of originals) {
+    const merged = Math.floor(Date.parse(original.merged_at) / 1e3);
+    for (const ref3 of crossReferences.get(original.pr_number) ?? []) {
+      if (!ref3.url.startsWith(issuePrefix) || ref3.createdAtEpoch <= merged) continue;
+      const issue = Number(ref3.url.slice(issuePrefix.length));
+      if (!Number.isInteger(issue)) continue;
+      const list = out.get(issue) ?? [];
+      if (!list.some((e) => e.original === original)) list.push({ original, url: ref3.url });
+      out.set(issue, list);
+    }
+  }
+  return out;
+}
+function dedupeEvidence(items) {
+  const seen = /* @__PURE__ */ new Set();
+  return items.filter((e) => {
+    const key = `${e.kind}\0${e.ref}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function originalRef(pr2) {
+  return { pr_url: pr2.pr_url, merge_sha: pr2.merge_sha, merged_at: utc(Date.parse(pr2.merged_at)) };
+}
+function fixRef(event17) {
+  return { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha, merged_at: utc(event17.epoch * 1e3) };
+}
+function utc(ms2) {
+  return new Date(ms2).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+function buildRepairPair(candidate, original, fix, runGit3) {
+  const originalFiles = changedFiles(runGit3, original.base_sha, original.merge_sha);
+  const fixChanges = changedFiles(runGit3, fix.parentSha, fix.pr?.merge_sha ?? fix.sha);
+  const originalPaths = new Set(originalFiles.map((f) => f.path));
+  const fixPaths = new Set(fixChanges.map((f) => f.path));
+  const tests = { added: 0, modified: 0, deleted: 0 };
+  for (const f of fixChanges) {
+    if (!TEST_PATH.test(f.path)) continue;
+    if (f.status === "A") tests.added++;
+    else if (f.status === "D") tests.deleted++;
+    else tests.modified++;
+  }
+  return {
+    schema_version: candidate.schema_version,
+    record_type: "repair_pair",
+    candidate_id: candidate.candidate_id,
+    original: candidate.original,
+    fix: candidate.fix,
+    lag_seconds: candidate.lag_seconds,
+    proxy: candidate.proxy,
+    confidence: candidate.confidence,
+    files: {
+      original: [...originalPaths].sort(),
+      fix: [...fixPaths].sort(),
+      fix_only: [...fixPaths].filter((p) => !originalPaths.has(p)).sort(),
+      original_only: [...originalPaths].filter((p) => !fixPaths.has(p)).sort(),
+      fix_preexisting: existingPaths(runGit3, original.merge_sha, [...fixPaths]).sort()
+    },
+    line_survival: lineSurvival(runGit3, original, fix.parentSha),
+    fix_tests: tests,
+    // Review metadata is not in the corpus cache; null means not collected.
+    original_review: { reviewed: null, review_count: null, reviewer_count: null, first_review_latency_seconds: null },
+    graph_distance: null,
+    envelope: candidate.envelope
+  };
+}
+function changedFiles(runGit3, from, to) {
+  const result = runGit3(["diff", "--name-status", "--no-renames", "-z", from, to]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  const parts = result.stdout.split("\0").filter(Boolean);
+  const out = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) out.push({ status: parts[i].charAt(0), path: parts[i + 1] });
+  return out;
+}
+function existingPaths(runGit3, sha2, paths) {
+  const out = [];
+  for (let i = 0; i < paths.length; i += 200) {
+    const result = runGit3(["ls-tree", "-r", "--name-only", "-z", sha2, "--", ...paths.slice(i, i + 200)]);
+    if (result.exitCode !== 0) throw new Error(`corrective: cannot list ${sha2}: ${result.stderr.trim()}`);
+    out.push(...result.stdout.split("\0").filter(Boolean));
+  }
+  return out;
+}
+function lineSurvival(runGit3, original, fixParent) {
+  if (addedLineCount(runGit3, original.base_sha, original.merge_sha) > LINE_SURVIVAL_MAX_LINES) return null;
+  const added = diffLines(runGit3, original.base_sha, original.merge_sha, "+");
+  let total = 0;
+  for (const lines of added.values()) for (const count of lines.values()) total += count;
+  if (total === 0 || total > LINE_SURVIVAL_MAX_LINES) return null;
+  const removed = diffLines(runGit3, original.merge_sha, fixParent, "-", [...added.keys()]);
+  let lost = 0;
+  for (const [path4, lines] of removed) {
+    const mine = added.get(path4);
+    if (!mine) continue;
+    for (const [line, count] of lines) lost += Math.min(count, mine.get(line) ?? 0);
+  }
+  return Math.round((1 - lost / total) * 1e4) / 1e4;
+}
+function addedLineCount(runGit3, from, to) {
+  const result = runGit3(["diff", "--numstat", "--no-renames", from, to]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  let total = 0;
+  for (const line of result.stdout.split("\n")) {
+    const added = Number(line.split("	")[0]);
+    if (Number.isFinite(added)) total += added;
+  }
+  return total;
+}
+function diffLines(runGit3, from, to, side, paths) {
+  const out = /* @__PURE__ */ new Map();
+  if (paths && paths.length === 0) return out;
+  const result = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", from, to, ...paths ? ["--", ...paths] : []]);
+  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  let file = null;
+  let inHeader = false;
+  for (const line of result.stdout.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      file = null;
+      inHeader = true;
+      continue;
+    }
+    if (line.startsWith("@@")) {
+      inHeader = false;
+      continue;
+    }
+    if (inHeader) {
+      if (line.startsWith(side === "+" ? "+++ " : "--- ")) {
+        const path4 = diffHeaderPath(line);
+        if (path4 === null) file = null;
+        else {
+          file = out.get(path4) ?? /* @__PURE__ */ new Map();
+          out.set(path4, file);
+        }
+      }
+      continue;
+    }
+    if (!file || !line.startsWith(side)) continue;
+    const content = line.slice(1).trim();
+    if (content) file.set(content, (file.get(content) ?? 0) + 1);
+  }
+  return out;
+}
+function deriveCorrectiveRows(s2Rows, pairs, envelope) {
+  const byOriginal = /* @__PURE__ */ new Map();
+  for (const pair of pairs) {
+    const list = byOriginal.get(pair.original.pr_url) ?? [];
+    list.push(pair);
+    byOriginal.set(pair.original.pr_url, list);
+  }
+  const out = [];
+  for (const row of s2Rows) {
+    out.push(
+      deriveCorrectiveLabel({
+        prUrl: row.prUrl,
+        horizon_days: row.horizon_days,
+        base_label_hash: canonicalHash(row),
+        base_label_present: row.outcome.report_outcome !== null,
+        repair_pairs: byOriginal.get(row.prUrl) ?? [],
+        envelope
+      })
+    );
+  }
+  return out;
+}
+function correctiveEnvelope(branch, asOf, now) {
+  return {
+    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
+    definition_version: CORRECTIVE_REWORK_DEFINITION_VERSION,
+    labeller_version: CORRECTIVE_LABELLER_VERSION,
+    integration_branch: branch,
+    as_of: utc(asOf.getTime()),
+    computed_at: utc(now.getTime())
+  };
+}
+function correctiveCorpusRepo(input, deps) {
+  const envelope = correctiveEnvelope(input.branch, input.asOf, deps.now());
+  const reverts = readRevertCommits(deps.runGit, input.branch, input.from, input.asOf);
+  const events17 = collectFixEvents([...input.originals, ...input.laterPrs], reverts);
+  deps.onDiagnostic?.(`info: ${input.repo}: ${events17.length} fix events (${reverts.length} revert commits)`);
+  const landing = input.szz ? buildLandingIndex(deps.runGit, input.branch, input.originals) : null;
+  let blameFailures = 0;
+  let blamed = 0;
+  const blame = landing ? (event17) => {
+    if (++blamed % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: blamed ${blamed} bug fixes`);
+    try {
+      return blameFix(deps.runGit, { parentSha: event17.parentSha, tipSha: event17.pr?.merge_sha ?? event17.sha }, landing, event17.epoch - MAX_FIX_LAG_SECONDS - 86400);
+    } catch (error) {
+      blameFailures++;
+      deps.onDiagnostic?.(`error: ${input.repo}: cannot blame ${event17.pr?.pr_url ?? event17.sha}: ${String(error).slice(0, 200)}`);
+      return { status: "skipped", files: 0, changedLines: 0 };
+    }
+  } : void 0;
+  const { candidates, events: eventsById, szz } = detectCandidates({
+    repo: input.repo,
+    originals: input.originals,
+    events: events17,
+    crossReferences: input.crossReferences,
+    issues: input.issues,
+    ...blame ? { blame } : {},
+    envelope
+  });
+  const byUrl = new Map(input.originals.map((pr2) => [pr2.pr_url, pr2]));
+  const repairPairs = [];
+  const failedPairs = [];
+  const accepted2 = candidates.filter((c) => c.status === "accepted");
+  for (const [i, candidate] of accepted2.entries()) {
+    if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: measured ${i}/${accepted2.length} repair pairs`);
+    try {
+      repairPairs.push(buildRepairPair(candidate, byUrl.get(candidate.original.pr_url), eventsById.get(candidate.candidate_id), deps.runGit));
+    } catch (error) {
+      failedPairs.push(candidate.candidate_id);
+      deps.onDiagnostic?.(`error: ${input.repo}: cannot measure pair ${candidate.candidate_id}: ${String(error).slice(0, 200)}`);
+    }
+  }
+  return {
+    candidates,
+    repairPairs,
+    corrective: deriveCorrectiveRows(input.s2Rows, repairPairs, envelope),
+    failedPairs,
+    szz: { ...szz, skipped: szz.skipped - blameFailures, failed: blameFailures }
+  };
+}
+function summarizeCorrective(result, originals) {
+  const count = (items, key) => items.reduce((acc, item) => (acc[key(item)] = (acc[key(item)] ?? 0) + 1, acc), {});
+  const byHorizon = {};
+  for (const row of result.corrective) {
+    const h = byHorizon[row.horizon_days] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
+    h.rows++;
+    h[String(row.corrective)]++;
+  }
+  for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
+  const flagged = new Set(result.repairPairs.map((p) => p.original.pr_url));
+  return {
+    candidates: result.candidates.length,
+    candidates_by_proxy_status: count(result.candidates, (c) => `${c.proxy}:${c.status}`),
+    exclusions: count(result.candidates.filter((c) => c.exclusion_code), (c) => c.exclusion_code),
+    revert_reasons: count(
+      result.candidates.filter((c) => c.proxy === "revert" && c.status === "accepted"),
+      (c) => c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? "unstated"
+    ),
+    szz: result.szz,
+    repair_pairs: result.repairPairs.length,
+    direct_push_fixes: result.repairPairs.filter((p) => p.fix.pr_url === null).length,
+    failed_pairs: result.failedPairs.length,
+    originals,
+    originals_with_fix_60d: flagged.size,
+    originals_with_fix_60d_share: originals ? Math.round(flagged.size / originals * 1e4) / 1e4 : null,
+    corrective_by_horizon: byHorizon
+  };
+}
+
+// src/corpus/feature-git.ts
+var DAY_MS = 864e5;
+var WINDOW_MS = 90 * DAY_MS;
+var OUTPUT_LIMIT = 1024 ** 3;
+var MAX_COMPLEXITY_FILE_BYTES = 2 * 1024 ** 2;
+var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+function gitBuffer(gitDir, args, input) {
+  const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], {
+    maxBuffer: OUTPUT_LIMIT,
+    stdio: ["pipe", "pipe", "ignore"],
+    ...input === void 0 ? {} : { input }
+  });
+  return { ok: result.status === 0, stdout: result.stdout ?? Buffer.alloc(0) };
+}
+function forEachGitRecord(gitDir, args, scratch, separator, onRecord) {
+  const out = openSync2(scratch, "w");
+  try {
+    const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], { stdio: ["ignore", out, "pipe"], maxBuffer: 16 * 1024 ** 2 });
+    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${String(result.stderr).trim().split("\n").pop()}`);
+  } finally {
+    closeSync2(out);
+  }
+  const fd = openSync2(scratch, "r");
+  try {
+    const chunk = Buffer.alloc(32 * 1024 ** 2);
+    let carry = Buffer.alloc(0);
+    for (let read = readSync(fd, chunk); read > 0; read = readSync(fd, chunk)) {
+      const data = carry.length ? Buffer.concat([carry, chunk.subarray(0, read)]) : Buffer.from(chunk.subarray(0, read));
+      let start = 0;
+      for (let end = data.indexOf(separator, start); end !== -1; end = data.indexOf(separator, start)) {
+        if (end > start) onRecord(data.toString("utf8", start, end));
+        start = end + 1;
+      }
+      carry = data.subarray(start);
+    }
+    if (carry.length) onRecord(carry.toString("utf8"));
+  } finally {
+    closeSync2(fd);
+    rmSync2(scratch, { force: true });
+  }
+}
+var HistoryIndex = class {
+  /** First-parent position of each commit on the line. */
+  firstParentPosition = /* @__PURE__ */ new Map();
+  /** Position at which each reachable commit landed on the line. */
+  landingPosition = /* @__PURE__ */ new Map();
+  /** Running maximum of landing times, so a mis-dated commit cannot reorder a window. */
+  landingTimes = [];
+  landingMessages = /* @__PURE__ */ new Map();
+  commitPosition = [];
+  commitAuthor = [];
+  commitIsFix = [];
+  authorIds = /* @__PURE__ */ new Map();
+  authorCommits = [];
+  files = /* @__PURE__ */ new Map();
+  commitIds = /* @__PURE__ */ new Map();
+  addLandingLine(lines) {
+    let latest = 0;
+    lines.forEach((line, position) => {
+      this.firstParentPosition.set(line.sha, position);
+      latest = Math.max(latest, line.epochSeconds * 1e3);
+      this.landingTimes.push(latest);
+    });
+  }
+  addCommit(sha2, email, subject, paths) {
+    const position = this.landingPosition.get(sha2);
+    if (position === void 0) return;
+    const key = email.trim().toLowerCase();
+    let author = this.authorIds.get(key);
+    if (author === void 0) {
+      author = this.authorIds.size;
+      this.authorIds.set(key, author);
+      this.authorCommits.push([]);
+    }
+    const id2 = this.commitPosition.length;
+    this.commitIds.set(sha2, id2);
+    this.commitPosition.push(position);
+    this.commitAuthor.push(author);
+    this.commitIsFix.push(isFixSubject(subject));
+    this.authorCommits[author].push(position);
+    for (const path4 of paths) {
+      const list = this.files.get(path4);
+      if (list) list.push(id2);
+      else this.files.set(path4, [id2]);
+    }
+  }
+  /** Sorts by landing position. Call once, after every commit is added. */
+  seal() {
+    for (const list of this.files.values()) list.sort((a, b) => this.commitPosition[a] - this.commitPosition[b]);
+    for (const list of this.authorCommits) list.sort((a, b) => a - b);
+  }
+  /** The newest line position whose history is certainly within `base_sha`'s ancestors. */
+  basePosition(baseSha) {
+    if (baseSha === EMPTY_TREE_SHA2) return -1;
+    const direct = this.firstParentPosition.get(baseSha);
+    if (direct !== void 0) return direct;
+    const landed = this.landingPosition.get(baseSha);
+    return landed === void 0 ? null : landed - 1;
+  }
+  firstAtOrAfter(list, position, read) {
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = low + high >>> 1;
+      if (read(list[middle]) < position) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+  /** The first line position that landed inside the 90 days before `asOfMs`. */
+  windowStart(asOfMs) {
+    return this.firstAtOrAfter(this.landingTimes, asOfMs - WINDOW_MS, (time) => time);
+  }
+  historyColumns(input) {
+    const { basePosition, asOfMs } = input;
+    const windowStart = this.windowStart(asOfMs);
+    const position = (id2) => this.commitPosition[id2];
+    const recent = /* @__PURE__ */ new Set();
+    for (const path4 of input.changedFiles) {
+      const list = this.files.get(path4);
+      if (!list) continue;
+      const from = this.firstAtOrAfter(list, windowStart, position);
+      const to = this.firstAtOrAfter(list, basePosition + 1, position);
+      for (let i = from; i < to; i++) recent.add(list[i]);
+    }
+    let newestFileMs = null;
+    for (const path4 of input.existingFiles) {
+      const first = this.files.get(path4)?.[0];
+      if (first === void 0 || position(first) > basePosition) continue;
+      const created = this.landingTimes[position(first)];
+      newestFileMs = newestFileMs === null ? created : Math.max(newestFileMs, created);
+    }
+    const authorIds = (input.authorEmails ?? []).flatMap((email) => {
+      const id2 = this.authorIds.get(email.trim().toLowerCase());
+      return id2 === void 0 ? [] : [id2];
+    });
+    let repoCommits = 0;
+    for (const id2 of authorIds) {
+      const list = this.authorCommits[id2];
+      repoCommits += this.firstAtOrAfter(list, basePosition + 1, (value) => value);
+    }
+    const touched = /* @__PURE__ */ new Set();
+    if (authorIds.length) {
+      const ids = new Set(authorIds);
+      for (const path4 of input.changedFiles) {
+        const list = this.files.get(path4);
+        if (!list) continue;
+        const to = this.firstAtOrAfter(list, basePosition + 1, position);
+        for (let i = 0; i < to; i++) if (ids.has(this.commitAuthor[list[i]])) touched.add(list[i]);
+      }
+    }
+    return {
+      "feature.history.file_commits_90d": recent.size,
+      "feature.history.file_authors_90d": new Set([...recent].map((id2) => this.commitAuthor[id2])).size,
+      "feature.history.file_fix_commits_90d": [...recent].filter((id2) => this.commitIsFix[id2]).length,
+      "feature.history.newest_file_age_days": newestFileMs === null ? null : Number((Math.max(0, asOfMs - newestFileMs) / DAY_MS).toFixed(2)),
+      "feature.author.repo_commits_prior": input.authorEmails === null ? null : repoCommits,
+      "feature.author.touched_file_commits_prior": input.authorEmails === null ? null : touched.size
+    };
+  }
+  /** Author email of a non-merge commit in the index, for a PR whose own commits are unknown. */
+  commitEmail(sha2) {
+    const id2 = this.commitIds.get(sha2);
+    if (id2 === void 0) return null;
+    const author = this.commitAuthor[id2];
+    for (const [email, value] of this.authorIds) if (value === author) return email;
+    return null;
+  }
+};
+function buildHistoryIndex(gitDir, tip, scratchPrefix, messagesFor) {
+  const index = new HistoryIndex();
+  const line = [];
+  forEachGitRecord(gitDir, ["log", "--first-parent", "--reverse", "--format=%H%x1f%ct%x1f%B%x1e", tip], `${scratchPrefix}.line`, 30, (record) => {
+    const [sha2 = "", epoch = "0", message = ""] = record.replace(/^\n/, "").split("");
+    line.push({ sha: sha2, epochSeconds: Number(epoch) });
+    if (messagesFor.has(sha2)) index.landingMessages.set(sha2, message.trim());
+  });
+  index.addLandingLine(line);
+  const parents = /* @__PURE__ */ new Map();
+  forEachGitRecord(gitDir, ["rev-list", "--parents", tip], `${scratchPrefix}.parents`, 10, (record) => {
+    const [sha2 = "", ...rest] = record.split(" ");
+    parents.set(sha2, rest);
+  });
+  line.forEach(({ sha: sha2 }, position) => {
+    const stack = [sha2];
+    while (stack.length) {
+      const current = stack.pop();
+      if (index.landingPosition.has(current)) continue;
+      index.landingPosition.set(current, position);
+      for (const parent of parents.get(current) ?? []) stack.push(parent);
+    }
+  });
+  parents.clear();
+  forEachGitRecord(
+    gitDir,
+    ["log", "--no-merges", "--no-renames", "-z", "--name-only", "--format=%x1e%H%x1f%ae%x1f%s%x1f", tip],
+    `${scratchPrefix}.files`,
+    30,
+    (record) => {
+      const [sha2 = "", email = "", subject = "", files = ""] = record.split("");
+      index.addCommit(sha2, email, subject, files.split("\0").map((path4) => path4.replace(/^\n/, "")).filter(Boolean));
+    }
+  );
+  index.seal();
+  return index;
+}
+function parseRawNumstat(output) {
+  const tokens2 = output.split("\0");
+  const files = /* @__PURE__ */ new Map();
+  for (let i = 0; i < tokens2.length; i++) {
+    const token = tokens2[i];
+    if (!token) continue;
+    if (token.startsWith(":")) {
+      const [, , oldOid = "", newOid = "", status = ""] = token.slice(1).split(" ");
+      const path4 = tokens2[++i] ?? "";
+      files.set(path4, { path: path4, status: status.charAt(0), oldOid, newOid, added: 0, deleted: 0 });
+      continue;
+    }
+    const [added = "0", deleted = "0", ...rest] = token.split("	");
+    const file = files.get(rest.join("	"));
+    if (file) {
+      file.added = Number(added) || 0;
+      file.deleted = Number(deleted) || 0;
+    }
+  }
+  return [...files.values()];
+}
+var DIFF_FLAGS = ["--no-renames", "--no-ext-diff", "--no-textconv", "--no-color", "--full-index"];
+function readDiff(gitDir, baseSha, mergeSha) {
+  const facts = gitBuffer(gitDir, ["diff", ...DIFF_FLAGS, "--abbrev=40", "--raw", "--numstat", "-z", baseSha, mergeSha]);
+  if (!facts.ok) return null;
+  const patch = gitBuffer(gitDir, ["diff", ...DIFF_FLAGS, "-p", baseSha, mergeSha]);
+  return {
+    files: parseRawNumstat(facts.stdout.toString("utf8")),
+    diffSha256: patch.ok ? createHash4("sha256").update(patch.stdout).digest("hex") : null
+  };
+}
+var ZERO_OID = /^0+$/;
+function complexityDelta(gitDir, files) {
+  const measured = files.filter((file) => fileComplexity("", getExtension(file.path)) !== null);
+  if (measured.length === 0) return null;
+  const oids = [...new Set(measured.flatMap((file) => [file.oldOid, file.newOid]).filter((oid) => !ZERO_OID.test(oid)))];
+  if (oids.length === 0) return null;
+  const output = gitBuffer(gitDir, ["cat-file", "--batch"], `${oids.join("\n")}
+`);
+  if (!output.ok) return null;
+  const blobs = /* @__PURE__ */ new Map();
+  for (let offset = 0; offset < output.stdout.length; ) {
+    const newline = output.stdout.indexOf(10, offset);
+    if (newline === -1) return null;
+    const [oid = "", type = "", size = ""] = output.stdout.toString("utf8", offset, newline).split(" ");
+    if (type === "missing" || type !== "blob" && type !== "commit") return null;
+    const bytes = Number(size);
+    blobs.set(oid, bytes > MAX_COMPLEXITY_FILE_BYTES ? "oversized" : output.stdout.subarray(newline + 1, newline + 1 + bytes));
+    offset = newline + 1 + bytes + 1;
+  }
+  let delta = 0;
+  let any = false;
+  for (const file of measured) {
+    const extension = getExtension(file.path);
+    const oldBlob = ZERO_OID.test(file.oldOid) ? null : blobs.get(file.oldOid);
+    const newBlob = ZERO_OID.test(file.newOid) ? null : blobs.get(file.newOid);
+    if (oldBlob === "oversized" || newBlob === "oversized") continue;
+    if (oldBlob === void 0 || newBlob === void 0) return null;
+    delta += (newBlob ? fileComplexity(newBlob.toString("utf8"), extension) ?? 0 : 0) - (oldBlob ? fileComplexity(oldBlob.toString("utf8"), extension) ?? 0 : 0);
+    any = true;
+  }
+  return any ? delta : null;
+}
+function gitColumns(input) {
+  const { index, gitDir, record } = input;
+  const asOfMs = Date.parse(record.merged_at);
+  const diff = readDiff(gitDir, record.base_sha, record.merge_sha);
+  const shape = diff ? {
+    "feature.shape.files_touched": diff.files.length,
+    "feature.shape.lines_added": diff.files.reduce((sum, file) => sum + file.added, 0),
+    "feature.shape.lines_deleted": diff.files.reduce((sum, file) => sum + file.deleted, 0),
+    "feature.shape.loc_touched": diff.files.reduce((sum, file) => sum + file.added + file.deleted, 0),
+    "feature.shape.tests_changed": diff.files.some((file) => isTestFile(file.path)),
+    "feature.shape.complexity_delta": complexityDelta(gitDir, diff.files),
+    "feature.content.diff_sha256": diff.diffSha256,
+    "feature.history.new_files": diff.files.filter((file) => file.status === "A").length
+  } : {};
+  const basePosition = index.basePosition(record.base_sha);
+  if (!diff || basePosition === null) return shape;
+  const emails = input.authorEmails ?? (() => {
+    const email = index.commitEmail(record.merge_sha);
+    return email ? [email] : null;
+  })();
+  return {
+    ...shape,
+    ...index.historyColumns({
+      basePosition,
+      asOfMs,
+      changedFiles: diff.files.map((file) => file.path),
+      existingFiles: diff.files.filter((file) => file.status !== "A").map((file) => file.path),
+      authorEmails: emails
+    })
+  };
+}
+
+// src/corpus/feature-run.ts
+var FEATURE_STEPS = ["ci", "evidence", "timeline", "extract", "manifest"];
+function readRecords(repoDir) {
+  return readFileSync5(join8(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => ({ ...JSON.parse(line), title: "", body: "" }));
+}
+function authorEmails(record, evidence3) {
+  if (!evidence3) return null;
+  const emails = evidence3.commits.filter((commit) => commit.author_login !== null && commit.author_login === record.author_login && commit.author_email).map((commit) => commit.author_email);
+  return emails.length ? [...new Set(emails)] : null;
+}
+function loadEvidenceChunk(repoDir, chunk) {
+  const batch = readCapturedBatch(repoDir, "evidence", chunk);
+  const out = new Map(chunk.map((number) => [number, null]));
+  if (!batch) return { capturedAt: null, evidence: out };
+  const timeline = readCapturedBatch(repoDir, "timeline", chunk);
+  if (!timeline) throw new Error(`no timeline capture for PRs ${chunk[0]}-${chunk.at(-1)}; run --step timeline first`);
+  const events17 = new Map(timeline.items.map((item) => [item.pr_number, item.value]));
+  for (const item of batch.items) {
+    const found = events17.get(item.pr_number);
+    if (!item.value || !found) continue;
+    out.set(item.pr_number, { ...item.value, dismissals: found.dismissals, label_events: found.label_events, renames: found.renames });
+  }
+  return { capturedAt: batch.captured_at < timeline.captured_at ? batch.captured_at : timeline.captured_at, evidence: out };
+}
+function landingMessage(record, index) {
+  return record.batched ? null : index.landingMessages.get(record.merge_sha) ?? null;
+}
+function extractRepo(repo, repoDir, writeRows, log) {
+  const manifestErrors = validateFeatureManifest(REWORK_RISK_FEATURE_MANIFEST);
+  const columnErrors = validateFeatureColumns(MANIFEST_COLUMNS, { allowSegments: true });
+  if (manifestErrors.length || columnErrors.length) throw new Error(`manifest failed validation: ${[...manifestErrors, ...columnErrors][0].message}`);
+  const statsPath = join8(repoDir, "enumeration.json");
+  if (!existsSync5(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+  const { branch } = JSON.parse(readFileSync5(statsPath, "utf8"));
+  const records = readRecords(repoDir);
+  const byNumber = new Map(records.map((record) => [record.pr_number, record]));
+  const gitDir = join8(repoDir, "repo.git");
+  log(`info: ${repo}: indexing history`);
+  const index = buildHistoryIndex(gitDir, `refs/heads/${branch}`, join8(repoDir, ".feature-index"), new Set(records.map((record) => record.merge_sha)));
+  const ciNumbers = records.filter((record) => record.merged_at >= CI_CAPTURE_FROM).map((record) => record.pr_number);
+  const ci2 = /* @__PURE__ */ new Map();
+  for (const chunk of chunkNumbers(ciNumbers)) {
+    for (const item of readCapturedBatch(repoDir, "ci", chunk)?.items ?? []) if (item.value) ci2.set(item.pr_number, item.value);
+  }
+  const rows = [];
+  let failed = 0;
+  let withoutEvidence = 0;
+  let capturedFrom = null;
+  let capturedUntil = null;
+  const chunks = chunkNumbers(records.map((record) => record.pr_number));
+  chunks.forEach((chunk, position) => {
+    const { capturedAt, evidence: items } = loadEvidenceChunk(repoDir, chunk);
+    if (capturedAt) {
+      if (!capturedFrom || capturedAt < capturedFrom) capturedFrom = capturedAt;
+      if (!capturedUntil || capturedAt > capturedUntil) capturedUntil = capturedAt;
+    }
+    for (const number of chunk) {
+      const record = byNumber.get(number);
+      const evidence3 = items.get(number) ?? null;
+      if (!evidence3) withoutEvidence++;
+      try {
+        rows.push(extractPrFeatures({
+          record,
+          evidence: evidence3,
+          ci: ci2.get(number) ?? null,
+          landingMessage: landingMessage(record, index),
+          git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
+        }));
+      } catch (error) {
+        failed++;
+        log(`warn: ${repo}: PR ${number}: ${error.message.slice(0, 160)}`);
+      }
+    }
+    if (position % 200 === 0) log(`info: ${repo}: extracted ${rows.length}/${records.length}`);
+  });
+  const path4 = join8(repoDir, "features.jsonl.gz");
+  writeRows(path4, rows);
+  const bytes = readFileSync5(path4);
+  const summary = {
+    repo,
+    manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+    prs: records.length,
+    rows: rows.length,
+    failed_rows: failed,
+    rows_without_evidence: withoutEvidence,
+    evidence_captured_from: capturedFrom,
+    evidence_captured_until: capturedUntil,
+    file: "features.jsonl.gz",
+    sha256: createHash5("sha256").update(bytes).digest("hex"),
+    bytes: bytes.length
+  };
+  writeFileSync3(join8(repoDir, "features.summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+  return summary;
+}
+function runCorpusFeatures(input) {
+  const { step, entries, cacheRoot, io, log } = input;
+  const repoDirOf = (repo) => join8(cacheRoot, repo.replace("/", "__"));
+  if (step === "manifest") {
+    const missing = entries.filter((entry2) => !existsSync5(join8(repoDirOf(entry2.repo), "features.summary.json"))).map((entry2) => entry2.repo);
+    if (missing.length) {
+      log(`error: no features yet for ${missing.length} repos`);
+      return { exitCode: 3 };
+    }
+    const repos = entries.map((entry2) => JSON.parse(readFileSync5(join8(repoDirOf(entry2.repo), "features.summary.json"), "utf8")));
+    const manifest = {
+      issue: "HOK-3023",
+      manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+      cohort_manifest_sha256: input.cohortSha256,
+      totals: {
+        repos: repos.length,
+        prs: repos.reduce((sum, repo) => sum + repo.prs, 0),
+        rows: repos.reduce((sum, repo) => sum + repo.rows, 0),
+        failed_rows: repos.reduce((sum, repo) => sum + repo.failed_rows, 0),
+        rows_without_evidence: repos.reduce((sum, repo) => sum + repo.rows_without_evidence, 0)
+      },
+      repos
+    };
+    mkdirSync3(dirname(input.out), { recursive: true });
+    writeFileSync3(input.out, `${JSON.stringify(manifest, null, 2)}
+`);
+    io.writeStdout(`${JSON.stringify(manifest.totals)}
+`);
+    return { exitCode: 0 };
+  }
+  let failures = 0;
+  for (const entry2 of entries) {
+    const repoDir = repoDirOf(entry2.repo);
+    try {
+      if (step === "extract") {
+        const summary = extractRepo(entry2.repo, repoDir, input.writeRows, log);
+        io.writeStdout(`${JSON.stringify({ repo: summary.repo, rows: summary.rows, failed_rows: summary.failed_rows, rows_without_evidence: summary.rows_without_evidence })}
+`);
+        if (summary.failed_rows) failures++;
+        continue;
+      }
+      const kind = step;
+      const records = readRecords(repoDir);
+      const numbers = (kind === "ci" ? records.filter((record) => record.merged_at >= CI_CAPTURE_FROM) : records).map((record) => record.pr_number);
+      const result = captureRepo(kind, entry2.repo, repoDir, numbers, input.graphql, log);
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, prs: numbers.length, ...result })}
+`);
+      if (result.failed) failures++;
+    } catch (error) {
+      failures++;
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, error: error.message.slice(0, 200) })}
+`);
+      log(`error: ${entry2.repo}: ${error.message.slice(0, 200)}`);
+    }
+  }
+  return { exitCode: failures ? 3 : 0 };
+}
+
+// src/corpus/feature-replay.ts
+import { createHash as createHash6, randomBytes } from "node:crypto";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, readdirSync, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname2, join as join9 } from "node:path";
+var REPLAY_VERSION = "rr-feature-replay/1.0.0";
+var SECOND = 1e3;
+function insideGitWorkTree(path4) {
+  for (let dir = path4; ; dir = dirname2(dir)) {
+    if (existsSync6(join9(dir, ".git"))) return true;
+    if (dirname2(dir) === dir) return false;
+  }
+}
+var shift = (at2, ms2) => new Date(Date.parse(at2) + ms2).toISOString();
+function truncateCiAt(ci2, asOf) {
+  if (!ci2) return null;
+  const cutoff = Date.parse(asOf);
+  return { ...ci2, contexts: ci2.contexts.filter((context) => context.at !== null && Date.parse(context.at) <= cutoff) };
+}
+function blankPostMergeRecord(record) {
+  return { ...record, relanded_merge_shas: [], labels: [], closing_issues: [], title: "", body: "" };
+}
+function withPostMergeActivity(evidence3, asOf) {
+  const latest = Math.max(
+    Date.parse(asOf),
+    ...[...evidence3.renames, ...evidence3.body_edits, ...evidence3.label_events, ...evidence3.dismissals].map((event17) => Date.parse(event17.at)),
+    ...evidence3.reviews.flatMap((review) => review.submitted_at ? [Date.parse(review.submitted_at)] : [])
+  );
+  const after = new Date(latest + SECOND).toISOString();
+  const later = new Date(latest + 30 * 86400 * SECOND).toISOString();
+  const labels = labelsAt(evidence3, asOf) ?? [];
+  const lastTitle = evidence3.renames.length ? evidence3.renames.at(-1).to : evidence3.title;
+  return {
+    ...evidence3,
+    title: "CANARY TITLE",
+    body: "CANARY BODY",
+    reviews: [
+      // Existing reviews, dismissed after the merge.
+      ...evidence3.reviews.map((review) => review.state === "DISMISSED" ? review : { ...review, state: "DISMISSED" }),
+      { id: "canary-approve", state: "APPROVED", submitted_at: after, author: "canary-reviewer" },
+      { id: "canary-changes", state: "CHANGES_REQUESTED", submitted_at: later, author: "canary-reviewer-2" }
+    ],
+    dismissals: [
+      ...evidence3.dismissals,
+      ...evidence3.reviews.filter((review) => review.state !== "DISMISSED").map((review) => ({ at: after, previous_state: review.state, review_id: review.id }))
+    ],
+    label_events: [
+      ...evidence3.label_events,
+      { at: after, action: "added", label: "canary-label" },
+      ...labels.map((label2) => ({ at: later, action: "removed", label: label2 }))
+    ],
+    renames: [...evidence3.renames, { at: after, from: lastTitle, to: "CANARY TITLE" }],
+    body_edits: [
+      ...evidence3.body_edits.length ? evidence3.body_edits : [{ at: evidence3.created_at, body: evidence3.body }],
+      { at: after, body: "CANARY BODY" }
+    ]
+  };
+}
+function withPostMergeCi(ci2, number, asOf) {
+  return {
+    pr_number: number,
+    contexts: [...ci2?.contexts ?? [], { at: shift(asOf, SECOND), failed: true }, { at: null, failed: false }]
+  };
+}
+function withPostMergeRecord(record) {
+  return { ...record, relanded_merge_shas: ["f".repeat(40)], labels: ["canary-label"], closing_issues: [999999999], title: "CANARY TITLE", body: "CANARY BODY" };
+}
+function withPreMergeReview(evidence3, asOf) {
+  const at2 = Date.parse(asOf) - SECOND >= Date.parse(evidence3.created_at) ? shift(asOf, -SECOND) : asOf;
+  return { ...evidence3, reviews: [...evidence3.reviews, { id: "control-review", state: "APPROVED", submitted_at: at2, author: "control-reviewer" }] };
+}
+function differingColumns(a, b) {
+  const out = [];
+  for (const key of ["manifest_version", "repo", "pr_number", "merge_sha", "base_sha", "landed_by", "as_of", "as_of_basis"]) {
+    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) out.push(key);
+  }
+  const columns = /* @__PURE__ */ new Set([...Object.keys(a.features), ...Object.keys(b.features)]);
+  for (const column of columns) if (JSON.stringify(a.features[column]) !== JSON.stringify(b.features[column])) out.push(column);
+  return out;
+}
+function rng(seed, label2) {
+  let counter = 0;
+  return () => {
+    const digest = createHash6("sha256").update(`${seed}:${label2}:${counter++}`).digest();
+    return digest.readUInt32BE(0) / 2 ** 32;
+  };
+}
+function shuffled(items, random) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+var emptyTally = () => ({ sampled: 0, replay_identical: 0, perturbed_identical: 0, control_changed: 0, leaky_reading_differs: 0 });
+function add(into, from) {
+  for (const key of Object.keys(into)) into[key] += from[key];
+}
+function replayRepo(input) {
+  const { repo, repoDir, seed, log, label: label2 } = input;
+  const { branch } = JSON.parse(readFileSync6(join9(repoDir, "enumeration.json"), "utf8"));
+  const records = readRecords(repoDir);
+  const gitDir = join9(repoDir, "repo.git");
+  const scratch = join9(repoDir, ".feature-index-replay");
+  const merges = new Set(records.map((record) => record.merge_sha));
+  log(`info: ${label2}: indexing full history`);
+  const full = buildHistoryIndex(gitDir, `refs/heads/${branch}`, scratch, merges);
+  const line = [];
+  for (const [sha2, position] of full.firstParentPosition) line[position] = sha2;
+  const landing = (record) => full.landingPosition.get(record.merge_sha);
+  const placed = records.filter((record) => landing(record) !== void 0).sort((a, b) => landing(a) - landing(b));
+  const random = rng(seed, repo);
+  const types = [...new Set(placed.map((record) => record.landed_by))].sort();
+  const anchors = [];
+  for (const type of types) anchors.push(shuffled(placed.filter((record) => record.landed_by === type), random)[0]);
+  for (const record of shuffled(placed, random)) {
+    if (anchors.length >= Math.max(input.cuts, types.length)) break;
+    if (!anchors.includes(record)) anchors.push(record);
+  }
+  const evidenceCache = /* @__PURE__ */ new Map();
+  const ciCache = /* @__PURE__ */ new Map();
+  const chunks = chunkNumbers(records.map((record) => record.pr_number));
+  const chunkOf = /* @__PURE__ */ new Map();
+  for (const chunk of chunks) for (const number of chunk) chunkOf.set(number, chunk);
+  const ciNumbers = records.filter((record) => record.merged_at >= CI_CAPTURE_FROM).map((record) => record.pr_number);
+  const ciChunkOf = /* @__PURE__ */ new Map();
+  for (const chunk of chunkNumbers(ciNumbers)) for (const number of chunk) ciChunkOf.set(number, chunk);
+  const load = (number) => {
+    if (!evidenceCache.has(number)) {
+      for (const [pr2, value] of loadEvidenceChunk(repoDir, chunkOf.get(number)).evidence) evidenceCache.set(pr2, value);
+    }
+    const ciChunk = ciChunkOf.get(number);
+    if (!ciCache.has(number)) {
+      if (ciChunk) for (const item of readCapturedBatch(repoDir, "ci", ciChunk)?.items ?? []) ciCache.set(item.pr_number, item.value);
+      if (!ciCache.has(number)) ciCache.set(number, null);
+    }
+    return { evidence: evidenceCache.get(number), ci: ciCache.get(number) };
+  };
+  const row = (index, record, evidence3, ci2) => extractPrFeatures({
+    record,
+    evidence: evidence3,
+    ci: ci2,
+    landingMessage: landingMessage(record, index),
+    git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
+  });
+  const result = { repo, cuts: anchors.length, totals: emptyTally(), by_landed_by: {}, items: [] };
+  anchors.forEach((anchor, cutNumber) => {
+    const cutPosition = landing(anchor);
+    const cutSha = line[cutPosition];
+    log(`info: ${label2}: cut ${cutNumber + 1}/${anchors.length}`);
+    const cut = buildHistoryIndex(gitDir, cutSha, scratch, merges);
+    const before = placed.filter((record) => record !== anchor && landing(record) <= cutPosition && landing(record) >= cutPosition - 300);
+    const sample = [anchor, ...shuffled(before, random).slice(0, input.perCut - 1)];
+    for (const record of sample) {
+      const { evidence: evidence3, ci: ci2 } = load(record.pr_number);
+      const asOf = record.merged_at;
+      const tally = emptyTally();
+      tally.sampled = 1;
+      const baseline = row(full, record, evidence3, ci2);
+      const replay = differingColumns(baseline, row(cut, blankPostMergeRecord(record), evidence3 ? truncateEvidenceAt(evidence3, asOf) : null, truncateCiAt(ci2, asOf)));
+      const perturbed = evidence3 ? differingColumns(baseline, row(full, withPostMergeRecord(record), withPostMergeActivity(evidence3, asOf), withPostMergeCi(ci2, record.pr_number, asOf))) : differingColumns(baseline, row(full, withPostMergeRecord(record), null, ci2));
+      const controlChanged = evidence3 ? differingColumns(baseline, row(full, record, withPreMergeReview(evidence3, asOf), ci2)).length > 0 : false;
+      const leaky = evidence3 ? evidence3.reviews.length !== reviewsAt(evidence3, asOf).length || JSON.stringify([...record.labels].sort()) !== JSON.stringify(labelsAt(evidence3, asOf)) : false;
+      if (replay.length === 0) tally.replay_identical = 1;
+      if (perturbed.length === 0) tally.perturbed_identical = 1;
+      if (controlChanged) tally.control_changed = 1;
+      if (leaky) tally.leaky_reading_differs = 1;
+      add(result.totals, tally);
+      add(result.by_landed_by[record.landed_by] ??= emptyTally(), tally);
+      result.items.push({ pr_number: record.pr_number, landed_by: record.landed_by, cut_sha: cutSha, replay, perturbed, control_changed: controlChanged, leaky_reading_differs: leaky });
+    }
+  });
+  return result;
+}
+function runFeatureReplay(input) {
+  const { io, log } = input;
+  let sliceRepos;
+  let sliceSha;
+  try {
+    const bytes = readFileSync6(input.slicePath);
+    sliceSha = createHash6("sha256").update(bytes).digest("hex");
+    const slice = JSON.parse(bytes.toString("utf8"));
+    if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
+    sliceRepos = new Set(slice.repos);
+    if (insideGitWorkTree(input.outDir)) throw new Error("--out must be outside any git work tree; sampled PRs would reveal development repos");
+    if (existsSync6(input.outDir) && readdirSync(input.outDir).length) throw new Error(`${input.outDir} is not empty`);
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const development = input.entries.filter((entry2) => !sliceRepos.has(entry2.repo));
+  const seed = input.seed ?? randomBytes(32).toString("hex");
+  mkdirSync4(input.outDir, { recursive: true });
+  const totals = emptyTally();
+  const byLandedBy = {};
+  let failures = 0;
+  development.forEach((entry2, position) => {
+    const label2 = `development repo ${position + 1}/${development.length}`;
+    try {
+      const result = replayRepo({ repo: entry2.repo, repoDir: join9(input.cacheRoot, entry2.repo.replace("/", "__")), seed, cuts: input.cuts, perCut: input.perCut, log, label: label2 });
+      writeFileSync4(join9(input.outDir, `replay-${position + 1}.json`), `${JSON.stringify(result, null, 2)}
+`);
+      add(totals, result.totals);
+      for (const [type, tally] of Object.entries(result.by_landed_by)) add(byLandedBy[type] ??= emptyTally(), tally);
+    } catch (error) {
+      failures++;
+      log(`error: ${label2}: ${error.message.slice(0, 200)}`);
+    }
+  });
+  const summary = {
+    replay_version: REPLAY_VERSION,
+    excluded_slice_sha256: sliceSha,
+    development_repos: development.length,
+    failed_repos: failures,
+    seed,
+    totals,
+    by_landed_by: Object.fromEntries(Object.entries(byLandedBy).sort(([a], [b]) => a.localeCompare(b)))
+  };
+  writeFileSync4(join9(input.outDir, "summary.json"), `${JSON.stringify(summary, null, 2)}
+`);
+  io.writeStdout(`${JSON.stringify(summary)}
+`);
+  const passed = failures === 0 && totals.sampled > 0 && totals.replay_identical === totals.sampled && totals.perturbed_identical === totals.sampled;
+  return { exitCode: passed ? 0 : 1 };
+}
+
+// src/corpus/cli.ts
+import { createHash as createHash9, randomBytes as randomBytes2 } from "node:crypto";
+import { chmodSync, closeSync as closeSync3, existsSync as existsSync7, mkdirSync as mkdirSync5, openSync as openSync3, readdirSync as readdirSync2, readFileSync as readFileSync7, rmSync as rmSync3, writeFileSync as writeFileSync5, writeSync as writeSync2 } from "node:fs";
+import { join as join10, resolve as resolve5 } from "node:path";
+import { parseArgs as parseArgs3 } from "node:util";
+import { gzipSync as gzipSync2, inflateRawSync } from "node:zlib";
 
 // src/corpus/calibration.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 
 // src/report/stats.ts
 function round42(value) {
@@ -9278,7 +14307,7 @@ function auditShare(plan, stratum) {
 }
 function auditedUrls(picked, plan, stratum, seed) {
   return new Set(
-    seededOrder(picked, (u) => sha256(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * auditShare(plan, stratum))).map((u) => u.pr_url)
+    seededOrder(picked, (u) => sha2562(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * auditShare(plan, stratum))).map((u) => u.pr_url)
   );
 }
 function extendAudit(items, plan, seed) {
@@ -9294,7 +14323,7 @@ function parseLabellers(raw) {
   if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
   return { a: l.a, b: l.b };
 }
-var sha256 = (...parts) => createHash3("sha256").update(parts.join("\0")).digest("hex");
+var sha2562 = (...parts) => createHash7("sha256").update(parts.join("\0")).digest("hex");
 function seededOrder(list, key) {
   return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
 }
@@ -9350,10 +14379,10 @@ function drawCalibrationSample(units, plan, seed) {
       else byRepo.set(u.repo, [u]);
     }
     for (const [repo, list] of byRepo) {
-      byRepo.set(repo, seededOrder(list, (u) => sha256(seed, stratum, u.pr_url)));
+      byRepo.set(repo, seededOrder(list, (u) => sha2562(seed, stratum, u.pr_url)));
       cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
     }
-    const repos = seededOrder([...byRepo.keys()], (repo) => sha256(seed, "repo", stratum, repo));
+    const repos = seededOrder([...byRepo.keys()], (repo) => sha2562(seed, "repo", stratum, repo));
     const want = plan.allocation[stratum];
     const picked = [];
     for (let round = 0; picked.length < want; round++) {
@@ -9369,13 +14398,13 @@ function drawCalibrationSample(units, plan, seed) {
     }
     if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
     const doubles = new Set(
-      seededOrder(picked, (u) => sha256(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
+      seededOrder(picked, (u) => sha2562(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
     );
     const audited = auditedUrls(picked, plan, stratum, seed);
-    for (const unit of picked) items.push({ ...unit, item_id: sha256(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
+    for (const unit of picked) items.push({ ...unit, item_id: sha2562(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   return {
-    items: seededOrder(items, (i) => sha256(seed, "order", i.item_id)),
+    items: seededOrder(items, (i) => sha2562(seed, "order", i.item_id)),
     cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
     shortfalls
   };
@@ -9556,7 +14585,7 @@ var recallOf = (positive) => (rows) => {
   return den ? num2 / den : null;
 };
 function prng(seed) {
-  let a = parseInt(sha256(seed, "bootstrap").slice(0, 8), 16) >>> 0;
+  let a = parseInt(sha2562(seed, "bootstrap").slice(0, 8), 16) >>> 0;
   return () => {
     a = a + 1831565813 >>> 0;
     let t = a;
@@ -9592,15 +14621,15 @@ function bootstrap(rows, estimator, relevant, seed, resamples) {
 function scoreCalibration(input) {
   const { plan, items, sheetA, sheetB, seed } = input;
   const resamples = input.resamples ?? 2e3;
-  const decided = (id2) => {
+  const decided2 = (id2) => {
     const l = sheetA.get(id2);
     return l && l.verdict !== "unclear" ? l : null;
   };
   const decidedPerCell = /* @__PURE__ */ new Map();
-  for (const item of items) if (decided(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
+  for (const item of items) if (decided2(item.item_id)) decidedPerCell.set(`${item.repo}\0${item.stratum}`, (decidedPerCell.get(`${item.repo}\0${item.stratum}`) ?? 0) + 1);
   const population = new Map(input.cells.map((c) => [`${c.repo}\0${c.stratum}`, c.population]));
   const rows = items.flatMap((item) => {
-    const label2 = decided(item.item_id);
+    const label2 = decided2(item.item_id);
     const key = `${item.repo}\0${item.stratum}`;
     return label2 ? [{ item, label: label2, weight: (population.get(key) ?? 0) / decidedPerCell.get(key) }] : [];
   });
@@ -9646,7 +14675,7 @@ function scoreCalibration(input) {
     if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
     if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
   }
-  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha256(seed, "pseudonym", repo));
+  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha2562(seed, "pseudonym", repo));
   const anyProxy = (item) => item.proxies.length > 0;
   const repos = repoNames.map((repo, i) => {
     const subset = rows.filter((r) => r.item.repo === repo);
@@ -9660,7 +14689,7 @@ function scoreCalibration(input) {
   });
   const rejected = items.filter((i) => i.stratum === "rejected");
   const rejYes = rejected.filter((i) => sheetA.get(i.item_id)?.verdict === "yes").length;
-  const rejDecided = rejected.filter((i) => decided(i.item_id)).length;
+  const rejDecided = rejected.filter((i) => decided2(i.item_id)).length;
   const by_code = {};
   for (const item of rejected) {
     const label2 = sheetA.get(item.item_id);
@@ -9822,37 +14851,37 @@ function cap(diff) {
   return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
 [diff truncated at ${EVIDENCE_DIFF_MAX_CHARS} characters]`, diff_truncated: true } : { diff, diff_truncated: false };
 }
-function change(runGit3, url, from, to, pr) {
+function change(runGit3, url, from, to, pr2) {
   const files = git(runGit3, ["diff", "--name-only", "--no-renames", from, to]).split("\n").filter(Boolean);
   return {
     url,
-    title: pr?.title ?? null,
-    body: pr?.body ?? null,
-    merged_at: pr?.merged_at ?? null,
+    title: pr2?.title ?? null,
+    body: pr2?.body ?? null,
+    merged_at: pr2?.merged_at ?? null,
     files,
     ...cap(git(runGit3, ["diff", "--no-color", "--no-ext-diff", "--stat", "--patch", from, to]))
   };
 }
 function buildItemEvidence(item, context, runGit3) {
-  const pr = context.prs.get(item.pr_url);
-  if (!pr) throw new Error(`${item.item_id}: original not in the enumeration cache`);
-  const original = change(runGit3, pr.pr_url, pr.base_sha, pr.merge_sha, pr);
+  const pr2 = context.prs.get(item.pr_url);
+  if (!pr2) throw new Error(`${item.item_id}: original not in the enumeration cache`);
+  const original = change(runGit3, pr2.pr_url, pr2.base_sha, pr2.merge_sha, pr2);
   const fixUrls = [...new Set(item.candidates.map((c) => c.fix_url))].sort();
   const fixes = fixUrls.map((url) => {
     const fixPr = context.prs.get(url);
     if (fixPr) return change(runGit3, url, fixPr.base_sha, fixPr.merge_sha, fixPr);
-    const sha = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
-    if (!sha) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
-    return change(runGit3, url, `${sha}^`, sha, void 0);
+    const sha2 = url.match(/\/commit\/([0-9a-f]{40})$/)?.[1];
+    if (!sha2) throw new Error(`${item.item_id}: fix ${url} is neither an enumerated PR nor a commit`);
+    return change(runGit3, url, `${sha2}^`, sha2, void 0);
   });
   const searched = original.files.slice(0, EVIDENCE_RELATED_MAX_FILES);
-  const since = new Date(pr.merged_at);
+  const since = new Date(pr2.merged_at);
   const until = new Date(since.getTime() + context.horizonDays * 864e5);
   const related = [];
   if (searched.length) {
     const log = git(runGit3, ["log", "--first-parent", "--format=%H %cI", `--since=${since.toISOString()}`, `--until=${until.toISOString()}`, context.branch, "--", ...searched]);
-    const seen = /* @__PURE__ */ new Set([pr.pr_url, ...fixUrls]);
-    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
+    const seen = /* @__PURE__ */ new Set([pr2.pr_url, ...fixUrls]);
+    const later = log.split("\n").filter(Boolean).map((line) => context.bySha.get(line.split(" ")[0])).filter((r) => !!r && r.merged_at > pr2.merged_at).sort((a, b) => a.merged_at.localeCompare(b.merged_at));
     for (const r of later) {
       if (seen.has(r.pr_url) || related.length >= EVIDENCE_RELATED_MAX) continue;
       seen.add(r.pr_url);
@@ -9863,7 +14892,7 @@ function buildItemEvidence(item, context, runGit3) {
 }
 
 // src/corpus/calibration-gold.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 var GOLD_PROCEDURE = "hok-3269-gold";
 var GOLD_KINDS = ["revert_defect", "repair_ref", "missed_fix", "revert_non_defect", "planned_followup", "linkage_trap", "negative"];
 var GOLD_PASS_SHARE = { screening: 0.75, hidden: 0.8 };
@@ -9911,7 +14940,7 @@ function insertGoldRows(sheet, hidden, seed) {
     if (urls.has(g.pr_url)) throw new Error(`${g.item_id}: its PR is a sample item`);
   }
   for (const g of hidden) {
-    const at2 = Number.parseInt(createHash4("sha256").update(`${seed}\0gold\0${g.item_id}`).digest("hex").slice(0, 8), 16) % (rows.length + 1);
+    const at2 = Number.parseInt(createHash8("sha256").update(`${seed}\0gold\0${g.item_id}`).digest("hex").slice(0, 8), 16) % (rows.length + 1);
     rows.splice(at2, 0, blankRow(g));
   }
   return renderRows(rows);
@@ -9946,695 +14975,6 @@ function scoreGold(sheet, items, passShare) {
   return result;
 }
 
-// src/corpus/corrective-szz.ts
-var TEST_PATH = /(?:^|\/)(?:tests?|__tests__|spec|testing)\/|(?:^|\/)test_[^/]*$|[._-](?:test|spec)s?\.[^/]+$|_test\.go$|Tests?\.(?:java|kt|cs|swift)$/;
-var GENERATED_PATH = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.(?:mod|sum)|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock)$|(?:^|\/)(?:__snapshots__|__generated__|generated|openapi-gen|testdata|translations)\/|\.(?:snap|pb\.go|pb\.cc|pb\.h|min\.js|png|jpe?g|gif|svg|ico)$|[._]generated\.[^/]+$/;
-var SZZ_MAX_FILES = 20;
-var SZZ_MAX_CHANGED_LINES = 500;
-var SZZ_SKIP_FILES = 100;
-var SZZ_SKIP_CHANGED_LINES = 5e3;
-var ISSUE_BATCH = 50;
-function prefetchIssueMeta(repo, numbers, graphql, cache) {
-  const [owner, name] = repo.split("/");
-  const out = /* @__PURE__ */ new Map();
-  const unique2 = [...new Set(numbers)].sort((a, b) => a - b);
-  for (let i = 0; i < unique2.length; i += ISSUE_BATCH) {
-    const batch = unique2.slice(i, i + ISSUE_BATCH);
-    const key = `issues1:${batch.join(",")}`;
-    let rows = cache?.get(key);
-    if (!rows) {
-      const fields = batch.map((n) => `i${n}: issueOrPullRequest(number:${n}){ __typename ... on Issue { url issueType{ name } labels(first:50){ nodes{ name } } } }`).join("\n");
-      const data = graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
-      rows = batch.map((n) => {
-        const node = data.repository[`i${n}`];
-        if (!node || node.__typename !== "Issue" || !node.url) return [n, null];
-        return [n, { url: node.url, labels: (node.labels?.nodes ?? []).map((l) => l.name), type: node.issueType?.name ?? null }];
-      });
-      cache?.set(key, rows);
-    }
-    for (const [n, meta] of rows) if (meta) out.set(n, meta);
-  }
-  return out;
-}
-var BUG_LABEL = /^(?:(?:type|kind|t|c|issue|category)\s*[:/-]\s*)?bug$|^bug[- ]unreleased$|^potential bug$|^(?:(?:type|kind|c|i)\s*[:/-]\s*)?(?:crash|ice)$/i;
-var REGRESSION_LABEL = /regress|^incident\b/i;
-var NOT_REGRESSION = /\b(?:not|non)[- ]?(?:a[- ])?regression/i;
-function regressionLabels(issue) {
-  return issue.labels.filter((l) => REGRESSION_LABEL.test(l) && !NOT_REGRESSION.test(l));
-}
-function isBugIssue(issue) {
-  return issue.type === "Bug" || issue.labels.some((l) => BUG_LABEL.test(l)) || regressionLabels(issue).length > 0;
-}
-function diffHeaderPath(line) {
-  const name = line.slice(4).replace(/\t$/, "");
-  return name === "/dev/null" ? null : name.replace(/^[ab]\//, "");
-}
-function buildLandingIndex(runGit3, branch, originals) {
-  const owners = /* @__PURE__ */ new Map();
-  const own = (sha, pr) => {
-    const set = owners.get(sha) ?? /* @__PURE__ */ new Set();
-    set.add(pr);
-    owners.set(sha, set);
-  };
-  const rebased = originals.filter((pr) => pr.member_commits > 1);
-  let position = null;
-  let order = [];
-  if (rebased.length) {
-    const result = runGit3(["rev-list", "--first-parent", "--reverse", branch]);
-    if (result.exitCode !== 0) throw new Error(`szz: cannot list ${branch}: ${result.stderr.trim()}`);
-    order = result.stdout.split("\n").filter(Boolean);
-    position = new Map(order.map((sha, i) => [sha, i]));
-  }
-  for (const pr of originals) {
-    if (pr.landed_sha && pr.landed_sha !== pr.merge_sha) continue;
-    own(pr.merge_sha, pr);
-    for (const sha of pr.relanded_merge_shas ?? []) own(sha, pr);
-    if (pr.member_commits > 1 && position) {
-      const from = position.get(pr.base_sha);
-      const to = position.get(pr.merge_sha);
-      if (from !== void 0 && to !== void 0) for (let i = from + 1; i < to; i++) own(order[i], pr);
-    }
-  }
-  const out = /* @__PURE__ */ new Map();
-  for (const [sha, set] of owners) if (set.size === 1) out.set(sha, [...set][0]);
-  return out;
-}
-function blameFix(runGit3, fix, landing, sinceEpoch) {
-  const diff = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", "--ignore-submodules", fix.parentSha, fix.tipSha]);
-  if (diff.exitCode !== 0) throw new Error(`szz: cannot diff ${fix.parentSha}..${fix.tipSha}: ${diff.stderr.trim()}`);
-  const ranges = /* @__PURE__ */ new Map();
-  let oldFile = null;
-  let anyFile = null;
-  let inHeader = false;
-  let changedLines = 0;
-  const touched = /* @__PURE__ */ new Set();
-  for (const line of diff.stdout.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      oldFile = anyFile = null;
-      inHeader = true;
-      continue;
-    }
-    if (inHeader && (line.startsWith("--- ") || line.startsWith("+++ "))) {
-      const path4 = diffHeaderPath(line);
-      if (path4 === null) continue;
-      if (line.startsWith("--- ")) oldFile = path4;
-      anyFile ??= path4;
-      continue;
-    }
-    const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/);
-    if (hunk) inHeader = false;
-    if (!hunk || !anyFile || TEST_PATH.test(anyFile) || GENERATED_PATH.test(anyFile)) continue;
-    const start = Number(hunk[1]);
-    const deleted = hunk[2] === void 0 ? 1 : Number(hunk[2]);
-    const added = hunk[3] === void 0 ? 1 : Number(hunk[3]);
-    touched.add(anyFile);
-    changedLines += deleted + added;
-    if (oldFile && deleted > 0) {
-      const list = ranges.get(oldFile) ?? [];
-      list.push([start, start + deleted - 1]);
-      ranges.set(oldFile, list);
-    }
-  }
-  const files = touched.size;
-  if (files > SZZ_SKIP_FILES || changedLines > SZZ_SKIP_CHANGED_LINES) return { status: "skipped", files, changedLines };
-  const blamed = /* @__PURE__ */ new Map();
-  for (const [path4, list] of ranges) {
-    const result = runGit3([
-      "blame",
-      "--first-parent",
-      "-w",
-      "-M",
-      "-C",
-      "--line-porcelain",
-      `--since=@${sinceEpoch}`,
-      ...list.flatMap(([a, b]) => ["-L", `${a},${b}`]),
-      fix.parentSha,
-      "--",
-      path4
-    ]);
-    if (result.exitCode !== 0) throw new Error(`szz: cannot blame ${path4} at ${fix.parentSha}: ${result.stderr.trim()}`);
-    let sha = null;
-    let boundary = false;
-    for (const line of result.stdout.split("\n")) {
-      const header = line.match(/^([0-9a-f]{40}) \d+ \d+(?: \d+)?$/);
-      if (header) {
-        sha = header[1];
-        boundary = false;
-      } else if (line === "boundary") {
-        boundary = true;
-      } else if (line.startsWith("	")) {
-        const original = sha && !boundary ? landing.get(sha) : void 0;
-        if (original && line.slice(1).trim()) blamed.set(original, (blamed.get(original) ?? 0) + 1);
-        sha = null;
-      }
-    }
-  }
-  return { status: "blamed", tooLarge: files > SZZ_MAX_FILES || changedLines > SZZ_MAX_CHANGED_LINES, files, changedLines, blamed };
-}
-
-// src/corpus/corrective.ts
-var CORRECTIVE_LABELLER_VERSION = "1.0.0";
-var MAX_FIX_LAG_SECONDS = 60 * 86400;
-var LINE_SURVIVAL_MAX_LINES = 2e4;
-function readRevertCommits(runGit3, branch, from, until) {
-  const result = runGit3([
-    "log",
-    "--first-parent",
-    "--reverse",
-    "-i",
-    "-E",
-    "--grep=^revert\\b",
-    "--grep=^this reverts commit",
-    "--grep=^reverted https://",
-    `--since=${from.toISOString()}`,
-    `--until=${until.toISOString()}`,
-    "--pretty=format:%H%x1f%P%x1f%ct%x1f%s%x1f%b%x1e",
-    branch
-  ]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
-  const out = [];
-  for (const entry of result.stdout.split("")) {
-    const [sha = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
-    const epoch = Number.parseInt(epochText, 10);
-    if (!/^[0-9a-f]{40}$/.test(sha) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
-    out.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, subject, body });
-  }
-  return out;
-}
-function collectFixEvents(fixPrs, revertCommits) {
-  const events17 = [];
-  const bySha = /* @__PURE__ */ new Map();
-  for (const pr of fixPrs) {
-    const event17 = {
-      pr,
-      sha: pr.landed_sha ?? pr.merge_sha,
-      parentSha: pr.base_sha,
-      epoch: Math.floor(Date.parse(pr.merged_at) / 1e3),
-      title: pr.title,
-      body: pr.body ?? "",
-      labels: pr.labels,
-      closingIssues: pr.closing_issues,
-      authorLogin: pr.author_login
-    };
-    events17.push(event17);
-    bySha.set(pr.merge_sha, event17);
-    if (pr.landed_sha) bySha.set(pr.landed_sha, event17);
-  }
-  for (const commit of revertCommits) {
-    const landed = bySha.get(commit.sha);
-    if (landed) {
-      landed.body = `${landed.body}
-${commit.subject}
-${commit.body}`;
-      continue;
-    }
-    events17.push({
-      pr: null,
-      sha: commit.sha,
-      parentSha: commit.parents[0] ?? commit.sha,
-      epoch: commit.epoch,
-      title: commit.subject,
-      body: commit.body,
-      labels: [],
-      closingIssues: [],
-      authorLogin: null
-    });
-  }
-  return events17;
-}
-var REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
-var REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
-var REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
-var FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
-var FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
-var REGRESSION_CONTEXT = /\b(?:(?:regress(?:ion|ed)?|broke(?:n)?|breakage|bug|crash\w*|fail\w*)\s+(?:in|from|by|after|since|introduced|caused)|caused by|introduced (?:in|by))\b[^.\n]{0,25}$/i;
-var MAX_ORIGINALS_PER_ISSUE = 3;
-var BACKPORT2 = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
-var DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
-var REVERT_REASON = /\bdue to\b([^\n]*)/i;
-var NON_DEFECT_REASON = /merge conflict|conflicts? with|(?:to|in order to)(?: be able to)? (?:cleanly )?revert|dependen(?:cy|t) (?:of|on)|depends on|land ?race|stack (?:is )?in a (?:weird|bad|broken) state|wait(?:ing)? for .{0,40}(?:confirm|approv|review)|before merging|needs? to (?:be )?land(?:ed)? internally|ghfirst|diff train/i;
-function evidence2(kind, ref3 = null, count = null) {
-  return { kind, ref: ref3, count };
-}
-function escapeRegExp2(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-var OriginalIndex = class {
-  byNumber = /* @__PURE__ */ new Map();
-  byPrefix = /* @__PURE__ */ new Map();
-  constructor(originals) {
-    for (const pr of originals) {
-      this.byNumber.set(pr.pr_number, pr);
-      for (const sha of /* @__PURE__ */ new Set([pr.merge_sha, pr.landed_sha, pr.head_sha, ...pr.relanded_merge_shas ?? []])) {
-        if (!sha) continue;
-        const bucket = this.byPrefix.get(sha.slice(0, 7)) ?? [];
-        bucket.push({ sha, pr });
-        this.byPrefix.set(sha.slice(0, 7), bucket);
-      }
-    }
-  }
-  /** The one original a SHA or SHA prefix names; null when unknown or ambiguous. */
-  bySha(token) {
-    const hits = (this.byPrefix.get(token.slice(0, 7)) ?? []).filter((h) => h.sha.startsWith(token));
-    const prs = new Set(hits.map((h) => h.pr));
-    return prs.size === 1 ? hits[0] : null;
-  }
-};
-function citedNumbers(text, repo) {
-  const out = [];
-  const pattern = new RegExp(
-    `https://github\\.com/${escapeRegExp2(repo)}/(?:pull|issues)/(\\d+)|\\b${escapeRegExp2(repo)}#(\\d+)\\b|(?:^|[^\\w/.#-])#(\\d+)\\b`,
-    "gi"
-  );
-  for (const m of text.matchAll(pattern)) out.push({ n: Number(m[1] ?? m[2] ?? m[3]), index: m.index ?? 0 });
-  return out;
-}
-function shaTokens(text) {
-  const out = [];
-  for (const m of text.matchAll(/\b([0-9a-f]{7,40})\b/g)) if (/[a-f]/.test(m[1])) out.push({ token: m[1], index: m.index ?? 0 });
-  return out;
-}
-function detectCandidates(input) {
-  const index = new OriginalIndex(input.originals);
-  const drafts = /* @__PURE__ */ new Map();
-  const eventsById = /* @__PURE__ */ new Map();
-  const issueCiters = issueCitations(input.repo, input.originals, input.crossReferences);
-  const szzStats = { fixes: 0, skipped: 0, too_large: 0 };
-  const add = (original, event17, proxy, items, exclusion) => {
-    if (original.pr_url === event17.pr?.pr_url) return;
-    const lag = event17.epoch - Math.floor(Date.parse(original.merged_at) / 1e3);
-    if (lag < 1 || lag > MAX_FIX_LAG_SECONDS) return;
-    const id2 = correctiveCandidateId(original, { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha }, proxy);
-    eventsById.set(id2, event17);
-    const draft = drafts.get(id2);
-    if (!draft) {
-      drafts.set(id2, { original, event: event17, proxy, evidence: [...items], exclusion });
-      return;
-    }
-    for (const item of items) if (!draft.evidence.some((e) => e.kind === item.kind && e.ref === item.ref)) draft.evidence.push(item);
-    draft.exclusion ??= exclusion;
-  };
-  for (const event17 of input.events) {
-    const text = `${event17.title}
-${event17.body}`;
-    const common = commonExclusion(event17);
-    if (isRevert(event17)) {
-      const exclusion = common ?? revertExclusion(event17);
-      const reason = evidence2("revert_reason", revertReasonClass(event17));
-      for (const target of revertTargets(event17, text, input.repo, index)) {
-        const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
-        add(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
-      }
-      continue;
-    }
-    const signals = [];
-    if (FIX_TITLE.test(event17.title)) signals.push(evidence2("fix_title_prefix"));
-    for (const label2 of event17.labels) if (FIX_LABEL.test(label2)) signals.push(evidence2("fix_label", label2));
-    const cited = /* @__PURE__ */ new Map();
-    const cite = (original, item, at2) => {
-      if (!REGRESSION_CONTEXT.test(text.slice(Math.max(0, at2 - 60), at2))) return;
-      const items = cited.get(original) ?? [];
-      items.push(item, evidence2("regression_in_marker"));
-      cited.set(original, items);
-    };
-    for (const { n, index: at2 } of citedNumbers(text, input.repo)) {
-      const original = index.byNumber.get(n);
-      if (original) cite(original, evidence2("cites_original_pr", original.pr_url), at2);
-    }
-    for (const { token, index: at2 } of shaTokens(text)) {
-      const hit = index.bySha(token);
-      if (hit) cite(hit.pr, evidence2("cites_original_sha", hit.sha), at2);
-    }
-    const fixShaped = signals.length > 0;
-    for (const issue of fixShaped ? event17.closingIssues : []) {
-      const citers = issueCiters.get(issue) ?? [];
-      if (citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
-      for (const { original, url } of citers) {
-        if (original.pr_url === event17.pr?.pr_url) continue;
-        const items = cited.get(original) ?? [];
-        items.push(evidence2("closes_issue_citing_original", url));
-        cited.set(original, items);
-      }
-    }
-    for (const [original, items] of cited) add(original, event17, "repair_reference", dedupeEvidence([...items, ...signals]), common);
-    const closed = event17.closingIssues.flatMap((n) => {
-      const issue = input.issues.get(n);
-      return issue ? [{ n, issue }] : [];
-    });
-    for (const { n, issue } of closed) {
-      const labels = regressionLabels(issue);
-      const citers = issueCiters.get(n) ?? [];
-      if (!labels.length || citers.length > MAX_ORIGINALS_PER_ISSUE) continue;
-      for (const { original, url } of citers) {
-        add(original, event17, "regression_issue", [...labels.map((l) => evidence2("regression_issue_label", l)), evidence2("closes_issue_citing_original", url)], common);
-      }
-    }
-    const bugs = closed.filter(({ issue }) => isBugIssue(issue));
-    if (!bugs.length || !input.blame || !event17.pr) continue;
-    const szz = input.blame(event17);
-    szzStats.fixes++;
-    if (szz.status === "skipped") {
-      szzStats.skipped++;
-      continue;
-    }
-    if (szz.tooLarge) szzStats.too_large++;
-    const bugEvidence = bugs.map(({ issue }) => evidence2("closes_bug_issue", issue.url));
-    for (const [original, lines] of szz.blamed) {
-      add(original, event17, "szz", [...bugEvidence, evidence2("blamed_lines", original.merge_sha, lines)], common ?? (szz.tooLarge ? "fix_too_large" : null));
-    }
-  }
-  const candidates = [...drafts.entries()].map(([id2, d]) => ({
-    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
-    record_type: "candidate",
-    candidate_id: id2,
-    original: originalRef(d.original),
-    fix: fixRef(d.event),
-    lag_seconds: d.event.epoch - Math.floor(Date.parse(d.original.merged_at) / 1e3),
-    proxy: d.proxy,
-    confidence: PROXY_CONFIDENCE[d.proxy],
-    evidence: d.evidence,
-    status: d.exclusion ? "rejected" : "accepted",
-    exclusion_code: d.exclusion,
-    envelope: input.envelope
-  }));
-  candidates.sort((a, b) => a.original.merged_at.localeCompare(b.original.merged_at) || a.candidate_id.localeCompare(b.candidate_id));
-  return { candidates, events: eventsById, szz: szzStats };
-}
-function isRevert(event17) {
-  return REVERT_TITLE.test(event17.title) || /^\s*this reverts commit [0-9a-f]{7,40}/im.test(event17.body) || /^\s*reverts [\w.-]+\/[\w.-]+#\d+/im.test(event17.body);
-}
-function commonExclusion(event17) {
-  if (event17.authorLogin && DEPENDENCY_BOT.test(event17.authorLogin)) return "dependency_bot";
-  if (BACKPORT2.test(`${event17.title}
-${event17.body}`)) return "backport";
-  return null;
-}
-var AUTOREVERT = /autorevert/i;
-var INTERNAL_BUILD = /internal(?:ly)?\b|internalfb|fbcode|\bD\d{7,}\b|\bdiff\b.{0,30}\b(?:reverted|backed out)/i;
-var PUBLIC_CI = /\b(?:ci|trunk|tests?|builds?|jobs?|lint|failures?|fail(?:s|ed|ing)?|break(?:s|ing)?|broke(?:n)?|red|flak\w*|timeouts?|timed out|segfaults?|crash\w*)\b|actions\/runs|hud\.pytorch/i;
-function revertReasonClass(event17) {
-  const reason = event17.body.match(REVERT_REASON)?.[1];
-  if (!reason) return AUTOREVERT.test(event17.body) ? "autorevert" : "unstated";
-  if (NON_DEFECT_REASON.test(reason)) return "collateral";
-  if (AUTOREVERT.test(reason)) return "autorevert";
-  if (INTERNAL_BUILD.test(reason)) return "internal_build";
-  if (PUBLIC_CI.test(reason)) return "public_ci";
-  return "other";
-}
-function revertExclusion(event17) {
-  if (REVERT_OF_REVERT.test(event17.title)) return "revert_of_revert";
-  const reason = event17.body.match(REVERT_REASON)?.[1];
-  if (reason && NON_DEFECT_REASON.test(reason)) return "revert_non_defect";
-  return null;
-}
-function revertTargets(event17, text, repo, index) {
-  const out = [];
-  const seen = /* @__PURE__ */ new Set();
-  const push = (original, item) => {
-    if (original && !seen.has(original)) {
-      seen.add(original);
-      out.push({ original, evidence: item });
-    }
-  };
-  for (const m of text.matchAll(REVERTS_COMMIT)) {
-    const hit = index.bySha(m[1]);
-    if (hit) push(hit.pr, evidence2("revert_message", hit.sha));
-  }
-  const prRef = new RegExp(`^\\s*reverts? ${escapeRegExp2(repo)}#(\\d+)|^\\s*reverted https://github\\.com/${escapeRegExp2(repo)}/pull/(\\d+)`, "gim");
-  for (const m of text.matchAll(prRef)) {
-    const original = index.byNumber.get(Number(m[1] ?? m[2]));
-    push(original, evidence2("reverts_pr_reference", original?.pr_url ?? null));
-  }
-  if (!out.length) {
-    for (const { token } of shaTokens(text)) {
-      const hit = index.bySha(token);
-      if (hit) push(hit.pr, evidence2("revert_message", hit.sha));
-    }
-  }
-  if (!out.length) {
-    const quoted = event17.title.match(/^\s*(?:\[[^\]]*\]\s*)?revert\s+"(.*)"/i)?.[1];
-    for (const { n } of quoted ? citedNumbers(quoted, repo) : []) {
-      const original = index.byNumber.get(n);
-      push(original, evidence2("reverts_pr_reference", original?.pr_url ?? null));
-    }
-  }
-  return out;
-}
-function issueCitations(repo, originals, crossReferences) {
-  const out = /* @__PURE__ */ new Map();
-  const issuePrefix = `https://github.com/${repo}/issues/`;
-  for (const original of originals) {
-    const merged = Math.floor(Date.parse(original.merged_at) / 1e3);
-    for (const ref3 of crossReferences.get(original.pr_number) ?? []) {
-      if (!ref3.url.startsWith(issuePrefix) || ref3.createdAtEpoch <= merged) continue;
-      const issue = Number(ref3.url.slice(issuePrefix.length));
-      if (!Number.isInteger(issue)) continue;
-      const list = out.get(issue) ?? [];
-      if (!list.some((e) => e.original === original)) list.push({ original, url: ref3.url });
-      out.set(issue, list);
-    }
-  }
-  return out;
-}
-function dedupeEvidence(items) {
-  const seen = /* @__PURE__ */ new Set();
-  return items.filter((e) => {
-    const key = `${e.kind}\0${e.ref}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-function originalRef(pr) {
-  return { pr_url: pr.pr_url, merge_sha: pr.merge_sha, merged_at: utc(Date.parse(pr.merged_at)) };
-}
-function fixRef(event17) {
-  return { pr_url: event17.pr?.pr_url ?? null, sha: event17.sha, merged_at: utc(event17.epoch * 1e3) };
-}
-function utc(ms) {
-  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-function buildRepairPair(candidate, original, fix, runGit3) {
-  const originalFiles = changedFiles(runGit3, original.base_sha, original.merge_sha);
-  const fixChanges = changedFiles(runGit3, fix.parentSha, fix.pr?.merge_sha ?? fix.sha);
-  const originalPaths = new Set(originalFiles.map((f) => f.path));
-  const fixPaths = new Set(fixChanges.map((f) => f.path));
-  const tests = { added: 0, modified: 0, deleted: 0 };
-  for (const f of fixChanges) {
-    if (!TEST_PATH.test(f.path)) continue;
-    if (f.status === "A") tests.added++;
-    else if (f.status === "D") tests.deleted++;
-    else tests.modified++;
-  }
-  return {
-    schema_version: candidate.schema_version,
-    record_type: "repair_pair",
-    candidate_id: candidate.candidate_id,
-    original: candidate.original,
-    fix: candidate.fix,
-    lag_seconds: candidate.lag_seconds,
-    proxy: candidate.proxy,
-    confidence: candidate.confidence,
-    files: {
-      original: [...originalPaths].sort(),
-      fix: [...fixPaths].sort(),
-      fix_only: [...fixPaths].filter((p) => !originalPaths.has(p)).sort(),
-      original_only: [...originalPaths].filter((p) => !fixPaths.has(p)).sort(),
-      fix_preexisting: existingPaths(runGit3, original.merge_sha, [...fixPaths]).sort()
-    },
-    line_survival: lineSurvival(runGit3, original, fix.parentSha),
-    fix_tests: tests,
-    // Review metadata is not in the corpus cache; null means not collected.
-    original_review: { reviewed: null, review_count: null, reviewer_count: null, first_review_latency_seconds: null },
-    graph_distance: null,
-    envelope: candidate.envelope
-  };
-}
-function changedFiles(runGit3, from, to) {
-  const result = runGit3(["diff", "--name-status", "--no-renames", "-z", from, to]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
-  const parts = result.stdout.split("\0").filter(Boolean);
-  const out = [];
-  for (let i = 0; i + 1 < parts.length; i += 2) out.push({ status: parts[i].charAt(0), path: parts[i + 1] });
-  return out;
-}
-function existingPaths(runGit3, sha, paths) {
-  const out = [];
-  for (let i = 0; i < paths.length; i += 200) {
-    const result = runGit3(["ls-tree", "-r", "--name-only", "-z", sha, "--", ...paths.slice(i, i + 200)]);
-    if (result.exitCode !== 0) throw new Error(`corrective: cannot list ${sha}: ${result.stderr.trim()}`);
-    out.push(...result.stdout.split("\0").filter(Boolean));
-  }
-  return out;
-}
-function lineSurvival(runGit3, original, fixParent) {
-  if (addedLineCount(runGit3, original.base_sha, original.merge_sha) > LINE_SURVIVAL_MAX_LINES) return null;
-  const added = diffLines(runGit3, original.base_sha, original.merge_sha, "+");
-  let total = 0;
-  for (const lines of added.values()) for (const count of lines.values()) total += count;
-  if (total === 0 || total > LINE_SURVIVAL_MAX_LINES) return null;
-  const removed = diffLines(runGit3, original.merge_sha, fixParent, "-", [...added.keys()]);
-  let lost = 0;
-  for (const [path4, lines] of removed) {
-    const mine = added.get(path4);
-    if (!mine) continue;
-    for (const [line, count] of lines) lost += Math.min(count, mine.get(line) ?? 0);
-  }
-  return Math.round((1 - lost / total) * 1e4) / 1e4;
-}
-function addedLineCount(runGit3, from, to) {
-  const result = runGit3(["diff", "--numstat", "--no-renames", from, to]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
-  let total = 0;
-  for (const line of result.stdout.split("\n")) {
-    const added = Number(line.split("	")[0]);
-    if (Number.isFinite(added)) total += added;
-  }
-  return total;
-}
-function diffLines(runGit3, from, to, side, paths) {
-  const out = /* @__PURE__ */ new Map();
-  if (paths && paths.length === 0) return out;
-  const result = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", from, to, ...paths ? ["--", ...paths] : []]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
-  let file = null;
-  let inHeader = false;
-  for (const line of result.stdout.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      file = null;
-      inHeader = true;
-      continue;
-    }
-    if (line.startsWith("@@")) {
-      inHeader = false;
-      continue;
-    }
-    if (inHeader) {
-      if (line.startsWith(side === "+" ? "+++ " : "--- ")) {
-        const path4 = diffHeaderPath(line);
-        if (path4 === null) file = null;
-        else {
-          file = out.get(path4) ?? /* @__PURE__ */ new Map();
-          out.set(path4, file);
-        }
-      }
-      continue;
-    }
-    if (!file || !line.startsWith(side)) continue;
-    const content = line.slice(1).trim();
-    if (content) file.set(content, (file.get(content) ?? 0) + 1);
-  }
-  return out;
-}
-function deriveCorrectiveRows(s2Rows, pairs, envelope) {
-  const byOriginal = /* @__PURE__ */ new Map();
-  for (const pair of pairs) {
-    const list = byOriginal.get(pair.original.pr_url) ?? [];
-    list.push(pair);
-    byOriginal.set(pair.original.pr_url, list);
-  }
-  const out = [];
-  for (const row of s2Rows) {
-    out.push(
-      deriveCorrectiveLabel({
-        prUrl: row.prUrl,
-        horizon_days: row.horizon_days,
-        base_label_hash: canonicalHash(row),
-        base_label_present: row.outcome.report_outcome !== null,
-        repair_pairs: byOriginal.get(row.prUrl) ?? [],
-        envelope
-      })
-    );
-  }
-  return out;
-}
-function correctiveEnvelope(branch, asOf, now) {
-  return {
-    schema_version: ARBITER_CORRECTIVE_REWORK_SCHEMA_VERSION,
-    definition_version: CORRECTIVE_REWORK_DEFINITION_VERSION,
-    labeller_version: CORRECTIVE_LABELLER_VERSION,
-    integration_branch: branch,
-    as_of: utc(asOf.getTime()),
-    computed_at: utc(now.getTime())
-  };
-}
-function correctiveCorpusRepo(input, deps) {
-  const envelope = correctiveEnvelope(input.branch, input.asOf, deps.now());
-  const reverts = readRevertCommits(deps.runGit, input.branch, input.from, input.asOf);
-  const events17 = collectFixEvents([...input.originals, ...input.laterPrs], reverts);
-  deps.onDiagnostic?.(`info: ${input.repo}: ${events17.length} fix events (${reverts.length} revert commits)`);
-  const landing = input.szz ? buildLandingIndex(deps.runGit, input.branch, input.originals) : null;
-  let blameFailures = 0;
-  let blamed = 0;
-  const blame = landing ? (event17) => {
-    if (++blamed % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: blamed ${blamed} bug fixes`);
-    try {
-      return blameFix(deps.runGit, { parentSha: event17.parentSha, tipSha: event17.pr?.merge_sha ?? event17.sha }, landing, event17.epoch - MAX_FIX_LAG_SECONDS - 86400);
-    } catch (error) {
-      blameFailures++;
-      deps.onDiagnostic?.(`error: ${input.repo}: cannot blame ${event17.pr?.pr_url ?? event17.sha}: ${String(error).slice(0, 200)}`);
-      return { status: "skipped", files: 0, changedLines: 0 };
-    }
-  } : void 0;
-  const { candidates, events: eventsById, szz } = detectCandidates({
-    repo: input.repo,
-    originals: input.originals,
-    events: events17,
-    crossReferences: input.crossReferences,
-    issues: input.issues,
-    ...blame ? { blame } : {},
-    envelope
-  });
-  const byUrl = new Map(input.originals.map((pr) => [pr.pr_url, pr]));
-  const repairPairs = [];
-  const failedPairs = [];
-  const accepted2 = candidates.filter((c) => c.status === "accepted");
-  for (const [i, candidate] of accepted2.entries()) {
-    if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.repo}: measured ${i}/${accepted2.length} repair pairs`);
-    try {
-      repairPairs.push(buildRepairPair(candidate, byUrl.get(candidate.original.pr_url), eventsById.get(candidate.candidate_id), deps.runGit));
-    } catch (error) {
-      failedPairs.push(candidate.candidate_id);
-      deps.onDiagnostic?.(`error: ${input.repo}: cannot measure pair ${candidate.candidate_id}: ${String(error).slice(0, 200)}`);
-    }
-  }
-  return {
-    candidates,
-    repairPairs,
-    corrective: deriveCorrectiveRows(input.s2Rows, repairPairs, envelope),
-    failedPairs,
-    szz: { ...szz, skipped: szz.skipped - blameFailures, failed: blameFailures }
-  };
-}
-function summarizeCorrective(result, originals) {
-  const count = (items, key) => items.reduce((acc, item) => (acc[key(item)] = (acc[key(item)] ?? 0) + 1, acc), {});
-  const byHorizon = {};
-  for (const row of result.corrective) {
-    const h = byHorizon[row.horizon_days] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
-    h.rows++;
-    h[String(row.corrective)]++;
-  }
-  for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
-  const flagged = new Set(result.repairPairs.map((p) => p.original.pr_url));
-  return {
-    candidates: result.candidates.length,
-    candidates_by_proxy_status: count(result.candidates, (c) => `${c.proxy}:${c.status}`),
-    exclusions: count(result.candidates.filter((c) => c.exclusion_code), (c) => c.exclusion_code),
-    revert_reasons: count(
-      result.candidates.filter((c) => c.proxy === "revert" && c.status === "accepted"),
-      (c) => c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? "unstated"
-    ),
-    szz: result.szz,
-    repair_pairs: result.repairPairs.length,
-    direct_push_fixes: result.repairPairs.filter((p) => p.fix.pr_url === null).length,
-    failed_pairs: result.failedPairs.length,
-    originals,
-    originals_with_fix_60d: flagged.size,
-    originals_with_fix_60d_share: originals ? Math.round(flagged.size / originals * 1e4) / 1e4 : null,
-    corrective_by_horizon: byHorizon
-  };
-}
-
 // src/corpus/pr-refs.ts
 var SQUASH = /\(#(\d+)\)\s*$/;
 var MERGE_PR = /^merge pull request #(\d+)\b/i;
@@ -10642,19 +14982,19 @@ var BORS_AUTO = /^(?:auto merge|rollup merge) of #(\d+)\b/i;
 var BORS_BATCH = /^merge((?:\s+#\d+)+)\s*$/i;
 function extractCorpusPrNumbers(subject, body, repo) {
   const found = [];
-  const add = (value) => {
+  const add2 = (value) => {
     const n = Number(value);
     if (Number.isInteger(n) && n > 0 && !found.includes(n)) found.push(n);
   };
   const trimmed = subject.trim();
   const batch = trimmed.match(BORS_BATCH);
   if (batch) {
-    for (const match of batch[1].matchAll(/#(\d+)/g)) add(match[1]);
+    for (const match of batch[1].matchAll(/#(\d+)/g)) add2(match[1]);
   } else {
-    add((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
+    add2((trimmed.match(MERGE_PR) ?? trimmed.match(BORS_AUTO) ?? trimmed.match(SQUASH))?.[1]);
   }
   const trailer = new RegExp(`^Pull Request resolved:\\s*https://github\\.com/${escapeRegExp3(repo)}/pull/(\\d+)\\s*$`, "im");
-  add(body.match(trailer)?.[1]);
+  add2(body.match(trailer)?.[1]);
   return found;
 }
 function escapeRegExp3(value) {
@@ -10676,24 +15016,24 @@ var SEARCH_QUERY = `query($q:String!,$after:String){
 }`;
 var COUNT_QUERY = `query($q:String!){ search(type:ISSUE, query:$q, first:1){ issueCount } }`;
 var SEARCH_CAP = 1e3;
-var DAY_MS = 864e5;
-var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-var isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+var DAY_MS2 = 864e5;
+var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var isoDay = (ms2) => new Date(ms2).toISOString().slice(0, 10);
 function enumerateCorpusRepo(target, deps) {
   const commits = readFirstParent(target, deps.runGit);
   const rollups = readRollupMembers(target, deps.runGit, commits);
   const apiPrs = fetchMergedPrs(target, deps);
-  const byNumber = new Map(apiPrs.map((pr) => [pr.number, pr]));
+  const byNumber = new Map(apiPrs.map((pr2) => [pr2.number, pr2]));
   const byMergeSha = /* @__PURE__ */ new Map();
-  for (const pr of apiPrs) {
-    if (!pr.mergeCommit) continue;
-    const list = byMergeSha.get(pr.mergeCommit.oid) ?? [];
-    list.push(pr);
-    byMergeSha.set(pr.mergeCommit.oid, list);
+  for (const pr2 of apiPrs) {
+    if (!pr2.mergeCommit) continue;
+    const list = byMergeSha.get(pr2.mergeCommit.oid) ?? [];
+    list.push(pr2);
+    byMergeSha.set(pr2.mergeCommit.oid, list);
   }
   const named = [...commits.flatMap((c) => c.prNumbers), ...[...rollups.values()].flat().map((m) => m.prNumber)];
   const missing = [...new Set(named)].filter((n) => !byNumber.has(n));
-  for (const pr of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr.number, pr);
+  for (const pr2 of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr2.number, pr2);
   const records = [];
   const mapped = /* @__PURE__ */ new Set();
   const used = /* @__PURE__ */ new Set();
@@ -10702,79 +15042,79 @@ function enumerateCorpusRepo(target, deps) {
   let rollupPrs = 0;
   let rollupUnresolved = 0;
   const recordByNumber = /* @__PURE__ */ new Map();
-  const toRecord = (pr, landing, fields) => ({
+  const toRecord = (pr2, landing, fields) => ({
     repo: target.repo,
-    pr_number: pr.number,
-    pr_url: pr.url,
-    merged_at: pr.mergedAt ?? new Date(landing.epoch * 1e3).toISOString(),
-    base_ref: pr.baseRefName,
-    head_sha: pr.headRefOid,
+    pr_number: pr2.number,
+    pr_url: pr2.url,
+    merged_at: pr2.mergedAt ?? new Date(landing.epoch * 1e3).toISOString(),
+    base_ref: pr2.baseRefName,
+    head_sha: pr2.headRefOid,
     ...fields,
     landed_sha: landing.sha,
     relanded_merge_shas: [],
-    author_login: pr.author?.login ?? null,
-    author_type: pr.author?.__typename ?? null,
-    labels: pr.labels.nodes.map((label2) => label2.name),
-    closing_issues: pr.closingIssuesReferences.nodes.map((issue) => issue.number),
-    title: pr.title,
-    body: pr.body ?? ""
+    author_login: pr2.author?.login ?? null,
+    author_type: pr2.author?.__typename ?? null,
+    labels: pr2.labels.nodes.map((label2) => label2.name),
+    closing_issues: pr2.closingIssuesReferences.nodes.map((issue) => issue.number),
+    title: pr2.title,
+    body: pr2.body ?? ""
   });
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i];
     const viaSha = byMergeSha.get(commit.sha) ?? [];
-    const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr) => !!pr);
-    const candidates = [...new Map([...viaSha, ...viaRef].map((pr) => [pr.number, pr])).values()];
+    const viaRef = commit.prNumbers.map((n) => byNumber.get(n)).filter((pr2) => !!pr2);
+    const candidates = [...new Map([...viaSha, ...viaRef].map((pr2) => [pr2.number, pr2])).values()];
     const rollupMembers = rollups.get(commit.sha);
     if (rollupMembers) {
       mapped.add(commit.sha);
-      for (const pr of candidates) used.add(pr.number);
+      for (const pr2 of candidates) used.add(pr2.number);
       rollupPrs++;
       for (const member of rollupMembers) {
-        const pr = byNumber.get(member.prNumber);
-        if (!pr || used.has(pr.number)) {
+        const pr2 = byNumber.get(member.prNumber);
+        if (!pr2 || used.has(pr2.number)) {
           rollupUnresolved++;
           continue;
         }
-        used.add(pr.number);
-        const record = toRecord(pr, commit, { merge_sha: member.sha, base_sha: member.parentSha, member_commits: 1, landed_by: "rollup", batched: false });
+        used.add(pr2.number);
+        const record = toRecord(pr2, commit, { merge_sha: member.sha, base_sha: member.parentSha, member_commits: 1, landed_by: "rollup", batched: false });
         records.push(record);
-        recordByNumber.set(pr.number, record);
+        recordByNumber.set(pr2.number, record);
       }
       continue;
     }
-    const prs = candidates.filter((pr) => !used.has(pr.number));
+    const prs = candidates.filter((pr2) => !used.has(pr2.number));
     if (prs.length === 0) {
-      const relanded = candidates.filter((pr) => recordByNumber.has(pr.number));
+      const relanded = candidates.filter((pr2) => recordByNumber.has(pr2.number));
       if (relanded.length) {
         mapped.add(commit.sha);
         relandedCommits++;
-        for (const pr of relanded) recordByNumber.get(pr.number).relanded_merge_shas.push(commit.sha);
+        for (const pr2 of relanded) recordByNumber.get(pr2.number).relanded_merge_shas.push(commit.sha);
       }
       continue;
     }
     mapped.add(commit.sha);
     const batched = prs.length > 1;
     if (batched) batchedCommits++;
-    for (const pr of prs) {
-      used.add(pr.number);
+    for (const pr2 of prs) {
+      used.add(pr2.number);
       let first = i;
       const isMergeCommit = commit.parents.length > 1;
-      if (!batched && !isMergeCommit && viaSha.includes(pr) && pr.commits.totalCount > 1) {
-        for (let k = 1; k < pr.commits.totalCount && first - 1 >= 0 && !mapped.has(commits[first - 1].sha) && commits[first - 1].prNumbers.length === 0; k++) {
+      if (!batched && !isMergeCommit && viaSha.includes(pr2) && pr2.commits.totalCount > 1) {
+        for (let k = 1; k < pr2.commits.totalCount && first - 1 >= 0 && !mapped.has(commits[first - 1].sha) && commits[first - 1].prNumbers.length === 0; k++) {
           first--;
           mapped.add(commits[first].sha);
         }
       }
       const members = i - first + 1;
-      const record = toRecord(pr, commit, {
+      const record = toRecord(pr2, commit, {
         merge_sha: commit.sha,
-        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA2,
+        base_sha: commits[first].parents[0] ?? EMPTY_TREE_SHA3,
         member_commits: members,
-        landed_by: !viaSha.includes(pr) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
+        landed_by: !viaSha.includes(pr2) ? "number_ref" : isMergeCommit ? "merge_commit" : members > 1 ? "rebase" : "squash",
         batched
       });
       records.push(record);
-      recordByNumber.set(pr.number, record);
+      recordByNumber.set(pr2.number, record);
     }
   }
   const defaultNames = new Set(target.defaultBranchNames);
@@ -10800,8 +15140,8 @@ function enumerateCorpusRepo(target, deps) {
     rollup_prs: rollupPrs,
     rollup_member_prs: records.filter((r) => r.landed_by === "rollup").length,
     rollup_members_unresolved: rollupUnresolved,
-    api_prs_not_on_branch: apiPrs.filter((pr) => !used.has(pr.number)).length,
-    api_prs_not_on_branch_default_base: apiPrs.filter((pr) => !used.has(pr.number) && pr.baseRefName !== null && defaultNames.has(pr.baseRefName)).length,
+    api_prs_not_on_branch: apiPrs.filter((pr2) => !used.has(pr2.number)).length,
+    api_prs_not_on_branch_default_base: apiPrs.filter((pr2) => !used.has(pr2.number) && pr2.baseRefName !== null && defaultNames.has(pr2.baseRefName)).length,
     unmapped_sample: unmapped.slice(0, 20).map((c) => c.sha)
   };
   records.sort((a, b) => a.merged_at.localeCompare(b.merged_at) || a.pr_number - b.pr_number);
@@ -10829,8 +15169,8 @@ function readFirstParent(target, runGit3) {
   const seen = /* @__PURE__ */ new Set();
   const start = target.from.getTime();
   const end = target.until.getTime();
-  for (let lo = start; lo < end; lo += 30 * DAY_MS) {
-    const hi = Math.min(lo + 30 * DAY_MS, end);
+  for (let lo = start; lo < end; lo += 30 * DAY_MS2) {
+    const hi = Math.min(lo + 30 * DAY_MS2, end);
     const result = runGit3([
       "log",
       "--first-parent",
@@ -10841,13 +15181,13 @@ function readFirstParent(target, runGit3) {
       target.branch
     ]);
     if (result.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target.branch}: ${result.stderr.trim()}`);
-    for (const entry of result.stdout.split("")) {
-      const [sha = "", parents = "", epochText = "", subject = "", body = ""] = entry.replace(/^\n/, "").split("");
-      if (!/^[0-9a-f]{40}$/.test(sha) || seen.has(sha)) continue;
+    for (const entry2 of result.stdout.split("")) {
+      const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
+      if (!/^[0-9a-f]{40}$/.test(sha2) || seen.has(sha2)) continue;
       const epoch = Number.parseInt(epochText, 10);
       if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
-      seen.add(sha);
-      commits.push({ sha, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
+      seen.add(sha2);
+      commits.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
     }
   }
   return commits;
@@ -10859,18 +15199,18 @@ function readRollupMembers(target, runGit3, commits) {
   const result = runGit3([
     "log",
     "--grep=^Rollup merge of #",
-    `--since=${new Date(target.from.getTime() - 30 * DAY_MS).toISOString()}`,
+    `--since=${new Date(target.from.getTime() - 30 * DAY_MS2).toISOString()}`,
     `--until=${target.until.toISOString()}`,
     "--pretty=format:%H%x1f%P%x1f%s%x1e",
     target.branch
   ]);
   if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
   const bySha = /* @__PURE__ */ new Map();
-  for (const entry of result.stdout.split("")) {
-    const [sha = "", parents = "", subject = ""] = entry.replace(/^\n/, "").split("");
+  for (const entry2 of result.stdout.split("")) {
+    const [sha2 = "", parents = "", subject = ""] = entry2.replace(/^\n/, "").split("");
     const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
     const parentSha = parents.trim().split(/\s+/)[0];
-    if (/^[0-9a-f]{40}$/.test(sha) && parentSha && Number.isInteger(prNumber)) bySha.set(sha, { sha, parentSha, prNumber });
+    if (/^[0-9a-f]{40}$/.test(sha2) && parentSha && Number.isInteger(prNumber)) bySha.set(sha2, { sha: sha2, parentSha, prNumber });
   }
   for (const commit of commits) {
     const chain = [];
@@ -10881,7 +15221,7 @@ function readRollupMembers(target, runGit3, commits) {
 }
 function fetchMergedPrs(target, deps) {
   const out = /* @__PURE__ */ new Map();
-  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS]];
+  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS2]];
   while (pending.length) {
     const [lo, hi] = pending.shift();
     const range = `${isoDay(lo)}..${isoDay(hi)}`;
@@ -10889,14 +15229,14 @@ function fetchMergedPrs(target, deps) {
     const cacheKey = `merged:${range}`;
     const cached = deps.cache?.get(cacheKey);
     if (cached) {
-      for (const pr of cached) out.set(pr.number, pr);
+      for (const pr2 of cached) out.set(pr2.number, pr2);
       continue;
     }
     const count = deps.graphql(COUNT_QUERY, { q }).search.issueCount;
     if (count > SEARCH_CAP) {
       if (hi <= lo) throw new Error(`corpus: more than ${SEARCH_CAP} PRs merged on ${isoDay(lo)}; cannot slice further`);
-      const mid = lo + Math.floor((hi - lo) / DAY_MS / 2) * DAY_MS;
-      pending.unshift([lo, mid], [mid + DAY_MS, hi]);
+      const mid = lo + Math.floor((hi - lo) / DAY_MS2 / 2) * DAY_MS2;
+      pending.unshift([lo, mid], [mid + DAY_MS2, hi]);
       continue;
     }
     const slice = [];
@@ -10908,7 +15248,7 @@ function fetchMergedPrs(target, deps) {
     }
     deps.cache?.set(cacheKey, slice);
     deps.onDiagnostic?.(`info: ${target.repo} ${range}: ${slice.length} merged PRs`);
-    for (const pr of slice) out.set(pr.number, pr);
+    for (const pr2 of slice) out.set(pr2.number, pr2);
   }
   return [...out.values()];
 }
@@ -10922,7 +15262,7 @@ function fetchPrsByNumber(repo, numbers, deps) {
     if (!prs) {
       const fields = batch.map((n) => `pr${n}: pullRequest(number:${n}){ ${PR_FIELDS} }`).join("\n");
       const data = deps.graphql(`query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ${fields} } }`, { owner, name });
-      prs = Object.values(data.repository).filter((pr) => pr !== null);
+      prs = Object.values(data.repository).filter((pr2) => pr2 !== null);
       deps.cache?.set(cacheKey, prs);
     }
     out.push(...prs);
@@ -10986,13 +15326,13 @@ function labelCorpusRepo(input, deps) {
   const horizonTerminalIndex = buildHorizonTerminalIndex(labellerDeps, input.branch) ?? void 0;
   const rows = [];
   const failed = [];
-  for (const [i, pr] of all.entries()) {
+  for (const [i, pr2] of all.entries()) {
     if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.owner}/${input.repo}: labelled ${i}/${all.length} PRs`);
     try {
-      rows.push(...labelMergedPr(target, labellerDeps, pr, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
+      rows.push(...labelMergedPr(target, labellerDeps, pr2, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
     } catch (error) {
-      failed.push(pr.prNumber);
-      deps.onDiagnostic?.(`error: failed to label ${pr.prUrl}: ${String(error).slice(0, 200)}`);
+      failed.push(pr2.prNumber);
+      deps.onDiagnostic?.(`error: failed to label ${pr2.prUrl}: ${String(error).slice(0, 200)}`);
     }
   }
   return { rows, failed };
@@ -11013,9 +15353,9 @@ function parseCohortManifest(input) {
   if (Date.parse(m.window.merged_from) >= Date.parse(m.window.merged_until)) fail2("window must be non-empty");
   for (const key of ["repos", "alternates"]) {
     if (!Array.isArray(m[key])) fail2(`${key} must be an array`);
-    for (const entry of m[key]) {
-      if (!REPO.test(entry?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry?.repo)}`);
-      if (typeof entry.status !== "string") fail2(`${entry.repo}: status is required`);
+    for (const entry2 of m[key]) {
+      if (!REPO.test(entry2?.repo ?? "")) fail2(`invalid repo ${JSON.stringify(entry2?.repo)}`);
+      if (typeof entry2.status !== "string") fail2(`${entry2.repo}: status is required`);
     }
   }
   return m;
@@ -11023,9 +15363,9 @@ function parseCohortManifest(input) {
 function runnableRepos(manifest, only) {
   const all = [...manifest.repos, ...manifest.alternates];
   if (only) {
-    const entry = all.find((r) => r.repo === only);
-    if (!entry) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
-    return [entry];
+    const entry2 = all.find((r) => r.repo === only);
+    if (!entry2) throw new Error(`cohort manifest: ${only} is not declared; add it to the manifest first`);
+    return [entry2];
   }
   return all.filter((r) => RUNNABLE_STATUSES.includes(r.status));
 }
@@ -11227,7 +15567,8 @@ var OPTIONS = {
   sample: { type: "string" },
   gold: { type: "string" },
   sheet: { type: "string" },
-  definition: { type: "string" }
+  definition: { type: "string" },
+  step: { type: "string" }
 };
 var CORPUS_COMMANDS = [
   "corpus-enumerate",
@@ -11240,7 +15581,10 @@ var CORPUS_COMMANDS = [
   "corpus-calibration-score",
   "corpus-calibration-gold",
   "corpus-calibration-screen",
-  "corpus-calibration-topup"
+  "corpus-calibration-topup",
+  "corpus-feature-audit",
+  "corpus-features",
+  "corpus-feature-replay"
 ];
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
@@ -11250,8 +15594,8 @@ function secondsUntilReset() {
   if (result.exitCode !== 0 || !Number.isFinite(reset) || reset === 0) return 60;
   return Math.max(30, reset - Math.floor(Date.now() / 1e3) + 5);
 }
-var blockingSleep = (ms) => {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+var blockingSleep = (ms2) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms2);
 };
 function createGhGraphql(sleep, log) {
   return (query, variables) => {
@@ -11290,9 +15634,9 @@ function parseGraphqlResponse(stdout) {
   }
 }
 function createGhPullsForCommit(repo, sleep, log) {
-  return (sha) => {
+  return (sha2) => {
     for (let attempt2 = 0; ; attempt2++) {
-      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
+      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha2}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
       if (result.exitCode === 0) return JSON.parse(result.stdout || "[]");
       if (RATE_LIMITED.test(result.stderr) && attempt2 < 48) {
         const wait = secondsUntilReset();
@@ -11311,7 +15655,7 @@ function createGhPullsForCommit(repo, sleep, log) {
 }
 var GZIP_MEMBER_BYTES = 32 * 1024 * 1024;
 function writeJsonl(path4, rows, options = {}) {
-  const fd = openSync2(path4, "w");
+  const fd = openSync3(path4, "w");
   let bytes = 0;
   let writtenBytes = 0;
   let largestRowBytes = 0;
@@ -11319,7 +15663,7 @@ function writeJsonl(path4, rows, options = {}) {
   let pendingBytes = 0;
   const flush = () => {
     if (pendingBytes === 0) return;
-    const chunk = gzipSync(Buffer.concat(pending));
+    const chunk = gzipSync2(Buffer.concat(pending));
     writeSync2(fd, chunk);
     writtenBytes += chunk.length;
     pending = [];
@@ -11342,25 +15686,25 @@ function writeJsonl(path4, rows, options = {}) {
     }
     flush();
   } finally {
-    closeSync2(fd);
+    closeSync3(fd);
   }
   return { bytes, writtenBytes, largestRowBytes };
 }
 function fileCache(dir) {
-  mkdirSync2(dir, { recursive: true });
-  const path4 = (key) => join7(dir, `${createHash5("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+  mkdirSync5(dir, { recursive: true });
+  const path4 = (key) => join10(dir, `${createHash9("sha256").update(key).digest("hex").slice(0, 32)}.json`);
   return {
-    get: (key) => existsSync4(path4(key)) ? JSON.parse(readFileSync3(path4(key), "utf8")) : void 0,
-    set: (key, value) => writeFileSync2(path4(key), JSON.stringify(value))
+    get: (key) => existsSync7(path4(key)) ? JSON.parse(readFileSync7(path4(key), "utf8")) : void 0,
+    set: (key, value) => writeFileSync5(path4(key), JSON.stringify(value))
   };
 }
 function syncClone(repo, dir, defaultBranch) {
   const runGit3 = (args) => execArgvCommand("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
   const url = `https://github.com/${repo}.git`;
-  for (let attempt2 = 1; !existsSync4(join7(dir, "HEAD")); attempt2++) {
+  for (let attempt2 = 1; !existsSync7(join10(dir, "HEAD")); attempt2++) {
     const cloned = execArgvCommand("git", ["clone", "--bare", "--filter=blob:none", "--no-tags", url, dir], { encoding: "utf8" });
     if (cloned.exitCode === 0) break;
-    rmSync2(dir, { recursive: true, force: true });
+    rmSync3(dir, { recursive: true, force: true });
     if (attempt2 >= 3) throw new Error(`git clone failed: ${cloned.stderr.trim().split("\n").pop()}`);
   }
   const fetched = runGit3(["fetch", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`]);
@@ -11373,12 +15717,13 @@ function runCorpusCli(command, argv, io) {
 `);
     return { exitCode: 2 };
   }
+  if (command === "corpus-feature-audit") return runFeatureAudit(argv, io);
   let values;
   let entries;
   let manifestBytes;
   let window;
   try {
-    ({ values } = parseArgs2({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
+    ({ values } = parseArgs3({ args: [...argv], options: OPTIONS, strict: true, allowPositionals: false }));
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -11389,32 +15734,32 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: corpus-calibration-score needs --sample <dir>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationScore(resolve4(io.cwd, values.sample), io);
+    return runCalibrationScore(resolve5(io.cwd, values.sample), io);
   }
   if (command === "corpus-calibration-gold") {
     if (!values.sample || !values.gold) {
       io.writeStderr("error: corpus-calibration-gold needs --sample <dir> and --gold <gold.json>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationGold(resolve4(io.cwd, values.sample), resolve4(io.cwd, values.gold), io);
+    return runCalibrationGold(resolve5(io.cwd, values.sample), resolve5(io.cwd, values.gold), io);
   }
   if (command === "corpus-calibration-topup") {
     if (!values.sample || !values.plan || !values.gold) {
       io.writeStderr("error: corpus-calibration-topup needs --sample <dir>, --plan <plan.json> and --gold <gold.json>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationTopup(resolve4(io.cwd, values.sample), resolve4(io.cwd, values.plan), resolve4(io.cwd, values.gold), io);
+    return runCalibrationTopup(resolve5(io.cwd, values.sample), resolve5(io.cwd, values.plan), resolve5(io.cwd, values.gold), io);
   }
   if (command === "corpus-calibration-screen") {
     if (!values.gold || !!values.out === !!values.sheet) {
       io.writeStderr("error: corpus-calibration-screen needs --gold <gold.json> and either --out <blank sheet> or --sheet <filled sheet>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationScreen(resolve4(io.cwd, values.gold), values.out ? resolve4(io.cwd, values.out) : void 0, values.sheet ? resolve4(io.cwd, values.sheet) : void 0, io);
+    return runCalibrationScreen(resolve5(io.cwd, values.gold), values.out ? resolve5(io.cwd, values.out) : void 0, values.sheet ? resolve5(io.cwd, values.sheet) : void 0, io);
   }
   try {
     if (!values.manifest || !values["cache-dir"]) throw new Error("--manifest and --cache-dir are required");
-    manifestBytes = readFileSync3(resolve4(io.cwd, values.manifest));
+    manifestBytes = readFileSync7(resolve5(io.cwd, values.manifest));
     const manifest = parseCohortManifest(JSON.parse(manifestBytes.toString("utf8")));
     entries = runnableRepos(manifest, values.repo);
     window = { from: /* @__PURE__ */ new Date(`${manifest.window.merged_from}T00:00:00Z`), until: /* @__PURE__ */ new Date(`${manifest.window.merged_until}T00:00:00Z`) };
@@ -11437,7 +15782,7 @@ function runCorpusCli(command, argv, io) {
 `);
       return { exitCode: 2 };
     }
-    return runCorrectiveDerive(entries, resolve4(io.cwd, values["cache-dir"]), definition, io, log);
+    return runCorrectiveDerive(entries, resolve5(io.cwd, values["cache-dir"]), definition, io, log);
   }
   if (command === "corpus-calibration-sample") {
     if (!values.plan || !values["exclude-slice"] || !values.out) {
@@ -11448,14 +15793,14 @@ function runCorpusCli(command, argv, io) {
       io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
       return { exitCode: 2 };
     }
-    return runCalibrationSample(entries, manifestBytes, resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.plan), resolve4(io.cwd, values["exclude-slice"]), resolve4(io.cwd, values.out), values.seed, io, log, (values["exclude-sample"] ?? []).map((p) => resolve4(io.cwd, p)));
+    return runCalibrationSample(entries, manifestBytes, resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.plan), resolve5(io.cwd, values["exclude-slice"]), resolve5(io.cwd, values.out), values.seed, io, log, (values["exclude-sample"] ?? []).map((p) => resolve5(io.cwd, p)));
   }
   if (command === "corpus-calibration-evidence") {
     if (!values.sample) {
       io.writeStderr("error: corpus-calibration-evidence needs --sample <dir>\n");
       return { exitCode: 2 };
     }
-    return runCalibrationEvidence(resolve4(io.cwd, values["cache-dir"]), resolve4(io.cwd, values.sample), io, log);
+    return runCalibrationEvidence(resolve5(io.cwd, values["cache-dir"]), resolve5(io.cwd, values.sample), io, log);
   }
   if (command === "corpus-report") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : null;
@@ -11466,7 +15811,7 @@ function runCorpusCli(command, argv, io) {
     let notes = { notes: [], convention_findings: [] };
     try {
       if (values.notes) {
-        const parsed = JSON.parse(readFileSync3(resolve4(io.cwd, values.notes), "utf8"));
+        const parsed = JSON.parse(readFileSync7(resolve5(io.cwd, values.notes), "utf8"));
         notes = { notes: parsed.notes ?? [], convention_findings: parsed.convention_findings ?? [] };
       }
     } catch (error) {
@@ -11474,10 +15819,56 @@ function runCorpusCli(command, argv, io) {
 `);
       return { exitCode: 2 };
     }
-    return runReport(entries, resolve4(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve4(io.cwd, values.out), io, log);
+    return runReport(entries, resolve5(io.cwd, values["cache-dir"]), asOf, manifestBytes, notes, resolve5(io.cwd, values.out), io, log);
+  }
+  if (command === "corpus-feature-replay") {
+    if (!values["exclude-slice"] || !values.out) {
+      io.writeStderr("error: corpus-feature-replay needs --exclude-slice <slice manifest> and --out <private dir>\n");
+      return { exitCode: 2 };
+    }
+    if (values.seed !== void 0 && !/^[0-9a-f]{64}$/.test(values.seed)) {
+      io.writeStderr("error: --seed must be 64 lowercase hex characters\n");
+      return { exitCode: 2 };
+    }
+    return runFeatureReplay({
+      entries,
+      cacheRoot: resolve5(io.cwd, values["cache-dir"]),
+      slicePath: resolve5(io.cwd, values["exclude-slice"]),
+      outDir: resolve5(io.cwd, values.out),
+      ...values.seed ? { seed: values.seed } : {},
+      cuts: 6,
+      perCut: 8,
+      io,
+      log
+    });
   }
   const graphql = createGhGraphql(io.sleep ?? blockingSleep, log);
-  const cacheRoot = resolve4(io.cwd, values["cache-dir"]);
+  const cacheRoot = resolve5(io.cwd, values["cache-dir"]);
+  if (command === "corpus-features") {
+    const step = values.step;
+    if (!step || !FEATURE_STEPS.includes(step)) {
+      io.writeStderr(`error: corpus-features needs --step ${FEATURE_STEPS.join("|")}
+`);
+      return { exitCode: 2 };
+    }
+    if (step === "manifest" && !values.out) {
+      io.writeStderr("error: corpus-features --step manifest needs --out <file>\n");
+      return { exitCode: 2 };
+    }
+    return runCorpusFeatures({
+      step,
+      entries,
+      cacheRoot,
+      cohortSha256: createHash9("sha256").update(manifestBytes).digest("hex"),
+      ...values.out ? { out: resolve5(io.cwd, values.out) } : {},
+      graphql,
+      writeRows: (path4, rows) => {
+        writeJsonl(path4, rows, { gzip: true });
+      },
+      io,
+      log
+    });
+  }
   if (command === "corpus-label" || command === "corpus-corrective") {
     const asOf = values["as-of"] ? new Date(values["as-of"]) : /* @__PURE__ */ new Date();
     if (!Number.isFinite(asOf.getTime())) {
@@ -11488,61 +15879,61 @@ function runCorpusCli(command, argv, io) {
     return runLabel(entries, cacheRoot, asOf, graphql, io, log);
   }
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
-      mkdirSync2(repoDir, { recursive: true });
+      mkdirSync5(repoDir, { recursive: true });
       const meta = graphql("query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ name } } }", { owner, name });
       const branch = meta.repository.defaultBranchRef?.name;
       if (!branch) throw new Error("repository has no default branch");
-      log(`info: ${entry.repo}: syncing clone of ${branch}`);
-      const runGit3 = syncClone(entry.repo, join7(repoDir, "repo.git"), branch);
+      log(`info: ${entry2.repo}: syncing clone of ${branch}`);
+      const runGit3 = syncClone(entry2.repo, join10(repoDir, "repo.git"), branch);
       const { records, stats } = enumerateCorpusRepo(
-        { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], ...window },
-        { runGit: runGit3, graphql, cache: fileCache(join7(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry.repo, io.sleep ?? blockingSleep, log) }
+        { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], ...window },
+        { runGit: runGit3, graphql, cache: fileCache(join10(repoDir, "graphql")), onDiagnostic: log, pullsForCommit: createGhPullsForCommit(entry2.repo, io.sleep ?? blockingSleep, log) }
       );
-      writeJsonl(join7(repoDir, "prs.jsonl"), records);
-      writeFileSync2(join7(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
+      writeJsonl(join10(repoDir, "prs.jsonl"), records);
+      writeFileSync5(join10(repoDir, "enumeration.json"), `${JSON.stringify(stats, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(stats)}
 `);
-      log(`info: ${entry.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
+      log(`info: ${entry2.repo}: ${stats.prs} PRs, mapped_share ${stats.mapped_share}, pr_recall_est ${stats.pr_recall_est}, direct_push_share_est ${stats.direct_push_share_est}`);
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const statsPath = join7(repoDir, "enumeration.json");
-      if (!existsSync4(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
-      const { branch } = JSON.parse(readFileSync3(statsPath, "utf8"));
-      const records = readFileSync3(join7(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
-      const gitDir = join7(repoDir, "repo.git");
+      const statsPath = join10(repoDir, "enumeration.json");
+      if (!existsSync7(statsPath)) throw new Error("not enumerated yet; run corpus-enumerate first");
+      const { branch } = JSON.parse(readFileSync7(statsPath, "utf8"));
+      const records = readFileSync7(join10(repoDir, "prs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      log(`info: ${entry.repo}: backfilling blobs`);
+      log(`info: ${entry2.repo}: backfilling blobs`);
       const backfill = runGit3(["backfill"]);
       if (backfill.exitCode !== 0) throw new Error(`git backfill failed: ${backfill.stderr.trim().split("\n").pop()}`);
-      log(`info: ${entry.repo}: prefetching cross-references for ${records.length} PRs`);
-      const crossReferences = prefetchCrossReferences(entry.repo, records.map((r) => r.pr_number), graphql, fileCache(join7(repoDir, "graphql")));
-      log(`info: ${entry.repo}: labelling`);
+      log(`info: ${entry2.repo}: prefetching cross-references for ${records.length} PRs`);
+      const crossReferences = prefetchCrossReferences(entry2.repo, records.map((r) => r.pr_number), graphql, fileCache(join10(repoDir, "graphql")));
+      log(`info: ${entry2.repo}: labelling`);
       const { rows, failed } = labelCorpusRepo(
         { owner, repo: name, branch, repoDir: gitDir, records, horizons: HORIZONS },
         { runGit: runGit3, github: prefetchedGithubClient(crossReferences), now: () => asOf, onDiagnostic: log }
       );
-      const written = writeJsonl(join7(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
+      const written = writeJsonl(join10(repoDir, "s2.jsonl.gz"), rows, { gzip: true });
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         as_of: asOf.toISOString(),
         prs: records.length,
         rows: rows.length,
@@ -11552,27 +15943,27 @@ function runLabel(entries, cacheRoot, asOf, graphql, io, log) {
         s2_gzip_bytes: written.writtenBytes,
         largest_row_bytes: written.largestRowBytes,
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3),
-        base_rates: summarizeLabels(entry.repo, rows)
+        base_rates: summarizeLabels(entry2.repo, rows)
       };
-      writeFileSync2(join7(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, "s2.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
       if (failed.length) failures++;
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function readJsonl2(path4) {
-  return readFileSync3(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return readFileSync7(path4, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 function* readGzipJsonlMembers(path4) {
-  const raw = readFileSync3(path4);
+  const raw = readFileSync7(path4);
   for (let offset = 0; offset < raw.length; ) {
     if (raw[offset] !== 31 || raw[offset + 1] !== 139 || raw[offset + 3] !== 0) throw new Error(`${path4}: unexpected gzip member header at byte ${offset}`);
     const { buffer, engine } = inflateRawSync(raw.subarray(offset + 10), { info: true });
@@ -11582,79 +15973,79 @@ function* readGzipJsonlMembers(path4) {
 }
 function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     const started = Date.now();
     try {
-      const s2Path = join7(repoDir, "s2.jsonl.gz");
-      if (!existsSync4(s2Path)) throw new Error("not labelled yet; run corpus-label first");
-      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
-      const originals = readJsonl2(join7(repoDir, "prs.jsonl"));
-      const gitDir = join7(repoDir, "repo.git");
+      const s2Path = join10(repoDir, "s2.jsonl.gz");
+      if (!existsSync7(s2Path)) throw new Error("not labelled yet; run corpus-label first");
+      const { branch } = JSON.parse(readFileSync7(join10(repoDir, "enumeration.json"), "utf8"));
+      const originals = readJsonl2(join10(repoDir, "prs.jsonl"));
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      const cache = fileCache(join7(repoDir, "graphql"));
-      const laterPath = join7(repoDir, "fix-prs.jsonl");
+      const cache = fileCache(join10(repoDir, "graphql"));
+      const laterPath = join10(repoDir, "fix-prs.jsonl");
       let laterPrs = [];
-      if (existsSync4(laterPath)) laterPrs = readJsonl2(laterPath);
+      if (existsSync7(laterPath)) laterPrs = readJsonl2(laterPath);
       else if (window.until < asOf) {
-        log(`info: ${entry.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
+        log(`info: ${entry2.repo}: enumerating fix sources ${window.until.toISOString()}..${asOf.toISOString()}`);
         ({ records: laterPrs } = enumerateCorpusRepo(
-          { repo: entry.repo, branch, defaultBranchNames: [branch, ...entry.default_branch_aliases ?? []], from: window.until, until: asOf },
+          { repo: entry2.repo, branch, defaultBranchNames: [branch, ...entry2.default_branch_aliases ?? []], from: window.until, until: asOf },
           { runGit: runGit3, graphql, cache, onDiagnostic: log }
         ));
         writeJsonl(laterPath, laterPrs);
       }
-      log(`info: ${entry.repo}: loading cross-references and S2 rows`);
-      const crossReferences = prefetchCrossReferences(entry.repo, originals.map((r) => r.pr_number), graphql, cache);
-      const closing = [...originals, ...laterPrs].flatMap((pr) => pr.closing_issues);
-      log(`info: ${entry.repo}: fetching labels for ${new Set(closing).size} closed issues`);
-      const issues = prefetchIssueMeta(entry.repo, closing, graphql, cache);
+      log(`info: ${entry2.repo}: loading cross-references and S2 rows`);
+      const crossReferences = prefetchCrossReferences(entry2.repo, originals.map((r) => r.pr_number), graphql, cache);
+      const closing = [...originals, ...laterPrs].flatMap((pr2) => pr2.closing_issues);
+      log(`info: ${entry2.repo}: fetching labels for ${new Set(closing).size} closed issues`);
+      const issues = prefetchIssueMeta(entry2.repo, closing, graphql, cache);
       const s2Rows = readGzipJsonlMembers(s2Path);
       const result = correctiveCorpusRepo(
-        { repo: entry.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
+        { repo: entry2.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
       );
-      writeJsonl(join7(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
-      writeJsonl(join7(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
-      writeJsonl(join7(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
+      writeJsonl(join10(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
+      writeJsonl(join10(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
+      writeJsonl(join10(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         as_of: asOf.toISOString(),
         later_prs: laterPrs.length,
         ...summarizeCorrective(result, originals.length),
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3)
       };
-      writeFileSync2(join7(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
       if (result.failedPairs.length || result.szz.failed) failures++;
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 function runCorrectiveDerive(entries, cacheRoot, definition, io, log) {
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
       for (const file of ["s2.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"]) {
-        if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+        if (!existsSync7(join10(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
       }
-      const first = readGzipJsonlMembers(join7(repoDir, "corrective.jsonl.gz")).next();
+      const first = readGzipJsonlMembers(join10(repoDir, "corrective.jsonl.gz")).next();
       if (first.done) throw new Error("corrective.jsonl.gz is empty");
       const { labeller_version, integration_branch, as_of } = first.value.envelope;
       const envelope = { definition_version: definition, labeller_version, integration_branch, as_of, computed_at: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      const pairs = [...readGzipJsonlMembers(join7(repoDir, "repair_pairs.jsonl.gz"))];
-      const rows = deriveCorrectiveRows(readGzipJsonlMembers(join7(repoDir, "s2.jsonl.gz")), pairs, envelope);
-      const written = writeJsonl(join7(repoDir, `corrective.${definition}.jsonl.gz`), rows, { gzip: true });
+      const pairs = [...readGzipJsonlMembers(join10(repoDir, "repair_pairs.jsonl.gz"))];
+      const rows = deriveCorrectiveRows(readGzipJsonlMembers(join10(repoDir, "s2.jsonl.gz")), pairs, envelope);
+      const written = writeJsonl(join10(repoDir, `corrective.${definition}.jsonl.gz`), rows, { gzip: true });
       const byHorizon = {};
       for (const row of rows) {
         const h = byHorizon[String(row.horizon_days)] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
@@ -11663,46 +16054,46 @@ function runCorrectiveDerive(entries, cacheRoot, definition, io, log) {
       }
       for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
       const summary = {
-        repo: entry.repo,
+        repo: entry2.repo,
         definition_version: definition,
         derived_from: "repair_pairs.jsonl.gz",
         as_of: envelope.as_of,
         repair_pairs: pairs.length,
         corrective_by_horizon: byHorizon,
         file: `corrective.${definition}.jsonl.gz`,
-        sha256: createHash5("sha256").update(readFileSync3(join7(repoDir, `corrective.${definition}.jsonl.gz`))).digest("hex"),
+        sha256: createHash9("sha256").update(readFileSync7(join10(repoDir, `corrective.${definition}.jsonl.gz`))).digest("hex"),
         bytes: written.writtenBytes
       };
-      writeFileSync2(join7(repoDir, `corrective.${definition}.summary.json`), `${JSON.stringify(summary, null, 2)}
+      writeFileSync5(join10(repoDir, `corrective.${definition}.summary.json`), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
     } catch (error) {
       failures++;
-      io.writeStdout(`${JSON.stringify({ repo: entry.repo, error: error.message })}
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
 `);
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   return { exitCode: failures ? 3 : 0 };
 }
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha2562 = (bytes) => createHash5("sha256").update(bytes).digest("hex");
+  const sha2563 = (bytes) => createHash9("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
   const day = asOf.toISOString().slice(0, 10);
   let failures = 0;
-  for (const entry of entries) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of entries) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
-      for (const file of REPORT_INPUTS) if (!existsSync4(join7(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
+      for (const file of REPORT_INPUTS) if (!existsSync7(join10(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
       const counted = (file, onRow) => {
-        const path4 = join7(repoDir, file);
-        const bytes = readFileSync3(path4);
-        const record = { repo: entry.repo, file, sha256: sha2562(bytes), bytes: bytes.length, rows: 0 };
+        const path4 = join10(repoDir, file);
+        const bytes = readFileSync7(path4);
+        const record = { repo: entry2.repo, file, sha256: sha2563(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
           for (const row of readGzipJsonlMembers(path4)) {
@@ -11724,12 +16115,12 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
       const pairs = counted("repair_pairs.jsonl.gz", () => {
       })[Symbol.iterator]();
       while (!pairs.next().done) ;
-      const summary = summarizeCorpusRepo({ repo: entry.repo, tier: entry.tier ?? null, mergeConvention: entry.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
+      const summary = summarizeCorpusRepo({ repo: entry2.repo, tier: entry2.tier ?? null, mergeConvention: entry2.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
       repos.push(summary);
-      log(`info: ${entry.repo}: summarized`);
+      log(`info: ${entry2.repo}: summarized`);
     } catch (error) {
       failures++;
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   if (failures) return { exitCode: 3 };
@@ -11739,30 +16130,24 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
-    cohort_manifest_sha256: sha2562(manifestBytes),
+    cohort_manifest_sha256: sha2563(manifestBytes),
     label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
     inputs
   };
-  const run_id = sha2562(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
-  mkdirSync2(outDir, { recursive: true });
-  writeFileSync2(join7(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
+  const run_id = sha2563(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  mkdirSync5(outDir, { recursive: true });
+  writeFileSync5(join10(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
+  writeFileSync5(join10(outDir, "corpus-report.json"), `${JSON.stringify({ run_id, as_of: manifest.as_of, report_version: CORPUS_REPORT_VERSION, repos, flags, convention_spread: spread, convention_findings: findings }, null, 2)}
 `);
-  writeFileSync2(join7(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
+  writeFileSync5(join10(outDir, "corpus-report.md"), renderCorpusReportMarkdown({ run_id, as_of: day, repos, flags, spread, conventionFindings: findings }));
   const unresolved = flags.filter((f) => !f.resolution).length;
   io.writeStdout(`${JSON.stringify({ run_id, repos: repos.length, flags: flags.length, unresolved })}
 `);
   return { exitCode: unresolved ? 1 : 0 };
 }
-function insideGitWorkTree(path4) {
-  for (let dir = path4; ; dir = dirname(dir)) {
-    if (existsSync4(join7(dir, ".git"))) return true;
-    if (dirname(dir) === dir) return false;
-  }
-}
 function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log, excludeSamplePaths = []) {
-  const sha2562 = (bytes2) => createHash5("sha256").update(bytes2).digest("hex");
+  const sha2563 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
   const excludedUrls = /* @__PURE__ */ new Set();
   const excludedSamples = [];
   let plan;
@@ -11770,20 +16155,20 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
   let sliceBytes;
   let sliceRepos;
   try {
-    planBytes = readFileSync3(planPath);
+    planBytes = readFileSync7(planPath);
     plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
-    sliceBytes = readFileSync3(slicePath);
+    sliceBytes = readFileSync7(slicePath);
     const slice = JSON.parse(sliceBytes.toString("utf8"));
     if (!Array.isArray(slice.repos) || !slice.repos.length || !slice.repos.every((r) => typeof r === "string")) throw new Error("--exclude-slice has no repos list");
     sliceRepos = new Set(slice.repos);
     if (insideGitWorkTree(outDir)) throw new Error("--out must be outside any git work tree; the sample and its labels stay private");
-    if (existsSync4(outDir) && readdirSync(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
+    if (existsSync7(outDir) && readdirSync2(outDir).length) throw new Error(`${outDir} is not empty; refusing to overwrite a drawn sample`);
     for (const path4 of excludeSamplePaths) {
-      const bytes2 = readFileSync3(path4);
+      const bytes2 = readFileSync7(path4);
       const prior = JSON.parse(bytes2.toString("utf8"));
       if (!Array.isArray(prior.items) || !prior.items.length) throw new Error(`--exclude-sample ${path4} has no items`);
       for (const item of prior.items) excludedUrls.add(item.pr_url);
-      excludedSamples.push({ sample_sha256: sha2562(bytes2), items: prior.items.length });
+      excludedSamples.push({ sample_sha256: sha2563(bytes2), items: prior.items.length });
     }
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -11791,32 +16176,32 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     return { exitCode: 2 };
   }
   const development = entries.filter((e) => !sliceRepos.has(e.repo));
-  const seed = seedArg ?? randomBytes(32).toString("hex");
+  const seed = seedArg ?? randomBytes2(32).toString("hex");
   const units = [];
   const inputs = [];
   let failures = 0;
-  for (const entry of development) {
-    const [owner, name] = entry.repo.split("/");
-    const repoDir = join7(cacheRoot, `${owner}__${name}`);
+  for (const entry2 of development) {
+    const [owner, name] = entry2.repo.split("/");
+    const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
       const files = ["candidates.jsonl.gz", "corrective.jsonl.gz"];
       for (const file2 of files) {
-        const path4 = join7(repoDir, file2);
-        if (!existsSync4(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
-        inputs.push({ repo: entry.repo, file: file2, sha256: sha2562(readFileSync3(path4)) });
+        const path4 = join10(repoDir, file2);
+        if (!existsSync7(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
+        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2563(readFileSync7(path4)) });
       }
       units.push(
         ...classifyCalibrationRepo({
-          repo: entry.repo,
+          repo: entry2.repo,
           horizonDays: plan.horizon_days,
           szzStrongMinLines: plan.szz_strong_min_lines,
-          candidates: readGzipJsonlMembers(join7(repoDir, files[0])),
-          correctiveRows: readGzipJsonlMembers(join7(repoDir, files[1]))
+          candidates: readGzipJsonlMembers(join10(repoDir, files[0])),
+          correctiveRows: readGzipJsonlMembers(join10(repoDir, files[1]))
         })
       );
     } catch (error) {
       failures++;
-      log(`error: ${entry.repo}: ${error.message}`);
+      log(`error: ${entry2.repo}: ${error.message}`);
     }
   }
   if (failures) return { exitCode: 3 };
@@ -11831,9 +16216,9 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     procedure: "hok-3269-calibration-sample",
     sampler_version: CALIBRATION_SAMPLER_VERSION,
     plan,
-    plan_sha256: sha2562(planBytes),
-    cohort_manifest_sha256: sha2562(manifestBytes),
-    excluded_slice_sha256: sha2562(sliceBytes),
+    plan_sha256: sha2563(planBytes),
+    cohort_manifest_sha256: sha2563(manifestBytes),
+    excluded_slice_sha256: sha2563(sliceBytes),
     seed,
     inputs,
     cells: sample.cells,
@@ -11841,13 +16226,13 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     drawn_at: (/* @__PURE__ */ new Date()).toISOString(),
     ...excludedSamples.length && { excluded_samples: excludedSamples }
   };
-  mkdirSync2(outDir, { recursive: true, mode: 448 });
+  mkdirSync5(outDir, { recursive: true, mode: 448 });
   const bytes = Buffer.from(`${JSON.stringify(file, null, 2)}
 `, "utf8");
-  writeFileSync2(join7(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
+  writeFileSync5(join10(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
   const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
   io.writeStdout(
-    `${JSON.stringify({ sample_sha256: sha2562(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
+    `${JSON.stringify({ sample_sha256: sha2563(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
 `
   );
   return { exitCode: 0 };
@@ -11857,27 +16242,27 @@ function runCalibrationScore(sampleDir, io) {
   let sheets;
   let topupBack = false;
   try {
-    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
     sheets = {
-      a: readFileSync3(join7(sampleDir, "sheet-a.csv"), "utf8"),
-      b: readFileSync3(join7(sampleDir, "sheet-b.csv"), "utf8"),
-      h: readFileSync3(join7(sampleDir, "sheet-h.csv"), "utf8")
+      a: readFileSync7(join10(sampleDir, "sheet-a.csv"), "utf8"),
+      b: readFileSync7(join10(sampleDir, "sheet-b.csv"), "utf8"),
+      h: readFileSync7(join10(sampleDir, "sheet-h.csv"), "utf8")
     };
-    const topup = join7(sampleDir, TOPUP_SHEET);
-    topupBack = existsSync4(topup);
-    if (topupBack) sheets.h = appendSheetRows(sheets.h, readFileSync3(topup, "utf8"));
+    const topup = join10(sampleDir, TOPUP_SHEET);
+    topupBack = existsSync7(topup);
+    if (topupBack) sheets.h = appendSheetRows(sheets.h, readFileSync7(topup, "utf8"));
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
     return { exitCode: 2 };
   }
   let auditCheck;
-  const goldPath = join7(sampleDir, "gold.json");
-  if (existsSync4(goldPath)) {
+  const goldPath = join10(sampleDir, "gold.json");
+  if (existsSync7(goldPath)) {
     try {
       const pending = new Set(topupBack ? [] : (sample.audit_topups ?? []).flatMap((t) => t.gold_item_ids));
-      const hidden = parseGoldSet(JSON.parse(readFileSync3(goldPath, "utf8"))).items.filter((g) => g.use === "hidden" && !pending.has(g.item_id));
+      const hidden = parseGoldSet(JSON.parse(readFileSync7(goldPath, "utf8"))).items.filter((g) => g.use === "hidden" && !pending.has(g.item_id));
       const split = splitGoldRows(sheets.h, new Set(hidden.map((g) => g.item_id)));
       auditCheck = scoreGold(split.gold, hidden, GOLD_PASS_SHARE.hidden);
       sheets.h = split.rest;
@@ -11898,30 +16283,30 @@ function runCalibrationScore(sampleDir, io) {
     return { exitCode: 2 };
   }
   const run = scoreCalibrationRun({ plan: sample.plan, items: sample.items, cells: sample.cells, sheets: { a: a.labels, b: b.labels, h: h.labels }, seed: sample.seed });
-  writeFileSync2(join7(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run, ...auditCheck && { audit_check: auditCheck } }, null, 2)}
+  writeFileSync5(join10(sampleDir, "calibration-results.json"), `${JSON.stringify({ sample_plan_sha256: sample.plan_sha256, ...run, ...auditCheck && { audit_check: auditCheck } }, null, 2)}
 `, { mode: 384 });
-  writeFileSync2(join7(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run, auditCheck), { mode: 384 });
+  writeFileSync5(join10(sampleDir, "calibration-table.md"), renderCalibrationMarkdown(run, auditCheck), { mode: 384 });
   io.writeStdout(
-    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, ...auditCheck && { audit_check: { correct: auditCheck.correct, items: auditCheck.items, passed: auditCheck.passed } }, table: join7(sampleDir, "calibration-table.md") })}
+    `${JSON.stringify({ items: run.model.items, model_unlabelled: run.model.unlabelled, audit_unlabelled: run.human.unlabelled, models_stand_in: run.models_stand_in, chosen_definition: run.chosen_definition, ...auditCheck && { audit_check: { correct: auditCheck.correct, items: auditCheck.items, passed: auditCheck.passed } }, table: join10(sampleDir, "calibration-table.md") })}
 `
   );
   return { exitCode: 0 };
 }
 function runCalibrationGold(sampleDir, goldPath, io) {
   try {
-    const sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    const sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    const goldBytes = readFileSync3(goldPath);
+    const goldBytes = readFileSync7(goldPath);
     const hidden = parseGoldSet(JSON.parse(goldBytes.toString("utf8"))).items.filter((g) => g.use === "hidden");
     if (!hidden.length) throw new Error("the gold set has no hidden items");
     const sampleIds = new Set(sample.items.map((i) => i.item_id));
     const clash = hidden.find((g) => sampleIds.has(g.item_id));
     if (clash) throw new Error(`${clash.item_id}: collides with a sample item ID`);
-    const sheetPath = join7(sampleDir, "sheet-h.csv");
-    const sheet = insertGoldRows(readFileSync3(sheetPath, "utf8"), hidden, sample.seed);
-    writeFileSync2(join7(sampleDir, "gold.json"), goldBytes, { mode: 384, flag: "wx" });
-    writeFileSync2(sheetPath, sheet, { mode: 384 });
-    io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash5("sha256").update(goldBytes).digest("hex") })}
+    const sheetPath = join10(sampleDir, "sheet-h.csv");
+    const sheet = insertGoldRows(readFileSync7(sheetPath, "utf8"), hidden, sample.seed);
+    writeFileSync5(join10(sampleDir, "gold.json"), goldBytes, { mode: 384, flag: "wx" });
+    writeFileSync5(sheetPath, sheet, { mode: 384 });
+    io.writeStdout(`${JSON.stringify({ hidden: hidden.length, sheet_rows: parseCsv(sheet).length - 1, gold_sha256: createHash9("sha256").update(goldBytes).digest("hex") })}
 `);
     return { exitCode: 0 };
   } catch (error) {
@@ -11941,11 +16326,11 @@ function appendSheetRows(sheet, extra) {
 var TOPUP_PLAN_FIELDS = /* @__PURE__ */ new Set(["plan_version", "human_audit_share_by_stratum", "pick_needs_human_precision"]);
 function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
   try {
-    const sha2562 = (bytes2) => createHash5("sha256").update(bytes2).digest("hex");
-    const samplePath = join7(sampleDir, "sample.json");
-    const sample = JSON.parse(readFileSync3(samplePath, "utf8"));
+    const sha2563 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
+    const samplePath = join10(sampleDir, "sample.json");
+    const sample = JSON.parse(readFileSync7(samplePath, "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    const planBytes = readFileSync3(planPath);
+    const planBytes = readFileSync7(planPath);
     const plan = parseCalibrationPlan(JSON.parse(planBytes.toString("utf8")));
     if (plan.plan_version === sample.plan.plan_version) throw new Error(`the sample is already on plan ${plan.plan_version}`);
     const fields = /* @__PURE__ */ new Set([...Object.keys(plan), ...Object.keys(sample.plan)]);
@@ -11958,10 +16343,10 @@ function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
     const items = extendAudit(sample.items, plan, sample.seed);
     const added = items.filter((i, n) => i.audit && !sample.items[n].audit);
     if (!added.length) throw new Error("the new plan audits no item that was not already audited");
-    const goldBytes = readFileSync3(goldPath);
+    const goldBytes = readFileSync7(goldPath);
     const gold = parseGoldSet(JSON.parse(goldBytes.toString("utf8")));
-    const priorGoldPath = join7(sampleDir, "gold.json");
-    const prior = existsSync4(priorGoldPath) ? parseGoldSet(JSON.parse(readFileSync3(priorGoldPath, "utf8"))) : void 0;
+    const priorGoldPath = join10(sampleDir, "gold.json");
+    const prior = existsSync7(priorGoldPath) ? parseGoldSet(JSON.parse(readFileSync7(priorGoldPath, "utf8"))) : void 0;
     const priorIds = new Set(prior?.items.map((g) => g.item_id) ?? []);
     for (const g of prior?.items ?? []) {
       const same = gold.items.find((x) => x.item_id === g.item_id);
@@ -11974,28 +16359,28 @@ function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
     const sampleUrls = new Set(sample.items.map((i) => i.pr_url));
     const clash = hidden.find((g) => sampleIds.has(g.item_id) || sampleUrls.has(g.pr_url));
     if (clash) throw new Error(`${clash.item_id}: collides with a sample item`);
-    const evidence3 = readJsonl2(join7(sampleDir, "evidence.jsonl"));
+    const evidence3 = readJsonl2(join10(sampleDir, "evidence.jsonl"));
     const related = new Map([...evidence3].map((e) => [e.item_id, e.related.map((r) => r.url)]));
     const sheet = insertGoldRows(renderLabelSheet(added, related), hidden, sample.seed);
     const tag = (v) => v.replace(/[^0-9A-Za-z.]/g, "_");
-    const blankPath = join7(sampleDir, "sheet-h-topup.blank.csv");
-    writeFileSync2(blankPath, sheet, { mode: 384, flag: "wx" });
-    writeFileSync2(join7(sampleDir, `sample.plan-${tag(sample.plan.plan_version)}.json`), readFileSync3(samplePath), { mode: 384, flag: "wx" });
-    if (prior) writeFileSync2(join7(sampleDir, `gold.${tag(prior.gold_version)}.json`), readFileSync3(priorGoldPath), { mode: 384, flag: "wx" });
+    const blankPath = join10(sampleDir, "sheet-h-topup.blank.csv");
+    writeFileSync5(blankPath, sheet, { mode: 384, flag: "wx" });
+    writeFileSync5(join10(sampleDir, `sample.plan-${tag(sample.plan.plan_version)}.json`), readFileSync7(samplePath), { mode: 384, flag: "wx" });
+    if (prior) writeFileSync5(join10(sampleDir, `gold.${tag(prior.gold_version)}.json`), readFileSync7(priorGoldPath), { mode: 384, flag: "wx" });
     const next = {
       ...sample,
       plan,
-      plan_sha256: sha2562(planBytes),
+      plan_sha256: sha2563(planBytes),
       items,
       audit_topups: [...sample.audit_topups ?? [], { plan_version: plan.plan_version, from_plan_version: sample.plan.plan_version, added: added.length, gold_item_ids: hidden.map((g) => g.item_id), at: (/* @__PURE__ */ new Date()).toISOString() }]
     };
     const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}
 `, "utf8");
-    writeFileSync2(samplePath, bytes, { mode: 384 });
-    writeFileSync2(priorGoldPath, goldBytes, { mode: 384 });
+    writeFileSync5(samplePath, bytes, { mode: 384 });
+    writeFileSync5(priorGoldPath, goldBytes, { mode: 384 });
     const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, added.filter((i) => i.stratum === s).length]).filter(([, n]) => n > 0));
     io.writeStdout(
-      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha2562(bytes), gold_sha256: sha2562(goldBytes) })}
+      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha2563(bytes), gold_sha256: sha2563(goldBytes) })}
 `
     );
     return { exitCode: 0 };
@@ -12007,14 +16392,14 @@ function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
 }
 function runCalibrationScreen(goldPath, out, sheetPath, io) {
   try {
-    const screening = parseGoldSet(JSON.parse(readFileSync3(goldPath, "utf8"))).items.filter((g) => g.use === "screening");
+    const screening = parseGoldSet(JSON.parse(readFileSync7(goldPath, "utf8"))).items.filter((g) => g.use === "screening");
     if (!screening.length) throw new Error("the gold set has no screening items");
     if (out) {
-      writeFileSync2(out, renderGoldSheet(screening), { flag: "wx" });
+      writeFileSync5(out, renderGoldSheet(screening), { flag: "wx" });
       io.writeStdout(`${JSON.stringify({ screening: screening.length, sheet: out })}
 `);
     } else {
-      io.writeStdout(`${JSON.stringify(scoreGold(readFileSync3(sheetPath, "utf8"), screening, GOLD_PASS_SHARE.screening), null, 2)}
+      io.writeStdout(`${JSON.stringify(scoreGold(readFileSync7(sheetPath, "utf8"), screening, GOLD_PASS_SHARE.screening), null, 2)}
 `);
     }
     return { exitCode: 0 };
@@ -12027,9 +16412,9 @@ function runCalibrationScreen(goldPath, out, sheetPath, io) {
 function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   let sample;
   try {
-    sample = JSON.parse(readFileSync3(join7(sampleDir, "sample.json"), "utf8"));
+    sample = JSON.parse(readFileSync7(join10(sampleDir, "sample.json"), "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
-    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync4(join7(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
+    for (const file of ["evidence.jsonl", "sheet-h.csv"]) if (existsSync7(join10(sampleDir, file))) throw new Error(`${file} exists; refusing to overwrite`);
   } catch (error) {
     io.writeStderr(`error: ${error.message}
 `);
@@ -12038,14 +16423,14 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   const evidence3 = [];
   let failures = 0;
   for (const repo of [...new Set(sample.items.map((i) => i.repo))].sort()) {
-    const repoDir = join7(cacheRoot, repo.replace("/", "__"));
+    const repoDir = join10(cacheRoot, repo.replace("/", "__"));
     try {
-      const { branch } = JSON.parse(readFileSync3(join7(repoDir, "enumeration.json"), "utf8"));
-      const records = [...readJsonl2(join7(repoDir, "prs.jsonl")), ...existsSync4(join7(repoDir, "fix-prs.jsonl")) ? readJsonl2(join7(repoDir, "fix-prs.jsonl")) : []];
+      const { branch } = JSON.parse(readFileSync7(join10(repoDir, "enumeration.json"), "utf8"));
+      const records = [...readJsonl2(join10(repoDir, "prs.jsonl")), ...existsSync7(join10(repoDir, "fix-prs.jsonl")) ? readJsonl2(join10(repoDir, "fix-prs.jsonl")) : []];
       const prs = new Map(records.map((r) => [r.pr_url, r]));
       const bySha = /* @__PURE__ */ new Map();
-      for (const r of records) for (const sha of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha)) bySha.set(sha, r);
-      const gitDir = join7(repoDir, "repo.git");
+      for (const r of records) for (const sha2 of [r.merge_sha, r.landed_sha, ...r.relanded_merge_shas ?? []]) if (!bySha.has(sha2)) bySha.set(sha2, r);
+      const gitDir = join10(repoDir, "repo.git");
       const runGit3 = (args) => execArgvCommand("git", ["-C", gitDir, ...args], { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
       for (const item of sample.items.filter((i) => i.repo === repo)) evidence3.push(buildItemEvidence(item, { branch, horizonDays: sample.plan.horizon_days, prs, bySha }, runGit3));
     } catch (error) {
@@ -12056,10 +16441,10 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   if (failures) return { exitCode: 3 };
   const order = new Map(sample.items.map((i, n) => [i.item_id, n]));
   evidence3.sort((x, y) => order.get(x.item_id) - order.get(y.item_id));
-  writeJsonl(join7(sampleDir, "evidence.jsonl"), evidence3);
-  chmodSync(join7(sampleDir, "evidence.jsonl"), 384);
+  writeJsonl(join10(sampleDir, "evidence.jsonl"), evidence3);
+  chmodSync(join10(sampleDir, "evidence.jsonl"), 384);
   const related = new Map(evidence3.map((e) => [e.item_id, e.related.map((r) => r.url)]));
-  writeFileSync2(join7(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
+  writeFileSync5(join10(sampleDir, "sheet-h.csv"), renderLabelSheet(sample.items.filter((i) => i.audit), related), { mode: 384, flag: "wx" });
   const truncated = evidence3.reduce((n, e) => n + Number(e.original.diff_truncated) + e.fixes.filter((f) => f.diff_truncated).length, 0);
   io.writeStdout(`${JSON.stringify({ items: evidence3.length, audit: sample.items.filter((i) => i.audit).length, diffs_truncated: truncated, with_related: evidence3.filter((e) => e.related.length).length })}
 `);
@@ -12178,13 +16563,13 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
   const report = structuredClone(draft);
   report.policy = structuredClone(policy);
   const executed = report.prs.filter(
-    (pr) => pr.attribution.exact_model.evidence === "first_party_executed"
+    (pr2) => pr2.attribution.exact_model.evidence === "first_party_executed"
   );
   const executedRate = executed.length / Math.max(1, report.coverage.prs_enumerated);
   const exact = report.coverage.attribution.exact_model.rate >= policy.min_exact_model_coverage && executedRate >= policy.min_exact_model_coverage;
   const harness = report.coverage.attribution.harness.rate >= policy.min_harness_coverage;
   const comparablePriced = executed.filter(
-    (pr) => pr.cost?.actual_usd !== null && pr.cost?.actual_usd !== void 0
+    (pr2) => pr2.cost?.actual_usd !== null && pr2.cost?.actual_usd !== void 0
   ).length;
   const priced = Math.min(
     report.cost?.actual.prs_priced ?? 0,
@@ -12291,14 +16676,14 @@ function makeCell(k, n) {
 function ratioCell(ratio3, n, ci2) {
   return { basis: "descriptive", n, value: ratio3, ci: ci2 ? { low: ci2.low, high: ci2.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
-function labelAt(pr, horizon2) {
-  return pr.labels.find((label2) => label2.horizon_days === horizon2);
+function labelAt(pr2, horizon2) {
+  return pr2.labels.find((label2) => label2.horizon_days === horizon2);
 }
-function bucketFor(pr, feature, cuts) {
-  if (feature === "tests_changed") return pr.features.tests_changed === null ? null : pr.features.tests_changed ? "true" : "false";
-  if (feature === "files_touched_bucket") return pr.features.files_touched_bucket;
-  if (pr.features.loc_touched === null || !cuts) return null;
-  return quartileOf(pr.features.loc_touched, cuts);
+function bucketFor(pr2, feature, cuts) {
+  if (feature === "tests_changed") return pr2.features.tests_changed === null ? null : pr2.features.tests_changed ? "true" : "false";
+  if (feature === "files_touched_bucket") return pr2.features.files_touched_bucket;
+  if (pr2.features.loc_touched === null || !cuts) return null;
+  return quartileOf(pr2.features.loc_touched, cuts);
 }
 var reworked = (label2) => ["followup", "substantially_rewritten", "reverted"].includes(label2.outcome.report_outcome ?? "");
 function buildAggregates(prs, horizons) {
@@ -12307,21 +16692,21 @@ function buildAggregates(prs, horizons) {
   const models = [];
   const harnesses = [];
   for (const h of [...horizons].sort((a, b) => a - b)) {
-    const labelled = prs.flatMap((pr) => {
-      const l = labelAt(pr, h);
-      return l?.outcome.report_outcome ? [{ pr, l }] : [];
+    const labelled = prs.flatMap((pr2) => {
+      const l = labelAt(pr2, h);
+      return l?.outcome.report_outcome ? [{ pr: pr2, l }] : [];
     });
     for (const outcome2 of OUTCOMES) {
       const selected = labelled.filter(({ l }) => l.outcome.report_outcome === outcome2);
       survival.push({ horizon_days: h, outcome: outcome2, cell: makeCell(selected.length, labelled.length) });
     }
     for (const feature of Object.keys(REPORT_FEATURE_BUCKETS)) {
-      const locValues = feature === "loc_touched" ? labelled.map(({ pr }) => pr.features.loc_touched).filter((v) => v !== null).sort((a, b) => a - b) : [];
+      const locValues = feature === "loc_touched" ? labelled.map(({ pr: pr2 }) => pr2.features.loc_touched).filter((v) => v !== null).sort((a, b) => a - b) : [];
       const cuts = nearestRankQuartiles(locValues);
       const buckets = REPORT_FEATURE_BUCKETS[feature];
       for (const bucket of buckets) {
-        const group = labelled.filter(({ pr }) => bucketFor(pr, feature, cuts) === bucket);
-        const outside = labelled.filter(({ pr }) => bucketFor(pr, feature, cuts) !== null && bucketFor(pr, feature, cuts) !== bucket);
+        const group = labelled.filter(({ pr: pr2 }) => bucketFor(pr2, feature, cuts) === bucket);
+        const outside = labelled.filter(({ pr: pr2 }) => bucketFor(pr2, feature, cuts) !== null && bucketFor(pr2, feature, cuts) !== bucket);
         const ki = group.filter(({ l }) => reworked(l)).length;
         const ko = outside.filter(({ l }) => reworked(l)).length;
         const ciRate = wilsonInterval(ki, group.length);
@@ -12332,14 +16717,14 @@ function buildAggregates(prs, horizons) {
         }
       }
     }
-    const modelIds = [...new Set(labelled.map(({ pr }) => pr.attribution.exact_model.id).filter((v) => !!v))].sort();
+    const modelIds = [...new Set(labelled.map(({ pr: pr2 }) => pr2.attribution.exact_model.id).filter((v) => !!v))].sort();
     for (const id2 of modelIds) {
-      const group = labelled.filter(({ pr }) => pr.attribution.exact_model.id === id2);
+      const group = labelled.filter(({ pr: pr2 }) => pr2.attribution.exact_model.id === id2);
       models.push({ horizon_days: h, model_id: id2, cell: makeCell(group.filter(({ l }) => l.outcome.survived === true).length, group.length) });
     }
-    const harnessIds = [...new Set(labelled.map(({ pr }) => pr.attribution.harness.id).filter((v) => !!v))].sort();
+    const harnessIds = [...new Set(labelled.map(({ pr: pr2 }) => pr2.attribution.harness.id).filter((v) => !!v))].sort();
     for (const id2 of harnessIds) {
-      const group = labelled.filter(({ pr }) => pr.attribution.harness.id === id2);
+      const group = labelled.filter(({ pr: pr2 }) => pr2.attribution.harness.id === id2);
       harnesses.push({ horizon_days: h, harness_id: id2, cell: makeCell(group.filter(({ l }) => l.outcome.survived === true).length, group.length) });
     }
   }
@@ -12353,17 +16738,17 @@ function buildAggregates(prs, horizons) {
 }
 function buildCoverage(prs, horizons) {
   const missingByHorizon = [...horizons].sort((a, b) => a - b).map((h) => {
-    const labels = prs.map((pr) => labelAt(pr, h)).filter((label2) => !!label2);
+    const labels = prs.map((pr2) => labelAt(pr2, h)).filter((label2) => !!label2);
     const missing = /* @__PURE__ */ new Map();
     for (const label2 of labels) if (!label2.outcome.report_outcome) for (const reason of label2.outcome.reason_codes) missing.set(reason, (missing.get(reason) ?? 0) + 1);
     return { horizon_days: h, labelled: labels.filter((label2) => !!label2.outcome.report_outcome).length, missing: [...missing.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([reason, count]) => ({ reason, count })) };
   });
-  const identifiedAgent = prs.filter((pr) => pr.attribution.agent.status === "agent").length;
-  const identifiedHarness = prs.filter((pr) => !!pr.attribution.harness.id).length;
-  const identifiedModel = prs.filter((pr) => !!pr.attribution.exact_model.id).length;
+  const identifiedAgent = prs.filter((pr2) => pr2.attribution.agent.status === "agent").length;
+  const identifiedHarness = prs.filter((pr2) => !!pr2.attribution.harness.id).length;
+  const identifiedModel = prs.filter((pr2) => !!pr2.attribution.exact_model.id).length;
   const methods2 = [];
   const tallies = /* @__PURE__ */ new Map();
-  for (const pr of prs) for (const [dimension2, values] of [["agent", pr.attribution.agent.methods], ["harness", pr.attribution.harness.methods], ["exact_model", pr.attribution.exact_model.methods]]) for (const method of values) {
+  for (const pr2 of prs) for (const [dimension2, values] of [["agent", pr2.attribution.agent.methods], ["harness", pr2.attribution.harness.methods], ["exact_model", pr2.attribution.exact_model.methods]]) for (const method of values) {
     const key = `${dimension2}	${method}`;
     tallies.set(key, (tallies.get(key) ?? 0) + 1);
   }
@@ -12374,7 +16759,7 @@ function buildCoverage(prs, horizons) {
   return {
     basis: "descriptive",
     prs_enumerated: prs.length,
-    prs_eligible: prs.filter((pr) => pr.labels.some((label2) => !!label2.outcome.report_outcome)).length,
+    prs_eligible: prs.filter((pr2) => pr2.labels.some((label2) => !!label2.outcome.report_outcome)).length,
     labels_by_horizon: missingByHorizon,
     attribution: {
       agent: { identified_agent: identifiedAgent, identified_human_signal: 0, unknown: prs.length - identifiedAgent, rate: prs.length ? Math.round(identifiedAgent / prs.length * 1e4) / 1e4 : 0 },
@@ -12469,53 +16854,60 @@ function resolveAttributionConfig(input = {}) {
 }
 var unique = (values) => [...new Set(values)];
 var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some((signature) => value.toLowerCase().startsWith(signature));
-function attributePullRequest(pr, config = {}) {
-  const metadata = extractMetadataBlock(pr.body);
+function attributePullRequest(pr2, config = {}) {
+  const metadata = extractMetadataBlock(pr2.body);
+  const markers = detectAgentMarkers({
+    authorLogin: pr2.authorLogin,
+    authorType: pr2.authorType,
+    headRef: pr2.headRef,
+    commits: pr2.commitMessages.map((message) => ({ message })),
+    body: pr2.body
+  });
   const agentMethods = [];
   const harnessMethods = [];
   const modelMethods = [];
   let identifiedAgent = false;
   const routeRole = typeof metadata?.["executedroute"] === "string" ? metadata["executedroute"].toLowerCase() : "";
   const metadataHead = typeof metadata?.["headsha"] === "string" ? metadata["headsha"].toLowerCase() : null;
-  const routeVerified = routeRole === "coder" && recognizedModel(typeof metadata?.["model"] === "string" ? metadata["model"] : null) && (!metadataHead || metadataHead === pr.headSha.toLowerCase());
+  const routeVerified = routeRole === "coder" && recognizedModel(typeof metadata?.["model"] === "string" ? metadata["model"] : null) && (!metadataHead || metadataHead === pr2.headSha.toLowerCase());
   if (routeVerified) {
     identifiedAgent = true;
     agentMethods.push("first_party_route_metadata");
     harnessMethods.push("first_party_route_metadata");
     modelMethods.push("first_party_route_metadata");
   }
-  const login = (pr.authorLogin ?? "").toLowerCase();
+  const login = (pr2.authorLogin ?? "").toLowerCase();
   const configuredBot = [...config.botLogins ?? [], ...config.extraBotLogins ?? []].some((value) => value.toLowerCase() === login);
-  const botAuthor = configuredBot || /\[bot\]$/i.test(pr.authorLogin ?? "") || (pr.authorType ?? "").toLowerCase() === "bot";
+  const botAuthor = configuredBot || /\[bot\]$/i.test(pr2.authorLogin ?? "") || (pr2.authorType ?? "").toLowerCase() === "bot";
   if (botAuthor) {
     identifiedAgent = true;
     agentMethods.push(configuredBot ? "owner_config" : "bot_author");
   }
-  if (pr.commitMessages.some((message) => /co-authored-by:.*(?:\[bot\]|\b(?:bot|agent)\b)/i.test(message))) {
+  if (markers.coAuthorTrailer) {
     identifiedAgent = true;
     agentMethods.push("co_authored_by_trailer");
   }
-  const configuredPrefix = config.branchPrefixes?.find((value) => pr.headRef.startsWith(value));
-  const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr.headRef.startsWith(value));
-  const builtInPrefix = /^(?:agent|bot|codex|aider|claude-code)\//i.test(pr.headRef);
+  const configuredPrefix = config.branchPrefixes?.find((value) => pr2.headRef.startsWith(value));
+  const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr2.headRef.startsWith(value));
+  const builtInPrefix = branchAgentFamily(pr2.headRef) !== null;
   if (configuredPrefix || ownerPrefix || builtInPrefix) {
     identifiedAgent = true;
     agentMethods.push(ownerPrefix ? "owner_config" : "branch_prefix");
   }
-  const matchedLabel = pr.labels.find((label2) => config.labels?.[label2] !== void 0);
+  const matchedLabel = pr2.labels.find((label2) => config.labels?.[label2] !== void 0);
   if (matchedLabel) {
     identifiedAgent = true;
     agentMethods.push("pr_label");
   }
-  const signatureMatches = pr.commitMessages.join("\n").match(/\b(?:gpt-[\w.-]+|claude-[\w.-]+|gemini-[\w.-]+|o[13](?:-[\w.-]+)?)\b/ig) ?? [];
-  const signatureModels = [...new Set(signatureMatches.map((value) => value.toLowerCase()))];
-  if (signatureModels.length) {
+  const signatureModels = markers.modelIds;
+  if (markers.signature) {
     identifiedAgent = true;
     agentMethods.push("commit_signature");
   }
   const metadataHarness = typeof metadata?.["harness"] === "string" ? metadata["harness"].toLowerCase() : null;
   const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
-  const prefixHarness = builtInPrefix ? pr.headRef.split("/")[0]?.toLowerCase() ?? null : null;
+  const prefixFamily = branchAgentFamily(pr2.headRef);
+  const prefixHarness = prefixFamily === "claude" ? "claude-code" : prefixFamily;
   const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value) => !!value);
   const harnessIds = [...new Set(harnessEvidence.filter((value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)))];
   const harness = harnessIds.length === 1 ? harnessIds[0] : null;
@@ -12537,7 +16929,7 @@ function toReportAttribution(value) {
 }
 
 // src/orchestrate/enumerate.ts
-var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+var EMPTY_TREE_SHA4 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 function enumerateWindow(options) {
   const { runGit: runGit3, branch, from, to, cursor = null, maxPrs = Number.MAX_SAFE_INTEGER } = options;
   const cutoff = Math.floor(from.getTime() / 1e3);
@@ -12556,14 +16948,14 @@ function enumerateWindow(options) {
   const merges = [];
   for (const line of result.stdout.split("\n")) {
     if (!line.trim()) continue;
-    const [sha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
-    if (!sha || !/^[0-9a-f]{40}$/.test(sha)) continue;
+    const [sha2, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
+    if (!sha2 || !/^[0-9a-f]{40}$/.test(sha2)) continue;
     const epoch = Number.parseInt(epochText, 10);
     if (!Number.isFinite(epoch) || epoch < cutoff || epoch > end) continue;
     const parents = parentsText.trim().split(/\s+/).filter(Boolean);
-    const parentSha = parents[0] ?? EMPTY_TREE_SHA3;
+    const parentSha = parents[0] ?? EMPTY_TREE_SHA4;
     const subject = subjectParts.join("	");
-    merges.push({ mergeSha: sha, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha });
+    merges.push({ mergeSha: sha2, parentSha, mergedAtEpoch: epoch, prNumber: extractPrNumber(subject), headSha: parents[1] ?? sha2 });
   }
   const cap2 = Math.max(0, Math.floor(maxPrs));
   return { merges: cap2 < merges.length ? merges.slice(-cap2) : merges, cursorReset: reset };
@@ -12572,9 +16964,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash6("sha256").update(stableJson(config)).digest("hex");
+  return createHash10("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -12681,7 +17073,7 @@ async function runReportScan(target, deps, options) {
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 864e5);
   const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
-  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
+  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha2) => isAncestor(deps.runGit, sha2, target.integrationBranch)) : null;
   if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
   const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
   let merges = enumerated.merges;
@@ -12736,39 +17128,39 @@ async function runReportScan(target, deps, options) {
           deps.onDiagnostic?.(`warn: GitHub could not find PR #${merge.prNumber}; skipped`);
           continue;
         }
-        const pr = apiPr ?? { number: merge.prNumber, title: "", body: null, authorLogin: null, authorType: null, headRef: "", headSha: merge.headSha, labels: [], mergedAt: new Date(merge.mergedAtEpoch * 1e3).toISOString() };
-        const commits = deps.github.offline ? deps.runGit(["log", "--format=%B", `${merge.parentSha}..${merge.mergeSha}`]).stdout.split("\n\n").filter(Boolean) : await deps.github.listPullCommits(pr.number);
-        attribution = toReportAttribution(attributePullRequest({ ...pr, commitMessages: commits }, config));
-        mergedAt = pr.mergedAt;
+        const pr2 = apiPr ?? { number: merge.prNumber, title: "", body: null, authorLogin: null, authorType: null, headRef: "", headSha: merge.headSha, labels: [], mergedAt: new Date(merge.mergedAtEpoch * 1e3).toISOString() };
+        const commits = deps.github.offline ? deps.runGit(["log", "--format=%B", `${merge.parentSha}..${merge.mergeSha}`]).stdout.split("\n\n").filter(Boolean) : await deps.github.listPullCommits(pr2.number);
+        attribution = toReportAttribution(attributePullRequest({ ...pr2, commitMessages: commits }, config));
+        mergedAt = pr2.mergedAt;
         if (deps.extract) {
-          features = deps.extract({ ...merge, prNumber: merge.prNumber }, { taskText: `${pr.title}
+          features = deps.extract({ ...merge, prNumber: merge.prNumber }, { taskText: `${pr2.title}
 
-${pr.body ?? ""}` });
+${pr2.body ?? ""}` });
         } else {
           const checkoutParent = fs3.mkdtempSync(path3.join(os.tmpdir(), "hokusai-scan-report-"));
           const checkoutDir = path3.join(checkoutParent, "checkout");
           try {
-            const add = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
-            if (add.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
+            const add2 = deps.runGit(["worktree", "add", "--detach", "--no-checkout", checkoutDir, merge.mergeSha]);
+            if (add2.exitCode !== 0) throw new Error("Unable to prepare PR checkout");
             for (const args of [["-C", checkoutDir, "update-ref", "HEAD", merge.mergeSha], ["-C", checkoutDir, "checkout", "-f"]]) {
               if (deps.runGit(args).exitCode !== 0) throw new Error("Unable to check out PR merge");
             }
             features = extractCandidateFeatures({
               checkoutDir,
-              prNumber: pr.number,
+              prNumber: pr2.number,
               baseRef: merge.parentSha,
               offline: true,
               staticFeatures: options.staticAnalysis === "off" ? NULL_STATIC_FEATURES : void 0,
-              contract: { taskText: `${pr.title}
+              contract: { taskText: `${pr2.title}
 
-${pr.body ?? ""}` }
+${pr2.body ?? ""}` }
             });
           } finally {
             deps.runGit(["worktree", "remove", "--force", checkoutDir]);
             fs3.rmSync(checkoutParent, { recursive: true, force: true });
           }
         }
-        await deps.github.getCheckConclusion(pr.headSha);
+        await deps.github.getCheckConclusion(pr2.headSha);
       }
       const ref3 = refBySha.get(merge.mergeSha);
       const labelCache = previous?.labels_by_horizon ?? {};
@@ -12828,7 +17220,7 @@ ${pr.body ?? ""}` }
     else save();
   }
   const rows = [...reportRows.values()];
-  const dates = rows.map((pr) => pr.merged_at).sort();
+  const dates = rows.map((pr2) => pr2.merged_at).sort();
   return buildReportDraft({
     owner: target.owner,
     repo: target.repo,
@@ -12949,6 +17341,12 @@ corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <fil
                  (write or grade the auditor screening test; HOK-3269)
 corpus-calibration-topup --sample <private dir> --plan <plan.json> --gold <gold.json>
                  (audit top-up under a later plan: re-derive audit flags, write the blank top-up sheet with new hidden rows; HOK-3269)
+corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
+                 (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
+corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slice <slice.json> --out <private dir> [--seed <hex>]
+                 (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
+corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
+                 (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -13015,7 +17413,7 @@ function runScanCli(argv, io) {
     }
     let values;
     try {
-      ({ values } = parseArgs3({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
+      ({ values } = parseArgs4({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -13073,9 +17471,9 @@ function runScanCli(argv, io) {
     if (outSpec === "-") {
       io.writeStdout(output);
     } else {
-      outputPath = resolve5(outSpec);
-      mkdirSync4(dirname3(outputPath), { recursive: true });
-      writeFileSync4(outputPath, output);
+      outputPath = resolve6(outSpec);
+      mkdirSync7(dirname4(outputPath), { recursive: true });
+      writeFileSync7(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -13108,7 +17506,7 @@ async function runReportCli(argv, io) {
   try {
     let parsed;
     try {
-      parsed = parseArgs3({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
+      parsed = parseArgs4({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -13130,7 +17528,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join10(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync3(join13(tmpdir3(), "hokusai-report-"));
       const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -13187,7 +17585,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync5(resolve5(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync9(resolve6(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -13198,7 +17596,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join10(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join13(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -13212,14 +17610,14 @@ async function runReportCli(argv, io) {
     }, ...stateDir ? { stateDir } : {} });
     const output = emitReport(draft);
     const outSpec = values.out ?? "-";
-    const outputPath = outSpec === "-" ? null : resolve5(outSpec);
+    const outputPath = outSpec === "-" ? null : resolve6(outSpec);
     if (values.contribute === true) {
       const built = buildContributionPayload(JSON.parse(output));
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync4(dirname3(outputPath), { recursive: true });
-          writeFileSync4(outputPath, built.body);
+          mkdirSync7(dirname4(outputPath), { recursive: true });
+          writeFileSync7(outputPath, built.body);
         }
       } else {
         const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
@@ -13228,14 +17626,14 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync4(dirname3(outputPath), { recursive: true });
-          writeFileSync4(outputPath, output);
+          mkdirSync7(dirname4(outputPath), { recursive: true });
+          writeFileSync7(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync4(dirname3(outputPath), { recursive: true });
-      writeFileSync4(outputPath, output);
+      mkdirSync7(dirname4(outputPath), { recursive: true });
+      writeFileSync7(outputPath, output);
     }
     try {
       saveState?.();
@@ -13256,7 +17654,7 @@ async function runReportCli(argv, io) {
     diag.error(`unexpected: ${error.message}`);
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   } finally {
-    if (temporaryRepo) rmSync4(temporaryRepo, { recursive: true, force: true });
+    if (temporaryRepo) rmSync5(temporaryRepo, { recursive: true, force: true });
   }
 }
 function parsePositiveInteger(value, fallback, name, maximum) {
@@ -13272,8 +17670,8 @@ function parseGithubTarget(value) {
   return { owner: match[1], repo: match[2], url: `https://github.com/${match[1]}/${match[2]}.git` };
 }
 function resolveRepoDir(raw) {
-  const repoDir = resolve5(validateRepoDir(raw));
-  if (!existsSync6(repoDir) || !statSync4(repoDir).isDirectory()) {
+  const repoDir = resolve6(validateRepoDir(raw));
+  if (!existsSync9(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);
@@ -13345,16 +17743,16 @@ function collectLabels(context, params, prFilter) {
     if (prFilter) prs = prs.filter(prFilter);
   }
   const labels = [];
-  for (const pr of prs) {
+  for (const pr2 of prs) {
     try {
-      labels.push(...labelMergedPr(target, deps, pr, {
+      labels.push(...labelMergedPr(target, deps, pr2, {
         horizons: params.horizons,
         allMergedPrs,
         ...params.includeLinkedReferences === void 0 ? {} : { includeLinkedReferences: params.includeLinkedReferences }
       }));
     } catch (error) {
       if (error instanceof ScanUpstreamError) throw error;
-      diag.error(`failed to label ${pr.prUrl}: ${String(error)}`);
+      diag.error(`failed to label ${pr2.prUrl}: ${String(error)}`);
     }
   }
   const summary = summarizeLabels(`${target.owner}/${target.repo}`, labels);
@@ -13386,7 +17784,7 @@ function runCombinedScan(context, params) {
   const labels = collectLabels(
     context,
     { ...params, prUrl: void 0 },
-    (pr) => pr.prNumber === params.prNumber
+    (pr2) => pr2.prNumber === params.prNumber
   );
   if (labels.length === 0) {
     throw new ScanInputError(

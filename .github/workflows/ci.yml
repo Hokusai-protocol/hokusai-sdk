@@ -34,6 +34,7 @@ jobs:
       - run: pnpm check:docs
       - run: pnpm -r build
       - run: pnpm check:arbiter-report
+      - run: node scripts/export-router-row-schema.mjs --check
       - run: pnpm -r test
 
       # Clean-consumer proof for @hokusai/costs: pack, install the tarballs

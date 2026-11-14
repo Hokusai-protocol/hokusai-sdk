@@ -1,6 +1,6 @@
 {
   "name": "@hokusai/adapter-codex",
-  "version": "0.5.0",
+  "version": "0.8.0",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -28,7 +28,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@hokusai/core": "workspace:*"
+    "@hokusai/core": "workspace:*",
+    "@hokusai/costs": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --pretty false",

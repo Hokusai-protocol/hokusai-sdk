@@ -17,4 +17,4 @@ Only call `hokusai_submit_outcome` with `approve: true` after the user explicitl
 
 Pass `actualCostUsd` — what the run actually cost in USD. The server scores it against the budget the task was routed under, and an outcome without it is stored as telemetry: it trains nothing and earns nothing. If you do not know the cost, ask the user rather than omitting it or guessing.
 
-The outcome is submitted as a contribution row against the route it belongs to, so a task must be routed with `$hokusai-route` before its outcome can be reported.
+The outcome is submitted as a contribution row against the route it belongs to, so a task must be routed with `$hokusai-route` before its outcome can be reported. Always pass that route's `correlationId`, or the routed `taskId`: there is no "latest route" fallback, and an outcome is never attached to another task's route. Pass `actualModel` as the model that actually ran; never copy it from the recommendation.

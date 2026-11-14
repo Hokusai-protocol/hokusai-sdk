@@ -5,6 +5,7 @@ import {
   executeRouteCommand,
   latestRouteCommand,
   previewOutcomeCommand,
+  routeForTaskCommand,
   privacyStatusCommand,
   recordOnboardingFunnelSignal,
   submitOutcomeCommand,
@@ -12,6 +13,7 @@ import {
   type HarnessCommandResult,
   type OutcomeContributionPrompt,
   type LatestRouteCommandValue,
+  type MeasureStage,
   type PreviewOutcomeCommandValue,
   type PrivacyStatusCommandValue,
   type RouteCommandValue,
@@ -26,12 +28,21 @@ import {
   resolveCodexConfigDir,
 } from './config.js';
 import { createAllowlistedOpenAiRegistry } from './registry.js';
+import {
+  codexSessionBaseline,
+  measureCodexStage,
+  type CodexCallSession,
+} from './session-cost.js';
 
 export interface CodexPluginCommandOptions {
   client?: HokusaiClient | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   clock?: (() => Date) | undefined;
   transport?: FetchTransport | undefined;
+  /** The calling Codex session, read from the MCP call's `_meta`. */
+  session?: CodexCallSession | undefined;
+  /** Overrides the Codex session measurer (tests). */
+  measureStage?: MeasureStage | undefined;
 }
 
 export interface CodexRouteInput {
@@ -51,7 +62,9 @@ export interface CodexRouteInput {
 }
 
 export interface CodexOutcomeInput {
+  /** The route this outcome belongs to: its correlation id, or else its task id. One is required. */
   correlationId?: string;
+  taskId?: string;
   recommendedModel?: string;
   actualModel: string;
   recommendationAccepted: boolean;
@@ -95,6 +108,12 @@ function routeMetadata(
 export interface CodexOutcomePromptInput {
   event?: unknown;
   actualModel?: string;
+  /**
+   * The routed task this completion belongs to. Without it (or a correlation
+   * id) no route is offered: the prompt never guesses the newest route.
+   */
+  taskId?: string;
+  correlationId?: string;
 }
 
 function createClient(
@@ -176,6 +195,10 @@ export async function routeTaskWithCodex(
     taskId: createTaskId(input.taskId, options.clock),
     taskText: input.task,
     ...(routeMetadata(input) ? { metadata: routeMetadata(input) } : {}),
+    sessionBaseline: codexSessionBaseline(
+      options.session,
+      (options.clock ?? (() => new Date()))().toISOString(),
+    ),
     store,
     profile,
     ...(options.clock ? { clock: options.clock } : {}),
@@ -219,6 +242,7 @@ export async function previewOutcomeWithCodex(
 ): Promise<HarnessCommandResult<PreviewOutcomeCommandValue>> {
   return previewOutcomeCommand({
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
     currentModelId: input.actualModel,
     input: {
       actualModel: input.actualModel,
@@ -252,12 +276,17 @@ export async function submitOutcomeWithCodex(
     outcomeOptIn: hasOutcomeOptIn(options.env),
     ...(input.approve === undefined ? {} : { approve: input.approve }),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
     ...(input.actualCostUsd === undefined
       ? {}
       : { actualCostUsd: input.actualCostUsd }),
     ...(input.wallClockSeconds === undefined
       ? {}
       : { wallClockSeconds: input.wallClockSeconds }),
+    measureStage: options.measureStage ?? measureCodexStage,
+    // The rollout records the model that ran; the agent's report may not.
+    executedModelFromSession: true,
+    env: options.env,
     currentModelId: input.actualModel,
     input: {
       actualModel: input.actualModel,
@@ -301,8 +330,14 @@ export async function promptOutcomeContributionWithCodex(
   input: CodexOutcomePromptInput = {},
   options: CodexPluginCommandOptions = {},
 ): Promise<HarnessCommandResult<OutcomeContributionPrompt>> {
-  const latest = await latestRouteWithCodex(options);
-  const latestRoute = latest.ok
+  const latest =
+    input.taskId || input.correlationId
+      ? await routeForTaskCommand(createFsStore(resolveCodexConfigDir(options.env)), {
+          taskId: input.taskId,
+          correlationId: input.correlationId,
+        })
+      : undefined;
+  const latestRoute = latest?.ok
     ? {
         correlationId: latest.value.correlationId,
         taskId: latest.value.taskId,

@@ -56,3 +56,4 @@ export const taskCostFixtures: readonly TaskCostFixture[] = [
 ];
 
 export * from './attempt/index.js';
+export * from './queue/index.js';

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -52,14 +52,12 @@ describe('runReportCli', () => {
     expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
   });
 
-  it('fills the model from --use-latest when --recommended-model is omitted', async () => {
-    // Regression: with --use-latest and no explicit model flags, the payload
-    // builder fell back to an empty recommendedModel/actualModel and failed
-    // validation, even though the stored routing decision carried the model.
+  it('fills the model from the route stored for --task-id when --recommended-model is omitted', async () => {
     const result = await runReportCli(
       [
         '--preview',
-        '--use-latest',
+        '--task-id',
+        'task-latest',
         '--accepted',
         '--status',
         'succeeded',
@@ -74,13 +72,17 @@ describe('runReportCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () =>
-          Promise.resolve({
-            correlationId: 'route-latest',
-            taskId: 'task-latest',
-            createdAt: '2026-07-08T00:00:00.000Z',
-            recommendedModelId: 'claude-sonnet-4-6',
-          }),
+        findRoutingDecisionImpl: ({ taskId }) =>
+          Promise.resolve(
+            taskId === 'task-latest'
+              ? {
+                  correlationId: 'route-latest',
+                  taskId: 'task-latest',
+                  createdAt: '2026-07-08T00:00:00.000Z',
+                  recommendedModelId: 'claude-sonnet-4-6',
+                }
+              : undefined,
+          ),
         readStdin: () => Promise.resolve(''),
       },
     );
@@ -172,7 +174,7 @@ describe('runReportCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () => Promise.resolve(undefined),
+        findRoutingDecisionImpl: () => Promise.resolve(undefined),
         readStdin: () => Promise.resolve(''),
       },
     );
@@ -522,8 +524,8 @@ describe('runReportCli', () => {
     expect(occurrences).toBe(1);
   });
 
-  it('uses the latest local routing decision when --use-latest is passed', async () => {
-    const findLatestRoutingDecisionImpl = vi.fn(() =>
+  it('resolves the routing decision stored for --task-id', async () => {
+    const findRoutingDecisionImpl = vi.fn(() =>
       Promise.resolve({
         correlationId: 'route-latest',
         taskId: 'task-latest',
@@ -566,7 +568,8 @@ describe('runReportCli', () => {
     const result = await runReportCli(
       [
         '--preview',
-        '--use-latest',
+        '--task-id',
+        'task-latest',
         '--recommended-model',
         'claude-sonnet-4-6',
         '--actual-model',
@@ -585,19 +588,22 @@ describe('runReportCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl,
+        findRoutingDecisionImpl,
         previewReportOutcomeImpl,
         readStdin: () => Promise.resolve(''),
       },
     );
 
     expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
-    expect(findLatestRoutingDecisionImpl).toHaveBeenCalledOnce();
+    expect(findRoutingDecisionImpl).toHaveBeenCalledOnce();
+    expect(findRoutingDecisionImpl).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'task-latest' }),
+    );
     expect(previewReportOutcomeImpl).toHaveBeenCalledOnce();
     expect(result.stdout).toContain('route-latest');
   });
 
-  it('returns a clear error when --use-latest finds no record on disk', async () => {
+  it('rejects the removed --use-latest flag with a pointer to --task-id', async () => {
     const result = await runReportCli(
       [
         '--preview',
@@ -620,19 +626,21 @@ describe('runReportCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () => Promise.resolve(undefined),
         readStdin: () => Promise.resolve(''),
       },
     );
 
     expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR);
-    expect(result.stderr).toContain('--correlation-id');
+    expect(result.stderr).toContain('--use-latest was removed');
+    expect(result.stderr).toContain('--task-id');
   });
 
   it('surfaces a clear error when reading local routing decisions fails', async () => {
     const result = await runReportCli(
       [
         '--preview',
+        '--task-id',
+        'task-1',
         '--recommended-model',
         'claude-sonnet-4-6',
         '--actual-model',
@@ -651,7 +659,7 @@ describe('runReportCli', () => {
             outcomeSubmissionEnabled: true,
             modelAllowlist: ['claude-sonnet-4-6'],
           }),
-        findLatestRoutingDecisionImpl: () =>
+        findRoutingDecisionImpl: () =>
           Promise.reject(new Error('EACCES: permission denied')),
         readStdin: () => Promise.resolve(''),
       },
@@ -659,6 +667,122 @@ describe('runReportCli', () => {
 
     expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR);
     expect(result.stderr).toContain('Could not read local routing correlations');
+  });
+
+  describe('2026-10-30 incident (HOK-3364)', () => {
+    // An old route for another task (July), whose route context points cost
+    // resolution at a transcript directory, plus the current session's
+    // transcript there, far more expensive than the task. The old CLI attached
+    // both to an unrelated task's outcome.
+    async function seedIncident(): Promise<{ configDir: string; claudeDir: string }> {
+      const configDir = await mkdtemp(join(tmpdir(), 'hokusai-incident-config-'));
+      const claudeDir = await mkdtemp(join(tmpdir(), 'hokusai-incident-claude-'));
+      cleanups.push(() => rm(configDir, { recursive: true, force: true }));
+      cleanups.push(() => rm(claudeDir, { recursive: true, force: true }));
+      await writeFile(
+        join(configDir, 'hokusai-plugin-config.json'),
+        JSON.stringify({ outcomeSubmissionEnabled: true }),
+        'utf8',
+      );
+      await mkdir(join(configDir, 'correlations'), { recursive: true });
+      await writeFile(
+        join(configDir, 'correlations', 'route-july.json'),
+        JSON.stringify({
+          correlationId: 'route-july',
+          packetHash: 'HOK-1001',
+          createdAt: Date.parse('2026-07-13T10:00:00.000Z'),
+          metadata: {
+            taskId: 'HOK-1001',
+            originalCorrelationId: 'route-july',
+            inferenceLogId: 'inference-july',
+            recommendedModelId: 'claude-sonnet-4-6',
+            routeContext: JSON.stringify({
+              taskDescriptor: { task_type: 'feature' },
+              allowedModels: ['claude-sonnet-4-6', 'claude-opus-4-8'],
+              budgetUsd: 5,
+              baselineAt: '2026-07-13T10:00:00.000Z',
+              projectDirKey: '-repo',
+            }),
+          },
+        }),
+        'utf8',
+      );
+      await mkdir(join(claudeDir, 'projects', '-repo'), { recursive: true });
+      await writeFile(
+        join(claudeDir, 'projects', '-repo', 'current-session.jsonl'),
+        JSON.stringify({
+          timestamp: '2026-10-30T12:00:00.000Z',
+          message: { usage: { input_tokens: 2_000_000, output_tokens: 2_000_000 } },
+        }),
+        'utf8',
+      );
+      return { configDir, claudeDir };
+    }
+
+    it('attaches neither the July route nor the current-session cost to an unrouted task', async () => {
+      const { configDir, claudeDir } = await seedIncident();
+      vi.stubEnv('HOKUSAI_CONFIG_DIR', configDir);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', claudeDir);
+
+      const result = await runReportCli(
+        ['--preview', '--json', '--task-id', 'HOK-3315', '--actual-model', 'claude-opus-4-8', '--status', 'succeeded'],
+        {},
+        { readStdin: () => Promise.resolve('') },
+      );
+
+      expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR);
+      expect(result.stderr).toContain('No stored route for task HOK-3315');
+      const output = result.stdout + result.stderr;
+      expect(output).not.toContain('route-july');
+      expect(output).not.toContain('inference-july');
+    });
+
+    it('reports plain telemetry with no join key or cost when a correlation id is given explicitly', async () => {
+      const { configDir, claudeDir } = await seedIncident();
+      vi.stubEnv('HOKUSAI_CONFIG_DIR', configDir);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', claudeDir);
+
+      const result = await runReportCli(
+        [
+          '--preview',
+          '--json',
+          '--correlation-id',
+          'HOK-3315-outcome',
+          '--task-id',
+          'HOK-3315',
+          '--recommended-model',
+          'claude-opus-4-8',
+          '--actual-model',
+          'claude-opus-4-8',
+          '--accepted',
+          '--status',
+          'succeeded',
+        ],
+        {},
+        { readStdin: () => Promise.resolve('') },
+      );
+
+      expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OK);
+      expect(result.stdout).not.toContain('inference-july');
+      expect(result.stdout).not.toContain('route-july');
+      expect(result.stdout).not.toContain('inference_log_id');
+      expect(result.stdout).not.toContain('actual_cost_usd');
+    });
+
+    it("rejects a correlation id that belongs to another task's route", async () => {
+      const { configDir, claudeDir } = await seedIncident();
+      vi.stubEnv('HOKUSAI_CONFIG_DIR', configDir);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', claudeDir);
+
+      const result = await runReportCli(
+        ['--preview', '--correlation-id', 'route-july', '--task-id', 'HOK-3315', '--actual-model', 'claude-opus-4-8', '--status', 'succeeded'],
+        {},
+        { readStdin: () => Promise.resolve('') },
+      );
+
+      expect(result.exitCode).toBe(REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR);
+      expect(result.stderr).toContain('belongs to task HOK-1001, not HOK-3315');
+    });
   });
 
   it.each(['failed', 'abandoned', 'overridden'])(

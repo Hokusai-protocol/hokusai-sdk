@@ -4,10 +4,10 @@ import {
   defaultPluginConfigPath,
   loadPluginConfig,
   type HokusaiPluginConfig,
-  type LatestRoutingDecision,
+  type StoredRoutingDecision,
 } from '@hokusai/core';
 import { claudeCodeHarnessProfile } from './profile.js';
-import { findLatestRoutingDecision } from './commands.js';
+import { findRoutingDecision } from './commands.js';
 
 export interface OutcomePromptHookCliRunResult {
   exitCode: 0;
@@ -16,9 +16,10 @@ export interface OutcomePromptHookCliRunResult {
 }
 
 export interface OutcomePromptHookCliDeps {
-  findLatestRoutingDecisionImpl?: (input: {
+  findRoutingDecisionImpl?: (input: {
     configDir: string;
-  }) => Promise<LatestRoutingDecision | undefined>;
+    sessionId?: string | undefined;
+  }) => Promise<StoredRoutingDecision | undefined>;
   loadConfig?: (input: {
     configPath?: string;
     env: NodeJS.ProcessEnv;
@@ -82,6 +83,15 @@ async function defaultReadStdin(): Promise<string> {
   return chunks.join('');
 }
 
+/** The Claude Code session the hook event belongs to (`session_id`), if any. */
+function eventSessionId(event: unknown): string | undefined {
+  if (!event || typeof event !== 'object' || Array.isArray(event)) {
+    return undefined;
+  }
+  const sessionId = (event as Record<string, unknown>).session_id;
+  return typeof sessionId === 'string' && sessionId.trim().length > 0 ? sessionId.trim() : undefined;
+}
+
 function parseEvent(rawStdin: string, eventText: string): unknown {
   const raw = rawStdin.trim();
   if (raw.length > 0) {
@@ -138,14 +148,17 @@ export async function runOutcomePromptHookCli(
       }));
 
   try {
-    const [config, latestRoute, rawStdin] = await Promise.all([
+    const [config, rawStdin] = await Promise.all([
       loadConfigImpl(configPath === undefined ? { env } : { configPath, env }),
-      (deps.findLatestRoutingDecisionImpl ?? findLatestRoutingDecision)({
-        configDir,
-      }),
       (deps.readStdin ?? defaultReadStdin)(),
     ]);
     const event = parseEvent(rawStdin, parsed.eventText);
+    // Only a route recorded in this same session can be this task's. Without a
+    // session id there is no exact match, and no route is offered (HOK-3364).
+    const sessionId = eventSessionId(event);
+    const latestRoute = sessionId
+      ? await (deps.findRoutingDecisionImpl ?? findRoutingDecision)({ configDir, sessionId })
+      : undefined;
     const actualModel = env.HOKUSAI_ACTUAL_MODEL;
     const prompt = buildOutcomeContributionPrompt({
       event,

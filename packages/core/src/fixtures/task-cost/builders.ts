@@ -10,7 +10,6 @@
  * @module fixtures/task-cost/builders
  */
 
-import { MODEL_PRICING_AS_OF } from '../../pricing.js';
 import type {
   TaskCostBasis,
   TaskCostDiagnosticCode,
@@ -31,7 +30,12 @@ import { deriveUsageAvailability } from '../../task-cost/token-usage.js';
 export const FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 export const FIXTURE_TASK_ID = 'task-0001';
 export const FIXTURE_SESSION_ID = 'session-0001';
-export const FIXTURE_PRICING_REVISION = MODEL_PRICING_AS_OF;
+/**
+ * The price revision the golden events were priced at. Pinned, not the live
+ * `MODEL_PRICING_AS_OF`: a price-table update must not rewrite the HOK-3072
+ * goldens (their estimates are hand-written at these rates).
+ */
+export const FIXTURE_PRICING_REVISION = '2026-07-15';
 
 /** A named, self-describing fixture: events in, expected summaries out. */
 export interface TaskCostFixture {

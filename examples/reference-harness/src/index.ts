@@ -35,7 +35,7 @@ export interface ReferenceFlowSummary {
 export async function runReferenceFlow(
   log: (line: string) => void = () => undefined,
 ): Promise<ReferenceFlowSummary> {
-  const adapter = createReferenceHarnessAdapter();
+  const adapter = createReferenceHarnessAdapter({ now: () => new Date(OBSERVED_AT) });
   const client = createMockHokusaiClient();
 
   const shared = {

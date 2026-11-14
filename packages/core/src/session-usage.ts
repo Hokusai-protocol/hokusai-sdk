@@ -64,12 +64,28 @@ export interface SessionCostSidecar {
 export interface CostBaselineSnapshot {
   /** ISO timestamp of the route — always present; filters transcript turns. */
   baselineAt: string;
-  /** Encoded project-dir key (cwd with non-alphanumerics → `-`). */
-  projectDirKey: string;
+  /**
+   * Encoded project-dir key (cwd with non-alphanumerics → `-`). Claude Code
+   * only; other harnesses locate their session files by id.
+   */
+  projectDirKey?: string;
   /** Cumulative session cost at route time (sidecar diff base), when fresh. */
   costBaselineUsd?: number;
-  /** Session id the baseline cost belongs to, when a fresh sidecar was found. */
+  /**
+   * The session the route ran in. Claude Code: `CLAUDE_CODE_SESSION_ID`, else
+   * a fresh sidecar's id. Codex: the MCP call's `_meta` session id.
+   */
   sessionId?: string;
+}
+
+/** Claude Code exports the running session's id to commands it spawns. */
+export const CLAUDE_CODE_SESSION_ID_ENV = 'CLAUDE_CODE_SESSION_ID';
+
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]{1,200}$/;
+
+function envSessionId(env: NodeJS.ProcessEnv | undefined): string | undefined {
+  const value = (env ?? process.env)[CLAUDE_CODE_SESSION_ID_ENV]?.trim();
+  return value && SAFE_SESSION_ID.test(value) && !value.startsWith('.') ? value : undefined;
 }
 
 /** Token totals summed from a transcript, kept per-tier for correct pricing. */
@@ -207,8 +223,11 @@ function isSidecarFresh(
 
 /**
  * Capture the route-time cost baseline for later diffing. Always records
- * `baselineAt` and the encoded project-dir key; additionally adopts the current
- * sidecar's cost/session id when a fresh sidecar is present. Never throws.
+ * `baselineAt` and the encoded project-dir key. The session id comes from
+ * `CLAUDE_CODE_SESSION_ID` when Claude Code set it (exact), else from a fresh
+ * sidecar. The sidecar's cost is adopted only when it belongs to that same
+ * session: the sidecar is global, so with several sessions open it may be
+ * another session's. Never throws.
  */
 export function captureCostBaseline(input: {
   cwd: string;
@@ -218,9 +237,11 @@ export function captureCostBaseline(input: {
   fs?: SessionUsageFileSystem | undefined;
   freshnessMs?: number | undefined;
 }): CostBaselineSnapshot {
+  const sessionId = envSessionId(input.env);
   const snapshot: CostBaselineSnapshot = {
     baselineAt: input.nowIso,
     projectDirKey: encodeProjectDirKey(input.cwd),
+    ...(sessionId ? { sessionId } : {}),
   };
 
   try {
@@ -228,6 +249,7 @@ export function captureCostBaseline(input: {
     const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
     if (
       sidecar &&
+      (sessionId === undefined || sidecar.session_id === sessionId) &&
       isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)
     ) {
       return {
@@ -368,45 +390,30 @@ export function parseTranscriptUsageTotals(input: {
 }
 
 /**
- * Locate the current session transcript: the newest-mtime `*.jsonl` under the
- * project transcript directory. Returns `undefined` when the directory is
- * missing or holds no transcript. Never throws.
+ * Locate the transcript of exactly one Claude Code session: `<dir>/<sessionId>.jsonl`.
+ * Returns `undefined` when the session id is missing or unsafe, or the file
+ * is unreadable. It never falls back to the newest transcript in the
+ * directory: that is whatever session is running now, not the task's
+ * (HOK-3364).
  */
 export function locateSessionTranscript(input: {
   dir: string;
+  sessionId: string | undefined;
   fs?: SessionUsageFileSystem | undefined;
 }): string | undefined {
   const fs = input.fs ?? nodeFs;
-
-  let names: string[];
-  try {
-    names = fs.readdirSync(input.dir);
-  } catch {
+  const sessionId = input.sessionId?.trim();
+  if (!sessionId || !/^[A-Za-z0-9._-]{1,200}$/.test(sessionId) || sessionId.startsWith('.')) {
     return undefined;
   }
 
-  let best: string | undefined;
-  let bestMtime = Number.NEGATIVE_INFINITY;
-  for (const name of names) {
-    if (!name.endsWith('.jsonl')) {
-      continue;
-    }
-
-    const full = path.join(input.dir, name);
-    let mtime: number;
-    try {
-      mtime = fs.statSync(full).mtimeMs;
-    } catch {
-      continue;
-    }
-
-    if (mtime > bestMtime) {
-      bestMtime = mtime;
-      best = full;
-    }
+  const full = path.join(input.dir, `${sessionId}.jsonl`);
+  try {
+    fs.statSync(full);
+  } catch {
+    return undefined;
   }
-
-  return best;
+  return full;
 }
 
 /**
@@ -451,7 +458,7 @@ export interface CostResolutionRouteContext {
  *  2. Explicit token counts priced via the core price table.
  *  3. Statusline sidecar diff: `currentCost - costBaselineUsd` when the current
  *     sidecar's session id matches the route baseline (clamped >= 0).
- *  4. Transcript best-effort: newest `*.jsonl` for the project, usage summed for
+ *  4. Transcript: the route session's own `<sessionId>.jsonl`, usage summed for
  *     turns after `baselineAt`, priced via the price table.
  *  5. Otherwise `undefined` — the row is submitted partial (telemetry-only).
  *
@@ -515,8 +522,10 @@ export function resolveActualCostUsd(input: {
     }
   }
 
-  // Tier 4: transcript best-effort (requires a baseline timestamp to filter on).
-  if (routeContext?.baselineAt) {
+  // Tier 4: the route's own session transcript (requires its session id and a
+  // baseline timestamp). Never the newest transcript, which is the current
+  // session's, not the task's.
+  if (routeContext?.baselineAt && routeContext.sessionId) {
     try {
       const configDir = claudeConfigDirFrom(input);
       const dir = routeContext.projectDirKey
@@ -524,6 +533,7 @@ export function resolveActualCostUsd(input: {
         : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
       const transcriptPath = locateSessionTranscript({
         dir,
+        sessionId: routeContext.sessionId,
         ...(input.fs ? { fs: input.fs } : {}),
       });
       if (transcriptPath) {

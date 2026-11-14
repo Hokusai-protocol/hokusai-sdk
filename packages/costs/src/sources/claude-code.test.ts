@@ -50,6 +50,11 @@ describe('golden fixture parity: sanitized transcript -> adapter -> engine', () 
         const engine = createTaskCostEngine({
           taskId: expected.task_id,
           collectedAt: expected.collected_at,
+          // The goldens were priced at a pinned revision; the estimates
+          // themselves must still match the live table exactly.
+          ...(expected.pricing_revision !== undefined
+            ? { pricingRevision: expected.pricing_revision }
+            : {}),
         });
         for (const ingest of engine.ingestMany(result.inputs)) {
           expect(ingest.status).toBe('accepted');

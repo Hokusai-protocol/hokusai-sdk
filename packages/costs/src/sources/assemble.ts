@@ -25,6 +25,11 @@ export interface AcceptedUsageRow {
   isSubagent?: boolean;
   /** Attach the contract's `invalid_token_usage` diagnostic to the event. */
   usageInvalid: boolean;
+  /**
+   * The source knows the built-in table cannot price this row (e.g. a Codex
+   * response on a non-Standard service tier): no estimate, `no_pricing_data`.
+   */
+  unpriced?: boolean;
 }
 
 export interface AssembledInputs {
@@ -77,7 +82,15 @@ export function assembleInputs(
           ? { isSubagent: row.isSubagent }
           : {}),
         observedAt: row.observedAt,
-        ...(row.usageInvalid ? { diagnostics: ['invalid_token_usage'] } : {}),
+        ...(row.unpriced ? { estimatedCostUsd: null } : {}),
+        ...(row.usageInvalid || row.unpriced
+          ? {
+              diagnostics: [
+                ...(row.usageInvalid ? (['invalid_token_usage'] as const) : []),
+                ...(row.unpriced ? (['no_pricing_data'] as const) : []),
+              ],
+            }
+          : {}),
       });
     }
   }

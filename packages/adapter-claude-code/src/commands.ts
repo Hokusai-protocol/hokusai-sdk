@@ -12,7 +12,7 @@ import {
   createRouteTask,
   createRunDoctor,
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   resolveRetentionPolicy,
   createSetReportingEnabled,
   type HandoffInstructions,
@@ -21,7 +21,7 @@ import {
   type DeclineRecommendationInput,
   type DeclineRecommendationResult,
   type DoctorResult,
-  type LatestRoutingDecision,
+  type StoredRoutingDecision,
   type OutcomeReportPreview,
   type PayloadPreviewResult as CorePayloadPreviewResult,
   type PreviewReportOutcomeResult,
@@ -47,7 +47,7 @@ export type {
   DeclineRecommendationInput,
   DeclineRecommendationResult,
   DoctorResult,
-  LatestRoutingDecision,
+  StoredRoutingDecision,
   OutcomeReportPreview,
   PreviewReportOutcomeResult,
   PrivacyResultWarnings,
@@ -96,7 +96,7 @@ export function displayHandoff(
 
 export {
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   resolveRetentionPolicy,
 };
 export type { ClaudeCodeCommandOptions, RouteInput };

@@ -180,11 +180,15 @@ runs are evidence writes.
 
 ## Queue / CI events (MQ-1.2)
 
-HOK-3338 adopts this identity. Its events (`eventId`, `candidateId`, check-run
-attempt, review round) reference `run_id` / `stage_attempt_id` through
-`TaskAttemptRef` and define no parallel attempt or run id. A merge candidate
-spanning several PRs carries one ref per run (`attempt_refs`); it does not
-become a run. See the `two-pr-merge-candidate` fixture.
+HOK-3338 adopts this identity as `queue_lifecycle_event/v1` (contract 1.2.0,
+[`queue-lifecycle.md`](./queue-lifecycle.md)). Its events (`event_id`,
+`candidate_id`, check-run attempt, review round) reference `run_id` /
+`stage_attempt_id` through `TaskAttemptRef` and define no parallel attempt or
+run id. A merge candidate spanning several PRs carries one ref per run
+(`attempt_refs`); it does not become a run. See the `two-pr-merge-candidate`
+fixture here and `cumulative-candidate-predecessor-ejects` there. Its control
+events are judged by the rules above, applied by `reduceQueueLifecycleLog`
+through this reducer.
 
 ## Fixtures
 

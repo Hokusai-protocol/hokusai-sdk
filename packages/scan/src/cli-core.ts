@@ -131,6 +131,12 @@ corpus-calibration-screen --gold <gold.json> (--out <blank sheet> | --sheet <fil
                  (write or grade the auditor screening test; HOK-3269)
 corpus-calibration-topup --sample <private dir> --plan <plan.json> --gold <gold.json>
                  (audit top-up under a later plan: re-derive audit flags, write the blank top-up sheet with new hidden rows; HOK-3269)
+corpus-features  --manifest <cohort.json> --cache-dir <path> --step ci|evidence|extract|manifest [--repo <owner/name>] [--out <file>]
+                 (merge-time feature rows per enumerated PR; raw evidence stays local; HOK-3023)
+corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slice <slice.json> --out <private dir> [--seed <hex>]
+                 (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
+corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
+                 (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
 `;
 
 const OPTION_SPEC = {

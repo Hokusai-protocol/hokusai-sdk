@@ -3,6 +3,7 @@ export {
   // the route context and its inference log id, or it cannot later build an
   // attributable contribution row — which is exactly why Codex could not.
   buildReportContributionRow,
+  dominantSessionModel,
   buildRouteContextProjection,
   parseRouteContext,
   createClearLocalState,
@@ -18,7 +19,7 @@ export {
   createRouteTask,
   createRunDoctor,
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   pruneStoreForPrivacy,
   resolveRetentionPolicy,
   createSetReportingEnabled,
@@ -68,7 +69,7 @@ export type {
   DeclineRecommendationInput,
   DeclineRecommendationResult,
   DoctorResult,
-  LatestRoutingDecision,
+  StoredRoutingDecision,
   ModelCatalog,
   OutcomeReportPreview,
   PayloadPreviewResult,
@@ -88,4 +89,4 @@ export type {
   RoutingDecisionSummary,
   SharedCommandOptions,
 } from './types.js';
-export type { RouteContextProjection } from './types.js';
+export type { MeasureStage, MeasureStageInput, RouteContextProjection } from './types.js';

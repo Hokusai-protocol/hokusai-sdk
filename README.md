@@ -238,7 +238,7 @@ Optionally opt in to anonymized outcome reporting after your first route:
 ```
 
 ```text
-/hokusai:report --use-latest --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
+/hokusai:report --task-id <routed-task-id> --recommended-model claude-sonnet-4-6 --actual-model claude-sonnet-4-6 --accepted --status succeeded --rating 4
 ```
 
 The report command previews the anonymized payload first and sends only after

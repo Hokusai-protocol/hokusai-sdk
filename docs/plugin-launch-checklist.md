@@ -171,10 +171,10 @@ Expected result:
 
 ## Step 7. Preview the anonymized outcome report
 
-Preview the report built from the most recent routing decision:
+Preview the report built from the routing decision stored for the smoke task (pass the same task id you routed in Step 6):
 
 ```sh
-hokusai-report --preview --json --use-latest --actual-model <actual-model> --accepted --status succeeded
+hokusai-report --preview --json --task-id <smoke-task-id> --actual-model <actual-model> --accepted --status succeeded
 ```
 
 Expected result:
@@ -192,7 +192,7 @@ This step proves the outcome report preview is redacted before send.
 Submit the same report using the test API key:
 
 ```sh
-hokusai-report --send --json --use-latest --actual-model <actual-model> --accepted --status succeeded
+hokusai-report --send --json --task-id <smoke-task-id> --actual-model <actual-model> --accepted --status succeeded
 ```
 
 Expected success result:

@@ -46,7 +46,10 @@ import {
   type CorrelationRecord,
   type CorrelationStorage,
 } from './storage.js';
-import type { HarnessOutcomeRowV1 } from './contribution/index.js';
+import type {
+  HarnessOutcomeRow,
+  TechnicalTaskRouterContributionRowV4,
+} from './contribution/index.js';
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -64,7 +67,7 @@ function buildModelPredictPath(modelId: string): string {
 function buildModelContributionsPath(modelId: string): string {
   return `/api/v1/models/${modelId}/contributions`;
 }
-export const SDK_VERSION = '0.5.0';
+export const SDK_VERSION = '0.8.0';
 
 export const DEFAULT_HOKUSAI_BASE_URL = 'https://api.hokus.ai';
 
@@ -132,11 +135,11 @@ export interface ContributionRequestMetadata {
 
 /**
  * One-row batch submitted to the Model 30 contributions endpoint. The rows are
- * already-redacted harness outcome rows built by the shared contribution
- * builder.
+ * already-redacted rows built by the shared contribution builders: router row
+ * v4 for current writers (HOK-3412), harness rows for older clients.
  */
 export interface ContributionRequest {
-  rows: HarnessOutcomeRowV1[];
+  rows: (TechnicalTaskRouterContributionRowV4 | HarnessOutcomeRow)[];
   metadata: ContributionRequestMetadata;
 }
 

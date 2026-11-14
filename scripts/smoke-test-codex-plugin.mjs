@@ -342,6 +342,7 @@ async function main() {
       {
         name: 'hokusai_submit_outcome',
         arguments: {
+          taskId: 'smoke-unrouted-task',
           actualModel: 'gpt-5-codex',
           recommendationAccepted: true,
           completionStatus: 'succeeded',
@@ -356,6 +357,29 @@ async function main() {
     assert(
       outcomeErrorPayload?.code === 'E_NOT_FOUND',
       'outcome preview fails clearly when no route exists',
+    );
+
+    // HOK-3364: an outcome must name its route; there is no "latest route" fallback.
+    const unnamedOutcome = await requestMcp(
+      binPath,
+      env,
+      'tools/call',
+      {
+        name: 'hokusai_submit_outcome',
+        arguments: {
+          actualModel: 'gpt-5-codex',
+          recommendationAccepted: true,
+          completionStatus: 'succeeded',
+          latencyBucket: 'low',
+          costBucket: 'low',
+          tokenBucket: 'low',
+        },
+      },
+      14,
+    );
+    assert(
+      unnamedOutcome?.result?.structuredContent?.code === 'E_INVALID_INPUT',
+      'outcome preview without a correlationId or taskId is rejected, never matched to the newest route',
     );
 
     const leakedContent = collectFiles(configDir)

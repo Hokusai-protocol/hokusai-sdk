@@ -97,12 +97,24 @@ trains on. The server scores it and returns a `fidelityTier`, and **only
 `training_eligible` rows train the router or earn rewards**:
 
 ```ts
+import { measureTask } from '@hokusai/costs';
+
+const { cost } = await measureTask({ taskId }, async (tracker) => {
+  const response = await runYourModel(choice.model);
+  tracker.recordUsage({ model: choice.model, usage: response.usage });
+});
+
 const { fidelityTier } = await route.reportOutcome({
   status: 'succeeded',
-  actualCostUsd: 0.42,
+  cost, // per-stage tokens; its total is the reported cost
 });
 // 'training_eligible'
 ```
+
+The row is a `technical_task_router_row/v4`. `cost` becomes its stage's
+`task_cost` (tokens per model, priced by the shared engine), which Hokusai uses
+to reprice the run. `actualCostUsd` is still accepted as contributor-reported
+evidence, but without `cost` the stage is reported unmeasured.
 
 To reach that tier the server needs to score the cost against the budget, so it
 needs **both**:
@@ -110,7 +122,7 @@ needs **both**:
 | You must pass                         | Where                          |
 | ------------------------------------- | ------------------------------ |
 | `maxCostUsd` — the budget             | `route({ ... })`               |
-| `actualCostUsd` — what it really cost | `route.reportOutcome({ ... })` |
+| `cost` (or `actualCostUsd`) — what it really cost | `route.reportOutcome({ ... })` |
 
 Omit either and the row is accepted but classified `partial`: stored as
 telemetry, trains nothing, earns nothing. The router warns when this happens

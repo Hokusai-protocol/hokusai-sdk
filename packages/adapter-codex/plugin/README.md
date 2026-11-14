@@ -25,6 +25,21 @@ Privacy posture:
 - Raw prompts, code, logs, and customer data are rejected from local state writes.
 - Local state retains at most 7 days and 200 records by default.
 
+Run cost:
+
+- `$hokusai-route` records which Codex session made the call, using the
+  session id and turn start Codex sends with every MCP tool call (`_meta`).
+  It is stored locally only and is never sent to Hokusai.
+- `$hokusai-report` then reads that session's rollout under
+  `$CODEX_HOME/sessions` (default `~/.codex/sessions`) and reports its token
+  usage per model, priced by `@hokusai/costs`. It reads only that one rollout,
+  never "the newest".
+- The model the rollout shows ran is reported as the executed model. If it
+  differs from the model you report, the row records an `observed` override.
+- Verified clients: the Codex TUI (codex-cli 0.166.0), the VS Code extension
+  (0.164.0-alpha.11.1), and `codex exec`. A client that sends no session
+  reports the run as unmeasured.
+
 Examples:
 
 - `$hokusai-route Route this task through Hokusai.`

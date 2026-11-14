@@ -6,14 +6,15 @@ import {
   InMemoryModelRegistry,
   ModelMappingError,
   SDK_VERSION,
-  buildHarnessOutcomeRow,
+  buildTechnicalTaskRouterRowV4,
   deriveTaskDescriptor,
   mapRecommendation,
   resolveActualCostUsd,
   validateContributionRow,
+  type HokusaiTaskDescriptor,
   type ContributionAcceptedResponse,
   type ContributionRequest,
-  type HarnessOutcomeRowV1,
+  type TechnicalTaskRouterContributionRowV4,
   type ModelDefinition,
   type RouteRequest,
   type RouteResponse,
@@ -23,6 +24,7 @@ import {
   summarizeAiderOutput,
   type AiderAccountingSummary,
 } from './accounting.js';
+import { measureAiderStage } from './stage-cost.js';
 import {
   runAider,
   type AiderRunOptions,
@@ -127,7 +129,7 @@ export interface RunAiderLoopResult {
   accounting: AiderAccountingSummary;
   actualCostUsd: number | undefined;
   costOmittedReason?: string;
-  row: HarnessOutcomeRowV1;
+  row: TechnicalTaskRouterContributionRowV4;
   response: ContributionAcceptedResponse;
   fidelityTier?: string;
 }
@@ -171,7 +173,7 @@ function selectDispatchModel(
  *   4. map the recommendation strictly (no silent substitution)
  *   5. spawn Aider with the mapped model
  *   6. parse token/cost lines and derive `actual_cost_usd` when eligible
- *   7. submit exactly one `harness_outcome_row/v1`
+ *   7. submit exactly one `harness_outcome_row/v2` (no overrides: Aider runs the recommendation)
  */
 export async function runAiderLoop(
   options: RunAiderLoopOptions,
@@ -284,23 +286,44 @@ export async function runAiderLoop(
   const descriptor: TaskDescriptorFields =
     Object.keys(derived).length > 0 ? derived : { task_type: 'unknown' };
 
-  const row = buildHarnessOutcomeRow({
+  const budgetUsd = options.budgetUsd;
+  const row = buildTechnicalTaskRouterRowV4({
+    taskId,
     inferenceLogId: routeId,
-    taskDescriptor: descriptor,
+    // Aider runs exactly the mapped recommendation: nothing was overridden.
+    routeOverrides: [],
+    taskDescriptor: descriptor as HokusaiTaskDescriptor,
     allowedModels,
     selectedModels: { coder: mapped.id, reviewer: mapped.id },
-    completionResult,
-    ...(options.budgetUsd !== undefined
-      ? { budgetUsd: options.budgetUsd }
-      : {}),
-    ...(cost.value !== undefined ? { actualCostUsd: cost.value } : {}),
+    observedSuccess: completionResult === 'success',
+    // Only claimed when both the budget and the cost are known.
+    budgetCompliant:
+      budgetUsd !== undefined && cost.value !== undefined && cost.value <= budgetUsd,
+    ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+    // A failed run reports no cost of its own (`null`); its measured tokens
+    // still ride in the stage's `task_cost`.
+    ...(completionResult === 'failure'
+      ? { actualCostUsd: null }
+      : cost.value !== undefined
+        ? { actualCostUsd: cost.value }
+        : {}),
     wallClockSeconds: aider.wallClockSeconds,
     harness: AIDER_HARNESS_NAME,
     sdkVersion: SDK_VERSION,
-    taskId,
     observedAt,
+    stageExecutions: [
+      {
+        stage: 'coding',
+        executedModel: mapped.id,
+        // Aider printed the model it ran; that is its session record.
+        modelEvidence:
+          accounting.reportedModel !== undefined ? 'session_telemetry' : 'requested_only',
+        harness: AIDER_HARNESS_NAME,
+        cost: measureAiderStage({ taskId, model: mapped.id, accounting, observedAt }),
+      },
+    ],
   });
-  // Defensive: buildHarnessOutcomeRow already validated, but this guards against
+  // Defensive: the builder already validated, but this guards against
   // any future accidental field addition upstream.
   validateContributionRow(row);
 

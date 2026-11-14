@@ -47,6 +47,9 @@ importers:
       '@hokusai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@hokusai/costs':
+        specifier: workspace:*
+        version: link:../../packages/costs
     devDependencies:
       tsx:
         specifier: ^4.20.6
@@ -57,12 +60,18 @@ importers:
       '@hokusai/core':
         specifier: workspace:*
         version: link:../core
+      '@hokusai/costs':
+        specifier: workspace:*
+        version: link:../costs
 
   packages/adapter-claude-code:
     dependencies:
       '@hokusai/core':
         specifier: workspace:*
         version: link:../core
+      '@hokusai/costs':
+        specifier: workspace:*
+        version: link:../costs
     devDependencies:
       esbuild:
         specifier: ^0.28.0
@@ -73,6 +82,9 @@ importers:
       '@hokusai/core':
         specifier: workspace:*
         version: link:../core
+      '@hokusai/costs':
+        specifier: workspace:*
+        version: link:../costs
     devDependencies:
       esbuild:
         specifier: ^0.28.0

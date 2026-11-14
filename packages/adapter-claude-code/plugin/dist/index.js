@@ -1,6 +1,147 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// ../costs/src/sources/types.ts
+function countDiagnostic(diagnostics, code, by = 1) {
+  diagnostics[code] = (diagnostics[code] ?? 0) + by;
+}
+var TASK_COST_SOURCE_DIAGNOSTIC_CODES;
+var init_types = __esm({
+  "../costs/src/sources/types.ts"() {
+    "use strict";
+    TASK_COST_SOURCE_DIAGNOSTIC_CODES = [
+      /** A line was not valid JSON or not a JSON object. */
+      "malformed_line",
+      /** A line exceeded the parser's length bound. */
+      "oversized_line",
+      /** Input had more lines than the parser's bound; the rest were skipped. */
+      "truncated_input",
+      /** A usage row carried no resolvable session id. */
+      "missing_session_id",
+      /** A row's session is not in the boundary's session set. */
+      "session_not_in_boundary",
+      /** An event-source record names a different task than the boundary. */
+      "foreign_task",
+      /** A usage row carried no parseable timestamp, so it cannot be correlated. */
+      "missing_timestamp",
+      /** A row's timestamp falls outside the boundary window. */
+      "outside_time_window",
+      /** A row that should carry usage carried none. */
+      "missing_usage",
+      /** A present usage or cost field was malformed and treated as missing. */
+      "invalid_usage_value",
+      /** A row repeated an already-seen identity (streamed/resumed duplicate). */
+      "duplicate_row",
+      /** A cumulative counter regressed; the tracker re-baselined and the new (lower) totals are charged as the new turn's usage (REQ-F3). */
+      "cumulative_counter_reset",
+      /** Codex: `(cached + cache_write) > input` on a normalized event; `input_tokens` clamped to 0. */
+      "codex_cache_exceeds_input",
+      /**
+       * Codex: a response ran on a service tier the built-in table does not
+       * price (only Standard, `service_tier: "default"`, is priced); it was
+       * left unpriced instead of billed at Standard rates.
+       */
+      "unpriced_service_tier",
+      /** An event-source record was not a usable record shape. */
+      "invalid_record",
+      /** A file or directory could not be read. */
+      "unreadable_file",
+      /** A file exceeded the discovery size bound and was skipped. */
+      "oversized_file"
+    ];
+  }
+});
+
+// ../costs/src/sources/node-fs.ts
+var node_fs_exports = {};
+__export(node_fs_exports, {
+  TASK_COST_SOURCE_DIAGNOSTIC_CODES: () => TASK_COST_SOURCE_DIAGNOSTIC_CODES,
+  readSessionFilePaths: () => readSessionFilePaths,
+  readSessionFiles: () => readSessionFiles
+});
+import { readFileSync as readFileSync2, readdirSync as readdirSync2, statSync as statSync2 } from "node:fs";
+import { join as join4 } from "node:path";
+function readSessionFiles(options) {
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const sessionIds = options.sessionIds.filter(
+    (id2) => typeof id2 === "string" && id2.length > 0
+  );
+  const diagnostics = {};
+  const files = [];
+  const seen = /* @__PURE__ */ new Set();
+  function visit(dir, depth) {
+    let entries;
+    try {
+      entries = readdirSync2(dir, { withFileTypes: true });
+    } catch {
+      countDiagnostic(diagnostics, "unreadable_file");
+      return;
+    }
+    for (const entry2 of entries) {
+      const fullPath = join4(dir, entry2.name);
+      if (entry2.isDirectory()) {
+        if (depth < maxDepth) visit(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry2.isFile() || !entry2.name.endsWith(".jsonl")) continue;
+      const sessionId = sessionIds.find((id2) => entry2.name.includes(id2));
+      if (sessionId === void 0 || seen.has(fullPath)) continue;
+      seen.add(fullPath);
+      try {
+        if (statSync2(fullPath).size > maxFileBytes) {
+          countDiagnostic(diagnostics, "oversized_file");
+          continue;
+        }
+        files.push({ sessionId, content: readFileSync2(fullPath, "utf8") });
+      } catch {
+        countDiagnostic(diagnostics, "unreadable_file");
+      }
+    }
+  }
+  for (const root of options.roots) {
+    visit(root, 0);
+  }
+  return { files, diagnostics };
+}
+function readSessionFilePaths(options) {
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const diagnostics = {};
+  const contents = [];
+  for (const path5 of options.paths) {
+    try {
+      if (statSync2(path5).size > maxFileBytes) {
+        countDiagnostic(diagnostics, "oversized_file");
+        continue;
+      }
+      contents.push(readFileSync2(path5, "utf8"));
+    } catch {
+      countDiagnostic(diagnostics, "unreadable_file");
+    }
+  }
+  return { contents, diagnostics };
+}
+var DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_DEPTH;
+var init_node_fs = __esm({
+  "../costs/src/sources/node-fs.ts"() {
+    "use strict";
+    init_types();
+    init_types();
+    DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024;
+    DEFAULT_MAX_DEPTH = 6;
+  }
+});
+
 // src/index.ts
 import { mkdir as mkdir4, readFile as readFile3, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
-import path3 from "node:path";
+import path4 from "node:path";
 
 // ../core/src/anonymization.ts
 import { createHmac } from "node:crypto";
@@ -186,7 +327,7 @@ function preview(input, config) {
 }
 function sortKeys(payload) {
   if (Array.isArray(payload)) {
-    return payload.map((entry) => sortKeys(entry));
+    return payload.map((entry2) => sortKeys(entry2));
   }
   if (payload && typeof payload === "object") {
     const entries = Object.entries(payload).sort(
@@ -284,11 +425,11 @@ var CSV_METADATA_KEYS = {
 };
 function normalizePool(value) {
   const seen = /* @__PURE__ */ new Set();
-  for (const entry of value) {
-    if (typeof entry !== "string") {
+  for (const entry2 of value) {
+    if (typeof entry2 !== "string") {
       continue;
     }
-    const trimmed = entry.trim();
+    const trimmed = entry2.trim();
     if (trimmed) {
       seen.add(trimmed);
     }
@@ -341,12 +482,12 @@ function effectiveRolePool(pools, role) {
 function classifyRoutingPools(pools) {
   const constrained = ROUTING_ROLES.map(
     (role) => effectiveRolePool(pools, role)
-  ).filter((pool) => pool !== void 0);
+  ).filter((pool3) => pool3 !== void 0);
   if (constrained.length === 0) {
     return "ranking";
   }
   const singletons = constrained.filter(
-    (pool) => normalizePool(pool).length < 2
+    (pool3) => normalizePool(pool3).length < 2
   );
   if (singletons.length === 0) {
     return "ranking";
@@ -355,11 +496,11 @@ function classifyRoutingPools(pools) {
 }
 function singletonRoles(pools) {
   return ROUTING_ROLES.filter((role) => {
-    const pool = effectiveRolePool(pools, role);
-    return pool !== void 0 && normalizePool(pool).length < 2;
+    const pool3 = effectiveRolePool(pools, role);
+    return pool3 !== void 0 && normalizePool(pool3).length < 2;
   });
 }
-function validateRoutingInput(routing, path4 = "routing") {
+function validateRoutingInput(routing, path5 = "routing") {
   if (routing === void 0) {
     return [];
   }
@@ -378,7 +519,7 @@ function validateRoutingInput(routing, path4 = "routing") {
     }
     if (!Array.isArray(value)) {
       errors.push({
-        path: `${path4}.${field}`,
+        path: `${path5}.${field}`,
         message: "Expected an array of model ids.",
         code: "invalid_type"
       });
@@ -386,7 +527,7 @@ function validateRoutingInput(routing, path4 = "routing") {
     }
     if (normalizePool(value).length === 0) {
       errors.push({
-        path: `${path4}.${field}`,
+        path: `${path5}.${field}`,
         message: "Candidate pool must not be empty. Omit the field to leave the pool unconstrained.",
         code: "invalid_value"
       });
@@ -627,103 +768,103 @@ function createOutcomeCandidate(input) {
   }
   return candidate;
 }
-function validateSummary(value, path4, knownKeys, statuses, errors) {
+function validateSummary(value, path5, knownKeys, statuses, errors) {
   if (!isPlainObject(value)) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be an object.`
+      path: path5,
+      message: `"${path5}" must be an object.`
     });
     return;
   }
   for (const key of Object.keys(value)) {
     if (!knownKeys.has(key)) {
       errors.push({
-        path: `${path4}.${key}`,
-        message: `Unknown field "${key}" is not allowed in "${path4}".`
+        path: `${path5}.${key}`,
+        message: `Unknown field "${key}" is not allowed in "${path5}".`
       });
     }
   }
-  validateEnum(value.status, `${path4}.status`, statuses, errors);
+  validateEnum(value.status, `${path5}.status`, statuses, errors);
   if (value.failures !== void 0) {
-    validateNonNegativeInteger(value.failures, `${path4}.failures`, errors);
+    validateNonNegativeInteger(value.failures, `${path5}.failures`, errors);
   }
 }
-function validateExtensions(value, path4, errors) {
+function validateExtensions(value, path5, errors) {
   if (!isPlainObject(value)) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be an object.`
+      path: path5,
+      message: `"${path5}" must be an object.`
     });
     return;
   }
   for (const key of Object.keys(value)) {
     if (!OUTCOME_EXTENSION_KEY_SET.has(key)) {
       errors.push({
-        path: `${path4}.${key}`,
-        message: `Unknown field "${key}" is not allowed in "${path4}".`
+        path: `${path5}.${key}`,
+        message: `Unknown field "${key}" is not allowed in "${path5}".`
       });
     }
   }
-  validateNonEmptyString(value.version, `${path4}.version`, errors);
+  validateNonEmptyString(value.version, `${path5}.version`, errors);
   if (!isPlainObject(value.data)) {
     errors.push({
-      path: `${path4}.data`,
-      message: `"${path4}.data" must be an object.`
+      path: `${path5}.data`,
+      message: `"${path5}.data" must be an object.`
     });
   }
 }
-function validateLiteralString(value, path4, expected, errors) {
+function validateLiteralString(value, path5, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
     errors.push({
-      path: path4,
-      message: `Expected "${path4}" to be "${expected}".`
+      path: path5,
+      message: `Expected "${path5}" to be "${expected}".`
     });
     return;
   }
   if (value !== expected) {
     errors.push({
-      path: path4,
+      path: path5,
       message: `Unsupported schema version "${value}". Expected "${expected}".`
     });
   }
 }
-function validateNonEmptyString(value, path4, errors) {
+function validateNonEmptyString(value, path5, errors) {
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be a non-empty string.`
+      path: path5,
+      message: `"${path5}" must be a non-empty string.`
     });
   }
 }
-function validateBoolean(value, path4, errors) {
+function validateBoolean(value, path5, errors) {
   if (typeof value !== "boolean") {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be a boolean.`
+      path: path5,
+      message: `"${path5}" must be a boolean.`
     });
   }
 }
-function validateEnum(value, path4, allowedValues, errors) {
+function validateEnum(value, path5, allowedValues, errors) {
   if (typeof value !== "string" || !allowedValues.includes(value)) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
+      path: path5,
+      message: `"${path5}" must be one of: ${allowedValues.join(", ")}.`
     });
   }
 }
-function validateIntegerInRange(value, path4, min, max, errors) {
+function validateIntegerInRange(value, path5, min, max, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be an integer between ${min} and ${max}.`
+      path: path5,
+      message: `"${path5}" must be an integer between ${min} and ${max}.`
     });
   }
 }
-function validateNonNegativeInteger(value, path4, errors) {
+function validateNonNegativeInteger(value, path5, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be a non-negative integer.`
+      path: path5,
+      message: `"${path5}" must be a non-negative integer.`
     });
   }
 }
@@ -731,96 +872,96 @@ function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function formatBuildErrorMessage(errors) {
-  return `Invalid outcome report: ${errors.map(({ path: path4, message }) => `${path4 || "$"}: ${message}`).join("; ")}`;
+  return `Invalid outcome report: ${errors.map(({ path: path5, message }) => `${path5 || "$"}: ${message}`).join("; ")}`;
 }
 
 // ../core/src/schemas.ts
 function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
-function pushFieldError(errors, path4, message, code) {
-  errors.push({ path: path4, message, code });
+function pushFieldError(errors, path5, message, code) {
+  errors.push({ path: path5, message, code });
 }
-function validateNonEmptyString2(value, path4, errors) {
+function validateNonEmptyString2(value, path5, errors) {
   if (typeof value !== "string") {
-    pushFieldError(errors, path4, "Expected a string.", "invalid_type");
+    pushFieldError(errors, path5, "Expected a string.", "invalid_type");
     return;
   }
   if (value.trim().length === 0) {
-    pushFieldError(errors, path4, "Value must not be empty.", "required");
+    pushFieldError(errors, path5, "Value must not be empty.", "required");
   }
 }
-function validateStringRecord(value, path4, errors) {
+function validateStringRecord(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry !== "string") {
+  for (const [key, entry2] of Object.entries(value)) {
+    if (typeof entry2 !== "string") {
       pushFieldError(
         errors,
-        `${path4}.${key}`,
+        `${path5}.${key}`,
         "Expected a string value.",
         "invalid_type"
       );
     }
   }
 }
-function validateTaskInput(value, path4, errors) {
+function validateTaskInput(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.id, `${path4}.id`, errors);
-  validateNonEmptyString2(value.prompt, `${path4}.prompt`, errors);
+  validateNonEmptyString2(value.id, `${path5}.id`, errors);
+  validateNonEmptyString2(value.prompt, `${path5}.prompt`, errors);
   if ("metadata" in value && value.metadata !== void 0) {
-    validateStringRecord(value.metadata, `${path4}.metadata`, errors);
+    validateStringRecord(value.metadata, `${path5}.metadata`, errors);
   }
 }
-function validateConfidence(value, path4, errors) {
+function validateConfidence(value, path5, errors) {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    pushFieldError(errors, path4, "Expected a number.", "invalid_type");
+    pushFieldError(errors, path5, "Expected a number.", "invalid_type");
     return;
   }
   if (value < 0 || value > 1) {
     pushFieldError(
       errors,
-      path4,
+      path5,
       "Expected a number between 0 and 1.",
       "invalid_value"
     );
   }
 }
-function validateRouteRecommendationAlternative(value, path4, errors) {
+function validateRouteRecommendationAlternative(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.model, `${path4}.model`, errors);
+  validateNonEmptyString2(value.model, `${path5}.model`, errors);
   if ("reason" in value && value.reason !== void 0) {
-    validateNonEmptyString2(value.reason, `${path4}.reason`, errors);
+    validateNonEmptyString2(value.reason, `${path5}.reason`, errors);
   }
   if ("confidence" in value && value.confidence !== void 0) {
-    validateConfidence(value.confidence, `${path4}.confidence`, errors);
+    validateConfidence(value.confidence, `${path5}.confidence`, errors);
   }
 }
-function validateRouteRecommendation(value, path4, errors) {
+function validateRouteRecommendation(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.model, `${path4}.model`, errors);
+  validateNonEmptyString2(value.model, `${path5}.model`, errors);
   if ("reason" in value && value.reason !== void 0) {
-    validateNonEmptyString2(value.reason, `${path4}.reason`, errors);
+    validateNonEmptyString2(value.reason, `${path5}.reason`, errors);
   }
   if ("confidence" in value && value.confidence !== void 0) {
-    validateConfidence(value.confidence, `${path4}.confidence`, errors);
+    validateConfidence(value.confidence, `${path5}.confidence`, errors);
   }
   if ("alternatives" in value && value.alternatives !== void 0) {
     if (!Array.isArray(value.alternatives)) {
       pushFieldError(
         errors,
-        `${path4}.alternatives`,
+        `${path5}.alternatives`,
         "Expected an array.",
         "invalid_type"
       );
@@ -829,94 +970,94 @@ function validateRouteRecommendation(value, path4, errors) {
     value.alternatives.forEach((alternative, index) => {
       validateRouteRecommendationAlternative(
         alternative,
-        `${path4}.alternatives.${index}`,
+        `${path5}.alternatives.${index}`,
         errors
       );
     });
   }
 }
-function validateConsentSnapshot(value, path4, errors) {
+function validateConsentSnapshot(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.subjectId, `${path4}.subjectId`, errors);
+  validateNonEmptyString2(value.subjectId, `${path5}.subjectId`, errors);
   if (!Array.isArray(value.grantedScopes)) {
     pushFieldError(
       errors,
-      `${path4}.grantedScopes`,
+      `${path5}.grantedScopes`,
       "Expected an array of consent scopes.",
       "invalid_type"
     );
     return;
   }
   value.grantedScopes.forEach((scope, index) => {
-    validateNonEmptyString2(scope, `${path4}.grantedScopes.${index}`, errors);
+    validateNonEmptyString2(scope, `${path5}.grantedScopes.${index}`, errors);
   });
 }
-function validateModelSelection(value, path4, errors) {
+function validateModelSelection(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.id, `${path4}.id`, errors);
-  validateNonEmptyString2(value.provider, `${path4}.provider`, errors);
+  validateNonEmptyString2(value.id, `${path5}.id`, errors);
+  validateNonEmptyString2(value.provider, `${path5}.provider`, errors);
   if (!Array.isArray(value.capabilities)) {
     pushFieldError(
       errors,
-      `${path4}.capabilities`,
+      `${path5}.capabilities`,
       "Expected an array of capabilities.",
       "invalid_type"
     );
     return;
   }
   value.capabilities.forEach((capability, index) => {
-    validateNonEmptyString2(capability, `${path4}.capabilities.${index}`, errors);
+    validateNonEmptyString2(capability, `${path5}.capabilities.${index}`, errors);
   });
 }
-function validateCorrelationRecord(value, path4, errors) {
+function validateCorrelationRecord(value, path5, errors) {
   if (!isRecord(value)) {
-    pushFieldError(errors, path4, "Expected an object.", "invalid_type");
+    pushFieldError(errors, path5, "Expected an object.", "invalid_type");
     return;
   }
-  validateNonEmptyString2(value.taskId, `${path4}.taskId`, errors);
-  validateNonEmptyString2(value.correlationId, `${path4}.correlationId`, errors);
-  validateNonEmptyString2(value.createdAt, `${path4}.createdAt`, errors);
+  validateNonEmptyString2(value.taskId, `${path5}.taskId`, errors);
+  validateNonEmptyString2(value.correlationId, `${path5}.correlationId`, errors);
+  validateNonEmptyString2(value.createdAt, `${path5}.createdAt`, errors);
 }
-function validateRedactions(value, path4, errors) {
+function validateRedactions(value, path5, errors) {
   if (!Array.isArray(value)) {
     pushFieldError(
       errors,
-      path4,
+      path5,
       "Expected an array of redactions.",
       "invalid_type"
     );
     return;
   }
-  value.forEach((entry, index) => {
-    if (!isRecord(entry)) {
+  value.forEach((entry2, index) => {
+    if (!isRecord(entry2)) {
       pushFieldError(
         errors,
-        `${path4}.${index}`,
+        `${path5}.${index}`,
         "Expected an object.",
         "invalid_type"
       );
       return;
     }
-    if ("label" in entry) {
-      validateNonEmptyString2(entry.label, `${path4}.${index}.label`, errors);
+    if ("label" in entry2) {
+      validateNonEmptyString2(entry2.label, `${path5}.${index}.label`, errors);
       return;
     }
-    validateNonEmptyString2(entry.category, `${path4}.${index}.category`, errors);
+    validateNonEmptyString2(entry2.category, `${path5}.${index}.category`, errors);
     validateNonEmptyString2(
-      entry.placeholder,
-      `${path4}.${index}.placeholder`,
+      entry2.placeholder,
+      `${path5}.${index}.placeholder`,
       errors
     );
-    if (typeof entry.count !== "number") {
+    if (typeof entry2.count !== "number") {
       pushFieldError(
         errors,
-        `${path4}.${index}.count`,
+        `${path5}.${index}.count`,
         "Expected a number.",
         "invalid_type"
       );
@@ -1097,39 +1238,39 @@ function mapRecommendation(recommendation, options) {
       filteredSuggestions()
     );
   }
-  const descriptor = options.registry.resolve(modelId2);
-  if (!descriptor) {
+  const descriptor3 = options.registry.resolve(modelId2);
+  if (!descriptor3) {
     throw new ModelMappingError(
       "UNKNOWN_MODEL",
       `Unsupported model recommendation: ${modelId2}.`,
       filteredSuggestions()
     );
   }
-  if (allowedProviders && !allowedProviders.includes(descriptor.provider)) {
+  if (allowedProviders && !allowedProviders.includes(descriptor3.provider)) {
     throw new ModelMappingError(
       "PROVIDER_NOT_ALLOWED",
-      `Model ${descriptor.id} uses provider ${descriptor.provider}, which is not supported by this harness.`,
-      filteredSuggestions(descriptor.id)
+      `Model ${descriptor3.id} uses provider ${descriptor3.provider}, which is not supported by this harness.`,
+      filteredSuggestions(descriptor3.id)
     );
   }
-  if (options.requireAvailable && descriptor.available === false) {
+  if (options.requireAvailable && descriptor3.available === false) {
     throw new ModelMappingError(
       "MODEL_UNAVAILABLE",
-      `Model ${descriptor.id} is currently unavailable in this harness.`,
-      filteredSuggestions(descriptor.id)
+      `Model ${descriptor3.id} is currently unavailable in this harness.`,
+      filteredSuggestions(descriptor3.id)
     );
   }
-  return descriptor;
+  return descriptor3;
 }
 function validateRecommendedModel(modelId2, options) {
   const registry = options.registry ?? new InMemoryModelRegistry(ANTHROPIC_MODELS);
   const normalizedModelId = modelId2.trim();
   const allowlistedIds = new Set(
-    options.allowlist.map((entry) => registry.resolve(entry)).filter(
-      (descriptor2) => descriptor2 !== void 0 && descriptor2.provider === "anthropic"
-    ).map((descriptor2) => descriptor2.id)
+    options.allowlist.map((entry2) => registry.resolve(entry2)).filter(
+      (descriptor4) => descriptor4 !== void 0 && descriptor4.provider === "anthropic"
+    ).map((descriptor4) => descriptor4.id)
   );
-  const suggestions = registry.listAvailable().filter((descriptor2) => descriptor2.provider === "anthropic").filter((descriptor2) => allowlistedIds.has(descriptor2.id)).map((descriptor2) => descriptor2.id);
+  const suggestions = registry.listAvailable().filter((descriptor4) => descriptor4.provider === "anthropic").filter((descriptor4) => allowlistedIds.has(descriptor4.id)).map((descriptor4) => descriptor4.id);
   if (normalizedModelId.length === 0) {
     return {
       ok: false,
@@ -1137,34 +1278,34 @@ function validateRecommendedModel(modelId2, options) {
       suggestions
     };
   }
-  const descriptor = registry.resolve(normalizedModelId);
-  if (!descriptor) {
+  const descriptor3 = registry.resolve(normalizedModelId);
+  if (!descriptor3) {
     return {
       ok: false,
       reason: "unknown",
       suggestions
     };
   }
-  if (descriptor.provider !== "anthropic") {
+  if (descriptor3.provider !== "anthropic") {
     return {
       ok: false,
       reason: "not-anthropic",
-      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor.id)
+      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor3.id)
     };
   }
-  if (!allowlistedIds.has(descriptor.id)) {
+  if (!allowlistedIds.has(descriptor3.id)) {
     return {
       ok: false,
       reason: "not-in-allowlist",
-      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor.id)
+      suggestions: suggestions.filter((suggestion) => suggestion !== descriptor3.id)
     };
   }
-  return normalizedModelId === descriptor.id ? {
+  return normalizedModelId === descriptor3.id ? {
     ok: true,
-    modelId: descriptor.id
+    modelId: descriptor3.id
   } : {
     ok: true,
-    modelId: descriptor.id,
+    modelId: descriptor3.id,
     mappedFrom: normalizedModelId
   };
 }
@@ -1527,10 +1668,10 @@ function assertSafeStoreId(id2) {
 function isRawFieldName(key) {
   return RAW_FIELD_NAMES.has(key) || RAW_FIELD_PATTERNS.some((pattern) => pattern.test(key));
 }
-function assertNoRawPayloadFields(record, path4 = "") {
+function assertNoRawPayloadFields(record, path5 = "") {
   if (Array.isArray(record)) {
     for (const [index, value] of record.entries()) {
-      assertNoRawPayloadFields(value, `${path4}[${index}]`);
+      assertNoRawPayloadFields(value, `${path5}[${index}]`);
     }
     return;
   }
@@ -1538,7 +1679,7 @@ function assertNoRawPayloadFields(record, path4 = "") {
     return;
   }
   for (const [key, value] of Object.entries(record)) {
-    const fieldPath = path4 ? `${path4}.${key}` : key;
+    const fieldPath = path5 ? `${path5}.${key}` : key;
     if (isRawFieldName(key)) {
       throw new RawPayloadRejectedError(fieldPath);
     }
@@ -1625,8 +1766,8 @@ var FsLocalStore = class {
   async clearPayloadHashes() {
     await rm(this.#hashesDir(), { recursive: true, force: true });
   }
-  async appendAudit(entry) {
-    await writeJsonFile(this.#auditFilePath(entry.id), entry);
+  async appendAudit(entry2) {
+    await writeJsonFile(this.#auditFilePath(entry2.id), entry2);
   }
   async listAudit() {
     return (await readJsonFiles(this.#auditDir())).sort(
@@ -1672,22 +1813,22 @@ var FsLocalStore = class {
     );
     const auditEntries = await this.listAudit();
     const keptAuditEntries = pruneByRetention(
-      auditEntries.map((entry) => ({ ...entry, createdAt: entry.timestamp })),
+      auditEntries.map((entry2) => ({ ...entry2, createdAt: entry2.timestamp })),
       now,
       policy
-    ).map((entry) => ({
-      id: entry.id,
-      kind: entry.kind,
-      correlationId: entry.correlationId,
-      status: entry.status,
-      timestamp: entry.timestamp,
-      ...entry.error === void 0 ? {} : { error: entry.error }
+    ).map((entry2) => ({
+      id: entry2.id,
+      kind: entry2.kind,
+      correlationId: entry2.correlationId,
+      status: entry2.status,
+      timestamp: entry2.timestamp,
+      ...entry2.error === void 0 ? {} : { error: entry2.error }
     }));
     await this.#rewriteRecords(
       this.#auditDir(),
       auditEntries,
       keptAuditEntries,
-      (entry) => this.#auditFilePath(entry.id)
+      (entry2) => this.#auditFilePath(entry2.id)
     );
   }
   async clear() {
@@ -1752,7 +1893,7 @@ function buildModelPredictPath(modelId2) {
 function buildModelContributionsPath(modelId2) {
   return `/api/v1/models/${modelId2}/contributions`;
 }
-var SDK_VERSION = "0.5.0";
+var SDK_VERSION = "0.8.0";
 var DEFAULT_HOKUSAI_BASE_URL = "https://api.hokus.ai";
 var HokusaiDispatchError = class extends Error {
   constructor(message) {
@@ -1839,7 +1980,7 @@ var HokusaiDispatchBuilder = class {
       return supported;
     }
     const allowed = new Set(
-      this.#modelAllowlist.map((entry) => this.#modelRegistry.resolve(entry)?.id).filter((id2) => id2 !== void 0)
+      this.#modelAllowlist.map((entry2) => this.#modelRegistry.resolve(entry2)?.id).filter((id2) => id2 !== void 0)
     );
     return supported.filter((id2) => allowed.has(id2));
   }
@@ -2255,12 +2396,12 @@ var HokusaiClient = class {
     });
   }
 };
-function buildUrl(baseUrl, path4) {
+function buildUrl(baseUrl, path5) {
   const resolvedBaseUrl = new URL(baseUrl.toString());
   if (!resolvedBaseUrl.pathname.endsWith("/")) {
     resolvedBaseUrl.pathname = `${resolvedBaseUrl.pathname}/`;
   }
-  return new URL(path4.replace(/^\/+/, ""), resolvedBaseUrl).toString();
+  return new URL(path5.replace(/^\/+/, ""), resolvedBaseUrl).toString();
 }
 function createRequestId() {
   const cryptoObject = Reflect.get(globalThis, "crypto");
@@ -2432,7 +2573,7 @@ function normalizeContributionResponse(value, requestId) {
 }
 function firstStringArray(...values) {
   for (const value of values) {
-    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    if (Array.isArray(value) && value.every((entry2) => typeof entry2 === "string")) {
       return [...value];
     }
   }
@@ -2454,12 +2595,12 @@ function normalizeRejectedRows(value) {
     return void 0;
   }
   const rows = [];
-  for (const entry of value) {
-    if (!isPlainRecord(entry)) {
+  for (const entry2 of value) {
+    if (!isPlainRecord(entry2)) {
       continue;
     }
-    const index = firstFiniteNumber(entry.index);
-    const reason = firstString(entry.reason);
+    const index = firstFiniteNumber(entry2.index);
+    const reason = firstString(entry2.reason);
     if (index !== void 0 && reason !== void 0) {
       rows.push({ index, reason });
     }
@@ -2482,7 +2623,7 @@ function firstFiniteNumber(...values) {
 }
 function omitUndefined(value) {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== void 0)
+    Object.entries(value).filter(([, entry2]) => entry2 !== void 0)
   );
 }
 function omitEmptySections(inputs) {
@@ -2834,16 +2975,16 @@ function parseApiFieldErrors(value) {
     return void 0;
   }
   const fieldErrors = [];
-  for (const entry of value) {
-    if (!isFieldErrorLike(entry)) {
+  for (const entry2 of value) {
+    if (!isFieldErrorLike(entry2)) {
       continue;
     }
     const fieldError2 = {
-      path: entry.path,
-      message: entry.message
+      path: entry2.path,
+      message: entry2.message
     };
-    if (isFieldErrorCode(entry.code)) {
-      fieldError2.code = entry.code;
+    if (isFieldErrorCode(entry2.code)) {
+      fieldError2.code = entry2.code;
     }
     fieldErrors.push(fieldError2);
   }
@@ -3070,13 +3211,13 @@ function summarizeAllowlist(config, registry) {
   };
   const validModelIds = /* @__PURE__ */ new Set();
   const unknownEntries = [];
-  for (const entry of config.modelAllowlist) {
-    const descriptor = resolvedRegistry.resolve(entry);
-    if (!descriptor || descriptor.provider !== "anthropic") {
-      unknownEntries.push(entry);
+  for (const entry2 of config.modelAllowlist) {
+    const descriptor3 = resolvedRegistry.resolve(entry2);
+    if (!descriptor3 || descriptor3.provider !== "anthropic") {
+      unknownEntries.push(entry2);
       continue;
     }
-    validModelIds.add(descriptor.id);
+    validModelIds.add(descriptor3.id);
   }
   return {
     validModelIds: [...validModelIds],
@@ -3121,15 +3262,15 @@ function normalizeBaseUrl(value, fieldErrors) {
     return DEFAULT_HOKUSAI_BASE_URL;
   }
 }
-function normalizeBoolean(value, path4, fieldErrors, defaultValue) {
+function normalizeBoolean(value, path5, fieldErrors, defaultValue) {
   if (value === void 0) {
     return defaultValue;
   }
   if (typeof value !== "boolean") {
     fieldErrors.push({
-      path: path4,
+      path: path5,
       code: "invalid_type",
-      message: `Expected ${path4} to be a boolean.`
+      message: `Expected ${path5} to be a boolean.`
     });
     return defaultValue;
   }
@@ -3169,8 +3310,8 @@ function normalizeAllowlist(value, options) {
     return [...DEFAULT_ALLOWLIST];
   }
   const allowlist = [];
-  for (const [index, entry] of rawEntries.entries()) {
-    if (typeof entry !== "string") {
+  for (const [index, entry2] of rawEntries.entries()) {
+    if (typeof entry2 !== "string") {
       options.fieldErrors.push({
         path: `modelAllowlist[${index}]`,
         code: "invalid_type",
@@ -3178,12 +3319,12 @@ function normalizeAllowlist(value, options) {
       });
       continue;
     }
-    const normalized = entry.trim();
+    const normalized = entry2.trim();
     if (normalized.length === 0) {
       continue;
     }
-    const descriptor = options.registry?.resolve(normalized);
-    if (!descriptor) {
+    const descriptor3 = options.registry?.resolve(normalized);
+    if (!descriptor3) {
       if (options.strict) {
         options.fieldErrors.push({
           path: `modelAllowlist[${index}]`,
@@ -3194,7 +3335,7 @@ function normalizeAllowlist(value, options) {
       allowlist.push(normalized);
       continue;
     }
-    if (descriptor.provider !== "anthropic") {
+    if (descriptor3.provider !== "anthropic") {
       if (options.strict) {
         options.fieldErrors.push({
           path: `modelAllowlist[${index}]`,
@@ -3205,7 +3346,7 @@ function normalizeAllowlist(value, options) {
       allowlist.push(normalized);
       continue;
     }
-    allowlist.push(descriptor.id);
+    allowlist.push(descriptor3.id);
   }
   return allowlist.length > 0 ? allowlist : [...DEFAULT_ALLOWLIST];
 }
@@ -3222,7 +3363,7 @@ function readEnvConfig(env) {
       )
     } : {},
     ...env.HOKUSAI_MODEL_ALLOWLIST !== void 0 ? {
-      modelAllowlist: env.HOKUSAI_MODEL_ALLOWLIST.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+      modelAllowlist: env.HOKUSAI_MODEL_ALLOWLIST.split(",").map((entry2) => entry2.trim()).filter((entry2) => entry2.length > 0)
     } : {},
     ...env.HOKUSAI_OBJECTIVE !== void 0 ? { routingObjective: env.HOKUSAI_OBJECTIVE } : {}
   };
@@ -3307,7 +3448,7 @@ function displayTaskRecommendation(recommendation) {
   }
   if (recommendation.alternatives && recommendation.alternatives.length > 0) {
     lines.push(
-      `Alternatives: ${recommendation.alternatives.map((entry) => entry.model.id).join(", ")}`
+      `Alternatives: ${recommendation.alternatives.map((entry2) => entry2.model.id).join(", ")}`
     );
     for (const alternative of recommendation.alternatives) {
       const parts = [alternative.model.id];
@@ -3358,10 +3499,10 @@ async function recordOnboardingFunnelSignal(input) {
     emittedStages: [...stages]
   });
 }
-function buildSignal(stage, state2, now, harness) {
+function buildSignal(stage2, state2, now, harness) {
   const signal = {
     kind: "onboarding_funnel",
-    stage,
+    stage: stage2,
     installationId: state2.installationId,
     installedAt: state2.installedAt,
     occurredAt: now.toISOString()
@@ -3369,7 +3510,7 @@ function buildSignal(stage, state2, now, harness) {
   if (harness) {
     signal.harness = harness;
   }
-  if (stage === "first_route") {
+  if (stage2 === "first_route") {
     signal.timeToFirstRouteMs = Math.max(
       0,
       now.getTime() - Date.parse(state2.installedAt)
@@ -3483,7 +3624,7 @@ function parseMetadataList(value) {
   if (!value) {
     return void 0;
   }
-  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  const entries = value.split(",").map((entry2) => entry2.trim()).filter(Boolean);
   return entries.length > 0 ? entries : void 0;
 }
 function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
@@ -3531,7 +3672,7 @@ function buildRouteContextProjection(metadata, modelConstraints, signals = {}) {
     ...budgetUsd !== void 0 && Number.isFinite(budgetUsd) ? { budgetUsd } : {},
     ...costBaseline ? {
       baselineAt: costBaseline.baselineAt,
-      projectDirKey: costBaseline.projectDirKey,
+      ...costBaseline.projectDirKey !== void 0 ? { projectDirKey: costBaseline.projectDirKey } : {},
       ...costBaseline.costBaselineUsd !== void 0 ? { costBaselineUsd: costBaseline.costBaselineUsd } : {},
       ...costBaseline.sessionId !== void 0 ? { sessionId: costBaseline.sessionId } : {}
     } : {}
@@ -3548,7 +3689,7 @@ function parseRouteContext(value) {
     }
     const record = parsed;
     const taskDescriptor = typeof record.taskDescriptor === "object" && record.taskDescriptor !== null && !Array.isArray(record.taskDescriptor) ? record.taskDescriptor : {};
-    const allowedModels = Array.isArray(record.allowedModels) ? record.allowedModels.filter((entry) => typeof entry === "string") : [];
+    const allowedModels = Array.isArray(record.allowedModels) ? record.allowedModels.filter((entry2) => typeof entry2 === "string") : [];
     return {
       taskDescriptor,
       allowedModels,
@@ -3568,7 +3709,7 @@ function parseAlternativeIds(value) {
   }
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === "string") : [];
+    return Array.isArray(parsed) ? parsed.filter((entry2) => typeof entry2 === "string") : [];
   } catch {
     return [];
   }
@@ -3645,7 +3786,7 @@ async function findStoredCorrelationRecord(store, correlationId) {
   }
   const records = await store.listCorrelations();
   const byOriginal = records.find(
-    (entry) => entry.metadata?.originalCorrelationId === correlationId
+    (entry2) => entry2.metadata?.originalCorrelationId === correlationId
   );
   return {
     storedCorrelationId: byOriginal?.correlationId ?? storedCorrelationId,
@@ -3699,9 +3840,32 @@ function buildOutcomePreviewLines(report) {
 function buildContributionPreviewLines(row) {
   return [
     "",
-    "Contribution row (harness_outcome_row/v1) that will be submitted:",
+    `Contribution row (${row.schema_version}) that will be submitted:`,
     JSON.stringify(row, null, 2)
   ];
+}
+function stageModelEvidence(executedModel, stageCost) {
+  const observed = stageCost?.summaries[0]?.models ?? [];
+  const executed = normalizeModelId(executedModel);
+  return observed.some((model) => normalizeModelId(model) === executed) ? "session_telemetry" : "requested_only";
+}
+function dominantSessionModel(stageCost) {
+  const segments = stageCost?.summaries[0]?.model_segments ?? [];
+  const totals = /* @__PURE__ */ new Map();
+  for (const segment of segments) {
+    const { usage } = segment;
+    const tokens2 = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.cache_read_tokens ?? 0) + (usage.cache_write_tokens ?? 0);
+    totals.set(segment.model, (totals.get(segment.model) ?? 0) + tokens2);
+  }
+  let best;
+  let bestTokens = -1;
+  for (const [model, tokens2] of totals) {
+    if (tokens2 > bestTokens) {
+      best = model;
+      bestTokens = tokens2;
+    }
+  }
+  return best;
 }
 function buildReportContributionRow(input) {
   if (!input.inferenceLogId) {
@@ -3716,23 +3880,63 @@ function buildReportContributionRow(input) {
       "No routing context with allowed models was found for this decision. Route a task with this plugin before reporting."
     );
   }
+  if (!input.taskId) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "No task id is available for this routing decision, so the run cost cannot be attributed to it."
+    );
+  }
+  if (!input.recommendedModelId) {
+    return fail(
+      "CONTRIBUTION_UNAVAILABLE",
+      "The stored route has no recommended model, so the report cannot state whether the recommendation was followed."
+    );
+  }
+  const recommended = input.recommendedModelId;
+  const reported = input.report.actualModel;
+  const sessionModel = input.executedModelFromSession ? dominantSessionModel(input.stageCost) : void 0;
+  const sessionDiffers = sessionModel !== void 0 && normalizeModelId(sessionModel) !== normalizeModelId(reported);
+  const executed = sessionDiffers ? sessionModel : reported;
+  const routeOverrides = executed === recommended ? [] : ["coder", "reviewer"].map((role) => ({
+    role,
+    // A session that ran another model than reported is an observation,
+    // not a choice anyone is known to have made.
+    source: sessionDiffers ? "observed" : "operator",
+    from: recommended,
+    to: executed,
+    reason: sessionDiffers ? "session_model_differs" : input.report.recommendationAccepted ? "model_changed" : "recommendation_declined"
+  }));
+  const succeeded = input.report.completionStatus === "succeeded";
+  const budgetUsd = input.routeContext.budgetUsd;
+  const reportedCost = input.actualCostUsd ?? input.stageCost?.summaries[0]?.total_cost_usd ?? void 0;
+  const budgetCompliant = budgetUsd !== void 0 && reportedCost !== void 0 && reportedCost !== null && reportedCost <= budgetUsd;
   try {
-    const row = buildHarnessOutcomeRow({
+    const row = buildTechnicalTaskRouterRowV4({
+      taskId: input.taskId,
       inferenceLogId: input.inferenceLogId,
+      routeOverrides,
+      // The stored descriptor is partial (categorical labels a plugin can
+      // derive); the router row carries it as-is.
       taskDescriptor: input.routeContext.taskDescriptor,
       allowedModels: input.routeContext.allowedModels,
-      selectedModels: {
-        coder: input.report.actualModel,
-        reviewer: input.report.actualModel
-      },
-      completionResult: input.report.completionStatus === "succeeded" ? "success" : "failure",
+      selectedModels: { coder: executed, reviewer: executed },
+      observedSuccess: succeeded,
+      budgetCompliant,
       harness: input.harness,
       sdkVersion: SDK_VERSION,
       observedAt: input.observedAt,
-      ...input.routeContext.budgetUsd !== void 0 ? { budgetUsd: input.routeContext.budgetUsd } : {},
+      ...budgetUsd !== void 0 ? { budgetUsd } : {},
       ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
       ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
-      ...input.taskId ? { taskId: input.taskId } : {}
+      stageExecutions: [
+        {
+          stage: "coding",
+          executedModel: executed,
+          modelEvidence: stageModelEvidence(executed, input.stageCost),
+          harness: input.harness,
+          cost: input.stageCost ?? { summaries: [] }
+        }
+      ]
     });
     return ok(row);
   } catch (error) {
@@ -3994,7 +4198,7 @@ function createRouteTask(profile17) {
           ...storedCorrelation.record.metadata,
           recommendedModelId: recommendation.model.id,
           recommendedAlternativeIds: JSON.stringify(
-            recommendation.alternatives?.map((entry) => entry.model.id) ?? []
+            recommendation.alternatives?.map((entry2) => entry2.model.id) ?? []
           ),
           reasonHash: hashPayload(recommendation.reason, redactionConfig.salt),
           reasonPreview: redactForStorage(
@@ -4143,11 +4347,11 @@ function createPreviewTaskPayload(profile17) {
         correlationId: "preview-only",
         createdAt: (/* @__PURE__ */ new Date(0)).toISOString()
       },
-      redactions: profile17.buildTaskPacket(input, context.builderOptions).redactionSummary.map((entry) => ({
-        label: entry.category,
-        count: entry.count,
-        category: entry.category,
-        placeholder: `<redacted:${entry.category}>`
+      redactions: profile17.buildTaskPacket(input, context.builderOptions).redactionSummary.map((entry2) => ({
+        label: entry2.category,
+        count: entry2.count,
+        category: entry2.category,
+        placeholder: `<redacted:${entry2.category}>`
       })),
       createdAt: (/* @__PURE__ */ new Date(0)).toISOString()
     });
@@ -4158,18 +4362,22 @@ function createPreviewTaskPayload(profile17) {
     };
   };
 }
-async function findLatestRoutingDecision(input) {
+async function findRoutingDecision(input) {
   const store = new FsLocalStore(input.configDir);
-  const records = await store.listCorrelations();
-  const latest = records.reduce(
-    (currentLatest, record) => {
-      if (!currentLatest || record.createdAt > currentLatest.createdAt) {
-        return record;
-      }
-      return currentLatest;
-    },
-    void 0
-  );
+  let latest;
+  if (input.correlationId?.trim()) {
+    latest = (await findStoredCorrelationRecord(store, input.correlationId.trim())).record;
+  } else if (input.taskId?.trim() || input.sessionId?.trim()) {
+    const taskId = input.taskId?.trim();
+    const sessionId = input.sessionId?.trim();
+    const records = await store.listCorrelations();
+    latest = records.filter(
+      (record) => taskId ? record.metadata?.taskId === taskId : parseRouteContext(record.metadata?.routeContext)?.sessionId === sessionId
+    ).reduce(
+      (newest, record) => !newest || record.createdAt > newest.createdAt ? record : newest,
+      void 0
+    );
+  }
   if (!latest) {
     return void 0;
   }
@@ -4196,7 +4404,9 @@ function createPreviewReportOutcome(profile17) {
     const {
       taskId,
       inferenceLogId,
+      routedRecommendedModelId,
       routeContext,
+      stageCost,
       actualCostUsd,
       wallClockSeconds,
       ...reportInput
@@ -4218,11 +4428,13 @@ function createPreviewReportOutcome(profile17) {
       report,
       routeContext,
       inferenceLogId,
+      recommendedModelId: routedRecommendedModelId,
       harness: profile17.harness,
       observedAt: (options?.clock ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
+      stageCost,
       ...actualCostUsd !== void 0 ? { actualCostUsd } : {},
       ...wallClockSeconds !== void 0 ? { wallClockSeconds } : {},
-      ...taskId ? { taskId } : {}
+      taskId
     });
     const contributionRow = contributionResult.ok ? contributionResult.value : void 0;
     const lines = buildOutcomePreviewLines(report);
@@ -4260,17 +4472,33 @@ function createReportTaskOutcome(profile17) {
       store,
       input.correlationId
     );
-    const routeContext = parseRouteContext(resolvedCorrelation.record?.metadata?.routeContext) ?? input.routeContext;
-    const inferenceLogId = input.inferenceLogId ?? resolvedCorrelation.record?.metadata?.inferenceLogId;
+    const storedMetadata = resolvedCorrelation.record?.metadata;
+    if (storedMetadata?.taskId && input.taskId && storedMetadata.taskId !== input.taskId) {
+      return fail(
+        "CORRELATION_MISMATCH",
+        `Correlation ${input.correlationId} belongs to task ${storedMetadata.taskId}, not ${input.taskId}.`
+      );
+    }
+    if (storedMetadata?.inferenceLogId && input.inferenceLogId && storedMetadata.inferenceLogId !== input.inferenceLogId) {
+      return fail(
+        "CORRELATION_MISMATCH",
+        `Correlation ${input.correlationId} was routed by inference ${storedMetadata.inferenceLogId}, not ${input.inferenceLogId}.`
+      );
+    }
+    const routeContext = parseRouteContext(storedMetadata?.routeContext) ?? input.routeContext;
+    const inferenceLogId = input.inferenceLogId ?? storedMetadata?.inferenceLogId;
+    const recommendedModelId = storedMetadata?.recommendedModelId ?? input.routedRecommendedModelId;
     const contributionRowResult = buildReportContributionRow({
       report: previewResult.value.report,
       routeContext,
       inferenceLogId,
+      recommendedModelId,
       harness: profile17.harness,
       observedAt,
+      stageCost: input.stageCost,
       ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
       ...input.wallClockSeconds !== void 0 ? { wallClockSeconds: input.wallClockSeconds } : {},
-      ...input.taskId ? { taskId: input.taskId } : {}
+      taskId: input.taskId
     });
     let response;
     let contribution;
@@ -4758,9 +4986,9 @@ async function checkApiReachability(config, transport, options) {
     () => controller.abort(),
     options?.timeoutMs ?? DEFAULT_TIMEOUT_MS2
   );
-  const path4 = options?.path ?? DEFAULT_REACHABILITY_PATH;
+  const path5 = options?.path ?? DEFAULT_REACHABILITY_PATH;
   const requestId = options?.requestId ?? (/* @__PURE__ */ new Date()).toISOString();
-  const isDefaultHealthProbe = path4 === DEFAULT_REACHABILITY_PATH;
+  const isDefaultHealthProbe = path5 === DEFAULT_REACHABILITY_PATH;
   const headers = {
     "X-Request-ID": requestId,
     "X-Hokusai-Request-Id": requestId
@@ -4772,7 +5000,7 @@ async function checkApiReachability(config, transport, options) {
     const response = await transport(
       buildReachabilityUrl(
         config.apiBaseUrl,
-        path4
+        path5
       ),
       {
         method: "GET",
@@ -4995,12 +5223,12 @@ async function checkReachability(input, requestId) {
     clearTimeout(timeoutHandle);
   }
 }
-function buildReachabilityUrl(baseUrl, path4) {
+function buildReachabilityUrl(baseUrl, path5) {
   const normalizedBase = new URL(baseUrl);
   if (!normalizedBase.pathname.endsWith("/")) {
     normalizedBase.pathname = `${normalizedBase.pathname}/`;
   }
-  return new URL(path4.replace(/^\/+/, ""), normalizedBase).toString();
+  return new URL(path5.replace(/^\/+/, ""), normalizedBase).toString();
 }
 function mapReachabilityStatus(response) {
   if (response.status === 401 || response.status === 403) {
@@ -5189,52 +5417,52 @@ function buildTaskPacket(context) {
   }
   return result.packet;
 }
-function validateLiteralString2(value, path4, expected, errors) {
+function validateLiteralString2(value, path5, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
     errors.push({
-      path: path4,
-      message: `Expected "${path4}" to be "${expected}".`
+      path: path5,
+      message: `Expected "${path5}" to be "${expected}".`
     });
     return;
   }
   if (value !== expected) {
     errors.push({
-      path: path4,
+      path: path5,
       message: `Unsupported schema version "${value}". Expected "${expected}".`
     });
   }
 }
-function validateNonEmptyString3(value, path4, errors) {
+function validateNonEmptyString3(value, path5, errors) {
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be a non-empty string.`
+      path: path5,
+      message: `"${path5}" must be a non-empty string.`
     });
   }
 }
-function validateEnum2(value, path4, allowedValues, errors) {
+function validateEnum2(value, path5, allowedValues, errors) {
   if (typeof value !== "string" || !allowedValues.includes(value)) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be one of: ${allowedValues.join(", ")}.`
+      path: path5,
+      message: `"${path5}" must be one of: ${allowedValues.join(", ")}.`
     });
   }
 }
-function validateStringArray(value, path4, errors) {
+function validateStringArray(value, path5, errors) {
   if (!Array.isArray(value)) {
     errors.push({
-      path: path4,
-      message: `"${path4}" must be an array of strings.`
+      path: path5,
+      message: `"${path5}" must be an array of strings.`
     });
     return;
   }
   const entries = value;
   for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (typeof entry !== "string" || entry.trim().length === 0) {
+    const entry2 = entries[index];
+    if (typeof entry2 !== "string" || entry2.trim().length === 0) {
       errors.push({
-        path: `${path4}[${index}]`,
-        message: `"${path4}" entries must be non-empty strings.`
+        path: `${path5}[${index}]`,
+        message: `"${path5}" entries must be non-empty strings.`
       });
     }
   }
@@ -5327,9 +5555,9 @@ function normalizeText(text) {
 function classifyTaskFamily(input) {
   const haystack = [input.text, ...input.hints ?? []].join("\n");
   const matches = /* @__PURE__ */ new Set();
-  for (const entry of FAMILY_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(haystack))) {
-      matches.add(entry.family === "bug" ? "bugfix" : entry.family);
+  for (const entry2 of FAMILY_KEYWORDS) {
+    if (entry2.patterns.some((pattern) => pattern.test(haystack))) {
+      matches.add(entry2.family === "bug" ? "bugfix" : entry2.family);
     }
   }
   if (matches.size > 1) {
@@ -5386,7 +5614,7 @@ function summarizeLanguageSignals(extensionCounts) {
   return [...languages].sort((left, right) => left.localeCompare(right));
 }
 function summarizeFrameworkSignals(dependencyCategories) {
-  return [...new Set(dependencyCategories.map((entry) => entry.trim()).filter(Boolean))].sort(
+  return [...new Set(dependencyCategories.map((entry2) => entry2.trim()).filter(Boolean))].sort(
     (left, right) => left.localeCompare(right)
   );
 }
@@ -5772,8 +6000,8 @@ function isPlainObject3(value) {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
-function fieldError(path4, message, code) {
-  return { path: path4, message, code };
+function fieldError(path5, message, code) {
+  return { path: path5, message, code };
 }
 function validateFeatureValue(name, value) {
   if (value === null) {
@@ -7344,6 +7572,127 @@ var ARBITER_CORRECTIVE_REWORK_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/rework-risk-features.ts
+var REWORK_RISK_FEATURE_MANIFEST_VERSION = "rr-merge-features/1.0.0";
+var AGENT_TOOL_FAMILIES = [
+  "none",
+  "claude",
+  "copilot",
+  "cursor",
+  "codex",
+  "devin",
+  "gemini",
+  "aider",
+  "openhands",
+  "other",
+  "multiple"
+];
+var NO_DIFF = "The diff between base_sha and merge_sha could not be read.";
+var NO_HISTORY = "Ancestor history of base_sha could not be read.";
+var NO_EVENTS = "GitHub returned no timeline for this PR.";
+var NOT_INSTRUMENTED = "The PR did not come from an instrumented agent harness.";
+var NO_COMMITS = "The PR's commits could not be read.";
+var NO_MARKER_EVIDENCE = "No marker was found, and the commits or the body at as_of could not be read.";
+var NO_AUTHOR = "The author account no longer exists, or the PR was found from a `(#N)` reference in its landing commit and its author type was not recorded.";
+var entry = (name, as_of_source, kind, description, null_meaning) => ({ name, as_of_source, kind, description, null_meaning, segment: name.startsWith("segment.") });
+var REWORK_RISK_FEATURE_MANIFEST = Object.freeze({
+  manifest_version: REWORK_RISK_FEATURE_MANIFEST_VERSION,
+  as_of: "merged_at, or the landing commit time when GitHub reports none; see AS_OF_BASES.",
+  entries: Object.freeze([
+    entry("feature.shape.files_touched", "git_diff_base_to_merge", "integer", "Files changed.", NO_DIFF),
+    entry("feature.shape.lines_added", "git_diff_base_to_merge", "integer", "Lines added.", NO_DIFF),
+    entry("feature.shape.lines_deleted", "git_diff_base_to_merge", "integer", "Lines deleted.", NO_DIFF),
+    entry("feature.shape.loc_touched", "git_diff_base_to_merge", "integer", "Lines added plus deleted.", NO_DIFF),
+    entry("feature.shape.tests_changed", "git_diff_base_to_merge", "boolean", "A test file changed.", NO_DIFF),
+    entry("feature.shape.diff_uncertain", "git_diff_base_to_merge", "boolean", "The diff may include other PRs, as in a batched merge.", NO_DIFF),
+    entry("feature.shape.member_commits", "git_diff_base_to_merge", "integer", "First-parent commits the PR contributed.", NO_DIFF),
+    entry("feature.shape.complexity_delta", "git_diff_base_to_merge", "number", "wavemill-cyclomatic/v1 at merge_sha minus base_sha, over changed files of 2 MiB or less.", "No changed file has a supported language, or a file could not be read."),
+    entry("feature.history.file_commits_90d", "git_ancestors_of_base", "integer", "Commits touching the changed files that landed at or before base_sha, within the 90 days before as_of. Paths match exactly, without rename following.", NO_HISTORY),
+    entry("feature.history.file_authors_90d", "git_ancestors_of_base", "integer", "Distinct author emails on those commits.", NO_HISTORY),
+    entry("feature.history.file_fix_commits_90d", "git_ancestors_of_base", "integer", "Those commits with a fix-shaped subject. Never read from label tables.", NO_HISTORY),
+    entry("feature.history.newest_file_age_days", "git_ancestors_of_base", "number", "Days since the newest changed file that already existed first landed.", "Every changed file is new, or history could not be read."),
+    entry("feature.history.new_files", "git_ancestors_of_base", "integer", "Changed files absent at base_sha.", NO_HISTORY),
+    entry("feature.author.repo_commits_prior", "git_ancestors_of_base", "integer", "Commits among ancestors of base_sha from the email addresses on the author's commits in this PR.", NO_HISTORY),
+    entry("feature.author.touched_file_commits_prior", "git_ancestors_of_base", "integer", "Those commits that touch the changed files.", NO_HISTORY),
+    entry("feature.author.is_bot", "immutable_pr_fact", "boolean", "GitHub reports the PR author as a bot.", NO_AUTHOR),
+    entry("feature.agent.marker_present", "github_events_until_as_of", "boolean", "The PR carries evidence of an agent tool. False means no marker was seen, not that a person wrote it unaided.", NO_MARKER_EVIDENCE),
+    { ...entry("feature.agent.tool_family", "github_events_until_as_of", "category", "The agent tool the markers name.", NO_MARKER_EVIDENCE), categories: AGENT_TOOL_FAMILIES },
+    entry("feature.agent.marked_commit_share", "pr_commits_at_merge", "number", "Share of the PR's commits that carry a marker.", NO_COMMITS),
+    entry("feature.process.review_count", "github_events_until_as_of", "integer", "Reviews submitted by as_of.", NO_EVENTS),
+    entry("feature.process.approvals", "github_events_until_as_of", "integer", "Approvals submitted by as_of.", NO_EVENTS),
+    entry("feature.process.changes_requested", "github_events_until_as_of", "integer", "Change requests submitted by as_of, for any PR. Distinct from segment.provenance.change_requests.", NO_EVENTS),
+    entry("feature.process.distinct_reviewers", "github_events_until_as_of", "integer", "Distinct reviewers by as_of.", NO_EVENTS),
+    entry("feature.process.hours_open", "github_events_until_as_of", "number", "Hours from PR creation to as_of.", NO_EVENTS),
+    entry("feature.process.hours_to_first_review", "github_events_until_as_of", "number", "Hours from PR creation to the first review by as_of.", "No review was submitted by as_of."),
+    entry("feature.process.github_label_count", "github_events_until_as_of", "integer", "Labels on the PR at as_of, replayed from label events.", NO_EVENTS),
+    entry("feature.process.title_chars", "github_events_until_as_of", "integer", "Title length at as_of, replayed from rename events.", NO_EVENTS),
+    entry("feature.process.body_chars", "github_events_until_as_of", "integer", "Body length at as_of, replayed from edit history.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("feature.content.diff_sha256", "git_diff_base_to_merge", "content_sha256", "Hash of the private diff that content arms read.", NO_DIFF),
+    entry("feature.content.title_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private title at as_of.", NO_EVENTS),
+    entry("feature.content.body_sha256", "github_events_until_as_of", "content_sha256", "Hash of the private body at as_of.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.provenance.agent_iterations", "harness_contract", "integer", "Agent rework iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.self_review_iterations", "harness_contract", "integer", "Agent self-review iterations.", NOT_INSTRUMENTED),
+    entry("segment.provenance.human_intervention_count", "harness_contract", "integer", "Human interventions during the run.", NOT_INSTRUMENTED),
+    entry("segment.provenance.review_rounds", "harness_contract", "integer", "Review rounds the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.provenance.change_requests", "harness_contract", "integer", "Change requests the harness recorded.", NOT_INSTRUMENTED),
+    entry("segment.agent.exact_model", "pr_commits_at_merge", "category", "The model a commit names, when exactly one is named. Most markers name only a tool.", "No commit names exactly one model, or the commits could not be read."),
+    entry("segment.agent.marked_by_account", "immutable_pr_fact", "boolean", "The PR author is a known agent bot account.", NO_AUTHOR),
+    entry("segment.agent.marked_by_branch", "immutable_pr_fact", "boolean", "The PR's head branch has an agent tool's prefix.", "GitHub reports no head branch for this PR."),
+    entry("segment.agent.marked_by_commit", "pr_commits_at_merge", "boolean", "A commit has an agent author, co-author trailer, footer or model tag.", NO_COMMITS),
+    entry("segment.agent.marked_by_body", "github_events_until_as_of", "boolean", "The body at as_of has an agent footer or session link.", "The body at as_of cannot be rebuilt from edit history."),
+    entry("segment.author.dependency_bot", "immutable_pr_fact", "boolean", "The PR author is a dependency bot. Pre-registration section 2 reports these PRs separately.", NO_AUTHOR),
+    {
+      ...entry("segment.ci.checks_completed_by_merge", "github_events_until_as_of", "integer", "CI results completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    },
+    {
+      ...entry("segment.ci.checks_failed_by_merge", "github_events_until_as_of", "integer", "CI failures completed by as_of.", "GitHub no longer retains CI results for this commit."),
+      availability: "From 2025Q4 only; see docs/arbiter/merge-time-feature-manifest.md."
+    }
+  ])
+});
+var LEAKAGE_DENYLIST = Object.freeze([
+  // Corrective-rework and S2 outcome fields.
+  "corrective",
+  "horizon_days",
+  "report_outcome",
+  "reason_codes",
+  "label_provenance",
+  "labeller_version",
+  "normalization_version",
+  "definition_version",
+  "base_label_hash",
+  // Repair pairs and candidates.
+  "record_type",
+  "candidate_id",
+  "repair_pair_ids",
+  "proxy",
+  "confidence",
+  "lag_seconds",
+  "fix",
+  "fix_only",
+  "original_only",
+  "fix_preexisting",
+  "fix_tests",
+  "line_survival",
+  "graph_distance",
+  "original_review",
+  "evidence",
+  "status",
+  // Exclusion and cause codes.
+  "exclusion_code",
+  "exclusion_codes",
+  "cause_code",
+  "cause_codes",
+  "verdict",
+  // Corpus record fields that hold post-merge or enumeration-time state.
+  "relanded_merge_shas",
+  "closing_issues",
+  "labels",
+  "title",
+  "body"
+]);
+
 // ../core/src/task-cost/enums.ts
 var TASK_COST_FIELD_AVAILABILITIES = [
   "available",
@@ -7876,20 +8225,119 @@ var ANTHROPIC_MODEL_PRICING = {
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
+var OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272e3;
+function openAiLong(inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd) {
+  return {
+    thresholdInputTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+    inputPerMTokUsd,
+    cachedInputPerMTokUsd,
+    outputPerMTokUsd
+  };
+}
 var OPENAI_MODEL_PRICING = {
-  "gpt-5.5": { inputPerMTokUsd: 5, outputPerMTokUsd: 30 },
-  "gpt-5": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
-  "gpt-5-mini": { inputPerMTokUsd: 0.25, outputPerMTokUsd: 2 },
+  "gpt-6-astra": {
+    inputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 1,
+    outputPerMTokUsd: 50,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(20, 2, 75)
+  },
+  "gpt-6.1-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.1,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.2, 15)
+  },
+  "gpt-6.1-terra": {
+    inputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: 0.05,
+    outputPerMTokUsd: 5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(2, 0.1, 7.5)
+  },
+  "gpt-6-sol": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 10,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 15)
+  },
+  "gpt-6-luna": {
+    inputPerMTokUsd: 0.1,
+    cachedInputPerMTokUsd: 0.01,
+    outputPerMTokUsd: 0.5,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.2, 0.02, 0.75)
+  },
+  // Promotional pricing "through at least 2026-11-21": re-verify after then.
+  "gpt-5.6-sol": {
+    inputPerMTokUsd: 4,
+    cachedInputPerMTokUsd: 0.4,
+    outputPerMTokUsd: 20,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(8, 0.8, 30)
+  },
+  "gpt-5.6-terra": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 12,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(4, 0.4, 18)
+  },
+  "gpt-5.6-luna": {
+    inputPerMTokUsd: 0.2,
+    cachedInputPerMTokUsd: 0.02,
+    outputPerMTokUsd: 1.2,
+    cacheWritePerMTokUsd: null,
+    longContext: openAiLong(0.4, 0.04, 1.8)
+  },
+  "gpt-5.5": {
+    inputPerMTokUsd: 5,
+    cachedInputPerMTokUsd: 0.5,
+    outputPerMTokUsd: 30,
+    longContext: openAiLong(10, 1, 45)
+  },
+  "gpt-5.5-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4": {
+    inputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 0.25,
+    outputPerMTokUsd: 15,
+    longContext: openAiLong(5, 0.5, 22.5)
+  },
+  "gpt-5.4-pro": {
+    inputPerMTokUsd: 30,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 180,
+    longContext: openAiLong(60, null, 270)
+  },
+  "gpt-5.4-mini": { inputPerMTokUsd: 0.75, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 4.5 },
+  "gpt-5.4-nano": { inputPerMTokUsd: 0.2, cachedInputPerMTokUsd: 0.02, outputPerMTokUsd: 1.25 },
+  "gpt-5.3-codex": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
+  "gpt-5.2-pro": { inputPerMTokUsd: 21, cachedInputPerMTokUsd: null, outputPerMTokUsd: 168 },
+  "gpt-5.1": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
+  "gpt-5-mini": { inputPerMTokUsd: 0.25, cachedInputPerMTokUsd: 0.025, outputPerMTokUsd: 2 },
+  "gpt-5-nano": { inputPerMTokUsd: 0.05, cachedInputPerMTokUsd: 5e-3, outputPerMTokUsd: 0.4 },
+  "gpt-5-pro": { inputPerMTokUsd: 15, cachedInputPerMTokUsd: null, outputPerMTokUsd: 120 },
+  "gpt-4.1": { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, cachedInputPerMTokUsd: 0.1, outputPerMTokUsd: 1.6 },
+  "gpt-4o": { inputPerMTokUsd: 2.5, cachedInputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
+  "gpt-4o-mini": { inputPerMTokUsd: 0.15, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 0.6 },
+  o3: { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
+  "o3-pro": { inputPerMTokUsd: 20, cachedInputPerMTokUsd: null, outputPerMTokUsd: 80 },
+  // Not on the current page: earlier per-model pages, legacy cache multipliers.
   "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
   "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
-  "gpt-4o": { inputPerMTokUsd: 2.5, outputPerMTokUsd: 10 },
-  "gpt-4o-mini": { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.6 },
-  "gpt-4.1": { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
-  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, outputPerMTokUsd: 1.6 },
   "gpt-4-turbo": { inputPerMTokUsd: 10, outputPerMTokUsd: 30 },
   o1: { inputPerMTokUsd: 15, outputPerMTokUsd: 60 },
   "o1-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
-  o3: { inputPerMTokUsd: 2, outputPerMTokUsd: 8 },
   "o3-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 },
   "o4-mini": { inputPerMTokUsd: 1.1, outputPerMTokUsd: 4.4 }
 };
@@ -7904,7 +8352,7 @@ var MODEL_PRICING = {
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
-var MODEL_PRICING_AS_OF = "2026-07-15";
+var MODEL_PRICING_AS_OF = "2026-11-04";
 var COMPACT_DATE_SUFFIX = /-\d{8}$/;
 var DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
 var GEMINI_STABLE_SUFFIX = /-001$/;
@@ -7968,6 +8416,30 @@ function nonNegativeOrNull(value) {
   }
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
+function cacheRate(explicit, inputRate, multiplier, legacyEligible) {
+  if (explicit === null) return void 0;
+  if (explicit !== void 0) return explicit;
+  return legacyEligible ? inputRate * multiplier : void 0;
+}
+function appliedRates(model, price, promptTokens, requestScoped) {
+  const legacyEligible = isAnthropicModel(model) || isOpenAIModel(model);
+  const long = requestScoped && price.longContext && promptTokens > price.longContext.thresholdInputTokens ? price.longContext : void 0;
+  if (long) {
+    return {
+      input: long.inputPerMTokUsd,
+      output: long.outputPerMTokUsd,
+      cacheRead: cacheRate(long.cachedInputPerMTokUsd, long.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, false),
+      // Long-context cache writes share the TTL ambiguity: never priced.
+      cacheWrite: void 0
+    };
+  }
+  return {
+    input: price.inputPerMTokUsd,
+    output: price.outputPerMTokUsd,
+    cacheRead: cacheRate(price.cachedInputPerMTokUsd, price.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, legacyEligible),
+    cacheWrite: cacheRate(price.cacheWritePerMTokUsd, price.inputPerMTokUsd, CACHE_WRITE_INPUT_MULTIPLIER, legacyEligible)
+  };
+}
 function computeActualCostUsd(input) {
   const price = resolveModelPrice(input.model);
   if (!price) {
@@ -7980,12 +8452,16 @@ function computeActualCostUsd(input) {
   if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
     return void 0;
   }
-  if (cacheCreationTokens > 0 || cacheReadTokens > 0) {
-    if (!isAnthropicModel(input.model) && !isOpenAIModel(input.model)) {
-      return void 0;
-    }
+  const rates = appliedRates(
+    input.model,
+    price,
+    inputTokens + cacheReadTokens + cacheCreationTokens,
+    input.requestScoped === true
+  );
+  if (cacheReadTokens > 0 && rates.cacheRead === void 0 || cacheCreationTokens > 0 && rates.cacheWrite === void 0) {
+    return void 0;
   }
-  const cost = inputTokens / 1e6 * price.inputPerMTokUsd + cacheCreationTokens / 1e6 * price.inputPerMTokUsd * CACHE_WRITE_INPUT_MULTIPLIER + cacheReadTokens / 1e6 * price.inputPerMTokUsd * CACHE_READ_INPUT_MULTIPLIER + outputTokens / 1e6 * price.outputPerMTokUsd;
+  const cost = inputTokens / 1e6 * rates.input + cacheCreationTokens / 1e6 * (rates.cacheWrite ?? 0) + cacheReadTokens / 1e6 * (rates.cacheRead ?? 0) + outputTokens / 1e6 * rates.output;
   return Math.round(cost * 1e6) / 1e6;
 }
 function isAnthropicModel(model) {
@@ -8012,6 +8488,12 @@ var nodeFs = {
   readdirSync: (dirPath) => readdirSync(dirPath),
   statSync: (filePath) => ({ mtimeMs: statSync(filePath).mtimeMs })
 };
+var CLAUDE_CODE_SESSION_ID_ENV = "CLAUDE_CODE_SESSION_ID";
+var SAFE_SESSION_ID = /^[A-Za-z0-9._-]{1,200}$/;
+function envSessionId(env) {
+  const value = (env ?? process.env)[CLAUDE_CODE_SESSION_ID_ENV]?.trim();
+  return value && SAFE_SESSION_ID.test(value) && !value.startsWith(".") ? value : void 0;
+}
 var DEFAULT_SIDECAR_FRESHNESS_MS = 24 * 60 * 60 * 1e3;
 function encodeProjectDirKey(cwd) {
   return cwd.replace(/[^a-zA-Z0-9]/g, "-");
@@ -8080,14 +8562,16 @@ function isSidecarFresh(sidecar, nowIso, freshnessMs) {
   return Math.abs(now - updated) <= freshnessMs;
 }
 function captureCostBaseline(input) {
+  const sessionId = envSessionId(input.env);
   const snapshot = {
     baselineAt: input.nowIso,
-    projectDirKey: encodeProjectDirKey(input.cwd)
+    projectDirKey: encodeProjectDirKey(input.cwd),
+    ...sessionId ? { sessionId } : {}
   };
   try {
     const configDir = claudeConfigDirFrom(input);
     const sidecar = readSessionCostSidecar(sessionCostSidecarPath(configDir), input.fs ?? nodeFs);
-    if (sidecar && isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)) {
+    if (sidecar && (sessionId === void 0 || sidecar.session_id === sessionId) && isSidecarFresh(sidecar, input.nowIso, input.freshnessMs ?? DEFAULT_SIDECAR_FRESHNESS_MS)) {
       return {
         ...snapshot,
         costBaselineUsd: sidecar.cost_usd,
@@ -8143,16 +8627,16 @@ function parseTranscriptUsageTotals(input) {
     if (trimmed.length === 0) {
       continue;
     }
-    let entry;
+    let entry2;
     try {
-      entry = JSON.parse(trimmed);
+      entry2 = JSON.parse(trimmed);
     } catch {
       continue;
     }
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    if (!entry2 || typeof entry2 !== "object" || Array.isArray(entry2)) {
       continue;
     }
-    const record = entry;
+    const record = entry2;
     if (hasAfter) {
       const timestamp2 = record.timestamp;
       if (typeof timestamp2 !== "string") {
@@ -8184,31 +8668,17 @@ function parseTranscriptUsageTotals(input) {
 }
 function locateSessionTranscript(input) {
   const fs = input.fs ?? nodeFs;
-  let names;
+  const sessionId = input.sessionId?.trim();
+  if (!sessionId || !/^[A-Za-z0-9._-]{1,200}$/.test(sessionId) || sessionId.startsWith(".")) {
+    return void 0;
+  }
+  const full = path.join(input.dir, `${sessionId}.jsonl`);
   try {
-    names = fs.readdirSync(input.dir);
+    fs.statSync(full);
   } catch {
     return void 0;
   }
-  let best;
-  let bestMtime = Number.NEGATIVE_INFINITY;
-  for (const name of names) {
-    if (!name.endsWith(".jsonl")) {
-      continue;
-    }
-    const full = path.join(input.dir, name);
-    let mtime;
-    try {
-      mtime = fs.statSync(full).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (mtime > bestMtime) {
-      bestMtime = mtime;
-      best = full;
-    }
-  }
-  return best;
+  return full;
 }
 function computeTranscriptCostUsd(input) {
   const totals = parseTranscriptUsageTotals({
@@ -8259,12 +8729,13 @@ function resolveActualCostUsd(input) {
     } catch {
     }
   }
-  if (routeContext?.baselineAt) {
+  if (routeContext?.baselineAt && routeContext.sessionId) {
     try {
       const configDir = claudeConfigDirFrom(input);
       const dir = routeContext.projectDirKey ? path.join(configDir, "projects", routeContext.projectDirKey) : sessionTranscriptDir(configDir, input.cwd ?? process.cwd());
       const transcriptPath = locateSessionTranscript({
         dir,
+        sessionId: routeContext.sessionId,
         ...input.fs ? { fs: input.fs } : {}
       });
       if (transcriptPath) {
@@ -8555,11 +9026,32 @@ var TASK_COST_TOKEN_FIELDS = [
   "cache_write_tokens",
   "reasoning_tokens"
 ];
+function emptyTokenUsage() {
+  return {
+    input_tokens: null,
+    output_tokens: null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    reasoning_tokens: null
+  };
+}
+function addNullable(a, b) {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a + b;
+}
 function deriveUsageAvailability(usage) {
   const values = TASK_COST_TOKEN_FIELDS.map((field) => usage[field]);
   if (values.every((value) => value === null)) return "unavailable";
   if (values.some((value) => value === null)) return "partial";
   return values.every((value) => value === 0) ? "known_zero" : "available";
+}
+function promoteAvailability(values) {
+  if (values.length === 0) return "unavailable";
+  if (values.every((value) => value === "unavailable")) return "unavailable";
+  if (values.every((value) => value === "known_zero")) return "known_zero";
+  if (values.every((value) => value === "available" || value === "known_zero")) return "available";
+  return "partial";
 }
 
 // ../core/src/task-cost/validators.ts
@@ -8613,10 +9105,10 @@ var TASK_COST_FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
 function normalizeKey(key) {
   return key.toLowerCase().replaceAll("_", "").replaceAll("-", "");
 }
-function assertNoForbiddenKeys(value, path4 = []) {
+function assertNoForbiddenKeys(value, path5 = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys(item, [...path4, String(index)]);
+      assertNoForbiddenKeys(item, [...path5, String(index)]);
     }
     return;
   }
@@ -8627,10 +9119,10 @@ function assertNoForbiddenKeys(value, path4 = []) {
     if (TASK_COST_FORBIDDEN_KEYS.has(normalizeKey(key))) {
       throw new TaskCostValidationError(
         "forbidden_field",
-        `Forbidden field at ${[...path4, key].join(".")}`
+        `Forbidden field at ${[...path5, key].join(".")}`
       );
     }
-    assertNoForbiddenKeys(child, [...path4, key]);
+    assertNoForbiddenKeys(child, [...path5, key]);
   }
 }
 var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -8721,7 +9213,7 @@ function requireDiagnostics(value, label2) {
 }
 function requireStringArray(value, label2, item) {
   if (!Array.isArray(value)) fail2(`${label2} must be an array`);
-  return value.map((entry, index) => item(entry, `${label2}[${index}]`));
+  return value.map((entry2, index) => item(entry2, `${label2}[${index}]`));
 }
 function requireTokenUsage(value, label2) {
   const record = requireObject(value, label2);
@@ -8809,9 +9301,9 @@ function validateTaskCostSummaryV1(value) {
   requirePattern(record.provider_contract_version, PROVIDER_CONTRACT_PATTERN, "summary.provider_contract_version");
   requireStringArray(record.models, "summary.models", requireModel);
   if (!Array.isArray(record.model_segments)) fail2("summary.model_segments must be an array");
-  for (const [index, entry] of record.model_segments.entries()) {
+  for (const [index, entry2] of record.model_segments.entries()) {
     const label2 = `summary.model_segments[${index}]`;
-    const segment = requireObject(entry, label2);
+    const segment = requireObject(entry2, label2);
     requireModel(segment.model, `${label2}.model`);
     requireCount(segment.turn_count, `${label2}.turn_count`);
     requireTokenUsage(segment.usage, `${label2}.usage`);
@@ -8840,8 +9332,8 @@ function validateTaskCostSummaryV1(value) {
   requireEnum(record.join_confidence, TASK_COST_JOIN_CONFIDENCES, "summary.join_confidence");
   requireTimestamp(record.collected_at, "summary.collected_at");
   const eventCount = requireCount(record.event_count, "summary.event_count");
-  const eventIds = requireStringArray(record.event_ids, "summary.event_ids", requireId);
-  if (eventIds.length !== eventCount) fail2("summary.event_count must equal event_ids.length");
+  const eventIds2 = requireStringArray(record.event_ids, "summary.event_ids", requireId);
+  if (eventIds2.length !== eventCount) fail2("summary.event_count must equal event_ids.length");
   requireDiagnostics(record.diagnostics, "summary.diagnostics");
 }
 function validateTaskCostLedgerV1(value) {
@@ -8895,6 +9387,438 @@ function makeGuard(validate) {
 var isTaskCostEventV1 = makeGuard(validateTaskCostEventV1);
 var isTaskCostSummaryV1 = makeGuard(validateTaskCostSummaryV1);
 var isTaskCostLedgerV1 = makeGuard(validateTaskCostLedgerV1);
+
+// ../core/src/task-cost/aggregate.ts
+function roundUsd(value) {
+  return Math.round(value * 1e9) / 1e9;
+}
+function addUsd(a, b) {
+  const sum = addNullable(a, b);
+  return sum === null ? null : roundUsd(sum);
+}
+function compareStrings(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+function compareEvents(a, b) {
+  return Date.parse(a.observed_at) - Date.parse(b.observed_at) || compareStrings(a.session_id, b.session_id) || a.sequence - b.sequence || compareStrings(a.event_id, b.event_id);
+}
+function resolveReplays(events17) {
+  const firstById = /* @__PURE__ */ new Map();
+  const decisions = [];
+  let droppedDuplicates = 0;
+  for (const event17 of events17) {
+    if (firstById.has(event17.event_id)) {
+      decisions.push("drop_duplicate");
+      droppedDuplicates += 1;
+    } else {
+      firstById.set(event17.event_id, event17);
+      decisions.push(
+        event17.replay_of_event_id !== void 0 ? "supersede_prior" : "accept_first"
+      );
+    }
+  }
+  for (const start of firstById.values()) {
+    const seen = /* @__PURE__ */ new Set([start.event_id]);
+    let next = start.replay_of_event_id;
+    while (next !== void 0) {
+      if (seen.has(next)) {
+        throw new TaskCostValidationError(
+          "replay_cycle",
+          `replay_of_event_id cycle involving "${next}"`
+        );
+      }
+      seen.add(next);
+      next = firstById.get(next)?.replay_of_event_id;
+    }
+  }
+  const superseded = /* @__PURE__ */ new Set();
+  for (const event17 of firstById.values()) {
+    if (event17.replay_of_event_id !== void 0 && firstById.has(event17.replay_of_event_id)) {
+      superseded.add(event17.replay_of_event_id);
+    }
+  }
+  const resolvedDecisions = decisions.map((decision2, index) => {
+    const target = events17[index]?.replay_of_event_id;
+    return decision2 === "supersede_prior" && (target === void 0 || !firstById.has(target)) ? "accept_first" : decision2;
+  });
+  return {
+    contributing: [...firstById.values()].filter(
+      (event17) => !superseded.has(event17.event_id)
+    ),
+    decisions: resolvedDecisions,
+    droppedDuplicates
+  };
+}
+function differenceField(current, previous, onBackward, round) {
+  if (current === null) return { delta: null, baseline: previous };
+  if (previous === null) return { delta: current, baseline: current };
+  if (current >= previous)
+    return { delta: round(current - previous), baseline: current };
+  onBackward();
+  return { delta: 0, baseline: current };
+}
+function reconcileCumulative(events17) {
+  let backwardJump = false;
+  const markBackward = () => {
+    backwardJump = true;
+  };
+  const derived = /* @__PURE__ */ new Map();
+  const bySession = /* @__PURE__ */ new Map();
+  for (const event17 of events17) {
+    const list = bySession.get(event17.session_id) ?? [];
+    list.push(event17);
+    bySession.set(event17.session_id, list);
+  }
+  for (const sessionEvents of bySession.values()) {
+    const baseline = {
+      usage: emptyTokenUsage(),
+      actual: null,
+      estimated: null
+    };
+    const ordered = [...sessionEvents].sort(
+      (a, b) => a.sequence - b.sequence || compareStrings(a.event_id, b.event_id)
+    );
+    for (const event17 of ordered) {
+      if (event17.usage_kind === "delta") {
+        derived.set(event17.event_id, {
+          event: event17,
+          usage: { ...event17.usage },
+          actual: event17.actual_cost_usd,
+          estimated: event17.estimated_cost_usd
+        });
+        continue;
+      }
+      const usage = emptyTokenUsage();
+      for (const field of TASK_COST_TOKEN_FIELDS) {
+        const result = differenceField(
+          event17.usage[field],
+          baseline.usage[field],
+          markBackward,
+          (value) => value
+        );
+        usage[field] = result.delta;
+        baseline.usage[field] = result.baseline;
+      }
+      const actual = differenceField(
+        event17.actual_cost_usd,
+        baseline.actual,
+        markBackward,
+        roundUsd
+      );
+      const estimated = differenceField(
+        event17.estimated_cost_usd,
+        baseline.estimated,
+        markBackward,
+        roundUsd
+      );
+      baseline.actual = actual.baseline;
+      baseline.estimated = estimated.baseline;
+      derived.set(event17.event_id, {
+        event: event17,
+        usage,
+        actual: actual.delta,
+        estimated: estimated.delta
+      });
+    }
+  }
+  const observations = [...events17].sort(compareEvents).map((event17) => derived.get(event17.event_id));
+  return { observations, backwardJump };
+}
+function promoteCostSource(sources) {
+  const hasProvider = sources.some(
+    (s) => s === "provider_reported" || s === "mixed"
+  );
+  const hasEstimate = sources.some(
+    (s) => s === "local_estimate" || s === "mixed"
+  );
+  if (hasProvider && hasEstimate) return "mixed";
+  if (hasProvider) return "provider_reported";
+  if (hasEstimate) return "local_estimate";
+  return "none";
+}
+function promoteCoverage(coverages) {
+  if (coverages.length === 0) return "unavailable";
+  if (coverages.every((c) => c === "unavailable")) return "unavailable";
+  if (coverages.every((c) => c === "known_zero")) return "known_zero";
+  if (coverages.every((c) => c === "complete" || c === "known_zero"))
+    return "complete";
+  return "partial";
+}
+function resolvedCost(observation) {
+  return observation.actual ?? observation.estimated;
+}
+function observationSource(observation) {
+  if (observation.actual !== null) return "provider_reported";
+  if (observation.estimated !== null) return "local_estimate";
+  return "none";
+}
+function observationCoverage(observation) {
+  const usage = deriveUsageAvailability(observation.usage);
+  const cost = resolvedCost(observation);
+  if (cost === null) return usage === "unavailable" ? "unavailable" : "partial";
+  if (observation.actual === 0 || cost === 0 && usage === "known_zero")
+    return "known_zero";
+  return usage === "available" ? "complete" : "partial";
+}
+function costAvailability(value) {
+  if (value === null) return "unavailable";
+  return value === 0 ? "known_zero" : "available";
+}
+function sumUsage(usages) {
+  const total = emptyTokenUsage();
+  for (const usage of usages) {
+    for (const field of TASK_COST_TOKEN_FIELDS) {
+      total[field] = addNullable(total[field], usage[field]);
+    }
+  }
+  return total;
+}
+function sumUsd(values) {
+  return values.reduce((sum, value) => addUsd(sum, value), null);
+}
+function distinct(values) {
+  return [...new Set(values)];
+}
+function turnKey(event17) {
+  return `${event17.session_id}\0${event17.turn_id}`;
+}
+function buildSegments(observations) {
+  const runs = [];
+  for (const observation of observations) {
+    const model = observation.event.observed_model;
+    const last = runs[runs.length - 1];
+    if (last && last.model === model) {
+      last.members.push(observation);
+    } else {
+      runs.push({ model, members: [observation] });
+    }
+  }
+  return runs.map(({ model, members: run }) => ({
+    model,
+    turn_count: new Set(run.map((o) => turnKey(o.event))).size,
+    usage: sumUsage(run.map((o) => o.usage)),
+    actual_cost_usd: sumUsd(run.map((o) => o.actual)),
+    estimated_cost_usd: sumUsd(run.map((o) => o.estimated)),
+    cost_source: promoteCostSource(run.map(observationSource))
+  }));
+}
+function promoteBasis(bases) {
+  const [first, ...rest] = bases;
+  return first !== void 0 && rest.every((basis2) => basis2 === first) ? first : "unknown";
+}
+function promotePricingSource(sources) {
+  const [first, ...rest] = distinct(sources.filter((s) => s !== "none"));
+  if (first === void 0) return "none";
+  return rest.length === 0 ? first : "mixed";
+}
+function prepareTaskObservations(events17, options) {
+  for (const event17 of events17) validateTaskCostEventV1(event17);
+  const taskIds = distinct(events17.map((event17) => event17.task_id));
+  if (options.taskId === void 0 && taskIds.length > 1) {
+    throw new TaskCostValidationError(
+      "mixed_scope",
+      "events span multiple task_ids; pass options.taskId to select one"
+    );
+  }
+  const taskId = options.taskId ?? taskIds[0];
+  const taskEvents = events17.filter((event17) => event17.task_id === taskId);
+  const [firstEvent] = taskEvents;
+  if (taskId === void 0 || firstEvent === void 0) {
+    throw new TaskCostValidationError(
+      "schema_validation_failed",
+      "aggregateTaskCost requires at least one event for the task"
+    );
+  }
+  const harness = firstEvent.harness;
+  const providerContract = firstEvent.provider_contract_version;
+  if (taskEvents.some(
+    (event17) => event17.harness !== harness || event17.provider_contract_version !== providerContract
+  )) {
+    throw new TaskCostValidationError(
+      "mixed_scope",
+      "a summary covers one harness and one provider contract; aggregate per harness"
+    );
+  }
+  const replay = resolveReplays(taskEvents);
+  const { observations, backwardJump } = reconcileCumulative(
+    replay.contributing
+  );
+  return {
+    taskId,
+    taskEvents,
+    harness,
+    providerContract,
+    replay,
+    observations,
+    backwardJump
+  };
+}
+function aggregateTaskCost(events17, options = {}) {
+  const {
+    taskId,
+    taskEvents,
+    harness,
+    providerContract,
+    replay,
+    observations,
+    backwardJump
+  } = prepareTaskObservations(events17, options);
+  const contributing = observations.map((o) => o.event);
+  const resolved = observations.map(resolvedCost);
+  const totalComplete = resolved.every((cost) => cost !== null);
+  const usage = sumUsage(observations.map((o) => o.usage));
+  const coverage = promoteCoverage(observations.map(observationCoverage));
+  const costSource2 = promoteCostSource(observations.map(observationSource));
+  const bases = contributing.map((event17) => event17.cost_basis);
+  const pricedEvents = contributing.filter(
+    (event17) => event17.estimated_cost_usd !== null
+  );
+  const revisions = distinct(
+    pricedEvents.flatMap(
+      (event17) => event17.pricing_revision ? [event17.pricing_revision] : []
+    )
+  ).sort();
+  const pricingRevision = revisions[revisions.length - 1];
+  const collectedAt = options.collectedAt ?? taskEvents.reduce(
+    (latest, event17) => Date.parse(event17.observed_at) > Date.parse(latest.observed_at) ? event17 : latest
+  ).observed_at;
+  const derived = /* @__PURE__ */ new Set();
+  if (observations.some(
+    (o) => o.usage.input_tokens === null || o.usage.output_tokens === null
+  )) {
+    derived.add("missing_token_usage");
+  }
+  if (observations.some(
+    (o) => resolvedCost(o) === null && o.usage.input_tokens !== null && o.usage.output_tokens !== null
+  )) {
+    derived.add("unpriced_model");
+  }
+  if (coverage === "partial") derived.add("mixed_coverage");
+  if (observations.some((o) => o.actual !== null))
+    derived.add("provider_reported_cost");
+  if (resolved.every((cost) => cost === null))
+    derived.add("no_priced_sessions");
+  if (revisions.length > 1) derived.add("stale_pricing_revision");
+  if (replay.droppedDuplicates > 0) derived.add("replay_dropped");
+  if (backwardJump) derived.add("cumulative_backward_jump");
+  if (bases.includes("subscription"))
+    derived.add("subscription_basis_no_charge");
+  for (const event17 of contributing) {
+    for (const code of event17.diagnostics ?? []) derived.add(code);
+  }
+  const [harnessVersion, ...otherVersions] = distinct(
+    contributing.flatMap((e) => e.harness_version ? [e.harness_version] : [])
+  );
+  return {
+    schema_version: TASK_COST_SUMMARY_SCHEMA_VERSION,
+    task_id: taskId,
+    session_ids: distinct(contributing.map((event17) => event17.session_id)).sort(),
+    ...options.rootSessionId !== void 0 ? { root_session_id: options.rootSessionId } : {},
+    harness,
+    ...harnessVersion !== void 0 && otherVersions.length === 0 ? { harness_version: harnessVersion } : {},
+    provider_contract_version: providerContract,
+    models: distinct(contributing.map((event17) => event17.observed_model)),
+    model_segments: buildSegments(observations),
+    turn_count: new Set(contributing.map(turnKey)).size,
+    turns_truncated: options.turnsTruncated ?? false,
+    usage,
+    actual_cost_usd: sumUsd(observations.map((o) => o.actual)),
+    estimated_cost_usd: sumUsd(observations.map((o) => o.estimated)),
+    total_cost_usd: totalComplete ? sumUsd(resolved) : null,
+    cost_source: costSource2,
+    cost_basis: promoteBasis(bases),
+    coverage,
+    field_availability: {
+      usage: promoteAvailability(
+        observations.map((o) => deriveUsageAvailability(o.usage))
+      ),
+      actual_cost: promoteAvailability(
+        observations.map((o) => costAvailability(o.actual))
+      ),
+      estimated_cost: promoteAvailability(
+        observations.map((o) => costAvailability(o.estimated))
+      ),
+      pricing: promoteAvailability(
+        observations.map(
+          (o) => o.estimated !== null ? "available" : "unavailable"
+        )
+      )
+    },
+    ...pricingRevision !== void 0 ? { pricing_revision: pricingRevision, pricing_timestamp: collectedAt } : {},
+    pricing_source: promotePricingSource(
+      contributing.map((event17) => event17.pricing_source)
+    ),
+    join_confidence: options.joinConfidence ?? "unattributed",
+    collected_at: collectedAt,
+    event_count: contributing.length,
+    event_ids: contributing.map((event17) => event17.event_id),
+    diagnostics: TASK_COST_DIAGNOSTIC_CODES.filter((code) => derived.has(code))
+  };
+}
+function aggregateTaskCostByModel(events17, options = {}) {
+  const { observations } = prepareTaskObservations(events17, options);
+  const byModel = /* @__PURE__ */ new Map();
+  for (const observation of observations) {
+    const model = observation.event.observed_model;
+    const group = byModel.get(model);
+    if (group === void 0) byModel.set(model, [observation]);
+    else group.push(observation);
+  }
+  return [...byModel.entries()].map(([model, group]) => {
+    const resolved = group.map(resolvedCost);
+    return {
+      model,
+      event_count: group.length,
+      turn_count: new Set(group.map((o) => turnKey(o.event))).size,
+      usage: sumUsage(group.map((o) => o.usage)),
+      actual_cost_usd: sumUsd(group.map((o) => o.actual)),
+      estimated_cost_usd: sumUsd(group.map((o) => o.estimated)),
+      total_cost_usd: resolved.every((cost) => cost !== null) ? sumUsd(resolved) : null,
+      cost_source: promoteCostSource(group.map(observationSource)),
+      coverage: promoteCoverage(group.map(observationCoverage))
+    };
+  });
+}
+
+// ../core/src/task-cost/unavailable.ts
+function defaultProviderContractVersion(harness) {
+  return PROVIDER_CONTRACT_VERSIONS[harness] ?? `${harness}/1`;
+}
+function unavailableTaskCostSummary(input) {
+  const summary = {
+    schema_version: TASK_COST_SUMMARY_SCHEMA_VERSION,
+    task_id: input.taskId,
+    session_ids: [...new Set(input.sessionIds ?? [])].sort(),
+    harness: input.harness,
+    ...input.harnessVersion !== void 0 ? { harness_version: input.harnessVersion } : {},
+    provider_contract_version: input.providerContractVersion ?? defaultProviderContractVersion(input.harness),
+    models: [],
+    model_segments: [],
+    turn_count: 0,
+    turns_truncated: false,
+    usage: emptyTokenUsage(),
+    actual_cost_usd: null,
+    estimated_cost_usd: null,
+    total_cost_usd: null,
+    cost_source: "none",
+    cost_basis: input.costBasis ?? "unknown",
+    coverage: "unavailable",
+    field_availability: {
+      usage: "unavailable",
+      actual_cost: "unavailable",
+      estimated_cost: "unavailable",
+      pricing: "unavailable"
+    },
+    pricing_source: "none",
+    join_confidence: "unattributed",
+    collected_at: input.collectedAt,
+    event_count: 0,
+    event_ids: [],
+    diagnostics: []
+  };
+  validateTaskCostSummaryV1(summary);
+  return summary;
+}
 
 // ../core/src/task-cost/attempt-schema.ts
 var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
@@ -9357,11 +10281,1354 @@ var TASK_ATTEMPT_V1_JSON_SCHEMA = Object.freeze(
   }
 );
 
+// ../core/src/task-cost/queue-lifecycle.ts
+var QUEUE_LIFECYCLE_EVENT_WRITE_CLASS = Object.freeze({
+  enqueued: "control",
+  candidate_prepared: "control",
+  check_run_completed: "evidence",
+  ejected: "control",
+  rerun_requested: "control",
+  rebase_performed: "evidence",
+  repair_commit_pushed: "evidence",
+  recovery_decision: "control",
+  merged: "control",
+  dequeued: "control",
+  abandoned: "control",
+  review_round_started: "control",
+  review_round_completed: "evidence"
+});
+var QUEUE_LIFECYCLE_EVENT_SCOPES = Object.freeze({
+  enqueued: ["pr"],
+  candidate_prepared: ["candidate"],
+  check_run_completed: ["pr", "candidate"],
+  ejected: ["pr"],
+  rerun_requested: ["pr", "candidate"],
+  rebase_performed: ["pr"],
+  repair_commit_pushed: ["pr"],
+  recovery_decision: ["pr", "candidate"],
+  merged: ["pr"],
+  dequeued: ["pr"],
+  abandoned: ["pr"],
+  review_round_started: ["pr"],
+  review_round_completed: ["pr"]
+});
+
+// ../core/src/task-cost/queue-lifecycle-schema.ts
+var QUEUE_LIFECYCLE_EVENT_V1_JSON_SCHEMA = Object.freeze(
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "queue-lifecycle-event.v1.schema.json",
+    "title": "QueueLifecycleEventV1",
+    "description": "Queue, CI and repair lifecycle events for the task-cost contract (queue_lifecycle_event/v1, contract 1.2.0, HOK-3338 / MQ-1.2). Identity is task_attempt/v1: every event names its attempt (PR scope) or attempt_refs (candidate scope); event_id and candidate_id are minted idempotency keys. Control events (enqueued, candidate_prepared, ejected, rerun_requested, recovery_decision, merged, dequeued, abandoned, review_round_started) are accepted only for the current, unsettled run; evidence events (check_run_completed, rebase_performed, repair_commit_pushed, review_round_completed) are always accepted against their own attempt. Facts only: durations, failure classes and time-to-land are derived elsewhere. Absent means not reported; null is not used. Single-record shape only: cross-record rules are in reduceQueueLifecycleLog. Rules: packages/core/src/task-cost/queue-lifecycle.md. Readers ignore unknown fields.",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/enqueued"
+      },
+      {
+        "$ref": "#/$defs/candidate_prepared"
+      },
+      {
+        "$ref": "#/$defs/check_run_completed"
+      },
+      {
+        "$ref": "#/$defs/ejected"
+      },
+      {
+        "$ref": "#/$defs/rerun_requested"
+      },
+      {
+        "$ref": "#/$defs/rebase_performed"
+      },
+      {
+        "$ref": "#/$defs/repair_commit_pushed"
+      },
+      {
+        "$ref": "#/$defs/recovery_decision"
+      },
+      {
+        "$ref": "#/$defs/merged"
+      },
+      {
+        "$ref": "#/$defs/dequeued"
+      },
+      {
+        "$ref": "#/$defs/abandoned"
+      },
+      {
+        "$ref": "#/$defs/review_round_started"
+      },
+      {
+        "$ref": "#/$defs/review_round_completed"
+      }
+    ],
+    "$defs": {
+      "schemaVersion": {
+        "const": "queue_lifecycle_event/v1"
+      },
+      "mintedId": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$",
+        "description": "Lowercase RFC 9562 UUID (v7 recommended) or ULID. Minted, never a hash of anything."
+      },
+      "identifier": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      },
+      "slug": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "harness": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "model": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+      },
+      "version": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+      },
+      "checkKey": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+      },
+      "providerId": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$"
+      },
+      "utcTimestamp": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+      },
+      "gitSha": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+      },
+      "positiveInt": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "probability": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "recoveryAction": {
+        "enum": [
+          "retry",
+          "rebase",
+          "fix",
+          "split",
+          "wait_for_predecessor",
+          "escalate"
+        ]
+      },
+      "propensitySource": {
+        "enum": [
+          "exact",
+          "deterministic",
+          "none"
+        ]
+      },
+      "attemptRef": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "run_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "stage_attempt_id": {
+            "$ref": "#/$defs/mintedId"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "description": "TaskAttemptRef from task_attempt/v1. Never a parallel run id."
+      },
+      "policy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/slug"
+          },
+          "version": {
+            "$ref": "#/$defs/version"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      },
+      "modelAttribution": {
+        "description": "Intended and observed models are separate. executed_model is present iff executed_model_evidence is not not_observed.",
+        "type": "object",
+        "properties": {
+          "harness": {
+            "$ref": "#/$defs/harness"
+          },
+          "intended_model": {
+            "$ref": "#/$defs/model"
+          },
+          "executed_model_evidence": {
+            "enum": [
+              "provider_response",
+              "harness_session",
+              "not_observed"
+            ]
+          },
+          "executed_model": {
+            "$ref": "#/$defs/model"
+          }
+        },
+        "required": [
+          "harness",
+          "executed_model_evidence"
+        ],
+        "if": {
+          "properties": {
+            "executed_model_evidence": {
+              "const": "not_observed"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "executed_model"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "executed_model"
+          ]
+        }
+      },
+      "actor": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/$defs/modelAttribution"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "agent"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "operator"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "description": "A human. Carries no identity.",
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "tend",
+                  "monitor"
+                ]
+              },
+              "component": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "github"
+              },
+              "app": {
+                "$ref": "#/$defs/slug"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "$ref": "#/$defs/anyModelField"
+            }
+          }
+        ]
+      },
+      "anyModelField": {
+        "anyOf": [
+          {
+            "required": [
+              "harness"
+            ]
+          },
+          {
+            "required": [
+              "intended_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model"
+            ]
+          },
+          {
+            "required": [
+              "executed_model_evidence"
+            ]
+          }
+        ]
+      },
+      "prScope": {
+        "description": "An event about one PR of one run.",
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "pr_number": {
+            "$ref": "#/$defs/positiveInt"
+          },
+          "head_sha": {
+            "$ref": "#/$defs/gitSha"
+          }
+        },
+        "required": [
+          "attempt",
+          "pr_number",
+          "head_sha"
+        ],
+        "not": {
+          "required": [
+            "attempt_refs"
+          ]
+        }
+      },
+      "candidateScope": {
+        "description": "An event about a merge candidate: one ref per run, predecessors first. A candidate is not a run.",
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "attempt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/attemptRef"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "candidate_id",
+          "attempt_refs"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "attempt"
+              ]
+            },
+            {
+              "required": [
+                "pr_number"
+              ]
+            }
+          ]
+        }
+      },
+      "noCandidateLink": {
+        "not": {
+          "required": [
+            "candidate_id"
+          ]
+        }
+      },
+      "base": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "$ref": "#/$defs/schemaVersion"
+          },
+          "event_id": {
+            "$ref": "#/$defs/mintedId"
+          },
+          "event_type": {
+            "enum": [
+              "enqueued",
+              "candidate_prepared",
+              "check_run_completed",
+              "ejected",
+              "rerun_requested",
+              "rebase_performed",
+              "repair_commit_pushed",
+              "recovery_decision",
+              "merged",
+              "dequeued",
+              "abandoned",
+              "review_round_started",
+              "review_round_completed"
+            ]
+          },
+          "observed_at": {
+            "$ref": "#/$defs/utcTimestamp"
+          },
+          "actor": {
+            "$ref": "#/$defs/actor"
+          }
+        },
+        "required": [
+          "schema_version",
+          "event_id",
+          "event_type",
+          "observed_at",
+          "actor"
+        ]
+      },
+      "enqueued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "enqueued"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "queue_depth": {
+                "$ref": "#/$defs/count"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run's PR entered the queue."
+      },
+      "candidate_prepared": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "candidate_prepared"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pr_number": {
+                      "$ref": "#/$defs/positiveInt"
+                    },
+                    "head_sha": {
+                      "$ref": "#/$defs/gitSha"
+                    }
+                  },
+                  "required": [
+                    "pr_number",
+                    "head_sha"
+                  ]
+                },
+                "minItems": 1
+              },
+              "candidate_sha": {
+                "$ref": "#/$defs/gitSha"
+              }
+            },
+            "required": [
+              "event_type",
+              "base_sha",
+              "entries"
+            ]
+          },
+          {
+            "$ref": "#/$defs/candidateScope"
+          }
+        ],
+        "description": "Control. The composition of a merge candidate; entries[i] is the PR of attempt_refs[i] (alignment is a validator rule)."
+      },
+      "check_run_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "check_run_completed"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "trigger": {
+                "enum": [
+                  "pull_request",
+                  "merge_group",
+                  "push",
+                  "other"
+                ]
+              },
+              "conclusion": {
+                "enum": [
+                  "success",
+                  "failure",
+                  "neutral",
+                  "cancelled",
+                  "skipped",
+                  "timed_out",
+                  "action_required",
+                  "stale",
+                  "startup_failure"
+                ]
+              },
+              "started_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              },
+              "completed_at": {
+                "$ref": "#/$defs/utcTimestamp"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt",
+              "head_sha",
+              "trigger",
+              "conclusion",
+              "completed_at"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Evidence. One completed check run attempt, verbatim from the provider."
+      },
+      "ejected": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "ejected"
+              },
+              "trigger": {
+                "enum": [
+                  "check_failed",
+                  "merge_conflict",
+                  "predecessor_ejected",
+                  "base_moved",
+                  "operator",
+                  "timeout",
+                  "policy",
+                  "unknown"
+                ]
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR left the queue or a candidate involuntarily. trigger is what the queue reported, not a failure class."
+      },
+      "rerun_requested": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rerun_requested"
+              },
+              "check_run_id": {
+                "$ref": "#/$defs/providerId"
+              },
+              "check_key": {
+                "$ref": "#/$defs/checkKey"
+              },
+              "run_attempt": {
+                "$ref": "#/$defs/positiveInt"
+              }
+            },
+            "required": [
+              "event_type",
+              "check_run_id",
+              "check_key",
+              "run_attempt"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          }
+        ],
+        "description": "Control. A check run attempt was re-run; the rerun is a later check_run_completed."
+      },
+      "rebase_performed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "rebase_performed"
+              },
+              "previous_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "previous_base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "method": {
+                "enum": [
+                  "rebase",
+                  "merge"
+                ]
+              },
+              "had_conflicts": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "event_type",
+              "previous_head_sha",
+              "base_sha",
+              "method"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A head move onto a new base. Not a new attempt."
+      },
+      "repair_commit_pushed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "repair_commit_pushed"
+              },
+              "parent_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "commits_pushed": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "cause_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/mintedId"
+                },
+                "uniqueItems": true
+              },
+              "cost_event_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/identifier"
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "parent_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Evidence. A repair push; actor is the commit author."
+      },
+      "recovery_decision": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "recovery_decision"
+              },
+              "policy": {
+                "$ref": "#/$defs/policy"
+              },
+              "context": {
+                "type": "object",
+                "properties": {
+                  "as_of": {
+                    "$ref": "#/$defs/utcTimestamp"
+                  },
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "uniqueItems": true
+                  },
+                  "failing_check_keys": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/checkKey"
+                    }
+                  },
+                  "failure_class": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "$ref": "#/$defs/slug"
+                      },
+                      "labeler_version": {
+                        "$ref": "#/$defs/version"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "labeler_version"
+                    ]
+                  },
+                  "attempt_number": {
+                    "$ref": "#/$defs/positiveInt"
+                  },
+                  "base_moved_since_candidate": {
+                    "type": "boolean"
+                  },
+                  "queue_depth": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "properties": {
+                      "harness": {
+                        "$ref": "#/$defs/harness"
+                      },
+                      "executed_model": {
+                        "$ref": "#/$defs/model"
+                      },
+                      "task_type": {
+                        "$ref": "#/$defs/slug"
+                      }
+                    },
+                    "required": []
+                  },
+                  "flake_history": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "check_key": {
+                          "$ref": "#/$defs/checkKey"
+                        },
+                        "window_runs": {
+                          "$ref": "#/$defs/count"
+                        },
+                        "window_failures": {
+                          "$ref": "#/$defs/count"
+                        }
+                      },
+                      "required": [
+                        "check_key",
+                        "window_runs",
+                        "window_failures"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "as_of",
+                  "event_ids"
+                ],
+                "description": "Frozen decision-time snapshot. as_of <= observed_at and every event_id precedes the decision (validator and reducer rules)."
+              },
+              "available_actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/recoveryAction"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "chosen_action": {
+                "$ref": "#/$defs/recoveryAction"
+              },
+              "propensity_source": {
+                "$ref": "#/$defs/propensitySource"
+              },
+              "propensities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "$ref": "#/$defs/recoveryAction"
+                    },
+                    "probability": {
+                      "$ref": "#/$defs/probability"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "probability"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "event_type",
+              "policy",
+              "context",
+              "available_actions",
+              "chosen_action",
+              "propensity_source"
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/prScope"
+                  },
+                  {
+                    "$ref": "#/$defs/noCandidateLink"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/candidateScope"
+              }
+            ]
+          },
+          {
+            "if": {
+              "properties": {
+                "propensity_source": {
+                  "const": "none"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "propensities"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "propensities"
+              ]
+            }
+          }
+        ],
+        "description": "Control. A self-contained recovery decision. propensities cover exactly available_actions and sum to 1 (validator rule); absent iff propensity_source is none."
+      },
+      "merged": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "merged"
+              },
+              "merge_commit_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "base_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "candidate_id": {
+                "$ref": "#/$defs/mintedId"
+              },
+              "method": {
+                "enum": [
+                  "merge",
+                  "squash",
+                  "rebase"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "merge_commit_sha"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          }
+        ],
+        "description": "Control. The PR landed."
+      },
+      "dequeued": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "dequeued"
+              },
+              "trigger": {
+                "enum": [
+                  "pr_closed",
+                  "head_changed",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Left the queue; the run may enqueue again."
+      },
+      "abandoned": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "abandoned"
+              },
+              "trigger": {
+                "enum": [
+                  "retry_budget_exhausted",
+                  "superseded",
+                  "operator",
+                  "policy",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "event_type",
+              "trigger"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. The run stops trying to land this PR."
+      },
+      "review_round_started": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_started"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "stage_attempt_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "harness": {
+                      "$ref": "#/$defs/harness"
+                    },
+                    "intended_model": {
+                      "$ref": "#/$defs/model"
+                    },
+                    "challenge": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "reviewer_key",
+                    "stage"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "executed_model"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "executed_model_evidence"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "minItems": 1
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "$ref": "#/$defs/policy"
+                  },
+                  "propensity_source": {
+                    "$ref": "#/$defs/propensitySource"
+                  },
+                  "propensity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "policy",
+                  "propensity_source"
+                ],
+                "if": {
+                  "properties": {
+                    "propensity_source": {
+                      "const": "none"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "propensity"
+                    ]
+                  }
+                },
+                "else": {
+                  "required": [
+                    "propensity"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "reviewers"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          }
+        ],
+        "description": "Control. Which reviewers a round runs (intent) and the policy that chose them."
+      },
+      "review_round_completed": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/base"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event_type": {
+                "const": "review_round_completed"
+              },
+              "round": {
+                "$ref": "#/$defs/positiveInt"
+              },
+              "first_round_head_sha": {
+                "$ref": "#/$defs/gitSha"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/modelAttribution"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reviewer_key": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage": {
+                          "$ref": "#/$defs/slug"
+                        },
+                        "stage_attempt_id": {
+                          "$ref": "#/$defs/mintedId"
+                        }
+                      },
+                      "required": [
+                        "reviewer_key",
+                        "stage"
+                      ]
+                    }
+                  ]
+                },
+                "minItems": 1
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "finding_id": {
+                      "$ref": "#/$defs/mintedId"
+                    },
+                    "reviewer_key": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "blocking": {
+                      "type": "boolean"
+                    },
+                    "location": {
+                      "enum": [
+                        "first_round",
+                        "changed_since_first_round",
+                        "unchanged_since_first_round",
+                        "unknown"
+                      ]
+                    },
+                    "reflag_of": {
+                      "$ref": "#/$defs/mintedId"
+                    }
+                  },
+                  "required": [
+                    "finding_id",
+                    "reviewer_key",
+                    "blocking",
+                    "location"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "event_type",
+              "round",
+              "first_round_head_sha",
+              "reviewers",
+              "findings"
+            ]
+          },
+          {
+            "$ref": "#/$defs/prScope"
+          },
+          {
+            "$ref": "#/$defs/noCandidateLink"
+          },
+          {
+            "if": {
+              "properties": {
+                "round": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "round"
+              ]
+            },
+            "then": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "enum": [
+                          "first_round",
+                          "unknown"
+                        ]
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "reflag_of"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "findings": {
+                  "items": {
+                    "properties": {
+                      "location": {
+                        "not": {
+                          "const": "first_round"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Evidence. What a round's reviewers found; findings: [] is an observed clean round."
+      }
+    }
+  }
+);
+
 // ../core/src/fixtures/task-cost/builders.ts
 var FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 var FIXTURE_TASK_ID = "task-0001";
 var FIXTURE_SESSION_ID = "session-0001";
-var FIXTURE_PRICING_REVISION = MODEL_PRICING_AS_OF;
+var FIXTURE_PRICING_REVISION = "2026-07-15";
 function isoAt(offsetSeconds) {
   return new Date(FIXTURE_EPOCH_MS + offsetSeconds * 1e3).toISOString().replace(".000Z", "Z");
 }
@@ -10680,11 +12947,11 @@ function derivedResult(derivedId, inputs, t, supersedes) {
     ...supersedes !== void 0 ? { supersedes } : {}
   };
 }
-function decision(index, entry, value, reasons2) {
-  const key = entry.record_type === "attempt" ? entry.id : entry.record_type === "derived" ? entry.derived_id : entry.write_id;
+function decision(index, entry2, value, reasons2) {
+  const key = entry2.record_type === "attempt" ? entry2.id : entry2.record_type === "derived" ? entry2.derived_id : entry2.write_id;
   return {
     index,
-    record_type: entry.record_type,
+    record_type: entry2.record_type,
     key,
     decision: value,
     ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
@@ -11072,7 +13339,7 @@ var comparisonRecomputed = (() => {
       }
     ],
     expected: {
-      decisions: log.map((entry, index) => decision(index, entry, "accepted")),
+      decisions: log.map((entry2, index) => decision(index, entry2, "accepted")),
       attempts: [
         state(pair, { current: true }),
         state(primary, { current: true }),
@@ -11144,10 +13411,1290 @@ var twoPrMergeCandidate = (() => {
   };
 })();
 
+// ../core/src/fixtures/task-cost/queue/builders.ts
+function sha(n) {
+  return `c0de${n.toString(16).padStart(36, "0")}`;
+}
+var TEND = { kind: "tend", component: "merge-lane" };
+var WATCHDOG = { kind: "monitor", component: "ready-watchdog" };
+var GITHUB = { kind: "github", app: "merge-queue" };
+var ACTIONS = { kind: "github", app: "actions" };
+var OPERATOR = { kind: "operator" };
+function agent(executed, intended = executed, harness = "claude-code") {
+  return {
+    kind: "agent",
+    harness,
+    intended_model: intended,
+    executed_model_evidence: "provider_response",
+    executed_model: executed
+  };
+}
+function qe(input) {
+  const { t, ...rest } = input;
+  return { schema_version: "queue_lifecycle_event/v1", observed_at: at(t), ...rest };
+}
+function pr(attempt2, prNumber, headSha) {
+  return { attempt: attempt2, pr_number: prNumber, head_sha: headSha };
+}
+function decided(index, event17, decision2, reasons2) {
+  if (event17.schema_version !== "queue_lifecycle_event/v1") {
+    throw new TypeError(`stream entry ${index} is not a queue event`);
+  }
+  return {
+    index,
+    event_id: event17.event_id,
+    event_type: event17.event_type,
+    decision: decision2,
+    ...reasons2 !== void 0 ? { reasons: reasons2 } : {}
+  };
+}
+function decisionsFor(stream, overrides = {}) {
+  const out = [];
+  for (const [index, entry2] of stream.entries()) {
+    if (entry2.schema_version !== "queue_lifecycle_event/v1") continue;
+    const [decision2, reasons2] = overrides[index] ?? ["accepted"];
+    out.push(decided(index, entry2, decision2, reasons2));
+  }
+  return out;
+}
+function eventIds(...events17) {
+  return events17.map((event17) => event17.event_id);
+}
+
+// ../core/src/fixtures/task-cost/queue/fixtures.ts
+var BASE2 = sha(100);
+function candidateState(candidate, ejected = [], merged = []) {
+  const prepared = candidate;
+  return {
+    candidate_id: prepared.candidate_id,
+    base_sha: prepared.base_sha,
+    attempt_refs: prepared.attempt_refs,
+    entries: prepared.entries,
+    ejected_run_ids: ejected,
+    merged_run_ids: merged
+  };
+}
+var cleanMerge = (() => {
+  const run = attempt({ kind: "run", id: mint(1001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(1101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 101, sha(1)),
+    base_sha: BASE2,
+    queue_depth: 0
+  });
+  const candidate = qe({
+    event_id: mint(1102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 101, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const check = qe({
+    event_id: mint(1103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: mint(1201),
+    attempt_refs: [runRef],
+    head_sha: sha(2),
+    check_run_id: "5001",
+    check_key: "ci-test",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const merged = qe({
+    event_id: mint(1104),
+    event_type: "merged",
+    t: 95,
+    actor: GITHUB,
+    ...pr(runRef, 101, sha(1)),
+    merge_commit_sha: sha(2),
+    base_sha: BASE2,
+    candidate_id: mint(1201),
+    method: "merge"
+  });
+  const settled = outcome(mint(1301), runRef, "succeeded", 100);
+  const stream = [run, enqueued, candidate, check, merged, settled];
+  return {
+    name: "clean-merge",
+    description: "One PR is enqueued, prepared as a single-entry candidate, passes its merge_group check and merges. The run settles after the merge.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, check, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var flakeRerun = (() => {
+  const run = attempt({ kind: "run", id: mint(2001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const candidateId = mint(2201);
+  const scope = { candidate_id: candidateId, attempt_refs: [runRef] };
+  const enqueued = qe({
+    event_id: mint(2101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 102, sha(1)),
+    base_sha: BASE2
+  });
+  const candidate = qe({
+    event_id: mint(2102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    ...scope,
+    base_sha: BASE2,
+    entries: [{ pr_number: 102, head_sha: sha(1) }],
+    candidate_sha: sha(2)
+  });
+  const unit = qe({
+    event_id: mint(2103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(25),
+    completed_at: at(80)
+  });
+  const e2eFailed = qe({
+    event_id: mint(2104),
+    event_type: "check_run_completed",
+    t: 121,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(25),
+    completed_at: at(120)
+  });
+  const decision2 = qe({
+    event_id: mint(2105),
+    event_type: "recovery_decision",
+    t: 125,
+    actor: TEND,
+    ...scope,
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(121),
+      event_ids: [e2eFailed.event_id],
+      failing_check_keys: ["ci-e2e"],
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 0,
+      flake_history: [{ check_key: "ci-e2e", window_runs: 20, window_failures: 3 }]
+    },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "retry",
+    propensity_source: "exact",
+    propensities: [
+      { action: "retry", probability: 0.8 },
+      { action: "rebase", probability: 0.2 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rerun = qe({
+    event_id: mint(2106),
+    event_type: "rerun_requested",
+    t: 126,
+    actor: TEND,
+    ...scope,
+    check_run_id: "6002",
+    check_key: "ci-e2e",
+    run_attempt: 1
+  });
+  const e2ePassed = qe({
+    event_id: mint(2107),
+    event_type: "check_run_completed",
+    t: 231,
+    actor: ACTIONS,
+    ...scope,
+    head_sha: sha(2),
+    check_run_id: "6003",
+    check_key: "ci-e2e",
+    trigger: "merge_group",
+    run_attempt: 2,
+    conclusion: "success",
+    started_at: at(130),
+    completed_at: at(230)
+  });
+  const merged = qe({
+    event_id: mint(2108),
+    event_type: "merged",
+    t: 240,
+    actor: GITHUB,
+    ...pr(runRef, 102, sha(1)),
+    merge_commit_sha: sha(2),
+    candidate_id: candidateId
+  });
+  const settled = outcome(mint(2301), runRef, "succeeded", 250);
+  const stream = [run, enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged, settled];
+  return {
+    name: "flake-rerun",
+    description: "A merge_group e2e check fails on attempt 1. A randomized (exact-propensity) recovery decision chooses retry over rebase; the rerun is attempt 2 of the same check_key with a new check_run_id, passes, and the PR merges. Both attempts stay as facts.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, candidate, unit, e2eFailed, decision2, rerun, e2ePassed, merged),
+      candidates: [candidateState(candidate, [], [run.id])]
+    }
+  };
+})();
+var baseDriftRebase = (() => {
+  const run = attempt({ kind: "run", id: mint(3001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(3101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(3102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(3201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 103, head_sha: sha(1) }]
+  });
+  const ejected = qe({
+    event_id: mint(3103),
+    event_type: "ejected",
+    t: 60,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    trigger: "base_moved",
+    candidate_id: mint(3201)
+  });
+  const decision2 = qe({
+    event_id: mint(3104),
+    event_type: "recovery_decision",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 103, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: { as_of: at(60), event_ids: [ejected.event_id], attempt_number: 1, base_moved_since_candidate: true },
+    available_actions: ["retry", "rebase", "escalate"],
+    chosen_action: "rebase",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "rebase", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const rebased = qe({
+    event_id: mint(3105),
+    event_type: "rebase_performed",
+    t: 70,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    previous_head_sha: sha(1),
+    previous_base_sha: BASE2,
+    base_sha: sha(101),
+    method: "rebase",
+    had_conflicts: false
+  });
+  const requeued = qe({
+    event_id: mint(3106),
+    event_type: "enqueued",
+    t: 75,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    base_sha: sha(101)
+  });
+  const second = qe({
+    event_id: mint(3107),
+    event_type: "candidate_prepared",
+    t: 80,
+    actor: TEND,
+    candidate_id: mint(3202),
+    attempt_refs: [runRef],
+    base_sha: sha(101),
+    entries: [{ pr_number: 103, head_sha: sha(3) }]
+  });
+  const check = qe({
+    event_id: mint(3108),
+    event_type: "check_run_completed",
+    t: 141,
+    actor: ACTIONS,
+    ...pr(runRef, 103, sha(3)),
+    check_run_id: "7001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(140)
+  });
+  const merged = qe({
+    event_id: mint(3109),
+    event_type: "merged",
+    t: 150,
+    actor: TEND,
+    ...pr(runRef, 103, sha(3)),
+    merge_commit_sha: sha(4),
+    base_sha: sha(101),
+    candidate_id: mint(3202),
+    method: "squash"
+  });
+  const settled = outcome(mint(3301), runRef, "succeeded", 160);
+  const stream = [run, enqueued, first, ejected, decision2, rebased, requeued, second, check, merged, settled];
+  return {
+    name: "base-drift-rebase",
+    description: "The base moves under a prepared candidate, so the PR is ejected (trigger base_moved). A deterministic decision rebases it; the head move is a rebase_performed evidence fact on the same run, not a new attempt. It re-enters in a new candidate on the new base and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, ejected, decision2, rebased, requeued, second, check, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var realFailureRepair = (() => {
+  const run = attempt({ kind: "run", id: mint(4001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({
+    event_id: mint(4101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    base_sha: BASE2
+  });
+  const first = qe({
+    event_id: mint(4102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(4201),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(1) }]
+  });
+  const failed = qe({
+    event_id: mint(4103),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(1)),
+    check_run_id: "8001",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    started_at: at(30),
+    completed_at: at(90)
+  });
+  const ejected = qe({
+    event_id: mint(4104),
+    event_type: "ejected",
+    t: 92,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    trigger: "check_failed",
+    candidate_id: mint(4201),
+    cause_event_ids: [failed.event_id]
+  });
+  const decision2 = qe({
+    event_id: mint(4105),
+    event_type: "recovery_decision",
+    t: 95,
+    actor: TEND,
+    ...pr(runRef, 104, sha(1)),
+    policy: { name: "merge-lane-recovery", version: "1.0.0" },
+    context: {
+      as_of: at(92),
+      event_ids: [failed.event_id, ejected.event_id],
+      failing_check_keys: ["ci-unit"],
+      failure_class: { label: "test-assertion", labeler_version: "mq-0.2.0" },
+      attempt_number: 1,
+      base_moved_since_candidate: false,
+      queue_depth: 2,
+      provenance: { harness: "claude-code", executed_model: "claude-sonnet-5-5", task_type: "bugfix" },
+      flake_history: [{ check_key: "ci-unit", window_runs: 40, window_failures: 0 }]
+    },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "fix",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 1 },
+      { action: "escalate", probability: 0 }
+    ]
+  });
+  const repair = attempt({ kind: "stage_attempt", id: mint(4002), parent: run.id, stage: "repair", t: 100 });
+  const repairRef = ref2(run.id, repair.id);
+  const pushed = qe({
+    event_id: mint(4106),
+    event_type: "repair_commit_pushed",
+    t: 300,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(repairRef, 104, sha(5)),
+    parent_sha: sha(1),
+    commits_pushed: 1,
+    cause_event_ids: [decision2.event_id],
+    cost_event_ids: ["evt-repair-0001", "evt-repair-0002"]
+  });
+  const repairDone = outcome(mint(4301), repairRef, "succeeded", 301);
+  const requeued = qe({
+    event_id: mint(4107),
+    event_type: "enqueued",
+    t: 310,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    base_sha: BASE2
+  });
+  const second = qe({
+    event_id: mint(4108),
+    event_type: "candidate_prepared",
+    t: 320,
+    actor: TEND,
+    candidate_id: mint(4202),
+    attempt_refs: [runRef],
+    base_sha: BASE2,
+    entries: [{ pr_number: 104, head_sha: sha(5) }]
+  });
+  const passed = qe({
+    event_id: mint(4109),
+    event_type: "check_run_completed",
+    t: 391,
+    actor: ACTIONS,
+    ...pr(runRef, 104, sha(5)),
+    check_run_id: "8002",
+    check_key: "ci-unit",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    started_at: at(330),
+    completed_at: at(390)
+  });
+  const merged = qe({
+    event_id: mint(4110),
+    event_type: "merged",
+    t: 400,
+    actor: TEND,
+    ...pr(runRef, 104, sha(5)),
+    merge_commit_sha: sha(6),
+    candidate_id: mint(4202),
+    method: "squash"
+  });
+  const settled = outcome(mint(4302), runRef, "succeeded", 410);
+  const stream = [
+    run,
+    enqueued,
+    first,
+    failed,
+    ejected,
+    decision2,
+    repair,
+    pushed,
+    repairDone,
+    requeued,
+    second,
+    passed,
+    merged,
+    settled
+  ];
+  return {
+    name: "real-failure-repair",
+    description: "A unit check fails for real; the PR is ejected with the failed check as cause. A recovery decision snapshots only what preceded it and chooses fix. A repair stage attempt pushes a commit attributed to the agent with its provider-observed model and the cost events of the repair; the PR re-enters and merges.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, first, failed, ejected, decision2, pushed, requeued, second, passed, merged),
+      candidates: [candidateState(first, [run.id]), candidateState(second, [], [run.id])]
+    }
+  };
+})();
+var cumulativePredecessorEjects = (() => {
+  const runA = attempt({ kind: "run", id: mint(5001), parent: TASK, t: 0 });
+  const runB = attempt({ kind: "run", id: mint(5002), parent: OTHER_TASK, task: OTHER_TASK, t: 1 });
+  const refA = ref2(runA.id);
+  const refB = ref2(runB.id, void 0, OTHER_TASK);
+  const enqA = qe({ event_id: mint(5101), event_type: "enqueued", t: 10, actor: TEND, ...pr(refA, 105, sha(1)), queue_depth: 0 });
+  const enqB = qe({ event_id: mint(5102), event_type: "enqueued", t: 11, actor: TEND, ...pr(refB, 106, sha(2)), queue_depth: 1 });
+  const c1 = mint(5201);
+  const cumulative = qe({
+    event_id: mint(5103),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: GITHUB,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 105, head_sha: sha(1) }, { pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(3)
+  });
+  const failed = qe({
+    event_id: mint(5104),
+    event_type: "check_run_completed",
+    t: 91,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refA, refB],
+    head_sha: sha(3),
+    check_run_id: "9001",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(90)
+  });
+  const ejectA = qe({
+    event_id: mint(5105),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refA, 105, sha(1)),
+    trigger: "check_failed",
+    candidate_id: c1,
+    cause_event_ids: [failed.event_id]
+  });
+  const ejectB = qe({
+    event_id: mint(5106),
+    event_type: "ejected",
+    t: 92,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    trigger: "predecessor_ejected",
+    candidate_id: c1,
+    cause_event_ids: [ejectA.event_id]
+  });
+  const wrongComposition = qe({
+    event_id: mint(5107),
+    event_type: "check_run_completed",
+    t: 95,
+    actor: ACTIONS,
+    candidate_id: c1,
+    attempt_refs: [refB],
+    head_sha: sha(3),
+    check_run_id: "9002",
+    check_key: "ci-lint",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(94)
+  });
+  const c2 = mint(5202);
+  const alone = qe({
+    event_id: mint(5108),
+    event_type: "candidate_prepared",
+    t: 100,
+    actor: GITHUB,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    base_sha: BASE2,
+    entries: [{ pr_number: 106, head_sha: sha(2) }],
+    candidate_sha: sha(4)
+  });
+  const passed = qe({
+    event_id: mint(5109),
+    event_type: "check_run_completed",
+    t: 171,
+    actor: ACTIONS,
+    candidate_id: c2,
+    attempt_refs: [refB],
+    head_sha: sha(4),
+    check_run_id: "9003",
+    check_key: "ci-unit",
+    trigger: "merge_group",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(170)
+  });
+  const staleMerge = qe({
+    event_id: mint(5110),
+    event_type: "merged",
+    t: 175,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(3),
+    candidate_id: c1
+  });
+  const merged = qe({
+    event_id: mint(5111),
+    event_type: "merged",
+    t: 176,
+    actor: GITHUB,
+    ...pr(refB, 106, sha(2)),
+    merge_commit_sha: sha(4),
+    candidate_id: c2
+  });
+  const settled = outcome(mint(5301), refB, "succeeded", 180);
+  const stream = [
+    runA,
+    runB,
+    enqA,
+    enqB,
+    cumulative,
+    failed,
+    ejectA,
+    ejectB,
+    wrongComposition,
+    alone,
+    passed,
+    staleMerge,
+    merged,
+    settled
+  ];
+  return {
+    name: "cumulative-candidate-predecessor-ejects",
+    description: "Two PRs from two tasks form one cumulative candidate (B is tested on top of A). The candidate check fails; A is ejected for the failure and B because its predecessor was ejected. B lands alone in a new candidate. A check naming a different composition under the old candidate id is rejected, as is a merge claimed under the candidate B was ejected from.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(wrongComposition)]: ["rejected", ["candidate_mismatch"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["ejected_from_candidate"]]
+      }),
+      accepted_event_ids: eventIds(enqA, enqB, cumulative, failed, ejectA, ejectB, alone, passed, merged),
+      candidates: [candidateState(cumulative, [runA.id, runB.id]), candidateState(alone, [], [runB.id])]
+    }
+  };
+})();
+var operatorManualCommit = (() => {
+  const run = attempt({ kind: "run", id: mint(6001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const enqueued = qe({ event_id: mint(6101), event_type: "enqueued", t: 10, actor: TEND, ...pr(runRef, 107, sha(1)) });
+  const failed = qe({
+    event_id: mint(6102),
+    event_type: "check_run_completed",
+    t: 61,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(1)),
+    check_run_id: "10001",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "failure",
+    completed_at: at(60)
+  });
+  const dequeued = qe({
+    event_id: mint(6103),
+    event_type: "dequeued",
+    t: 62,
+    actor: TEND,
+    ...pr(runRef, 107, sha(1)),
+    trigger: "policy"
+  });
+  const escalate = qe({
+    event_id: mint(6104),
+    event_type: "recovery_decision",
+    t: 65,
+    actor: WATCHDOG,
+    ...pr(runRef, 107, sha(1)),
+    policy: { name: "ready-watchdog", version: "3.2.0" },
+    context: { as_of: at(62), event_ids: [failed.event_id, dequeued.event_id], failing_check_keys: ["ci-typecheck"], attempt_number: 3 },
+    available_actions: ["retry", "fix", "escalate"],
+    chosen_action: "escalate",
+    propensity_source: "deterministic",
+    propensities: [
+      { action: "retry", probability: 0 },
+      { action: "fix", probability: 0 },
+      { action: "escalate", probability: 1 }
+    ]
+  });
+  const manual = qe({
+    event_id: mint(6105),
+    event_type: "repair_commit_pushed",
+    t: 900,
+    actor: OPERATOR,
+    ...pr(runRef, 107, sha(7)),
+    parent_sha: sha(1),
+    commits_pushed: 2,
+    cause_event_ids: [escalate.event_id]
+  });
+  const requeued = qe({ event_id: mint(6106), event_type: "enqueued", t: 910, actor: OPERATOR, ...pr(runRef, 107, sha(7)) });
+  const passed = qe({
+    event_id: mint(6107),
+    event_type: "check_run_completed",
+    t: 961,
+    actor: ACTIONS,
+    ...pr(runRef, 107, sha(7)),
+    check_run_id: "10002",
+    check_key: "ci-typecheck",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(960)
+  });
+  const merged = qe({
+    event_id: mint(6108),
+    event_type: "merged",
+    t: 970,
+    actor: TEND,
+    ...pr(runRef, 107, sha(7)),
+    merge_commit_sha: sha(8)
+  });
+  const settled = outcome(mint(6301), runRef, "succeeded", 980);
+  const stream = [run, enqueued, failed, dequeued, escalate, manual, requeued, passed, merged, settled];
+  return {
+    name: "operator-manual-commit",
+    description: "The watchdog escalates after a third failure. A human pushes the fix: the repair commit is attributed to the operator (no model, no stage attempt), so the agent is never credited with it. The PR then lands without a merge candidate.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(enqueued, failed, dequeued, escalate, manual, requeued, passed, merged),
+      candidates: []
+    }
+  };
+})();
+var crashResumeDuplicate = (() => {
+  const run1 = attempt({ kind: "run", id: mint(7001), parent: TASK, t: 0 });
+  const ref1 = ref2(run1.id);
+  const enqueued = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 10,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 1
+  });
+  const candidate = qe({
+    event_id: mint(7102),
+    event_type: "candidate_prepared",
+    t: 20,
+    actor: TEND,
+    candidate_id: mint(7201),
+    attempt_refs: [ref1],
+    base_sha: BASE2,
+    entries: [{ pr_number: 108, head_sha: sha(1) }]
+  });
+  const check = qe({
+    event_id: mint(7103),
+    event_type: "check_run_completed",
+    t: 81,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11001",
+    check_key: "ci-test",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(80)
+  });
+  const replayEnqueued = { ...enqueued };
+  const replayCandidate = JSON.parse(JSON.stringify(candidate));
+  const reorderedCheck = Object.fromEntries(Object.entries(check).reverse());
+  const conflicting = qe({
+    event_id: mint(7101),
+    event_type: "enqueued",
+    t: 85,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    queue_depth: 0
+  });
+  const run2 = attempt({ kind: "run", id: mint(7002), parent: TASK, t: 100 });
+  const ref22 = ref2(run2.id);
+  const staleMerge = qe({
+    event_id: mint(7104),
+    event_type: "merged",
+    t: 110,
+    actor: TEND,
+    ...pr(ref1, 108, sha(1)),
+    merge_commit_sha: sha(2)
+  });
+  const lateCheck = qe({
+    event_id: mint(7105),
+    event_type: "check_run_completed",
+    t: 111,
+    actor: ACTIONS,
+    ...pr(ref1, 108, sha(1)),
+    check_run_id: "11002",
+    check_key: "ci-lint",
+    trigger: "pull_request",
+    run_attempt: 1,
+    conclusion: "success",
+    completed_at: at(79)
+  });
+  const enqueued2 = qe({ event_id: mint(7106), event_type: "enqueued", t: 200, actor: TEND, ...pr(ref22, 108, sha(9)) });
+  const merged2 = qe({
+    event_id: mint(7107),
+    event_type: "merged",
+    t: 260,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    merge_commit_sha: sha(10)
+  });
+  const settled = outcome(mint(7301), ref22, "succeeded", 270);
+  const lateDequeue = qe({
+    event_id: mint(7108),
+    event_type: "dequeued",
+    t: 280,
+    actor: TEND,
+    ...pr(ref22, 108, sha(9)),
+    trigger: "pr_closed"
+  });
+  const stream = [
+    run1,
+    enqueued,
+    candidate,
+    check,
+    replayEnqueued,
+    replayCandidate,
+    reorderedCheck,
+    conflicting,
+    run2,
+    staleMerge,
+    lateCheck,
+    enqueued2,
+    merged2,
+    settled,
+    lateDequeue
+  ];
+  return {
+    name: "crash-resume-duplicate",
+    description: "After a crash the writer re-emits three events (one with reordered keys): each is a duplicate by event_id and changes nothing. A different fact under a reused event_id is rejected, never overwriting. After a relaunch, a control write from the old run is stale while its late check-run evidence is kept; once run 2 settles, a late dequeue is rejected.",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream, {
+        [stream.indexOf(replayEnqueued)]: ["duplicate"],
+        [stream.indexOf(replayCandidate)]: ["duplicate"],
+        [stream.indexOf(reorderedCheck)]: ["duplicate"],
+        [stream.indexOf(conflicting)]: ["rejected", ["event_id_conflict"]],
+        [stream.indexOf(staleMerge)]: ["rejected", ["stale_run"]],
+        [stream.indexOf(lateDequeue)]: ["rejected", ["settled"]]
+      }),
+      accepted_event_ids: eventIds(enqueued, candidate, check, lateCheck, enqueued2, merged2),
+      candidates: [candidateState(candidate)]
+    }
+  };
+})();
+var multiRoundReview = (() => {
+  const run = attempt({ kind: "run", id: mint(8001), parent: TASK, t: 0 });
+  const runRef = ref2(run.id);
+  const reviewFlow = { kind: "monitor", component: "review-flow" };
+  const r1Correctness = attempt({ kind: "stage_attempt", id: mint(8002), parent: run.id, stage: "review", t: 10 });
+  const r1Security = attempt({ kind: "stage_attempt", id: mint(8003), parent: run.id, stage: "security-review", t: 10 });
+  const started1 = qe({
+    event_id: mint(8101),
+    event_type: "review_round_started",
+    t: 11,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    reviewers: [
+      { reviewer_key: "correctness", stage: "review", stage_attempt_id: r1Correctness.id, harness: "codex", intended_model: "gpt-5.5" },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        challenge: true
+      }
+    ],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "exact", propensity: 0.25 }
+  });
+  const f1 = mint(8401);
+  const f2 = mint(8402);
+  const completed1 = qe({
+    event_id: mint(8102),
+    event_type: "review_round_completed",
+    t: 200,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(1)),
+    round: 1,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r1Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      },
+      {
+        reviewer_key: "security",
+        stage: "security-review",
+        stage_attempt_id: r1Security.id,
+        harness: "claude-code",
+        intended_model: "claude-opus-5-5",
+        executed_model_evidence: "not_observed"
+      }
+    ],
+    findings: [
+      { finding_id: f1, reviewer_key: "correctness", blocking: true, location: "first_round" },
+      { finding_id: f2, reviewer_key: "security", blocking: false, location: "first_round" }
+    ]
+  });
+  const fix1 = qe({
+    event_id: mint(8103),
+    event_type: "repair_commit_pushed",
+    t: 400,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(11)),
+    parent_sha: sha(1),
+    cause_event_ids: [completed1.event_id]
+  });
+  const r2Correctness = attempt({ kind: "stage_attempt", id: mint(8004), parent: run.id, stage: "review", t: 410 });
+  const started2 = qe({
+    event_id: mint(8104),
+    event_type: "review_round_started",
+    t: 411,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r2Correctness.id, harness: "codex", intended_model: "gpt-5.5" }],
+    selection: { policy: { name: "review-intensity", version: "0.3.0" }, propensity_source: "deterministic", propensity: 1 }
+  });
+  const completed2 = qe({
+    event_id: mint(8105),
+    event_type: "review_round_completed",
+    t: 600,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(11)),
+    round: 2,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r2Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: [
+      { finding_id: mint(8403), reviewer_key: "correctness", blocking: true, location: "unchanged_since_first_round", reflag_of: f2 },
+      { finding_id: mint(8404), reviewer_key: "correctness", blocking: false, location: "unchanged_since_first_round" },
+      { finding_id: mint(8405), reviewer_key: "correctness", blocking: true, location: "changed_since_first_round" }
+    ]
+  });
+  const fix2 = qe({
+    event_id: mint(8106),
+    event_type: "repair_commit_pushed",
+    t: 800,
+    actor: agent("claude-sonnet-5-5"),
+    ...pr(runRef, 109, sha(12)),
+    parent_sha: sha(11),
+    cause_event_ids: [completed2.event_id]
+  });
+  const r3Correctness = attempt({ kind: "stage_attempt", id: mint(8005), parent: run.id, stage: "review", t: 810 });
+  const started3 = qe({
+    event_id: mint(8107),
+    event_type: "review_round_started",
+    t: 811,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    reviewers: [{ reviewer_key: "correctness", stage: "review", stage_attempt_id: r3Correctness.id, harness: "codex", intended_model: "gpt-5.5" }]
+  });
+  const completed3 = qe({
+    event_id: mint(8108),
+    event_type: "review_round_completed",
+    t: 950,
+    actor: reviewFlow,
+    ...pr(runRef, 109, sha(12)),
+    round: 3,
+    first_round_head_sha: sha(1),
+    reviewers: [
+      {
+        reviewer_key: "correctness",
+        stage: "review",
+        stage_attempt_id: r3Correctness.id,
+        harness: "codex",
+        intended_model: "gpt-5.5",
+        executed_model_evidence: "provider_response",
+        executed_model: "gpt-5.5-2026-08-01"
+      }
+    ],
+    findings: []
+  });
+  const stream = [
+    run,
+    r1Correctness,
+    r1Security,
+    started1,
+    completed1,
+    fix1,
+    r2Correctness,
+    started2,
+    completed2,
+    fix2,
+    r3Correctness,
+    started3,
+    completed3
+  ];
+  return {
+    name: "multi-round-review",
+    description: "Three review rounds. Round 1 runs two reviewers chosen with an exact propensity; the challenge reviewer has no observed model, so none is recorded. Round 2 re-flags a round-1 finding and raises a new one on code round 1 already saw (unchanged_since_first_round), plus one on changed lines. Round 3 is an observed clean round (findings: []).",
+    stream,
+    expected: {
+      decisions: decisionsFor(stream),
+      accepted_event_ids: eventIds(started1, completed1, fix1, started2, completed2, fix2, started3, completed3),
+      candidates: []
+    }
+  };
+})();
+
+// ../core/src/fixtures/contribution-v4.ts
+var TASK_ID = "task-0001";
+var INFERENCE_LOG_ID = "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a80";
+var CONTRIBUTION_V4_CHALLENGE_PAIR_ID = "01a1a6d0-0000-7000-8000-000000000001";
+var descriptor = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-4-8", "gpt-5-codex"];
+function summaryOf(fixture) {
+  const [summary] = fixture.expectedSummaries;
+  if (!summary) throw new Error(`task-cost fixture ${fixture.name} has no summary`);
+  return summary;
+}
+function stage(name, executedModel, harness, source, modelEvidence = "session_telemetry") {
+  return {
+    stage: name,
+    executed_model: executedModel,
+    model_evidence: modelEvidence,
+    harness,
+    task_cost: summaryOf(source)
+  };
+}
+function v4Row(fields) {
+  return {
+    schema_version: "technical_task_router_row/v4",
+    task_descriptor: descriptor,
+    allowed_models: pool,
+    available_models: { planner_models: pool, coder_models: pool, reviewer_models: pool },
+    budget_usd: 5,
+    wall_clock_seconds: 1840,
+    success_under_budget: true,
+    completion_result: "success",
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool.length },
+    sparse_cell: {
+      cell_id: "bugfix-typescript",
+      descriptor_signature: "bugfix|typescript|backend",
+      observed_count: 41,
+      is_sparse: false
+    },
+    observed_at: "2026-11-04T18:00:00.000Z",
+    task_id: TASK_ID,
+    harness: "wavemill",
+    ...fields
+  };
+}
+var lowCostLabels = {
+  budget_label: "under_budget",
+  cost_label: "low",
+  time_label: "slow",
+  success_label: "success"
+};
+var singleHarnessV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  selected_models: { planner: "claude-sonnet-5", coder: "claude-sonnet-5", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("planning", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("coding", "claude-sonnet-5", "claude-code", claudeCodeModelSwitchFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.0489 + 0.1185 + 0.10925
+  actual_cost_usd: 0.27665,
+  outcome_labels: lowCostLabels
+});
+var mixedHarnessV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  selected_models: { planner: "claude-sonnet-5", coder: "claude-haiku-4-5", reviewer: "claude-sonnet-5" },
+  stage_executions: [
+    stage("planning", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("coding", "claude-haiku-4-5", "native", nativeSimpleFixture, "provider_response"),
+    stage("review", "claude-sonnet-5", "claude-code", claudeCodeRetryFixture)
+  ],
+  // 0.0489 + 0.0027 + 0.0399
+  actual_cost_usd: 0.0915,
+  outcome_labels: lowCostLabels
+});
+var challengePrimaryV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [],
+  comparison_group: { id: CONTRIBUTION_V4_CHALLENGE_PAIR_ID, role_varied: "coder" },
+  selected_models: { coder: "claude-sonnet-5", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "claude-sonnet-5", "claude-code", claudeCodeSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.0489 + 0.10925
+  actual_cost_usd: 0.15815,
+  outcome_labels: lowCostLabels
+});
+var challengeChallengerV4Fixture = v4Row({
+  inference_log_id: INFERENCE_LOG_ID,
+  overrides: [
+    { role: "coder", source: "challenge", from: "claude-sonnet-5", to: "gpt-5-codex", reason: "challenge_arm" }
+  ],
+  comparison_group: { id: CONTRIBUTION_V4_CHALLENGE_PAIR_ID, role_varied: "coder" },
+  selected_models: { coder: "gpt-5-codex", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "gpt-5-codex", "codex", codexSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture)
+  ],
+  // 0.02125 + 0.10925
+  actual_cost_usd: 0.1305,
+  outcome_labels: lowCostLabels
+});
+var ciFixRepairV4Fixture = v4Row({
+  selected_models: { coder: "gpt-5-codex", reviewer: "claude-opus-4-8" },
+  stage_executions: [
+    stage("coding", "gpt-5-codex", "codex", codexSimpleFixture),
+    stage("review", "claude-opus-4-8", "claude-code", claudeCodeCacheTiersFixture),
+    stage("ci-fix", "gpt-5-codex", "codex", codexRealCacheFixture)
+  ],
+  // 0.02125 + 0.10925 + 0.605988
+  actual_cost_usd: 0.736488,
+  outcome_labels: lowCostLabels
+});
+
+// ../core/src/fixtures/routing-outcome.ts
+var descriptor2 = {
+  task_type: "bugfix",
+  language: "typescript",
+  domain: "backend",
+  complexity: 3,
+  repo_size_bucket: "large",
+  files_touched_bucket: "2_5",
+  description_length_bucket: "medium",
+  is_greenfield: false,
+  is_migration: false,
+  requires_tests: true,
+  cross_service: false,
+  ui_heavy: false,
+  risk_level: "medium"
+};
+var pool2 = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7", "glm-5.3-flash"];
+function routerRow(routing, success) {
+  return {
+    schema_version: "technical_task_router_row/v3",
+    task_descriptor: descriptor2,
+    allowed_models: pool2,
+    available_models: { planner_models: pool2, coder_models: pool2, reviewer_models: pool2 },
+    budget_usd: 5,
+    actual_cost_usd: 2.29,
+    wall_clock_seconds: 1840,
+    success_under_budget: success,
+    completion_result: success ? "success" : "failure",
+    outcome_labels: {
+      budget_label: "under_budget",
+      cost_label: "medium",
+      time_label: "slow",
+      success_label: success ? "success" : "failure"
+    },
+    candidate_pool: { scenario_id: "wavemill-default", scenario_kind: "production", pool_size: pool2.length },
+    sparse_cell: { cell_id: "bugfix-typescript", descriptor_signature: "bugfix|typescript|backend", observed_count: 41, is_sparse: false },
+    observed_at: "2026-10-30T18:00:00.000Z",
+    harness: "wavemill",
+    ...routing
+  };
+}
+var followedRecommendationRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a70",
+    overrides: [],
+    selected_models: { planner: "claude-sonnet-4-6", coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" }
+  },
+  true
+);
+var escalationOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a71",
+    overrides: [
+      { role: "coder", source: "escalation", from: "claude-haiku-4-5", to: "glm-5.3-flash", reason: "stage_failed" }
+    ],
+    selected_models: { coder: "glm-5.3-flash", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var challengeOverrideRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a72",
+    overrides: [
+      { role: "coder", source: "challenge", from: "claude-opus-4-7", to: "claude-haiku-4-5", reason: "challenge_arm" }
+    ],
+    selected_models: { coder: "claude-haiku-4-5", reviewer: "claude-sonnet-4-6" }
+  },
+  false
+);
+var operatorRerouteRoutingFixture = routerRow(
+  {
+    inference_log_id: "0f8e2c1a-5b3d-4e7f-9a1b-2c3d4e5f6a73",
+    overrides: [
+      { role: "reviewer", source: "operator", from: "claude-haiku-4-5", to: "claude-opus-4-7", reason: "operator_reroute" }
+    ],
+    selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-opus-4-7" }
+  },
+  true
+);
+var unroutedTelemetryRoutingFixture = routerRow(
+  { selected_models: { coder: "claude-sonnet-4-6", reviewer: "claude-sonnet-4-6" } },
+  true
+);
+
 // ../core/src/contribution/schema.ts
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3 = "technical_task_router_row/v3";
+var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4 = "technical_task_router_row/v4";
 var HARNESS_OUTCOME_ROW_SCHEMA_VERSION = "harness_outcome_row/v1";
+var HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2 = "harness_outcome_row/v2";
+var ROUTE_ROLES = ["planner", "coder", "reviewer"];
+var ROUTE_OVERRIDE_SOURCES = [
+  "escalation",
+  "launchability",
+  "challenge",
+  "operator",
+  "observed"
+];
+var RECOMMENDATION_COPY_KEYS = Object.freeze([
+  "recommended_model",
+  "recommended_models",
+  "recommended_model_id",
+  "recommendation",
+  "recommendation_accepted",
+  "recommendedmodel",
+  "recommendedmodels",
+  "recommendationaccepted"
+]);
 var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "schema_version",
   "task_descriptor",
@@ -11164,6 +14711,18 @@ var HARNESS_OUTCOME_ROW_FIELDS = Object.freeze([
   "observed_at",
   "harness_metadata"
 ]);
+var HARNESS_OUTCOME_ROW_V2_FIELDS = Object.freeze([
+  ...HARNESS_OUTCOME_ROW_FIELDS,
+  "overrides"
+]);
+var COST_BUCKET_THRESHOLDS_USD = {
+  lowUpperBound: 1,
+  mediumUpperBound: 5
+};
+var TIME_BUCKET_THRESHOLDS_SECONDS = {
+  fastUpperBound: 300,
+  mediumUpperBound: 1800
+};
 var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
   "prompt",
   "messages",
@@ -11175,6 +14734,71 @@ var FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
   "description",
   "issue_body"
 ]);
+var STAGE_EXECUTION_BASE_STAGES = ["planning", "coding", "review"];
+var STAGE_EXECUTION_REPAIR_STAGES = [
+  "ci-fix",
+  "conflict-resolution",
+  "ready-remediation"
+];
+var STAGE_EXECUTION_STAGES = [
+  ...STAGE_EXECUTION_BASE_STAGES,
+  ...STAGE_EXECUTION_REPAIR_STAGES
+];
+var STAGE_TO_ROLE = Object.freeze({
+  planning: "planner",
+  coding: "coder",
+  review: "reviewer"
+});
+var MODEL_EVIDENCE_KINDS = [
+  "provider_response",
+  "session_telemetry",
+  "requested_only"
+];
+var RICH_ROUTER_ROW_FIELDS = [
+  "schema_version",
+  "task_descriptor",
+  "allowed_models",
+  "selected_models",
+  "available_models",
+  "budget_usd",
+  "actual_cost_usd",
+  "wall_clock_seconds",
+  "success_under_budget",
+  "completion_result",
+  "outcome_labels",
+  "candidate_pool",
+  "sparse_cell",
+  "scorer_ref",
+  "observed_at",
+  "task_id",
+  "harness"
+];
+var RICH_ROUTER_ROW_LEGACY_FIELDS = [
+  "candidate_pools",
+  "current_candidate_pools",
+  "audit_metadata",
+  "scenario",
+  "scenarios"
+];
+var ROUTER_ROW_V3_EXTRA_FIELDS = ["inference_log_id", "overrides"];
+var ROUTER_ROW_V4_EXTRA_FIELDS = [
+  ...ROUTER_ROW_V3_EXTRA_FIELDS,
+  "stage_executions",
+  "comparison_group",
+  "integration",
+  "sdk_version"
+];
+var TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
+  ...RICH_ROUTER_ROW_FIELDS,
+  ...ROUTER_ROW_V4_EXTRA_FIELDS
+]);
+var STAGE_EXECUTION_FIELDS = Object.freeze([
+  "stage",
+  "executed_model",
+  "model_evidence",
+  "harness",
+  "task_cost"
+]);
 var ContributionValidationError = class extends Error {
   code;
   constructor(code, message) {
@@ -11183,6 +14807,7 @@ var ContributionValidationError = class extends Error {
     this.code = code;
   }
 };
+var CONTRIBUTION_FORBIDDEN_KEYS = Object.freeze([...FORBIDDEN_KEYS]);
 function isPlainObject5(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -11197,7 +14822,7 @@ function hasOnlyAllowedKeys(value, keys) {
   return Object.keys(value).every((key) => allowed.has(key));
 }
 function isStringArray(value) {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  return Array.isArray(value) && value.every((entry2) => typeof entry2 === "string");
 }
 function isTechnicalTaskRouterSelectedModels(value) {
   if (!isPlainObject5(value)) {
@@ -11247,10 +14872,10 @@ function isSparseCellMetadata(value) {
   }
   return typeof value.cell_id === "string" && typeof value.descriptor_signature === "string" && isFiniteNonNegativeNumber(value.observed_count) && typeof value.is_sparse === "boolean";
 }
-function assertNoForbiddenKeys2(value, path4 = []) {
+function assertNoForbiddenKeys2(value, path5 = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
-      assertNoForbiddenKeys2(item, [...path4, String(index)]);
+      assertNoForbiddenKeys2(item, [...path5, String(index)]);
     }
     return;
   }
@@ -11262,10 +14887,10 @@ function assertNoForbiddenKeys2(value, path4 = []) {
     if (FORBIDDEN_KEYS.has(normalizedKey)) {
       throw new ContributionValidationError(
         "forbidden_field",
-        `Forbidden field at ${[...path4, key].join(".")}`
+        `Forbidden field at ${[...path5, key].join(".")}`
       );
     }
-    assertNoForbiddenKeys2(child, [...path4, key]);
+    assertNoForbiddenKeys2(child, [...path5, key]);
   }
 }
 var OUTCOME_DIAGNOSTIC_VALUES = /* @__PURE__ */ new Set([
@@ -11413,35 +15038,25 @@ function isTechnicalTaskRouterContributionRowV1(value) {
   return true;
 }
 function isTechnicalTaskRouterContributionRowV2(value) {
+  return isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2, []);
+}
+function isTechnicalTaskRouterContributionRowV3(value) {
+  return isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3, ROUTER_ROW_V3_EXTRA_FIELDS) && routingOutcomeErrors(value).length === 0;
+}
+function isTechnicalTaskRouterContributionRowV4(value) {
+  return isRichRouterRow(value, TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4, ROUTER_ROW_V4_EXTRA_FIELDS) && routingOutcomeErrors(value).length === 0 && stageExecutionErrors(value).length === 0;
+}
+function isRichRouterRow(value, version, extraKeys) {
   if (!isPlainObject5(value)) {
     return false;
   }
-  if (value.schema_version !== TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2) {
+  if (value.schema_version !== version) {
     return false;
   }
   if (!hasOnlyAllowedKeys(value, [
-    "schema_version",
-    "task_descriptor",
-    "allowed_models",
-    "selected_models",
-    "available_models",
-    "budget_usd",
-    "actual_cost_usd",
-    "wall_clock_seconds",
-    "success_under_budget",
-    "completion_result",
-    "outcome_labels",
-    "candidate_pool",
-    "sparse_cell",
-    "scorer_ref",
-    "observed_at",
-    "task_id",
-    "harness",
-    "candidate_pools",
-    "current_candidate_pools",
-    "audit_metadata",
-    "scenario",
-    "scenarios"
+    ...extraKeys,
+    ...RICH_ROUTER_ROW_FIELDS,
+    ...RICH_ROUTER_ROW_LEGACY_FIELDS
   ])) {
     return false;
   }
@@ -11505,13 +15120,19 @@ function isHarnessOutcomeRowMetadata(value) {
   return (value.harness === void 0 || typeof value.harness === "string") && (value.sdk_version === void 0 || typeof value.sdk_version === "string");
 }
 function isHarnessOutcomeRowV1(value) {
+  return isHarnessRow(value, HARNESS_OUTCOME_ROW_SCHEMA_VERSION, HARNESS_OUTCOME_ROW_FIELDS);
+}
+function isHarnessOutcomeRowV2(value) {
+  return isHarnessRow(value, HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2, HARNESS_OUTCOME_ROW_V2_FIELDS) && routingOutcomeErrors(value).length === 0;
+}
+function isHarnessRow(value, version, fields) {
   if (!isPlainObject5(value)) {
     return false;
   }
-  if (value.schema_version !== HARNESS_OUTCOME_ROW_SCHEMA_VERSION) {
+  if (value.schema_version !== version) {
     return false;
   }
-  if (!hasOnlyAllowedKeys(value, HARNESS_OUTCOME_ROW_FIELDS)) {
+  if (!hasOnlyAllowedKeys(value, fields)) {
     return false;
   }
   if (!isPlainObject5(value.task_descriptor) || Object.keys(value.task_descriptor).length === 0) {
@@ -11555,9 +15176,196 @@ function isHarnessOutcomeRowV1(value) {
   }
   return true;
 }
+var RECOMMENDATION_COPY_KEY_SET = new Set(
+  RECOMMENDATION_COPY_KEYS.map((key) => key.replaceAll("_", ""))
+);
+var ROUTE_SLUG_PATTERN = /^[a-z][a-z0-9_.:-]{0,127}$/;
+function routingOutcomeErrors(row) {
+  if (!isPlainObject5(row)) {
+    return ["row must be an object"];
+  }
+  const errors = [];
+  const routed = row.inference_log_id !== void 0;
+  if (routed && (typeof row.inference_log_id !== "string" || row.inference_log_id.trim().length === 0)) {
+    errors.push("inference_log_id must be a non-empty string");
+  }
+  if (routed && row.overrides === void 0) {
+    errors.push("a routed row must list overrides ([] when the recommendation was followed)");
+  }
+  if (!routed && row.overrides !== void 0) {
+    errors.push("overrides require inference_log_id: an unrouted row has no recommendation to override");
+  }
+  if (row.overrides === void 0) {
+    return errors;
+  }
+  if (!Array.isArray(row.overrides)) {
+    return [...errors, "overrides must be an array"];
+  }
+  const selected = isPlainObject5(row.selected_models) ? row.selected_models : {};
+  const lastByRole = /* @__PURE__ */ new Map();
+  for (const [index, entry2] of row.overrides.entries()) {
+    const label2 = `overrides[${index}]`;
+    if (!isPlainObject5(entry2) || !hasOnlyAllowedKeys(entry2, ["role", "source", "from", "to", "reason"])) {
+      errors.push(`${label2} must be an object with role, source, from, to and reason`);
+      continue;
+    }
+    if (!ROUTE_ROLES.includes(entry2.role)) {
+      errors.push(`${label2}.role must be one of: ${ROUTE_ROLES.join(", ")}`);
+    }
+    if (!ROUTE_OVERRIDE_SOURCES.includes(entry2.source)) {
+      errors.push(`${label2}.source must be one of: ${ROUTE_OVERRIDE_SOURCES.join(", ")}`);
+    }
+    for (const key of ["from", "to"]) {
+      const model = entry2[key];
+      if (typeof model !== "string" || model.trim().length === 0) {
+        errors.push(`${label2}.${key} must be a non-empty model id`);
+      }
+    }
+    if (entry2.from === entry2.to) {
+      errors.push(`${label2} must change the model (from equals to)`);
+    }
+    if (typeof entry2.reason !== "string" || !ROUTE_SLUG_PATTERN.test(entry2.reason)) {
+      errors.push(`${label2}.reason must be a slug`);
+    }
+    const previous = lastByRole.get(String(entry2.role));
+    if (previous && previous.to !== entry2.from) {
+      errors.push(`${label2}.from must equal the previous ${String(entry2.role)} override's to`);
+    }
+    lastByRole.set(String(entry2.role), entry2);
+  }
+  for (const [role, last] of lastByRole) {
+    if (selected[role] !== last.to) {
+      errors.push(`the last ${role} override must end at selected_models.${role}`);
+    }
+  }
+  return errors;
+}
+var HARNESS_SLUG_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
+var SDK_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
+function isBaseStage(stage2) {
+  return STAGE_EXECUTION_BASE_STAGES.includes(stage2);
+}
+function stageExecutionErrors(row) {
+  if (!isPlainObject5(row)) {
+    return ["row must be an object"];
+  }
+  const errors = [];
+  const executions = row.stage_executions;
+  if (!Array.isArray(executions) || executions.length === 0) {
+    errors.push("stage_executions must be a non-empty array");
+  } else {
+    const lastByStage = /* @__PURE__ */ new Map();
+    for (const [index, entry2] of executions.entries()) {
+      const label2 = `stage_executions[${index}]`;
+      if (!isPlainObject5(entry2) || !hasOnlyAllowedKeys(entry2, STAGE_EXECUTION_FIELDS)) {
+        errors.push(`${label2} must be an object with only: ${STAGE_EXECUTION_FIELDS.join(", ")}`);
+        continue;
+      }
+      if (!STAGE_EXECUTION_STAGES.includes(entry2.stage)) {
+        errors.push(`${label2}.stage must be one of: ${STAGE_EXECUTION_STAGES.join(", ")}`);
+      }
+      if (typeof entry2.executed_model !== "string" || entry2.executed_model.trim().length === 0) {
+        errors.push(`${label2}.executed_model must be a non-empty model id`);
+      }
+      if (!MODEL_EVIDENCE_KINDS.includes(entry2.model_evidence)) {
+        errors.push(`${label2}.model_evidence must be one of: ${MODEL_EVIDENCE_KINDS.join(", ")}`);
+      }
+      if (typeof entry2.harness !== "string" || !HARNESS_SLUG_PATTERN.test(entry2.harness)) {
+        errors.push(`${label2}.harness must be a harness slug`);
+      }
+      if (entry2.task_cost === void 0) {
+        errors.push(`${label2}.task_cost is required (use an unavailable summary for an unmeasured stage)`);
+      } else {
+        try {
+          validateTaskCostSummaryV1(entry2.task_cost);
+          if (typeof row.task_id === "string" && entry2.task_cost.task_id !== row.task_id) {
+            errors.push(`${label2}.task_cost.task_id must equal the row's task_id`);
+          }
+        } catch (error) {
+          errors.push(`${label2}.task_cost: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (isBaseStage(entry2.stage)) {
+        lastByStage.set(entry2.stage, entry2.executed_model);
+      }
+    }
+    const selected = isPlainObject5(row.selected_models) ? row.selected_models : {};
+    for (const [stage2, model] of lastByStage) {
+      const role = STAGE_TO_ROLE[stage2];
+      if (selected[role] !== model) {
+        errors.push(`the last ${stage2} stage's executed_model must equal selected_models.${role}`);
+      }
+    }
+  }
+  if (row.comparison_group !== void 0) {
+    const group = row.comparison_group;
+    if (!isPlainObject5(group) || !hasOnlyAllowedKeys(group, ["id", "role_varied"])) {
+      errors.push("comparison_group must be an object with only id and role_varied");
+    } else {
+      if (typeof group.id !== "string" || !MINTED_ID_PATTERN.test(group.id)) {
+        errors.push("comparison_group.id must be a minted pair id (UUID or ULID)");
+      }
+      if (!ROUTE_ROLES.includes(group.role_varied)) {
+        errors.push(`comparison_group.role_varied must be one of: ${ROUTE_ROLES.join(", ")}`);
+      }
+    }
+  }
+  if (row.integration !== void 0 && (!isPlainObject5(row.integration) || Object.keys(row.integration).length > 0)) {
+    errors.push("integration is reserved (HOK-3343); only {} is accepted");
+  }
+  if (row.sdk_version !== void 0 && (typeof row.sdk_version !== "string" || !SDK_VERSION_PATTERN.test(row.sdk_version))) {
+    errors.push("sdk_version must be a version string");
+  }
+  return errors;
+}
+function findRecommendationCopy(value, path5 = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const found = findRecommendationCopy(item, [...path5, String(index)]);
+      if (found) return found;
+    }
+    return void 0;
+  }
+  if (!isPlainObject5(value)) {
+    return void 0;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (RECOMMENDATION_COPY_KEY_SET.has(key.toLowerCase().replaceAll("_", ""))) {
+      return [...path5, key].join(".");
+    }
+    const found = findRecommendationCopy(child, [...path5, key]);
+    if (found) return found;
+  }
+  return void 0;
+}
 function validateContributionRow(row) {
   assertNoForbiddenKeys2(row);
-  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isHarnessOutcomeRowV1(row) || isSubmitDataContributionRow(row)) {
+  const copy = findRecommendationCopy(row);
+  if (copy) {
+    throw new ContributionValidationError(
+      "schema_validation_failed",
+      `Contribution rows must not store a recommendation copy (${copy}); Hokusai joins it from inference_log_id`
+    );
+  }
+  if (isPlainObject5(row) && (row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3 || row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4 || row.schema_version === HARNESS_OUTCOME_ROW_SCHEMA_VERSION_V2)) {
+    const errors = routingOutcomeErrors(row);
+    if (errors.length > 0) {
+      throw new ContributionValidationError(
+        "schema_validation_failed",
+        `Invalid routing outcome: ${errors.join("; ")}`
+      );
+    }
+  }
+  if (isPlainObject5(row) && row.schema_version === TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4) {
+    const errors = stageExecutionErrors(row);
+    if (errors.length > 0) {
+      throw new ContributionValidationError(
+        "schema_validation_failed",
+        `Invalid stage executions: ${errors.join("; ")}`
+      );
+    }
+  }
+  if (isTechnicalTaskRouterContributionRowV1(row) || isTechnicalTaskRouterContributionRowV2(row) || isTechnicalTaskRouterContributionRowV3(row) || isTechnicalTaskRouterContributionRowV4(row) || isHarnessOutcomeRowV1(row) || isHarnessOutcomeRowV2(row) || isSubmitDataContributionRow(row)) {
     return row;
   }
   throw new ContributionValidationError(
@@ -11567,35 +15375,194 @@ function validateContributionRow(row) {
 }
 
 // ../core/src/contribution/builder.ts
-function buildHarnessOutcomeRow(projection) {
-  if (!projection.taskDescriptor || Object.keys(projection.taskDescriptor).length === 0) {
-    throw new Error("taskDescriptor must be a non-empty object");
+function deriveBudgetLabel(projection) {
+  if (projection.budgetUsd === void 0 || projection.actualCostUsd === void 0 || projection.actualCostUsd === null) {
+    return "unknown";
   }
-  if (!projection.allowedModels || projection.allowedModels.length === 0) {
-    throw new Error("allowedModels must be a non-empty array");
+  return projection.actualCostUsd <= projection.budgetUsd ? "under_budget" : "over_budget";
+}
+function deriveCostLabel(actualCostUsd) {
+  if (actualCostUsd === void 0 || actualCostUsd === null) {
+    return "unknown";
   }
-  if (!projection.selectedModels) {
-    throw new Error("selectedModels is required");
+  if (actualCostUsd === 0) {
+    return "free";
   }
-  const harnessMetadata = {
-    ...projection.harness ? { harness: projection.harness } : {},
-    ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
+  if (actualCostUsd < COST_BUCKET_THRESHOLDS_USD.lowUpperBound) {
+    return "low";
+  }
+  if (actualCostUsd < COST_BUCKET_THRESHOLDS_USD.mediumUpperBound) {
+    return "medium";
+  }
+  return "high";
+}
+function deriveTimeLabel(wallClockSeconds) {
+  if (wallClockSeconds === void 0) {
+    return "unknown";
+  }
+  if (wallClockSeconds < TIME_BUCKET_THRESHOLDS_SECONDS.fastUpperBound) {
+    return "fast";
+  }
+  if (wallClockSeconds < TIME_BUCKET_THRESHOLDS_SECONDS.mediumUpperBound) {
+    return "medium";
+  }
+  return "slow";
+}
+function deriveOutcomeLabels(projection) {
+  const derived = {
+    budget_label: deriveBudgetLabel(projection),
+    cost_label: deriveCostLabel(projection.actualCostUsd),
+    time_label: deriveTimeLabel(projection.wallClockSeconds),
+    success_label: projection.observedSuccess ? "success" : "failure"
   };
+  return {
+    ...derived,
+    ...projection.outcomeLabelOverrides
+  };
+}
+function deriveAvailableModels(projection) {
+  if (projection.availableModels) {
+    return {
+      planner_models: [...projection.availableModels.planner_models],
+      coder_models: [...projection.availableModels.coder_models],
+      reviewer_models: [...projection.availableModels.reviewer_models]
+    };
+  }
+  const allowedModels = projection.allowedModels ? [...projection.allowedModels] : [];
+  const plannerModels = projection.selectedModels?.planner ? allowedModels : [];
+  return {
+    planner_models: plannerModels,
+    coder_models: allowedModels,
+    reviewer_models: allowedModels
+  };
+}
+function deriveCandidatePool(projection) {
+  if (projection.candidatePool) {
+    return { ...projection.candidatePool };
+  }
+  return {
+    scenario_id: "unknown",
+    scenario_kind: "unknown",
+    pool_size: projection.allowedModels?.length ?? 0
+  };
+}
+function deriveSparseCell(projection) {
+  if (projection.sparseCell) {
+    return { ...projection.sparseCell };
+  }
+  return {
+    cell_id: "unknown",
+    descriptor_signature: "unknown",
+    observed_count: 0,
+    is_sparse: false
+  };
+}
+function routingOutcomeFields(projection) {
+  if (projection.inferenceLogId && projection.routeOverrides === void 0) {
+    throw new Error(
+      "routeOverrides is required for a routed task: pass [] if the recommendation was followed"
+    );
+  }
+  if (!projection.inferenceLogId && projection.routeOverrides !== void 0) {
+    throw new Error("routeOverrides requires inferenceLogId: an unrouted task has no recommendation");
+  }
+  return projection.inferenceLogId ? {
+    inference_log_id: projection.inferenceLogId,
+    overrides: (projection.routeOverrides ?? []).map((override) => ({ ...override }))
+  } : {};
+}
+function buildTechnicalTaskRouterContributionRowV2(projection) {
+  if (!projection.taskDescriptor || !projection.allowedModels || !projection.selectedModels) {
+    throw new Error("taskDescriptor, allowedModels, and selectedModels are required");
+  }
   const row = {
-    schema_version: HARNESS_OUTCOME_ROW_SCHEMA_VERSION,
-    task_descriptor: { ...projection.taskDescriptor },
+    schema_version: TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2,
+    task_descriptor: projection.taskDescriptor,
     allowed_models: [...projection.allowedModels],
     selected_models: { ...projection.selectedModels },
-    completion_result: projection.completionResult,
+    available_models: deriveAvailableModels(projection),
+    success_under_budget: projection.observedSuccess && projection.budgetCompliant,
+    completion_result: projection.observedSuccess ? "success" : "failure",
+    outcome_labels: deriveOutcomeLabels(projection),
+    candidate_pool: deriveCandidatePool(projection),
+    sparse_cell: deriveSparseCell(projection),
+    observed_at: projection.observedAt,
     ...projection.budgetUsd !== void 0 ? { budget_usd: projection.budgetUsd } : {},
     ...projection.actualCostUsd !== void 0 ? { actual_cost_usd: projection.actualCostUsd } : {},
     ...projection.wallClockSeconds !== void 0 ? { wall_clock_seconds: projection.wallClockSeconds } : {},
-    ...projection.successUnderBudget !== void 0 ? { success_under_budget: projection.successUnderBudget } : {},
-    ...projection.inferenceLogId ? { inference_log_id: projection.inferenceLogId } : {},
-    ...projection.harness ? { harness: projection.harness } : {},
+    ...projection.scorerRef ? { scorer_ref: projection.scorerRef } : {},
     ...projection.taskId ? { task_id: projection.taskId } : {},
-    ...projection.observedAt ? { observed_at: projection.observedAt } : {},
-    ...Object.keys(harnessMetadata).length > 0 ? { harness_metadata: harnessMetadata } : {}
+    ...projection.harness ? { harness: projection.harness } : {}
+  };
+  return validateContributionRow(row);
+}
+function buildTechnicalTaskRouterContributionRowV3(projection) {
+  const row = {
+    ...buildTechnicalTaskRouterContributionRowV2(projection),
+    schema_version: TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V3,
+    ...routingOutcomeFields(projection)
+  };
+  return validateContributionRow(row);
+}
+function toTaskCostHarness(harness) {
+  return TASK_COST_HARNESSES.includes(harness) ? harness : "unknown";
+}
+function stageTaskCost(stage2, taskId, collectedAt) {
+  const { summaries } = stage2.cost;
+  if (summaries.length > 1) {
+    throw new Error(
+      `stage ${stage2.stage} spans ${String(summaries.length)} task-cost summaries; split it into one stage per harness`
+    );
+  }
+  const [summary] = summaries;
+  if (summary) {
+    return structuredClone(summary);
+  }
+  return unavailableTaskCostSummary({
+    taskId,
+    harness: toTaskCostHarness(stage2.harness),
+    collectedAt,
+    ...stage2.sessionIds ? { sessionIds: stage2.sessionIds } : {}
+  });
+}
+function sumStageTotals(stages) {
+  let sum = 0;
+  for (const stage2 of stages) {
+    const total = stage2.task_cost.total_cost_usd;
+    if (total === null) return void 0;
+    sum += total;
+  }
+  return Math.round(sum * 1e9) / 1e9;
+}
+function buildTechnicalTaskRouterRowV4(projection) {
+  if (!projection.taskId) {
+    throw new Error("taskId is required for a v4 row");
+  }
+  if (projection.stageExecutions.length === 0) {
+    throw new Error("stageExecutions must list at least one stage");
+  }
+  const stageExecutions = projection.stageExecutions.map((stage2) => ({
+    stage: stage2.stage,
+    executed_model: stage2.executedModel,
+    model_evidence: stage2.modelEvidence,
+    harness: stage2.harness,
+    task_cost: stageTaskCost(stage2, projection.taskId, projection.observedAt)
+  }));
+  const actualCostUsd = projection.actualCostUsd !== void 0 ? projection.actualCostUsd : sumStageTotals(stageExecutions);
+  const row = {
+    ...buildTechnicalTaskRouterContributionRowV3({
+      ...projection,
+      ...actualCostUsd !== void 0 ? { actualCostUsd } : {}
+    }),
+    schema_version: TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V4,
+    stage_executions: stageExecutions,
+    ...projection.comparisonGroup ? {
+      comparison_group: {
+        id: projection.comparisonGroup.id,
+        role_varied: projection.comparisonGroup.roleVaried
+      }
+    } : {},
+    ...projection.sdkVersion ? { sdk_version: projection.sdkVersion } : {}
   };
   return validateContributionRow(row);
 }
@@ -12125,7 +16092,14 @@ function createRunReportCli(profile17, impls) {
     }));
     const previewReportOutcomeImpl = deps.previewReportOutcomeImpl ?? impls.previewReportOutcome;
     const reportTaskOutcomeImpl = deps.reportTaskOutcomeImpl ?? impls.reportTaskOutcome;
-    const findLatestRoutingDecisionImpl = deps.findLatestRoutingDecisionImpl ?? impls.findLatestRoutingDecision;
+    const findRoutingDecisionImpl = deps.findRoutingDecisionImpl ?? impls.findRoutingDecision;
+    if (parsed.useLatest) {
+      return toMessage2(
+        parsed,
+        "--use-latest was removed: it attached the newest stored route, whatever task it was for. Pass --task-id or --correlation-id.",
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
+      );
+    }
     let config;
     try {
       const configPath = toConfigFilePath2(profile17, parsed.configPath);
@@ -12168,10 +16142,24 @@ function createRunReportCli(profile17, impls) {
     const configDir = profile17.resolveConfigPath(
       parsed.configPath ? { override: parsed.configPath } : void 0
     ).dir;
+    const requestedCorrelationId = parsed.correlationId ?? pipedInput.correlationId;
+    const requestedTaskId = parsed.taskId ?? pipedInput.taskId;
+    if (requestedCorrelationId === void 0 && requestedTaskId === void 0) {
+      return toMessage2(
+        parsed,
+        "Name the task this outcome belongs to: pass --task-id or --correlation-id.",
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
+        { fieldErrors: ["correlationId: Provide --correlation-id, or --task-id of a routed task."] }
+      );
+    }
     let latest;
-    if (parsed.useLatest || parsed.correlationId === void 0 && pipedInput.correlationId === void 0) {
+    {
       try {
-        latest = await findLatestRoutingDecisionImpl({ configDir });
+        latest = await findRoutingDecisionImpl({
+          configDir,
+          ...requestedCorrelationId !== void 0 ? { correlationId: requestedCorrelationId } : {},
+          ...requestedTaskId !== void 0 ? { taskId: requestedTaskId } : {}
+        });
       } catch (error) {
         return toMessage2(
           parsed,
@@ -12186,21 +16174,47 @@ function createRunReportCli(profile17, impls) {
     if (!parsed.send) {
       parsed.preview = true;
     }
-    if ((parsed.useLatest || parsed.correlationId === void 0) && pipedInput.correlationId === void 0 && !latest) {
+    if (requestedCorrelationId === void 0 && !latest) {
       return toMessage2(
         parsed,
-        "No local routing decision was found. Pass --correlation-id or route a task first.",
+        `No stored route for task ${requestedTaskId}. This outcome cannot be linked to a Hokusai recommendation; pass --correlation-id to report it as plain telemetry.`,
         REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
-        {
-          fieldErrors: ["correlationId: Provide --correlation-id or use --use-latest after routing a task."]
-        }
+        { fieldErrors: ["correlationId: No route was recorded for this task id."] }
+      );
+    }
+    if (latest && requestedTaskId !== void 0 && latest.taskId !== requestedTaskId) {
+      return toMessage2(
+        parsed,
+        `Correlation ${latest.correlationId} belongs to task ${latest.taskId}, not ${requestedTaskId}.`,
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
+      );
+    }
+    if (latest?.inferenceLogId !== void 0 && parsed.inferenceLogId !== void 0 && latest.inferenceLogId !== parsed.inferenceLogId) {
+      return toMessage2(
+        parsed,
+        `The route for this task was made by inference ${latest.inferenceLogId}, not ${parsed.inferenceLogId}.`,
+        REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR
       );
     }
     const stderrNotes = [];
     const recommendationAccepted = resolveRecommendationAccepted(parsed, pipedInput);
     const resolvedInferenceLogId = parsed.inferenceLogId ?? latest?.inferenceLogId;
     const resolvedActualModel = parsed.actualModel ?? pipedInput.actualModel ?? (recommendationAccepted === true ? latest?.recommendedModelId : void 0) ?? "";
-    const resolvedActualCostUsd = resolveActualCostUsd({
+    const resolvedTaskId = parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report";
+    let stageCost;
+    try {
+      stageCost = await (deps.measureStageImpl ?? impls.measureStage)?.({
+        taskId: resolvedTaskId,
+        executedModel: resolvedActualModel,
+        routeContext: latest?.routeContext,
+        endedAt: (deps.now ?? (() => /* @__PURE__ */ new Date()))().toISOString(),
+        env
+      });
+    } catch {
+      stageCost = void 0;
+    }
+    const measuredTotalUsd = stageCost?.summaries[0]?.total_cost_usd ?? void 0;
+    const resolvedActualCostUsd = parsed.actualCostUsd === void 0 && measuredTotalUsd !== void 0 && measuredTotalUsd !== null ? measuredTotalUsd : resolveActualCostUsd({
       model: resolvedActualModel,
       env,
       ...parsed.actualCostUsd !== void 0 ? { explicitActualCostUsd: parsed.actualCostUsd } : {},
@@ -12209,7 +16223,7 @@ function createRunReportCli(profile17, impls) {
       ...latest?.routeContext ? { routeContext: latest.routeContext } : {}
     });
     const reportInput = {
-      taskId: parsed.taskId ?? pipedInput.taskId ?? latest?.taskId ?? parsed.correlationId ?? pipedInput.correlationId ?? "outcome-report",
+      taskId: resolvedTaskId,
       correlationId: parsed.correlationId ?? pipedInput.correlationId ?? latest?.correlationId ?? "",
       recommendedModel: parsed.recommendedModel ?? pipedInput.recommendedModel ?? latest?.recommendedModelId ?? "",
       actualModel: resolvedActualModel,
@@ -12239,7 +16253,9 @@ function createRunReportCli(profile17, impls) {
       } : {},
       ...parsed.notes ?? pipedInput.notes ? { notes: parsed.notes ?? pipedInput.notes } : {},
       ...resolvedInferenceLogId ? { inferenceLogId: resolvedInferenceLogId } : {},
+      ...latest?.recommendedModelId ? { routedRecommendedModelId: latest.recommendedModelId } : {},
       ...latest?.routeContext ? { routeContext: latest.routeContext } : {},
+      ...stageCost ? { stageCost } : {},
       ...resolvedActualCostUsd !== void 0 ? { actualCostUsd: resolvedActualCostUsd } : {},
       ...parsed.wallClockSeconds !== void 0 ? { wallClockSeconds: parsed.wallClockSeconds } : {}
     };
@@ -12329,7 +16345,7 @@ function buildOutcomeContributionPrompt(input) {
       remediation: "Set HOKUSAI_OUTCOME_OPT_IN=true, then rerun the Hokusai report command."
     };
   }
-  const actualModel = input.actualModel ?? input.latestRoute.recommendedModelId;
+  const actualModel = input.actualModel;
   if (!actualModel) {
     return {
       shouldPrompt: true,
@@ -12339,13 +16355,16 @@ function buildOutcomeContributionPrompt(input) {
       remediation: "Run the report command with --actual-model set to the model that completed the task."
     };
   }
+  const recommended = input.latestRoute.recommendedModelId;
   const reportArgs = [
-    "--use-latest",
-    "--recommended-model",
-    input.latestRoute.recommendedModelId ?? actualModel,
+    "--correlation-id",
+    input.latestRoute.correlationId,
+    "--task-id",
+    input.latestRoute.taskId,
+    ...recommended ? ["--recommended-model", recommended] : [],
     "--actual-model",
     actualModel,
-    "--accepted",
+    recommended !== void 0 && recommended === actualModel ? "--accepted" : "--rejected",
     "--status",
     "succeeded",
     "--latency-bucket",
@@ -12376,7 +16395,7 @@ function collectCompletionSignals(value, signals) {
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach((entry) => collectCompletionSignals(entry, signals));
+    value.forEach((entry2) => collectCompletionSignals(entry2, signals));
     return;
   }
   if (typeof value !== "object") {
@@ -12385,7 +16404,7 @@ function collectCompletionSignals(value, signals) {
   const record = value;
   collectStructuredSignals(record, signals);
   Object.values(record).forEach(
-    (entry) => collectCompletionSignals(entry, signals)
+    (entry2) => collectCompletionSignals(entry2, signals)
   );
 }
 function collectStructuredSignals(record, signals) {
@@ -12568,7 +16587,7 @@ function createRunPrivacyCli(_profile, impls) {
         );
       }
       const lines = result.value.decisions.map(
-        (entry) => `${entry.createdAt} ${entry.correlationId} ${entry.recommendedModelId ?? "unknown-model"} ${entry.status ?? "unknown-status"}`
+        (entry2) => `${entry2.createdAt} ${entry2.correlationId} ${entry2.recommendedModelId ?? "unknown-model"} ${entry2.status ?? "unknown-status"}`
       );
       return ok2(
         `${renderWarnings(result.value.warnings)}${lines.join("\n")}
@@ -12638,7 +16657,7 @@ function createRunPrivacyCli(_profile, impls) {
         );
       }
       const lines = result.value.entries.map(
-        (entry) => `${new Date(entry.timestamp).toISOString()} ${entry.kind} ${entry.status} ${entry.correlationId}${entry.error ? ` ${entry.error}` : ""}`
+        (entry2) => `${new Date(entry2.timestamp).toISOString()} ${entry2.kind} ${entry2.status} ${entry2.correlationId}${entry2.error ? ` ${entry2.error}` : ""}`
       );
       return ok2(
         `${renderWarnings(result.value.warnings)}${lines.join("\n")}
@@ -12990,9 +17009,9 @@ function collectRawArrayFields(input) {
   const entries = [];
   for (const source of sources) {
     if (!source) continue;
-    for (const entry of source) {
-      if (typeof entry === "string" && entry.trim().length > 0) {
-        entries.push(entry);
+    for (const entry2 of source) {
+      if (typeof entry2 === "string" && entry2.trim().length > 0) {
+        entries.push(entry2);
       }
     }
   }
@@ -13003,7 +17022,7 @@ function buildConstraintList(input) {
     ...input.constraints ?? [],
     ...input.latencyPreference ? [`latency:${input.latencyPreference}`] : [],
     ...input.costPreference ? [`cost:${input.costPreference}`] : []
-  ].map((entry) => entry.trim()).filter(Boolean);
+  ].map((entry2) => entry2.trim()).filter(Boolean);
   return constraints.length > 0 ? constraints : void 0;
 }
 function redactStringArray(entries, config) {
@@ -13012,11 +17031,11 @@ function redactStringArray(entries, config) {
   }
   const output = [];
   const redactions = [];
-  for (const entry of entries) {
-    if (typeof entry !== "string" || entry.trim().length === 0) {
+  for (const entry2 of entries) {
+    if (typeof entry2 !== "string" || entry2.trim().length === 0) {
       continue;
     }
-    const result = redact(entry, config);
+    const result = redact(entry2, config);
     output.push(result.output);
     redactions.push(...result.redactions);
   }
@@ -13116,11 +17135,2000 @@ var runCli = createRunCli(claudeCodeHarnessProfile, {
   }
 });
 
+// src/stage-cost.ts
+import path3 from "node:path";
+
+// ../costs/src/money.ts
+var PICO_PER_TOKEN_SCALE = 1e6;
+var PICO_PER_MICRO = 1000000n;
+function rateToPicoPerToken(ratePerMTokUsd) {
+  return BigInt(Math.round(ratePerMTokUsd * PICO_PER_TOKEN_SCALE));
+}
+function priceTokens(tokens2, ratePerMTokUsd) {
+  if (!Number.isFinite(tokens2) || tokens2 < 0 || !Number.isInteger(tokens2))
+    return 0n;
+  if (!Number.isFinite(ratePerMTokUsd) || ratePerMTokUsd < 0) return 0n;
+  return BigInt(tokens2) * rateToPicoPerToken(ratePerMTokUsd);
+}
+function roundPicoTo(pico, unit) {
+  return (pico + unit / 2n) / unit;
+}
+function toMicroUsd(picoTotal) {
+  return Number(roundPicoTo(picoTotal, PICO_PER_MICRO)) / 1e6;
+}
+
+// ../costs/src/pricing-resolver.ts
+function validateHostPriceOverride(override) {
+  const label2 = `price override for model "${override.model}"`;
+  if (typeof override.model !== "string" || override.model.trim().length === 0) {
+    throw new TypeError("price override model must be a non-empty string");
+  }
+  for (const [field, value] of [
+    ["inputPerMTokUsd", override.inputPerMTokUsd],
+    ["outputPerMTokUsd", override.outputPerMTokUsd]
+  ]) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      throw new TypeError(
+        `${label2}: ${field} must be a finite non-negative number`
+      );
+    }
+  }
+  for (const [field, value] of [
+    ["cacheWriteMultiplier", override.cacheWriteMultiplier],
+    ["cacheReadMultiplier", override.cacheReadMultiplier]
+  ]) {
+    if (value !== void 0 && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
+      throw new TypeError(
+        `${label2}: ${field} must be a finite non-negative number`
+      );
+    }
+  }
+  return normalizeModelId(override.model);
+}
+function buildOverrideIndex(overrides) {
+  const index = /* @__PURE__ */ new Map();
+  for (const override of overrides) {
+    const key = validateHostPriceOverride(override);
+    if (index.has(key)) {
+      throw new TypeError(
+        `duplicate price override for model "${override.model}" (normalizes to "${key}")`
+      );
+    }
+    index.set(key, override);
+  }
+  return index;
+}
+function builtInPriceTable(price) {
+  if (Object.values(ANTHROPIC_MODEL_PRICING).includes(price))
+    return "anthropic";
+  if (Object.values(OPENAI_MODEL_PRICING).includes(price)) return "openai";
+  if (Object.values(GOOGLE_MODEL_PRICING).includes(price)) return "google";
+  return "external";
+}
+function priceWithOverride(override, usage, inputTokens, outputTokens, ctx) {
+  const provenance = {
+    pricingSource: "local_estimate",
+    priceTable: override.priceTable ?? "override",
+    ...override.asOf ?? ctx.pricingRevision ? { pricingRevision: override.asOf ?? ctx.pricingRevision } : {}
+  };
+  const cacheWrite = usage.cache_write_tokens ?? 0;
+  const cacheRead = usage.cache_read_tokens ?? 0;
+  if (cacheWrite > 0 && override.cacheWriteMultiplier === void 0 || cacheRead > 0 && override.cacheReadMultiplier === void 0) {
+    return {
+      estimated: null,
+      pricingSource: "none",
+      diagnostics: ["no_pricing_data"]
+    };
+  }
+  const pico = priceTokens(inputTokens, override.inputPerMTokUsd) + priceTokens(outputTokens, override.outputPerMTokUsd) + priceTokens(
+    cacheWrite,
+    override.inputPerMTokUsd * (override.cacheWriteMultiplier ?? 0)
+  ) + priceTokens(
+    cacheRead,
+    override.inputPerMTokUsd * (override.cacheReadMultiplier ?? 0)
+  );
+  return { estimated: toMicroUsd(pico), ...provenance, diagnostics: [] };
+}
+function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx, requestScoped) {
+  const price = resolveModelPrice(model);
+  if (price === void 0) {
+    return {
+      estimated: null,
+      pricingSource: "none",
+      diagnostics: ["unpriced_model"]
+    };
+  }
+  const estimated = computeActualCostUsd({
+    model,
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens: usage.cache_write_tokens ?? 0,
+    cacheReadTokens: usage.cache_read_tokens ?? 0,
+    requestScoped
+  });
+  if (estimated === void 0) {
+    return {
+      estimated: null,
+      pricingSource: "none",
+      diagnostics: ["no_pricing_data"]
+    };
+  }
+  return {
+    estimated,
+    pricingSource: "local_estimate",
+    priceTable: builtInPriceTable(price),
+    pricingRevision: ctx.pricingRevision ?? MODEL_PRICING_AS_OF,
+    diagnostics: []
+  };
+}
+function resolveEstimate(req, ctx) {
+  if (req.estimatedCostUsd !== void 0) {
+    if (req.estimatedCostUsd === null) {
+      return { estimated: null, pricingSource: "none", diagnostics: [] };
+    }
+    return {
+      estimated: req.estimatedCostUsd,
+      pricingSource: req.pricingSource ?? "local_estimate",
+      priceTable: req.priceTable ?? "external",
+      ...ctx.pricingRevision !== void 0 ? { pricingRevision: ctx.pricingRevision } : {},
+      diagnostics: []
+    };
+  }
+  const inputTokens = req.usage.input_tokens;
+  const outputTokens = req.usage.output_tokens;
+  if (inputTokens === null || outputTokens === null) {
+    return { estimated: null, pricingSource: "none", diagnostics: [] };
+  }
+  const override = buildOverrideIndex(ctx.overrides ?? []).get(
+    normalizeModelId(req.observedModel)
+  );
+  if (override !== void 0) {
+    return priceWithOverride(
+      override,
+      req.usage,
+      inputTokens,
+      outputTokens,
+      ctx
+    );
+  }
+  return priceWithBuiltInTable(
+    req.observedModel,
+    req.usage,
+    inputTokens,
+    outputTokens,
+    ctx,
+    req.requestScoped === true
+  );
+}
+function resolveEventPrice(req, ctx = {}) {
+  const diagnostics = [];
+  let actual = null;
+  if (req.actualCostUsd !== void 0 && req.actualCostUsd !== null) {
+    if (Number.isFinite(req.actualCostUsd) && req.actualCostUsd >= 0) {
+      actual = req.actualCostUsd;
+    } else {
+      diagnostics.push("invalid_token_usage");
+    }
+  }
+  const estimate = resolveEstimate(req, ctx);
+  diagnostics.push(...estimate.diagnostics);
+  return {
+    actualCostUsd: actual,
+    estimatedCostUsd: estimate.estimated,
+    pricingSource: estimate.estimated === null ? "none" : estimate.pricingSource,
+    ...estimate.priceTable !== void 0 && estimate.estimated !== null ? { priceTable: estimate.priceTable } : {},
+    ...estimate.pricingRevision !== void 0 && estimate.estimated !== null ? { pricingRevision: estimate.pricingRevision } : {},
+    costSource: actual !== null ? "provider_reported" : estimate.estimated !== null ? "local_estimate" : "none",
+    diagnostics
+  };
+}
+
+// ../costs/src/usage-normalizer.ts
+function normalizeUsage(partial) {
+  const usage = {};
+  const problems = [];
+  for (const field of TASK_COST_TOKEN_FIELDS) {
+    const value = partial[field];
+    if (value === void 0 || value === null) {
+      usage[field] = null;
+    } else if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+      usage[field] = value;
+    } else {
+      usage[field] = null;
+      problems.push(
+        `usage.${field} must be a non-negative integer or null, got ${String(value)}`
+      );
+    }
+  }
+  return {
+    ok: problems.length === 0,
+    usage,
+    diagnostics: problems.length > 0 ? ["invalid_token_usage"] : [],
+    problems
+  };
+}
+function deriveUsageCoverage(usage) {
+  const values = TASK_COST_TOKEN_FIELDS.map((field) => usage[field]);
+  if (values.every((value) => value === null)) return "unavailable";
+  if (values.some((value) => value === null)) return "partial";
+  return values.every((value) => value === 0) ? "known_zero" : "available";
+}
+function mergeDiagnostics(order, ...sources) {
+  const present = new Set(sources.flat());
+  return order.filter((code) => present.has(code));
+}
+function buildTaskCostEvent(input, observedModel, usage, pricing, diagnostics) {
+  return {
+    schema_version: TASK_COST_EVENT_SCHEMA_VERSION,
+    event_id: input.eventId,
+    task_id: input.taskId,
+    session_id: input.sessionId,
+    turn_id: input.turnId,
+    sequence: input.sequence,
+    ...input.parentEventId !== void 0 ? { parent_event_id: input.parentEventId } : {},
+    ...input.isSubagent !== void 0 ? { is_subagent: input.isSubagent } : {},
+    ...input.replayOfEventId !== void 0 ? { replay_of_event_id: input.replayOfEventId } : {},
+    harness: input.harness,
+    ...input.harnessVersion !== void 0 ? { harness_version: input.harnessVersion } : {},
+    provider_contract_version: input.providerContractVersion,
+    observed_model: observedModel,
+    usage_kind: input.usageKind ?? "delta",
+    usage,
+    usage_coverage: deriveUsageCoverage(usage),
+    actual_cost_usd: pricing.actualCostUsd,
+    estimated_cost_usd: pricing.estimatedCostUsd,
+    cost_source: pricing.costSource,
+    cost_basis: input.costBasis ?? "per_token_api",
+    pricing_source: pricing.pricingSource,
+    ...pricing.pricingRevision !== void 0 ? { pricing_revision: pricing.pricingRevision } : {},
+    ...pricing.priceTable !== void 0 ? { price_table: pricing.priceTable } : {},
+    observed_at: input.observedAt,
+    ...diagnostics.length > 0 ? { diagnostics: [...diagnostics] } : {}
+  };
+}
+
+// ../costs/src/engine.ts
+function isPrebuiltEvent(input) {
+  return typeof input === "object" && input !== null && input.schema_version === TASK_COST_EVENT_SCHEMA_VERSION;
+}
+function reject(reason, diagnostics = []) {
+  return { status: "rejected", reason, diagnostics };
+}
+function createTaskCostEngine(options) {
+  const { taskId } = options;
+  if (typeof taskId !== "string" || taskId.length === 0) {
+    throw new TypeError("createTaskCostEngine requires a non-empty taskId");
+  }
+  const overrides = options.priceOverrides ?? [];
+  buildOverrideIndex(overrides);
+  const pricingContext = {
+    overrides,
+    ...options.pricingRevision !== void 0 ? { pricingRevision: options.pricingRevision } : {}
+  };
+  const events17 = [];
+  const byId = /* @__PURE__ */ new Map();
+  function accept(event17) {
+    events17.push(event17);
+    byId.set(event17.event_id, event17);
+    return { status: "accepted", event: event17 };
+  }
+  function ingestPrebuilt(event17) {
+    try {
+      validateTaskCostEventV1(event17);
+    } catch (error) {
+      if (error instanceof TaskCostValidationError) {
+        return reject(`${error.code}: ${error.message}`);
+      }
+      throw error;
+    }
+    if (event17.task_id !== taskId) {
+      return reject(
+        `schema_validation_failed: event.task_id "${event17.task_id}" does not belong to this engine's taskId "${taskId}"`
+      );
+    }
+    const existing = byId.get(event17.event_id);
+    if (existing !== void 0) {
+      return { status: "duplicate", eventId: event17.event_id, event: existing };
+    }
+    return accept(event17);
+  }
+  function ingestFriendly(input) {
+    if (typeof input !== "object" || input === null || typeof input.eventId !== "string") {
+      return reject(
+        "schema_validation_failed: input must be an object with a string eventId"
+      );
+    }
+    if (input.taskId !== taskId) {
+      return reject(
+        `schema_validation_failed: input.taskId "${String(input.taskId)}" does not belong to this engine's taskId "${taskId}"`
+      );
+    }
+    const existing = byId.get(input.eventId);
+    if (existing !== void 0) {
+      return { status: "duplicate", eventId: input.eventId, event: existing };
+    }
+    const normalized = normalizeUsage(input.usage ?? {});
+    if (!normalized.ok) {
+      return reject(
+        `invalid_token_usage: ${normalized.problems.join("; ")}`,
+        normalized.diagnostics
+      );
+    }
+    if (input.costBasis === "subscription" && typeof input.actualCostUsd === "number" && Number.isFinite(input.actualCostUsd)) {
+      return reject(
+        'schema_validation_failed: actualCostUsd must be null/absent when costBasis is "subscription"'
+      );
+    }
+    const observedModel = typeof input.observedModel === "string" ? normalizeModelId(input.observedModel) : "";
+    const pricing = resolveEventPrice(
+      {
+        observedModel,
+        usage: normalized.usage,
+        harness: input.harness,
+        // A delta event is one provider request (a cumulative snapshot or a
+        // declared aggregate is not), so a long-context tier may apply.
+        requestScoped: (input.usageKind ?? "delta") === "delta" && input.aggregate !== true,
+        ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
+        ...input.costBasis !== void 0 ? { costBasis: input.costBasis } : {},
+        ...input.estimatedCostUsd !== void 0 ? { estimatedCostUsd: input.estimatedCostUsd } : {},
+        ...input.pricingSource !== void 0 ? { pricingSource: input.pricingSource } : {},
+        ...input.priceTable !== void 0 ? { priceTable: input.priceTable } : {}
+      },
+      pricingContext
+    );
+    const diagnostics = mergeDiagnostics(
+      TASK_COST_DIAGNOSTIC_CODES,
+      input.diagnostics ?? [],
+      pricing.diagnostics
+    );
+    const event17 = buildTaskCostEvent(
+      input,
+      observedModel,
+      normalized.usage,
+      pricing,
+      diagnostics
+    );
+    try {
+      validateTaskCostEventV1(event17);
+    } catch (error) {
+      if (error instanceof TaskCostValidationError) {
+        return reject(`${error.code}: ${error.message}`, diagnostics);
+      }
+      throw error;
+    }
+    return accept(event17);
+  }
+  const ingest = (input) => isPrebuiltEvent(input) ? ingestPrebuilt(input) : ingestFriendly(input);
+  return {
+    taskId,
+    ingest,
+    ingestMany(inputs) {
+      return inputs.map(ingest);
+    },
+    events() {
+      return Object.freeze([...events17]);
+    },
+    snapshot() {
+      if (events17.length === 0) {
+        throw new TaskCostValidationError(
+          "schema_validation_failed",
+          `no events ingested for task "${taskId}"`
+        );
+      }
+      return aggregateTaskCost(events17, {
+        taskId,
+        ...options.collectedAt !== void 0 ? { collectedAt: options.collectedAt } : {},
+        ...options.joinConfidence !== void 0 ? { joinConfidence: options.joinConfidence } : {},
+        ...options.rootSessionId !== void 0 ? { rootSessionId: options.rootSessionId } : {},
+        ...options.turnsTruncated !== void 0 ? { turnsTruncated: options.turnsTruncated } : {}
+      });
+    }
+  };
+}
+
+// ../costs/src/measure/errors.ts
+var TaskCostMeasureError = class extends TypeError {
+  code;
+  constructor(message, code = "INVALID_ARGUMENT") {
+    super(message);
+    this.name = "TaskCostMeasureError";
+    this.code = code;
+  }
+};
+
+// ../costs/src/sources/assemble.ts
+function assembleInputs(taskId, harness, providerContractVersion, rows) {
+  const bySession = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const sessionRows = bySession.get(row.sessionId);
+    if (sessionRows === void 0) bySession.set(row.sessionId, [row]);
+    else sessionRows.push(row);
+  }
+  const inputs = [];
+  const sourceVersions = [];
+  for (const sessionRows of bySession.values()) {
+    const ordered = [...sessionRows].sort((a, b) => a.observedMs - b.observedMs);
+    for (const [index, row] of ordered.entries()) {
+      if (row.harnessVersion !== null && !sourceVersions.includes(row.harnessVersion)) {
+        sourceVersions.push(row.harnessVersion);
+      }
+      inputs.push({
+        eventId: row.eventId,
+        taskId,
+        sessionId: row.sessionId,
+        turnId: row.turnId,
+        sequence: index + 1,
+        harness,
+        ...row.harnessVersion !== null ? { harnessVersion: row.harnessVersion } : {},
+        providerContractVersion,
+        observedModel: row.observedModel,
+        usage: row.usage,
+        usageKind: "delta",
+        ...row.actualCostUsd !== null ? { actualCostUsd: row.actualCostUsd } : {},
+        ...row.isSubagent !== void 0 ? { isSubagent: row.isSubagent } : {},
+        observedAt: row.observedAt,
+        ...row.unpriced ? { estimatedCostUsd: null } : {},
+        ...row.usageInvalid || row.unpriced ? {
+          diagnostics: [
+            ...row.usageInvalid ? ["invalid_token_usage"] : [],
+            ...row.unpriced ? ["no_pricing_data"] : []
+          ]
+        } : {}
+      });
+    }
+  }
+  return { inputs, sourceVersions };
+}
+
+// ../costs/src/sources/sanitize.ts
+var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+var MODEL_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$/;
+var VERSION_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
+function asRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
+}
+function idOrNull(value) {
+  return typeof value === "string" && ID_PATTERN2.test(value) ? value : null;
+}
+function modelOrNull(value) {
+  if (typeof value !== "string" || !MODEL_PATTERN2.test(value)) return null;
+  if (value.includes("..") || value.includes("//")) return null;
+  return value;
+}
+function versionOrNull(value) {
+  return typeof value === "string" && VERSION_PATTERN2.test(value) ? value : null;
+}
+function countOrNull(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+function usdOrNull(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+function isPresent(value) {
+  return value !== void 0 && value !== null;
+}
+function timestampOrNull(value) {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return null;
+  const iso = new Date(ms).toISOString().replace(/\.000Z$/, "Z");
+  return { iso, ms };
+}
+
+// ../costs/src/sources/correlation.ts
+function resolveTaskBoundary(boundary) {
+  if (boundary.boundaryVersion !== 1) {
+    throw new TypeError("task boundary must have boundaryVersion 1");
+  }
+  const taskId = idOrNull(boundary.taskId);
+  if (taskId === null) {
+    throw new TypeError("task boundary requires a contract-safe taskId");
+  }
+  if (!Array.isArray(boundary.sessionIds) || boundary.sessionIds.length === 0) {
+    throw new TypeError("task boundary requires at least one session id");
+  }
+  const sessionIds = /* @__PURE__ */ new Set();
+  for (const sessionId of boundary.sessionIds) {
+    const id2 = idOrNull(sessionId);
+    if (id2 === null) {
+      throw new TypeError("task boundary session ids must be contract-safe identifiers");
+    }
+    sessionIds.add(id2);
+  }
+  const started = timestampOrNull(boundary.startedAt);
+  const ended = timestampOrNull(boundary.endedAt);
+  if (started === null || ended === null || started.ms > ended.ms) {
+    throw new TypeError("task boundary requires an ordered startedAt/endedAt window");
+  }
+  return { taskId, sessionIds, startMs: started.ms, endMs: ended.ms };
+}
+function inBoundaryWindow(boundary, timestampMs) {
+  return timestampMs >= boundary.startMs && timestampMs <= boundary.endMs;
+}
+var CumulativeUsageTracker = class {
+  baseline = /* @__PURE__ */ new Map();
+  next(cumulative) {
+    let reset = false;
+    for (const field of TASK_COST_TOKEN_FIELDS) {
+      const current = cumulative[field];
+      const prior = this.baseline.get(field);
+      if (typeof current === "number" && prior !== void 0 && current < prior) {
+        reset = true;
+        break;
+      }
+    }
+    const usage = {};
+    for (const field of TASK_COST_TOKEN_FIELDS) {
+      const current = cumulative[field];
+      if (typeof current !== "number") {
+        usage[field] = null;
+        continue;
+      }
+      const prior = this.baseline.get(field);
+      usage[field] = reset ? current : current - (prior ?? 0);
+      this.baseline.set(field, current);
+    }
+    return { usage, reset };
+  }
+};
+
+// ../costs/src/sources/claude-code/adapter.ts
+init_types();
+
+// ../costs/src/sources/jsonl.ts
+init_types();
+var DEFAULT_MAX_LINE_LENGTH = 4 * 1024 * 1024;
+var DEFAULT_MAX_LINES = 5e5;
+function parseJsonlObjects(content, diagnostics, options = {}) {
+  const maxLineLength = options.maxLineLength ?? DEFAULT_MAX_LINE_LENGTH;
+  const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
+  const rows = [];
+  let lineCount = 0;
+  let offset = 0;
+  while (offset <= content.length) {
+    const newline = content.indexOf("\n", offset);
+    const end = newline === -1 ? content.length : newline;
+    const line = content.slice(offset, end).replace(/\r$/, "");
+    offset = end + 1;
+    if (newline === -1 && line.length === 0) break;
+    if (line.trim().length === 0) {
+      if (newline === -1) break;
+      continue;
+    }
+    lineCount += 1;
+    if (lineCount > maxLines) {
+      countDiagnostic(diagnostics, "truncated_input");
+      break;
+    }
+    if (line.length > maxLineLength) {
+      countDiagnostic(diagnostics, "oversized_line");
+      if (newline === -1) break;
+      continue;
+    }
+    try {
+      const value = JSON.parse(line);
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        rows.push(value);
+      } else {
+        countDiagnostic(diagnostics, "malformed_line");
+      }
+    } catch {
+      countDiagnostic(diagnostics, "malformed_line");
+    }
+    if (newline === -1) break;
+  }
+  return rows;
+}
+
+// ../costs/src/sources/claude-code/parser.ts
+init_types();
+var CLAUDE_CODE_PROVIDER_CONTRACT_VERSION = "claude-code/1";
+function projectCount(raw, row) {
+  const value = countOrNull(raw);
+  if (value === null && isPresent(raw)) row.usageInvalid = true;
+  return value;
+}
+function parseClaudeCodeTranscript(content, diagnostics, parseOptions) {
+  const rows = [];
+  for (const entry2 of parseJsonlObjects(content, diagnostics, parseOptions)) {
+    if (entry2.type !== "assistant") continue;
+    const message = asRecord(entry2.message);
+    const usage = message === null ? null : asRecord(message.usage);
+    if (message === null || usage === null) {
+      countDiagnostic(diagnostics, "missing_usage");
+      continue;
+    }
+    const messageId = idOrNull(message.id);
+    const requestId = idOrNull(entry2.requestId);
+    const composedKey = messageId !== null && requestId !== null ? `${messageId}.${requestId}` : messageId;
+    const row = {
+      sessionId: idOrNull(entry2.sessionId),
+      eventKey: composedKey ?? idOrNull(entry2.uuid),
+      turnId: idOrNull(entry2.uuid),
+      observedAt: null,
+      observedMs: null,
+      observedModel: modelOrNull(message.model) ?? "unknown",
+      usage: {},
+      usageInvalid: false,
+      isSubagent: typeof entry2.isSidechain === "boolean" ? entry2.isSidechain : void 0,
+      actualCostUsd: null,
+      harnessVersion: versionOrNull(entry2.version)
+    };
+    const timestamp2 = timestampOrNull(entry2.timestamp);
+    if (timestamp2 !== null) {
+      row.observedAt = timestamp2.iso;
+      row.observedMs = timestamp2.ms;
+    }
+    const outputDetails = asRecord(usage.output_tokens_details);
+    row.usage = {
+      input_tokens: projectCount(usage.input_tokens, row),
+      output_tokens: projectCount(usage.output_tokens, row),
+      cache_read_tokens: projectCount(usage.cache_read_input_tokens, row),
+      cache_write_tokens: projectCount(usage.cache_creation_input_tokens, row),
+      reasoning_tokens: outputDetails === null ? null : projectCount(outputDetails.thinking_tokens, row)
+    };
+    const actual = usdOrNull(entry2.costUSD);
+    if (actual === null && isPresent(entry2.costUSD)) row.usageInvalid = true;
+    row.actualCostUsd = actual;
+    if (row.usageInvalid) countDiagnostic(diagnostics, "invalid_usage_value");
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ../costs/src/sources/claude-code/adapter.ts
+function extractClaudeCodeUsage(options) {
+  const boundary = resolveTaskBoundary(options.boundary);
+  const diagnostics = {};
+  const byIdentity = /* @__PURE__ */ new Map();
+  let synthetic = 0;
+  for (const content of options.files) {
+    for (const row of parseClaudeCodeTranscript(
+      content,
+      diagnostics,
+      options.parseOptions
+    )) {
+      if (row.sessionId === null) {
+        countDiagnostic(diagnostics, "missing_session_id");
+        continue;
+      }
+      let key = row.eventKey;
+      if (key === null) {
+        synthetic += 1;
+        key = `${row.sessionId}.row.${synthetic}`;
+        row.eventKey = key;
+      } else if (byIdentity.has(key)) {
+        countDiagnostic(diagnostics, "duplicate_row");
+      }
+      byIdentity.set(key, row);
+    }
+  }
+  const accepted = [];
+  for (const [key, row] of byIdentity) {
+    const sessionId = row.sessionId;
+    if (!boundary.sessionIds.has(sessionId)) {
+      countDiagnostic(diagnostics, "session_not_in_boundary");
+      continue;
+    }
+    if (row.observedMs === null || row.observedAt === null) {
+      countDiagnostic(diagnostics, "missing_timestamp");
+      continue;
+    }
+    if (!inBoundaryWindow(boundary, row.observedMs)) {
+      countDiagnostic(diagnostics, "outside_time_window");
+      continue;
+    }
+    accepted.push({
+      eventId: key,
+      sessionId,
+      turnId: row.turnId ?? key,
+      observedAt: row.observedAt,
+      observedMs: row.observedMs,
+      observedModel: row.observedModel,
+      usage: row.usage,
+      actualCostUsd: row.actualCostUsd,
+      harnessVersion: row.harnessVersion,
+      ...row.isSubagent !== void 0 ? { isSubagent: row.isSubagent } : {},
+      usageInvalid: row.usageInvalid
+    });
+  }
+  const { inputs, sourceVersions } = assembleInputs(
+    boundary.taskId,
+    "claude-code",
+    CLAUDE_CODE_PROVIDER_CONTRACT_VERSION,
+    accepted
+  );
+  return { inputs, diagnostics, sourceVersions };
+}
+
+// ../costs/src/sources/claude-code/index.ts
+init_types();
+
+// ../costs/src/sources/codex/adapter.ts
+init_types();
+
+// ../costs/src/sources/codex/parser.ts
+init_types();
+var CODEX_PROVIDER_CONTRACT_VERSION = "codex/2";
+function projectUsage(raw, flag) {
+  const project = (value) => {
+    const count = countOrNull(value);
+    if (count === null && isPresent(value)) flag.usageInvalid = true;
+    return count;
+  };
+  return {
+    input_tokens: project(raw.input_tokens),
+    output_tokens: project(raw.output_tokens),
+    cache_read_tokens: project(raw.cached_input_tokens),
+    cache_write_tokens: project(raw.cache_write_input_tokens),
+    reasoning_tokens: project(raw.reasoning_output_tokens)
+  };
+}
+function parseCodexRollout(content, diagnostics, parseOptions) {
+  const session = {
+    sessionId: null,
+    harnessVersion: null,
+    observations: []
+  };
+  let currentTurnId = null;
+  let currentModel = "unknown";
+  let currentServiceTier = null;
+  for (const entry2 of parseJsonlObjects(content, diagnostics, parseOptions)) {
+    const payload = asRecord(entry2.payload);
+    if (entry2.type === "session_meta") {
+      session.sessionId ??= idOrNull(payload?.id) ?? idOrNull(payload?.session_id);
+      session.harnessVersion ??= versionOrNull(payload?.cli_version);
+      continue;
+    }
+    if (entry2.type === "turn_context") {
+      currentTurnId = idOrNull(payload?.turn_id);
+      currentModel = modelOrNull(payload?.model) ?? currentModel;
+      continue;
+    }
+    if (entry2.type === "event_msg" && payload?.type === "thread_settings_applied") {
+      const tier = asRecord(payload.thread_settings)?.service_tier;
+      if (typeof tier === "string" && /^[a-z][a-z0-9_-]{0,31}$/.test(tier)) {
+        currentServiceTier = tier;
+      }
+      continue;
+    }
+    if (entry2.type !== "event_msg" || payload?.type !== "token_count") {
+      continue;
+    }
+    const info = asRecord(payload.info);
+    const deltaRaw = info === null ? null : asRecord(info.last_token_usage);
+    const cumulativeRaw = info === null ? null : asRecord(info.total_token_usage);
+    if (deltaRaw === null && cumulativeRaw === null) {
+      countDiagnostic(diagnostics, "missing_usage");
+      continue;
+    }
+    const observation = {
+      turnId: currentTurnId,
+      observedModel: currentModel,
+      observedAt: null,
+      observedMs: null,
+      delta: null,
+      cumulative: null,
+      usageInvalid: false,
+      serviceTier: currentServiceTier
+    };
+    const timestamp2 = timestampOrNull(entry2.timestamp);
+    if (timestamp2 !== null) {
+      observation.observedAt = timestamp2.iso;
+      observation.observedMs = timestamp2.ms;
+    }
+    if (deltaRaw !== null) {
+      observation.delta = projectUsage(deltaRaw, observation);
+    }
+    if (cumulativeRaw !== null) {
+      observation.cumulative = projectUsage(cumulativeRaw, observation);
+    }
+    if (observation.usageInvalid) {
+      countDiagnostic(diagnostics, "invalid_usage_value");
+    }
+    session.observations.push(observation);
+  }
+  return session;
+}
+
+// ../costs/src/sources/codex/adapter.ts
+function normalizeCodexBuckets(usage, diagnostics) {
+  const input = usage.input_tokens;
+  if (input === null || input === void 0) return usage;
+  const cached = usage.cache_read_tokens ?? 0;
+  const cacheWrite = usage.cache_write_tokens ?? 0;
+  const sub = cached + cacheWrite;
+  if (sub <= 0) return usage;
+  const normalized = input - sub;
+  if (normalized < 0) {
+    countDiagnostic(diagnostics, "codex_cache_exceeds_input");
+    return { ...usage, input_tokens: 0 };
+  }
+  return { ...usage, input_tokens: normalized };
+}
+var CODEX_STANDARD_SERVICE_TIER = "default";
+function extractCodexUsage(options) {
+  const boundary = resolveTaskBoundary(options.boundary);
+  const diagnostics = {};
+  const byIdentity = /* @__PURE__ */ new Map();
+  for (const content of options.files) {
+    const session = parseCodexRollout(content, diagnostics, options.parseOptions);
+    if (session.sessionId === null) {
+      countDiagnostic(diagnostics, "missing_session_id");
+      continue;
+    }
+    const sessionId = session.sessionId;
+    if (!boundary.sessionIds.has(sessionId)) {
+      countDiagnostic(diagnostics, "session_not_in_boundary");
+      continue;
+    }
+    const tracker = new CumulativeUsageTracker();
+    const turnOrdinals = /* @__PURE__ */ new Map();
+    let orphanCount = 0;
+    for (const observation of session.observations) {
+      let usage = observation.delta;
+      if (observation.cumulative !== null) {
+        const derived = tracker.next(observation.cumulative);
+        if (derived.reset) {
+          countDiagnostic(diagnostics, "cumulative_counter_reset");
+          if (usage === null) usage = derived.usage;
+        } else if (usage === null) {
+          usage = derived.usage;
+        }
+      }
+      if (usage === null) continue;
+      usage = normalizeCodexBuckets(usage, diagnostics);
+      let eventId2;
+      let turnId;
+      if (observation.turnId !== null) {
+        const ordinal = turnOrdinals.get(observation.turnId) ?? 0;
+        turnOrdinals.set(observation.turnId, ordinal + 1);
+        turnId = observation.turnId;
+        eventId2 = ordinal === 0 ? observation.turnId : `${observation.turnId}.${ordinal + 1}`;
+      } else {
+        orphanCount += 1;
+        turnId = `${sessionId}.tc${orphanCount}`;
+        eventId2 = turnId;
+      }
+      if (observation.observedMs === null || observation.observedAt === null) {
+        countDiagnostic(diagnostics, "missing_timestamp");
+        continue;
+      }
+      if (!inBoundaryWindow(boundary, observation.observedMs)) {
+        countDiagnostic(diagnostics, "outside_time_window");
+        continue;
+      }
+      if (byIdentity.has(eventId2)) {
+        countDiagnostic(diagnostics, "duplicate_row");
+      }
+      const unpriced = observation.serviceTier !== null && observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
+      if (unpriced) countDiagnostic(diagnostics, "unpriced_service_tier");
+      byIdentity.set(eventId2, {
+        eventId: eventId2,
+        sessionId,
+        turnId,
+        observedAt: observation.observedAt,
+        observedMs: observation.observedMs,
+        observedModel: observation.observedModel,
+        usage,
+        actualCostUsd: null,
+        harnessVersion: session.harnessVersion,
+        usageInvalid: observation.usageInvalid,
+        ...unpriced ? { unpriced: true } : {}
+      });
+    }
+  }
+  const { inputs, sourceVersions } = assembleInputs(
+    boundary.taskId,
+    "codex",
+    CODEX_PROVIDER_CONTRACT_VERSION,
+    [...byIdentity.values()]
+  );
+  return { inputs, diagnostics, sourceVersions };
+}
+
+// ../costs/src/sources/codex/index.ts
+init_types();
+
+// ../costs/src/measure/session-files.ts
+function validateSessionFilesOptions(options) {
+  if (typeof options !== "object" || options === null) {
+    throw new TaskCostMeasureError("sessionFiles must be an object");
+  }
+  if (options.harness !== "claude-code" && options.harness !== "codex") {
+    throw new TaskCostMeasureError(
+      "sessionFiles.harness must be 'claude-code' or 'codex'"
+    );
+  }
+  if (!Array.isArray(options.sessionIds) && typeof options.sessionIds !== "function") {
+    throw new TaskCostMeasureError(
+      "sessionFiles.sessionIds must be an array of session ids or a function returning one"
+    );
+  }
+  for (const [name, list] of [
+    ["paths", options.paths],
+    ["roots", options.roots]
+  ]) {
+    if (list === void 0) continue;
+    if (!Array.isArray(list) || list.some((entry2) => typeof entry2 !== "string")) {
+      throw new TaskCostMeasureError(
+        `sessionFiles.${name} must be an array of strings`
+      );
+    }
+  }
+  if (options.paths === void 0 && options.roots === void 0) {
+    throw new TaskCostMeasureError(
+      "sessionFiles requires paths and/or roots \u2014 nothing is ever discovered implicitly"
+    );
+  }
+}
+function resolveSessionIds(options) {
+  const resolved = typeof options.sessionIds === "function" ? options.sessionIds() : options.sessionIds;
+  const candidates = resolved;
+  if (!Array.isArray(candidates) || candidates.length === 0 || candidates.some((id2) => typeof id2 !== "string" || id2.length === 0)) {
+    throw new TaskCostMeasureError(
+      "sessionFiles.sessionIds must resolve to a non-empty array of session ids (the explicit task boundary is required)"
+    );
+  }
+  return resolved;
+}
+async function collectSessionFiles(taskId, options, defaultWindow) {
+  const sessionIds = resolveSessionIds(options);
+  const window = options.window ?? defaultWindow;
+  const boundary = {
+    boundaryVersion: 1,
+    taskId,
+    sessionIds,
+    startedAt: window.startedAt,
+    endedAt: window.endedAt
+  };
+  const nodeFs2 = await Promise.resolve().then(() => (init_node_fs(), node_fs_exports));
+  const diagnostics = {};
+  const files = [];
+  if (options.paths !== void 0 && options.paths.length > 0) {
+    const read = nodeFs2.readSessionFilePaths({
+      paths: options.paths,
+      ...options.maxFileBytes !== void 0 ? { maxFileBytes: options.maxFileBytes } : {}
+    });
+    files.push(...read.contents);
+    mergeDiagnostics2(diagnostics, read.diagnostics);
+  }
+  if (options.roots !== void 0 && options.roots.length > 0) {
+    const read = nodeFs2.readSessionFiles({
+      roots: options.roots,
+      sessionIds,
+      ...options.maxFileBytes !== void 0 ? { maxFileBytes: options.maxFileBytes } : {}
+    });
+    files.push(...read.files.map((file) => file.content));
+    mergeDiagnostics2(diagnostics, read.diagnostics);
+  }
+  const extract = options.harness === "claude-code" ? extractClaudeCodeUsage : extractCodexUsage;
+  const result = extract({
+    boundary,
+    files
+  });
+  mergeDiagnostics2(diagnostics, result.diagnostics);
+  return { inputs: result.inputs, diagnostics, fileCount: files.length };
+}
+function mergeDiagnostics2(into, from) {
+  for (const [code, count] of Object.entries(from)) {
+    if (count !== void 0 && count > 0)
+      into[code] = (into[code] ?? 0) + count;
+  }
+}
+
+// ../costs/src/ledger/from-events.ts
+function backendOf(event17) {
+  if (event17.price_table !== void 0) return event17.price_table;
+  const slash = event17.observed_model.indexOf("/");
+  return slash > 0 ? event17.observed_model.slice(0, slash) : "unknown";
+}
+function toMicros(usd) {
+  return Math.round(usd * 1e6);
+}
+function toLedgerEntries(events17) {
+  return events17.map((event17) => {
+    const resolved = event17.actual_cost_usd ?? event17.estimated_cost_usd;
+    const pricingBasis = event17.actual_cost_usd !== null ? "metered" : event17.estimated_cost_usd !== null ? "token_equivalent" : "unpriced";
+    const counters = [
+      event17.usage.input_tokens,
+      event17.usage.output_tokens,
+      event17.usage.cache_read_tokens,
+      event17.usage.cache_write_tokens
+    ];
+    return {
+      eventKey: event17.event_id,
+      input: {
+        taskId: event17.task_id,
+        model: event17.observed_model,
+        harness: event17.harness,
+        backend: backendOf(event17),
+        source: event17.cost_source,
+        pricingBasis,
+        amountMicros: resolved === null ? null : toMicros(resolved),
+        ts: Date.parse(event17.observed_at),
+        inputTokens: event17.usage.input_tokens ?? 0,
+        outputTokens: event17.usage.output_tokens ?? 0,
+        cacheReadTokens: event17.usage.cache_read_tokens ?? 0,
+        cacheWriteTokens: event17.usage.cache_write_tokens ?? 0,
+        coverage: counters.every((counter) => counter !== null) ? "complete" : "partial"
+      }
+    };
+  });
+}
+
+// ../costs/src/measure/tracker.ts
+init_types();
+
+// ../costs/src/measure/usage.ts
+var USAGE_FIELD_MAP = [
+  ["inputTokens", "input_tokens"],
+  ["outputTokens", "output_tokens"],
+  ["cacheReadTokens", "cache_read_tokens"],
+  ["cacheWriteTokens", "cache_write_tokens"],
+  ["reasoningTokens", "reasoning_tokens"]
+];
+function emptyUsage() {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null
+  };
+}
+function toContractUsage(usage) {
+  const projected = {};
+  if (typeof usage !== "object" || usage === null) return projected;
+  for (const [camel, snake] of USAGE_FIELD_MAP) {
+    if (Object.prototype.hasOwnProperty.call(usage, camel)) {
+      const value = usage[camel];
+      projected[snake] = value === void 0 ? null : value;
+    }
+  }
+  return projected;
+}
+function toCamelUsage(usage) {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheReadTokens: usage.cache_read_tokens,
+    cacheWriteTokens: usage.cache_write_tokens,
+    reasoningTokens: usage.reasoning_tokens
+  };
+}
+function asRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+}
+var USAGE_RECORD_ALLOWED_KEYS = [
+  "model",
+  "usage",
+  "harness",
+  "providerCostUsd",
+  "costBasis",
+  "eventId",
+  "sessionId",
+  "turnId",
+  "occurredAt",
+  "usageKind",
+  "isSubagent",
+  "replayOfEventId",
+  "aggregate"
+];
+var FRIENDLY_ALLOWED_KEYS = [
+  "eventId",
+  "taskId",
+  "sessionId",
+  "turnId",
+  "sequence",
+  "harness",
+  "harnessVersion",
+  "providerContractVersion",
+  "observedModel",
+  "usage",
+  "usageKind",
+  "actualCostUsd",
+  "observedAt",
+  "costBasis",
+  "replayOfEventId",
+  "parentEventId",
+  "isSubagent",
+  "diagnostics",
+  "estimatedCostUsd",
+  "pricingSource",
+  "priceTable",
+  "aggregate"
+];
+var PREBUILT_ALLOWED_KEYS = [
+  "schema_version",
+  "event_id",
+  "task_id",
+  "session_id",
+  "turn_id",
+  "sequence",
+  "parent_event_id",
+  "is_subagent",
+  "replay_of_event_id",
+  "harness",
+  "harness_version",
+  "provider_contract_version",
+  "observed_model",
+  "usage_kind",
+  "usage",
+  "usage_coverage",
+  "actual_cost_usd",
+  "estimated_cost_usd",
+  "cost_source",
+  "cost_basis",
+  "pricing_source",
+  "pricing_revision",
+  "price_table",
+  "observed_at",
+  "diagnostics"
+];
+function projectAllowed(source, allowed) {
+  const projected = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      projected[key] = source[key];
+    }
+  }
+  return projected;
+}
+function projectUsageRecord(record) {
+  const projected = projectAllowed(
+    record,
+    USAGE_RECORD_ALLOWED_KEYS
+  );
+  if (projected.usage !== void 0) {
+    const usage = asRecord2(projected.usage);
+    const clean = {};
+    for (const [camel] of USAGE_FIELD_MAP) {
+      if (Object.prototype.hasOwnProperty.call(usage, camel)) {
+        clean[camel] = usage[camel];
+      }
+    }
+    projected.usage = clean;
+  }
+  return projected;
+}
+function projectIngestInput(record) {
+  return projectAllowed(record, FRIENDLY_ALLOWED_KEYS);
+}
+function projectPrebuiltEvent(record) {
+  return projectAllowed(record, PREBUILT_ALLOWED_KEYS);
+}
+
+// ../costs/src/measure/report.ts
+function roundNanoUsd(value) {
+  return Math.round(value * 1e9) / 1e9;
+}
+function sumLowerUsd(values) {
+  let sum = null;
+  for (const value of values) {
+    if (value === null) continue;
+    sum = roundNanoUsd((sum ?? 0) + value);
+  }
+  return sum;
+}
+function sumStrictUsd(values) {
+  if (values.length === 0 || values.some((value) => value === null))
+    return null;
+  return roundNanoUsd(
+    values.reduce((sum, value) => sum + value, 0)
+  );
+}
+function addNullableCount(a, b) {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a + b;
+}
+function addUsage(a, b) {
+  return {
+    inputTokens: addNullableCount(a.inputTokens, b.inputTokens),
+    outputTokens: addNullableCount(a.outputTokens, b.outputTokens),
+    cacheReadTokens: addNullableCount(a.cacheReadTokens, b.cacheReadTokens),
+    cacheWriteTokens: addNullableCount(a.cacheWriteTokens, b.cacheWriteTokens),
+    reasoningTokens: addNullableCount(a.reasoningTokens, b.reasoningTokens)
+  };
+}
+function promoteCostSource2(sources) {
+  const hasProvider = sources.some(
+    (s) => s === "provider_reported" || s === "mixed"
+  );
+  const hasEstimate = sources.some(
+    (s) => s === "local_estimate" || s === "mixed"
+  );
+  if (hasProvider && hasEstimate) return "mixed";
+  if (hasProvider) return "provider_reported";
+  if (hasEstimate) return "local_estimate";
+  return "none";
+}
+function promoteCoverage2(coverages) {
+  if (coverages.length === 0) return "unavailable";
+  if (coverages.every((c) => c === "unavailable")) return "unavailable";
+  if (coverages.every((c) => c === "known_zero")) return "known_zero";
+  if (coverages.every((c) => c === "complete" || c === "known_zero"))
+    return "complete";
+  return "partial";
+}
+function promoteBasis2(bases) {
+  const [first, ...rest] = bases;
+  return first !== void 0 && rest.every((basis2) => basis2 === first) ? first : "unknown";
+}
+function promotePricingSource2(sources) {
+  const [first, ...rest] = [...new Set(sources.filter((s) => s !== "none"))];
+  if (first === void 0) return "none";
+  return rest.length === 0 ? first : "mixed";
+}
+function mergeBreakdown(a, b) {
+  return {
+    totalUsd: sumStrictUsd([a.totalUsd, b.totalUsd]),
+    actualUsd: sumLowerUsd([a.actualUsd, b.actualUsd]),
+    estimatedUsd: sumLowerUsd([a.estimatedUsd, b.estimatedUsd]),
+    usage: addUsage(a.usage, b.usage),
+    eventCount: a.eventCount + b.eventCount,
+    turnCount: a.turnCount + b.turnCount,
+    costSource: promoteCostSource2([a.costSource, b.costSource]),
+    coverage: promoteCoverage2([a.coverage, b.coverage])
+  };
+}
+function breakdownFromModelTotal(total) {
+  return {
+    totalUsd: total.total_cost_usd,
+    actualUsd: total.actual_cost_usd,
+    estimatedUsd: total.estimated_cost_usd,
+    usage: toCamelUsage(total.usage),
+    eventCount: total.event_count,
+    turnCount: total.turn_count,
+    costSource: total.cost_source,
+    coverage: total.coverage
+  };
+}
+function breakdownFromSummary(summary) {
+  return {
+    totalUsd: summary.total_cost_usd,
+    actualUsd: summary.actual_cost_usd,
+    estimatedUsd: summary.estimated_cost_usd,
+    usage: toCamelUsage(summary.usage),
+    eventCount: summary.event_count,
+    turnCount: summary.turn_count,
+    costSource: summary.cost_source,
+    coverage: summary.coverage
+  };
+}
+var SOURCE_CODE_RENAMES = {
+  unreadable_file: "session_file_unreadable",
+  malformed_line: "malformed_record",
+  invalid_record: "malformed_record"
+};
+var DIAGNOSTIC_LEVELS = {
+  provider_reported_cost: "info",
+  replay_dropped: "info",
+  subscription_basis_no_charge: "info",
+  duplicate_event: "info",
+  duplicate_row: "info",
+  outside_time_window: "info",
+  session_not_in_boundary: "info",
+  foreign_task: "info",
+  collection_failed: "error",
+  aggregation_failed: "error",
+  ledger_flush_failed: "error"
+};
+var DIAGNOSTIC_MESSAGES = {
+  // Contract (summary) codes, passed through.
+  missing_token_usage: "an event lacks input/output token counts",
+  invalid_token_usage: "source usage was unparseable, negative, or non-finite",
+  unpriced_model: "usage was complete enough to price but no price was available",
+  mixed_coverage: "coverage is partial: some events are missing cost or usage",
+  provider_reported_cost: "at least one event carries a provider-reported charge",
+  no_pricing_data: "no price was available for the reported usage shape",
+  no_priced_sessions: "events exist but none produced a cost",
+  stale_pricing_revision: "events were priced against more than one pricing revision",
+  replay_dropped: "an event repeating a prior event_id was ignored",
+  cumulative_backward_jump: "a cumulative snapshot regressed and its delta was clamped",
+  subscription_basis_no_charge: "subscription-basis usage carries no actual charge",
+  // Source (count-only) codes, passed through.
+  oversized_line: "a session-file line exceeded the parser length bound",
+  truncated_input: "a session file had more lines than the parser bound",
+  missing_session_id: "a usage row carried no resolvable session id",
+  session_not_in_boundary: "rows from sessions outside the task boundary were dropped",
+  foreign_task: "records naming a different task were dropped",
+  missing_timestamp: "a usage row carried no parseable timestamp",
+  outside_time_window: "rows outside the task time window were dropped",
+  missing_usage: "a row that should carry usage carried none",
+  invalid_usage_value: "a present usage or cost field was malformed and treated as missing",
+  duplicate_row: "a source row repeated an already-seen identity",
+  cumulative_counter_reset: "a cumulative counter regressed; the baseline was reset",
+  codex_cache_exceeds_input: "reported cache tokens exceeded input tokens; uncached input was clamped to zero",
+  unpriced_service_tier: "a response ran on a non-Standard service tier, which the built-in table does not price; it was left unpriced",
+  // Mapped / tracker-level codes.
+  malformed_line: "a session-file line was malformed and skipped",
+  invalid_record: "a record was not a usable record shape",
+  unreadable_file: "a file or directory could not be read",
+  oversized_file: "a session file exceeded the size bound and was skipped",
+  invalid_usage: "a usage record was rejected; totals are unchanged",
+  no_usage_captured: "automatic capture requires supported usage events or session files; call tracker.recordUsage() otherwise",
+  session_file_unreadable: "a session file could not be read or exceeded the size bound",
+  malformed_record: "a session-file line or record was malformed and skipped",
+  duplicate_event: "an event id was recorded more than once; later copies were ignored",
+  collection_failed: "a usage source failed while collecting events",
+  aggregation_failed: "an engine could not summarize its events",
+  ledger_flush_failed: "persisting to the opt-in ledger failed"
+};
+var DIAGNOSTIC_ORDER = [
+  ...TASK_COST_DIAGNOSTIC_CODES,
+  "oversized_line",
+  "truncated_input",
+  "missing_session_id",
+  "session_not_in_boundary",
+  "foreign_task",
+  "missing_timestamp",
+  "outside_time_window",
+  "missing_usage",
+  "invalid_usage_value",
+  "duplicate_row",
+  "cumulative_counter_reset",
+  "codex_cache_exceeds_input",
+  "unpriced_service_tier",
+  "oversized_file",
+  "invalid_usage",
+  "duplicate_event",
+  "session_file_unreadable",
+  "malformed_record",
+  "no_usage_captured",
+  "collection_failed",
+  "aggregation_failed",
+  "ledger_flush_failed"
+];
+function buildTaskCostReport(input) {
+  const summaries = input.engines.map((engine) => engine.summary);
+  const contributing = [];
+  for (const engine of input.engines) {
+    const ids = new Set(engine.summary.event_ids);
+    for (const event17 of engine.events) {
+      if (ids.has(event17.event_id)) contributing.push(event17);
+    }
+  }
+  const byModel = {};
+  for (const engine of input.engines) {
+    for (const total of engine.modelTotals) {
+      const next = breakdownFromModelTotal(total);
+      const existing = byModel[total.model];
+      byModel[total.model] = existing === void 0 ? next : mergeBreakdown(existing, next);
+    }
+  }
+  const byHarness = {};
+  for (const summary of summaries) {
+    const next = breakdownFromSummary(summary);
+    const existing = byHarness[summary.harness];
+    byHarness[summary.harness] = existing === void 0 ? next : mergeBreakdown(existing, next);
+  }
+  const usage = summaries.map((summary) => toCamelUsage(summary.usage)).reduce(addUsage, emptyUsage());
+  const revisions = [
+    ...new Set(
+      contributing.flatMap(
+        (event17) => event17.pricing_revision !== void 0 ? [event17.pricing_revision] : []
+      )
+    )
+  ].sort();
+  const usedTables = new Set(
+    contributing.flatMap(
+      (event17) => event17.price_table !== void 0 ? [event17.price_table] : []
+    )
+  );
+  const priceTables = TASK_COST_PRICE_TABLES.filter(
+    (table) => usedTables.has(table)
+  );
+  const pricedEvents = contributing.filter(
+    (event17) => event17.cost_source !== "none"
+  ).length;
+  const unpricedWithUsage = contributing.filter(
+    (event17) => event17.cost_source === "none" && event17.usage_coverage !== "unavailable"
+  );
+  const unknownModels = [
+    ...new Set(unpricedWithUsage.map((event17) => event17.observed_model))
+  ];
+  const counts = /* @__PURE__ */ new Map();
+  const bump = (code, by) => {
+    if (by > 0) counts.set(code, (counts.get(code) ?? 0) + by);
+  };
+  for (const summary of summaries) {
+    for (const code of summary.diagnostics) {
+      if (code === "unpriced_model") continue;
+      bump(code, 1);
+    }
+  }
+  const summariesFlagUnpriced = summaries.some(
+    (summary) => summary.diagnostics.includes("unpriced_model")
+  );
+  bump(
+    "unpriced_model",
+    unpricedWithUsage.length > 0 ? unpricedWithUsage.length : summariesFlagUnpriced ? 1 : 0
+  );
+  for (const [code, count] of Object.entries(input.trackerDiagnostics)) {
+    bump(code, count ?? 0);
+  }
+  for (const [rawCode, count] of Object.entries(input.sourceDiagnostics)) {
+    bump(SOURCE_CODE_RENAMES[rawCode] ?? rawCode, count ?? 0);
+  }
+  const eventCount = summaries.reduce(
+    (sum, summary) => sum + summary.event_count,
+    0
+  );
+  if (eventCount === 0) bump("no_usage_captured", 1);
+  const diagnostics = DIAGNOSTIC_ORDER.flatMap(
+    (code) => {
+      const count = counts.get(code);
+      if (count === void 0) return [];
+      return [
+        {
+          code,
+          level: DIAGNOSTIC_LEVELS[code] ?? "warn",
+          message: DIAGNOSTIC_MESSAGES[code],
+          count
+        }
+      ];
+    }
+  );
+  const revision = revisions.at(-1) ?? null;
+  return {
+    taskId: input.taskId,
+    totalUsd: sumStrictUsd(summaries.map((summary) => summary.total_cost_usd)),
+    actualUsd: sumLowerUsd(summaries.map((summary) => summary.actual_cost_usd)),
+    estimatedUsd: sumLowerUsd(
+      summaries.map((summary) => summary.estimated_cost_usd)
+    ),
+    byModel,
+    byHarness,
+    usage,
+    eventCount,
+    turnCount: summaries.reduce((sum, summary) => sum + summary.turn_count, 0),
+    source: {
+      cost: promoteCostSource2(summaries.map((summary) => summary.cost_source)),
+      basis: promoteBasis2(summaries.map((summary) => summary.cost_basis)),
+      capture: [...input.capture],
+      sessionFileCount: input.sessionFileCount
+    },
+    pricing: {
+      source: promotePricingSource2(
+        summaries.map((summary) => summary.pricing_source)
+      ),
+      revision,
+      effectiveDate: revision ?? MODEL_PRICING_AS_OF,
+      revisions,
+      priceTables,
+      builtInTableAsOf: MODEL_PRICING_AS_OF,
+      overrideCount: input.overrideCount,
+      currency: "USD"
+    },
+    coverage: {
+      status: promoteCoverage2(summaries.map((summary) => summary.coverage)),
+      pricedEvents,
+      unpricedEvents: contributing.length - pricedEvents,
+      unknownModels
+    },
+    diagnostics,
+    summaries
+  };
+}
+
+// ../costs/src/measure/types.ts
+var TASK_COST_CAPTURE_KINDS = [
+  "events",
+  "session-files",
+  "manual"
+];
+
+// ../costs/src/measure/tracker.ts
+var ID_PATTERN3 = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+var PROVIDER_CONTRACT_PATTERN2 = /^[a-z][a-z0-9-]{0,31}\/[0-9]{1,4}$/;
+var generatedTaskCount = 0;
+function notAnObject(value) {
+  return typeof value !== "object" || value === null || Array.isArray(value);
+}
+function defaultProviderContract(harness) {
+  return PROVIDER_CONTRACT_VERSIONS[harness] ?? `${harness}/1`;
+}
+function createTrackerWithInternals(options = {}) {
+  if (notAnObject(options)) {
+    throw new TaskCostMeasureError("tracker options must be an object");
+  }
+  const taskId = options.taskId ?? `task-${++generatedTaskCount}`;
+  if (typeof taskId !== "string" || !ID_PATTERN3.test(taskId)) {
+    throw new TaskCostMeasureError(
+      `taskId must match the contract id pattern ${ID_PATTERN3}`
+    );
+  }
+  const defaultHarness = options.harness ?? "unknown";
+  if (!TASK_COST_HARNESSES.includes(defaultHarness)) {
+    throw new TaskCostMeasureError(
+      `harness must be one of: ${TASK_COST_HARNESSES.join(", ")}`
+    );
+  }
+  const defaultContract = options.providerContractVersion ?? defaultProviderContract(defaultHarness);
+  if (typeof defaultContract !== "string" || !PROVIDER_CONTRACT_PATTERN2.test(defaultContract)) {
+    throw new TaskCostMeasureError(
+      `providerContractVersion must match ${PROVIDER_CONTRACT_PATTERN2}`
+    );
+  }
+  const defaultBasis = options.costBasis ?? "per_token_api";
+  if (!TASK_COST_BASES.includes(defaultBasis)) {
+    throw new TaskCostMeasureError(
+      `costBasis must be one of: ${TASK_COST_BASES.join(", ")}`
+    );
+  }
+  if (options.now !== void 0 && typeof options.now !== "function") {
+    throw new TaskCostMeasureError("now must be a function returning a Date");
+  }
+  const now = options.now ?? (() => /* @__PURE__ */ new Date());
+  const overrides = options.priceOverrides ?? [];
+  try {
+    buildOverrideIndex(overrides);
+  } catch (error) {
+    throw new TaskCostMeasureError(
+      error instanceof Error ? error.message : "invalid price overrides"
+    );
+  }
+  let engines = /* @__PURE__ */ new Map();
+  let acceptedEvents = [];
+  let seenEventIds = /* @__PURE__ */ new Set();
+  let sequences = /* @__PURE__ */ new Map();
+  let trackerDiagnostics = /* @__PURE__ */ new Map();
+  let sourceDiagnostics = {};
+  let captureKinds = /* @__PURE__ */ new Set();
+  let sessionFileCount = 0;
+  let eventCounter = 0;
+  let persistedCount = 0;
+  function bumpDiagnostic(code, by = 1) {
+    trackerDiagnostics.set(code, (trackerDiagnostics.get(code) ?? 0) + by);
+  }
+  function engineFor(harness, providerContract) {
+    const key = `${harness}\0${providerContract}`;
+    const existing = engines.get(key);
+    if (existing !== void 0) return existing.engine;
+    const engine = createTaskCostEngine({
+      taskId,
+      priceOverrides: overrides,
+      ...options.pricingRevision !== void 0 ? { pricingRevision: options.pricingRevision } : {}
+    });
+    engines.set(key, { engine, harness });
+    return engine;
+  }
+  function nextSequence(harness, providerContract, sessionId) {
+    const key = `${harness}\0${providerContract}\0${sessionId}`;
+    const next = (sequences.get(key) ?? 0) + 1;
+    sequences.set(key, next);
+    return next;
+  }
+  function ingestInto(kind, harness, providerContract, input, eventId2) {
+    if (seenEventIds.has(eventId2)) {
+      bumpDiagnostic("duplicate_event");
+      return { status: "duplicate", eventId: eventId2 };
+    }
+    const result = engineFor(harness, providerContract).ingest(input);
+    if (result.status === "accepted") {
+      acceptedEvents.push(result.event);
+      seenEventIds.add(result.event.event_id);
+      captureKinds.add(kind);
+      return { status: "accepted", eventId: result.event.event_id };
+    }
+    if (result.status === "duplicate") {
+      bumpDiagnostic("duplicate_event");
+      return { status: "duplicate", eventId: result.eventId };
+    }
+    bumpDiagnostic("invalid_usage");
+    return { status: "rejected", reason: result.reason };
+  }
+  function recordUsageVia(kind, record) {
+    if (notAnObject(record)) {
+      throw new TaskCostMeasureError(
+        "recordUsage requires a usage record object"
+      );
+    }
+    const projected = projectUsageRecord(
+      record
+    );
+    const harness = projected.harness ?? defaultHarness;
+    if (!TASK_COST_HARNESSES.includes(harness)) {
+      throw new TaskCostMeasureError(
+        `harness must be one of: ${TASK_COST_HARNESSES.join(", ")}`
+      );
+    }
+    const providerContract = projected.harness !== void 0 && projected.harness !== defaultHarness ? defaultProviderContract(harness) : defaultContract;
+    let eventId2 = projected.eventId;
+    if (eventId2 === void 0) {
+      do {
+        eventCounter += 1;
+        eventId2 = `${taskId}.e${eventCounter}`;
+      } while (seenEventIds.has(eventId2));
+    } else if (typeof eventId2 !== "string" || eventId2.length === 0) {
+      bumpDiagnostic("invalid_usage");
+      return {
+        status: "rejected",
+        reason: "eventId must be a non-empty string"
+      };
+    }
+    const sessionId = projected.sessionId ?? taskId;
+    const occurredAt = projected.occurredAt instanceof Date ? projected.occurredAt.toISOString() : projected.occurredAt ?? now().toISOString();
+    const input = {
+      eventId: eventId2,
+      taskId,
+      sessionId: typeof sessionId === "string" ? sessionId : "",
+      turnId: projected.turnId ?? eventId2,
+      sequence: nextSequence(harness, providerContract, String(sessionId)),
+      harness,
+      providerContractVersion: providerContract,
+      observedModel: projected.model,
+      usage: toContractUsage(projected.usage),
+      ...projected.usageKind !== void 0 ? { usageKind: projected.usageKind } : {},
+      ...projected.providerCostUsd !== void 0 ? { actualCostUsd: projected.providerCostUsd } : {},
+      observedAt: typeof occurredAt === "string" ? occurredAt : "",
+      costBasis: projected.costBasis ?? defaultBasis,
+      ...projected.replayOfEventId !== void 0 ? { replayOfEventId: projected.replayOfEventId } : {},
+      ...projected.isSubagent !== void 0 ? { isSubagent: projected.isSubagent } : {},
+      ...projected.aggregate === true ? { aggregate: true } : {}
+    };
+    return ingestInto(kind, harness, providerContract, input, eventId2);
+  }
+  function recordVia(kind, input) {
+    if (notAnObject(input)) {
+      throw new TaskCostMeasureError(
+        "record requires an IngestUsageInput or TaskCostEventV1 object"
+      );
+    }
+    const raw = input;
+    const prebuilt = raw.schema_version === TASK_COST_EVENT_SCHEMA_VERSION;
+    const projected = prebuilt ? projectPrebuiltEvent(raw) : projectIngestInput(raw);
+    const harness = prebuilt ? projected.harness : projected.harness;
+    if (!TASK_COST_HARNESSES.includes(harness)) {
+      bumpDiagnostic("invalid_usage");
+      return {
+        status: "rejected",
+        reason: `harness must be one of: ${TASK_COST_HARNESSES.join(", ")}`
+      };
+    }
+    const providerContract = prebuilt ? projected.provider_contract_version : projected.providerContractVersion;
+    if (typeof providerContract !== "string" || providerContract.length === 0) {
+      bumpDiagnostic("invalid_usage");
+      return {
+        status: "rejected",
+        reason: "providerContractVersion is required"
+      };
+    }
+    const eventId2 = prebuilt ? projected.event_id : projected.eventId;
+    if (typeof eventId2 !== "string" || eventId2.length === 0) {
+      bumpDiagnostic("invalid_usage");
+      return {
+        status: "rejected",
+        reason: "eventId must be a non-empty string"
+      };
+    }
+    return ingestInto(kind, harness, providerContract, projected, eventId2);
+  }
+  function summary() {
+    const snapshots = [];
+    let aggregationFailures = 0;
+    for (const { engine } of engines.values()) {
+      const events17 = engine.events();
+      if (events17.length === 0) continue;
+      try {
+        snapshots.push({
+          summary: engine.snapshot(),
+          modelTotals: aggregateTaskCostByModel(events17, { taskId }),
+          events: events17
+        });
+      } catch (error) {
+        if (!(error instanceof TaskCostValidationError)) throw error;
+        aggregationFailures += 1;
+      }
+    }
+    const diagnostics = {};
+    for (const [code, count] of trackerDiagnostics) diagnostics[code] = count;
+    if (aggregationFailures > 0) {
+      diagnostics.aggregation_failed = (diagnostics.aggregation_failed ?? 0) + aggregationFailures;
+    }
+    return buildTaskCostReport({
+      taskId,
+      engines: snapshots,
+      trackerDiagnostics: diagnostics,
+      sourceDiagnostics: { ...sourceDiagnostics },
+      capture: TASK_COST_CAPTURE_KINDS.filter((kind) => captureKinds.has(kind)),
+      sessionFileCount,
+      overrideCount: overrides.length
+    });
+  }
+  async function flush() {
+    const ledger = options.ledger;
+    if (ledger === void 0) return { appended: 0, duplicates: 0 };
+    const pending = acceptedEvents.slice(persistedCount);
+    if (pending.length === 0) return { appended: 0, duplicates: 0 };
+    const results = await ledger.appendMany(toLedgerEntries(pending));
+    persistedCount += pending.length;
+    let appended = 0;
+    for (const result of results) {
+      if (result.status === "appended") appended += 1;
+    }
+    return { appended, duplicates: results.length - appended };
+  }
+  function reset() {
+    engines = /* @__PURE__ */ new Map();
+    acceptedEvents = [];
+    seenEventIds = /* @__PURE__ */ new Set();
+    sequences = /* @__PURE__ */ new Map();
+    trackerDiagnostics = /* @__PURE__ */ new Map();
+    sourceDiagnostics = {};
+    captureKinds = /* @__PURE__ */ new Set();
+    sessionFileCount = 0;
+    eventCounter = 0;
+    persistedCount = 0;
+  }
+  const tracker = {
+    taskId,
+    recordUsage: (record) => recordUsageVia("manual", record),
+    record: (input) => recordVia("manual", input),
+    summary,
+    events: () => Object.freeze([...acceptedEvents]),
+    flush,
+    reset
+  };
+  const internals = {
+    recordUsageVia,
+    recordVia,
+    addSourceDiagnostics(diagnostics) {
+      for (const [code, count] of Object.entries(diagnostics)) {
+        if (count !== void 0 && count > 0) {
+          countDiagnostic(sourceDiagnostics, code, count);
+        }
+      }
+    },
+    addSessionFiles(count) {
+      sessionFileCount += count;
+    },
+    bumpDiagnostic
+  };
+  return { tracker, internals };
+}
+
+// ../costs/src/measure/measure-task.ts
+function isPlainObject6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function subscriptionFor(source) {
+  const candidate = source;
+  for (const [add, remove] of [
+    ["on", "off"],
+    ["addListener", "removeListener"],
+    ["addEventListener", "removeEventListener"]
+  ]) {
+    if (typeof candidate[add] === "function" && typeof candidate[remove] === "function") {
+      return {
+        add: (eventName, listener) => candidate[add](
+          eventName,
+          listener
+        ),
+        remove: (eventName, listener) => candidate[remove](
+          eventName,
+          listener
+        )
+      };
+    }
+  }
+  return null;
+}
+function isIterableSource(source) {
+  const candidate = source;
+  return typeof candidate[Symbol.iterator] === "function" || typeof candidate[Symbol.asyncIterator] === "function";
+}
+function dispatchPayload(internals, payload, mapEvent) {
+  let record = payload;
+  if (mapEvent !== void 0) {
+    try {
+      record = mapEvent(payload);
+    } catch {
+      internals.bumpDiagnostic("collection_failed");
+      return;
+    }
+  } else if (isPlainObject6(record) && !("model" in record) && !("observedModel" in record) && isPlainObject6(record.detail)) {
+    record = record.detail;
+  }
+  if (!isPlainObject6(record)) {
+    internals.bumpDiagnostic("invalid_usage");
+    return;
+  }
+  try {
+    if (record.schema_version === TASK_COST_EVENT_SCHEMA_VERSION || typeof record.observedModel === "string") {
+      internals.recordVia(
+        "events",
+        record
+      );
+    } else {
+      internals.recordUsageVia("events", record);
+    }
+  } catch (error) {
+    if (!(error instanceof TaskCostMeasureError)) throw error;
+    internals.bumpDiagnostic("invalid_usage");
+  }
+}
+async function consumeIterable(internals, source, mapEvent) {
+  for await (const payload of source) {
+    dispatchPayload(internals, payload, mapEvent);
+  }
+}
+function attachTaskCost(error, cost) {
+  if (error === null || typeof error !== "object" && typeof error !== "function") {
+    return;
+  }
+  if (!Object.isExtensible(error)) return;
+  try {
+    Object.defineProperty(error, "taskCost", {
+      value: cost,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    });
+  } catch {
+  }
+}
+async function measureTask(options, fn) {
+  if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    throw new TaskCostMeasureError("measureTask requires an options object");
+  }
+  if (typeof fn !== "function") {
+    throw new TaskCostMeasureError("measureTask requires a function to run");
+  }
+  if (options.eventName !== void 0 && typeof options.eventName !== "string") {
+    throw new TaskCostMeasureError("eventName must be a string");
+  }
+  if (options.mapEvent !== void 0 && typeof options.mapEvent !== "function") {
+    throw new TaskCostMeasureError("mapEvent must be a function");
+  }
+  if (options.sessionFiles !== void 0) {
+    validateSessionFilesOptions(options.sessionFiles);
+  }
+  let subscription = null;
+  let iterable = null;
+  if (options.events !== void 0) {
+    if (options.events === null || typeof options.events !== "object") {
+      throw new TaskCostMeasureError(
+        "events must be an emitter, an Iterable, or an AsyncIterable"
+      );
+    }
+    subscription = subscriptionFor(options.events);
+    if (subscription === null) {
+      if (!isIterableSource(options.events)) {
+        throw new TaskCostMeasureError(
+          "events must be an emitter (on/off, addListener/removeListener, add/removeEventListener) or an (async) iterable"
+        );
+      }
+      iterable = options.events;
+    }
+  }
+  const { tracker, internals } = createTrackerWithInternals(options);
+  const now = options.now ?? (() => /* @__PURE__ */ new Date());
+  const signal = options.signal;
+  if (signal !== void 0) {
+    if (typeof signal.aborted !== "boolean") {
+      throw new TaskCostMeasureError("signal must be an AbortSignal");
+    }
+    if (signal.aborted) {
+      const reason = signal.reason;
+      if (reason instanceof Error || reason instanceof DOMException)
+        throw reason;
+      throw new DOMException(
+        "measureTask was aborted before the task ran",
+        "AbortError"
+      );
+    }
+  }
+  const startedAt = now().toISOString();
+  const eventName = options.eventName ?? "usage";
+  const listener = (payload) => dispatchPayload(internals, payload, options.mapEvent);
+  let fnError;
+  let fnThrew = false;
+  let result;
+  if (subscription !== null) subscription.add(eventName, listener);
+  try {
+    result = await fn(tracker);
+  } catch (error) {
+    fnThrew = true;
+    fnError = error;
+  } finally {
+    if (subscription !== null) subscription.remove(eventName, listener);
+  }
+  const endedAt = now().toISOString();
+  if (iterable !== null) {
+    try {
+      await consumeIterable(internals, iterable, options.mapEvent);
+    } catch {
+      internals.bumpDiagnostic("collection_failed");
+    }
+  }
+  if (options.sessionFiles !== void 0) {
+    try {
+      const collected = await collectSessionFiles(
+        tracker.taskId,
+        options.sessionFiles,
+        {
+          startedAt,
+          endedAt
+        }
+      );
+      internals.addSessionFiles(collected.fileCount);
+      internals.addSourceDiagnostics(collected.diagnostics);
+      for (const input of collected.inputs) {
+        internals.recordVia("session-files", input);
+      }
+    } catch (error) {
+      if (error instanceof TaskCostMeasureError && !fnThrew) throw error;
+      internals.bumpDiagnostic("collection_failed");
+    }
+  }
+  try {
+    await tracker.flush();
+  } catch {
+    internals.bumpDiagnostic("ledger_flush_failed");
+  }
+  const cost = tracker.summary();
+  if (fnThrew) {
+    attachTaskCost(fnError, cost);
+    throw fnError;
+  }
+  return { result, cost };
+}
+
+// ../costs/src/ledger/ledger.ts
+var DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
+
+// src/stage-cost.ts
+function locateRouteTranscript(input, options = {}) {
+  const sessionId = input.routeContext?.sessionId;
+  if (!sessionId || !input.routeContext?.baselineAt) {
+    return void 0;
+  }
+  const configDir = resolveClaudeConfigDir({
+    ...input.env ? { env: input.env } : {},
+    ...options.homedir ? { homedir: options.homedir } : {}
+  });
+  const dir = input.routeContext.projectDirKey ? path3.join(configDir, "projects", input.routeContext.projectDirKey) : sessionTranscriptDir(configDir, options.cwd ?? process.cwd());
+  return locateSessionTranscript({ dir, sessionId, ...options.fs ? { fs: options.fs } : {} });
+}
+function createClaudeCodeStageMeasurer(options = {}) {
+  return async (input) => {
+    try {
+      const transcript = locateRouteTranscript(input, options);
+      const sessionId = input.routeContext?.sessionId;
+      const startedAt = input.routeContext?.baselineAt;
+      if (!transcript || !sessionId || !startedAt) {
+        return void 0;
+      }
+      const { cost } = await measureTask(
+        {
+          taskId: input.taskId,
+          harness: "claude-code",
+          sessionFiles: {
+            harness: "claude-code",
+            sessionIds: [sessionId],
+            paths: [transcript],
+            window: { startedAt, endedAt: input.endedAt }
+          }
+        },
+        () => void 0
+      );
+      return cost;
+    } catch {
+      return void 0;
+    }
+  };
+}
+var measureClaudeCodeStage = createClaudeCodeStageMeasurer();
+
 // src/report-cli.ts
 var runReportCli = createRunReportCli(claudeCodeHarnessProfile, {
-  findLatestRoutingDecision,
+  findRoutingDecision,
   previewReportOutcome,
-  reportTaskOutcome
+  reportTaskOutcome,
+  measureStage: measureClaudeCodeStage
 });
 
 // src/outcome-prompt-hook.ts
@@ -13164,6 +19172,13 @@ async function defaultReadStdin2() {
   }
   return chunks.join("");
 }
+function eventSessionId(event17) {
+  if (!event17 || typeof event17 !== "object" || Array.isArray(event17)) {
+    return void 0;
+  }
+  const sessionId = event17.session_id;
+  return typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId.trim() : void 0;
+}
 function parseEvent(rawStdin, eventText) {
   const raw = rawStdin.trim();
   if (raw.length > 0) {
@@ -13204,14 +19219,13 @@ async function runOutcomePromptHookCli(argv, env, deps = {}) {
     ...input.configPath ? { store: new FilePluginConfigStore(input.configPath) } : {}
   }));
   try {
-    const [config, latestRoute, rawStdin] = await Promise.all([
+    const [config, rawStdin] = await Promise.all([
       loadConfigImpl(configPath === void 0 ? { env } : { configPath, env }),
-      (deps.findLatestRoutingDecisionImpl ?? findLatestRoutingDecision)({
-        configDir
-      }),
       (deps.readStdin ?? defaultReadStdin2)()
     ]);
     const event17 = parseEvent(rawStdin, parsed.eventText);
+    const sessionId = eventSessionId(event17);
+    const latestRoute = sessionId ? await (deps.findRoutingDecisionImpl ?? findRoutingDecision)({ configDir, sessionId }) : void 0;
     const actualModel = env.HOKUSAI_ACTUAL_MODEL;
     const prompt = buildOutcomeContributionPrompt({
       event: event17,
@@ -13274,8 +19288,8 @@ async function readStateFile(filePath) {
     }
     return Object.fromEntries(
       Object.entries(parsed).filter(
-        (entry) => {
-          const [, value] = entry;
+        (entry2) => {
+          const [, value] = entry2;
           return typeof value === "string";
         }
       )
@@ -13288,7 +19302,7 @@ async function readStateFile(filePath) {
   }
 }
 async function writeStateFile(filePath, state2) {
-  await mkdir4(path3.dirname(filePath), { recursive: true });
+  await mkdir4(path4.dirname(filePath), { recursive: true });
   await writeFile4(filePath, JSON.stringify(state2, null, 2), "utf8");
 }
 function createClaudeCodeAdapter(options) {
@@ -13501,16 +19515,19 @@ export {
   createClaudeCodeDoctor,
   createClaudeCodeHarnessAdapter,
   createClaudeCodeModelProvider,
+  createClaudeCodeStageMeasurer,
   declineRecommendation,
   defaultPluginConfigPath,
   displayHandoff,
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   getClaudeCodeStateFilePath,
   getReportingStatus,
   listRoutingDecisions,
   listSubmissionAudit,
   loadClaudeCodePluginConfig,
+  locateRouteTranscript,
+  measureClaudeCodeStage,
   previewClaudeCodeTaskPacket,
   previewReportOutcome,
   previewStoredDecision,

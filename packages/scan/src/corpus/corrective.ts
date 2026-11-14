@@ -45,6 +45,7 @@ import {
   type RepairPairV1,
   type RevertReasonClass,
 } from '@hokusai/core';
+import { isDependencyBotLogin } from '../attribution/agent-markers.js';
 import type { CrossReference, GitRunner } from '../survival-labeller.js';
 import { blameFix, buildLandingIndex, diffHeaderPath, isBugIssue, regressionLabels, TEST_PATH, type IssueMeta, type SzzResult } from './corrective-szz.js';
 import type { CorpusPrRecord } from './enumerate.js';
@@ -154,6 +155,8 @@ const REVERT_TITLE = /^\s*(?:\[[^\]]*\]\s*)?revert\b|\brevert(?:ed|s)?\s+"/i;
 const REVERTS_COMMIT = /^\s*this reverts commit ([0-9a-f]{7,40})/gim;
 const REVERT_OF_REVERT = /^\s*(?:\[[^\]]*\]\s*)?(?:revert\s+"revert\b|re-?land\b|reapply\b|re-?apply\b)/i;
 const FIX_TITLE = /^\s*(?:\[[^\]]*\]\s*)*(?:[\w.-]+(?:\([^)]*\))?!?:\s*)?(?:hot)?fix(?:e[sd])?\b|^\s*(?:\[[^\]]*\]\s*)*bug ?fix\b/i;
+/** A fix-shaped subject. Also read as a merge-time feature from ancestor commits, never from label tables. */
+export const isFixSubject = (subject: string): boolean => FIX_TITLE.test(subject);
 const FIX_LABEL = /\b(?:bug|regression|hotfix)\b|^fix$|^type: ?fix$|^kind\/(?:bug|regression)$/i;
 /**
  * Regression wording just before a citation ("Regression in <sha>", "broken
@@ -166,7 +169,6 @@ const REGRESSION_CONTEXT =
 /** Issues citing more originals than this are trackers or umbrellas, not bug reports. */
 const MAX_ORIGINALS_PER_ISSUE = 3;
 const BACKPORT = /^\s*(?:\[[^\]]*\]\s*)*\[?(?:backport|cherry[- ]?pick)\b|\(cherry picked from commit [0-9a-f]{7,40}\)/im;
-const DEPENDENCY_BOT = /^(?:dependabot(?:-preview)?|renovate(?:-bot)?|greenkeeper|pyup-bot|snyk-bot|depfu)(?:\[bot\])?$/i;
 /** Collateral and process reverts, from the reason a merge bot records ("Reverted <url> on behalf of <user> due to <reason>"). */
 const REVERT_REASON = /\bdue to\b([^\n]*)/i;
 const NON_DEFECT_REASON =
@@ -368,7 +370,7 @@ function isRevert(event: FixEvent): boolean {
 }
 
 function commonExclusion(event: FixEvent): ExclusionCode | null {
-  if (event.authorLogin && DEPENDENCY_BOT.test(event.authorLogin)) return 'dependency_bot';
+  if (isDependencyBotLogin(event.authorLogin)) return 'dependency_bot';
   // Title and cherry-pick trailer only: on default-branch PRs, `backport:*` labels (kibana, grafana) request a backport rather than mark one.
   if (BACKPORT.test(`${event.title}\n${event.body}`)) return 'backport';
   return null;

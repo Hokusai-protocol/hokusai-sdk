@@ -1,5 +1,6 @@
 import readline from 'node:readline';
 import { HokusaiApiError } from '@hokusai/core';
+import { codexCallSessionFromMeta } from './session-cost.js';
 import {
   latestRouteWithCodex,
   previewOutcomeWithCodex,
@@ -86,7 +87,11 @@ export const TOOLS: ToolDefinition[] = [
         'tokenBucket',
       ],
       properties: {
-        correlationId: { type: 'string' },
+        correlationId: {
+          type: 'string',
+          description: 'The route this outcome belongs to. Pass this or taskId; there is no "latest route" fallback.',
+        },
+        taskId: { type: 'string', description: 'The routed task id, when the correlationId is not known.' },
         recommendedModel: { type: 'string' },
         actualModel: { type: 'string' },
         recommendationAccepted: { type: 'boolean' },
@@ -140,7 +145,12 @@ export const TOOLS: ToolDefinition[] = [
           description:
             'Hook event payload or text to inspect for task completion, passing tests, merged PRs, or closed issues.',
         },
-        actualModel: { type: 'string' },
+        actualModel: { type: 'string', description: 'The model that actually ran. Never copied from the recommendation.' },
+        taskId: {
+          type: 'string',
+          description: 'The routed task this completion belongs to. Without it (or correlationId) no route is offered.',
+        },
+        correlationId: { type: 'string' },
       },
     },
   },
@@ -182,10 +192,19 @@ function asToolResult(payload: Record<string, unknown>, isError = false) {
   };
 }
 
-async function handleToolCall(name: string, args: Record<string, unknown>) {
+async function handleToolCall(
+  name: string,
+  args: Record<string, unknown>,
+  meta: unknown,
+) {
+  // Codex names the calling session in `_meta`; it stays local (HOK-3412).
+  const session = codexCallSessionFromMeta(meta);
   switch (name) {
     case 'hokusai_route':
-      return routeTaskWithCodex(args as unknown as CodexRouteInput);
+      return routeTaskWithCodex(
+        args as unknown as CodexRouteInput,
+        session ? { session } : {},
+      );
     case 'hokusai_preview_route_payload':
       return previewRoutePayloadWithCodex(args as unknown as CodexRouteInput);
     case 'hokusai_submit_outcome':
@@ -249,7 +268,7 @@ async function handleRequest(request: JsonRpcRequest) {
       request.params && typeof request.params.arguments === 'object'
         ? (request.params.arguments as Record<string, unknown>)
         : {};
-    const result = await handleToolCall(name, args);
+    const result = await handleToolCall(name, args, request.params?._meta);
     if (result.ok) {
       writeResult(
         id,

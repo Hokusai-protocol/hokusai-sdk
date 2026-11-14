@@ -10,7 +10,8 @@
     "typecheck": "tsc -b tsconfig.json --pretty false"
   },
   "dependencies": {
-    "@hokusai/core": "workspace:*"
+    "@hokusai/core": "workspace:*",
+    "@hokusai/costs": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.20.6"

@@ -62,6 +62,9 @@ function normalizeCodexBuckets(
   return { ...usage, input_tokens: normalized };
 }
 
+/** The Codex service tier the built-in price table represents (Standard). */
+export const CODEX_STANDARD_SERVICE_TIER = 'default';
+
 /**
  * Extract normalized per-turn usage for one task from Codex rollouts. Never
  * throws on malformed input; a misconfigured boundary throws `TypeError`.
@@ -136,6 +139,11 @@ export function extractCodexUsage(
       if (byIdentity.has(eventId)) {
         countDiagnostic(diagnostics, 'duplicate_row');
       }
+      // Only Standard (`default`) is in the built-in table; Fast / Flex /
+      // Batch responses are left unpriced rather than billed at Standard.
+      const unpriced =
+        observation.serviceTier !== null && observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
+      if (unpriced) countDiagnostic(diagnostics, 'unpriced_service_tier');
       byIdentity.set(eventId, {
         eventId,
         sessionId,
@@ -147,6 +155,7 @@ export function extractCodexUsage(
         actualCostUsd: null,
         harnessVersion: session.harnessVersion,
         usageInvalid: observation.usageInvalid,
+        ...(unpriced ? { unpriced: true } : {}),
       });
     }
   }

@@ -39,7 +39,7 @@ export {
   declineRecommendation,
   displayHandoff,
   displayTaskRecommendation,
-  findLatestRoutingDecision,
+  findRoutingDecision,
   getReportingStatus,
   listRoutingDecisions,
   listSubmissionAudit,
@@ -57,7 +57,7 @@ export {
   type DeclineRecommendationInput,
   type DeclineRecommendationResult,
   type DoctorResult,
-  type LatestRoutingDecision,
+  type StoredRoutingDecision,
   type OutcomeReportPreview,
   type PayloadPreviewResult,
   type PreviewReportOutcomeResult,
@@ -76,6 +76,12 @@ export { runCli } from './cli.js';
 export type { HandoffInstructions } from '@hokusai/core';
 export { REPORT_CLI_EXIT_CODES, type ReportCliExitCode } from './report-cli.js';
 export { runReportCli } from './report-cli.js';
+export {
+  createClaudeCodeStageMeasurer,
+  locateRouteTranscript,
+  measureClaudeCodeStage,
+  type ClaudeCodeStageMeasurerOptions,
+} from './stage-cost.js';
 export {
   runOutcomePromptHookCli,
   type OutcomePromptHookCliRunResult,
