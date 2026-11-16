@@ -247,6 +247,24 @@ for (const example of examples.sort()) {
   }
 }
 
+// The new core JSON subpath must survive packing and a clean offline install.
+// Older published versions intentionally predate this additive export.
+if (registryVersion === null) {
+  run(
+    process.execPath,
+    [
+      '--require',
+      guardPath,
+      '--input-type=module',
+      '-e',
+      `const {default: table} = await import('@hokusai/core/token-prices', {with: {type: 'json'}});
+     if (table.schema_version !== 'hokusai_token_prices/v1' || !table.models['gpt-5-codex'])
+       throw new Error('missing published token price artifact');`,
+    ],
+    { cwd: consumerDir, env: cleanEnv() },
+  );
+}
+
 // ── 6. Every exports subpath resolves and ships types ────────────────
 for (const [subpath, target] of Object.entries(installedJson.exports)) {
   const specifier =

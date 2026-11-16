@@ -104,6 +104,8 @@ jobs:
 
       # A broken @hokusai/costs tarball must never publish: pack, install into
       # a clean consumer, and run the shipped offline examples (HOK-3073).
+      - name: Verify published token price artifact
+        run: pnpm check:token-prices
       - name: Smoke-test the packed @hokusai/costs consumer
         run: pnpm smoke:costs
 

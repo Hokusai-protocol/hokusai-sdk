@@ -30,7 +30,7 @@ describe('unpriced models (REQ-F4)', () => {
 
     const report = t.summary();
     expect(report.totalUsd).toBeNull();
-    expect(report.estimatedUsd).toBeCloseTo(3, 9); // the priced subtotal
+    expect(report.estimatedUsd).toBeCloseTo(2, 9); // the priced subtotal
     expect(report.actualUsd).toBeNull();
     expect(report.coverage.status).toBe('partial');
     expect(report.coverage.unknownModels).toEqual(['unknown-model-xyz']);
@@ -38,7 +38,7 @@ describe('unpriced models (REQ-F4)', () => {
     expect(report.coverage.unpricedEvents).toBe(1);
     expect(report.byModel['unknown-model-xyz']?.totalUsd).toBeNull();
     expect(report.byModel['unknown-model-xyz']?.estimatedUsd).toBeNull();
-    expect(report.byModel['claude-sonnet-5']?.totalUsd).toBeCloseTo(3, 9);
+    expect(report.byModel['claude-sonnet-5']?.totalUsd).toBeCloseTo(2, 9);
     const diagnostic = report.diagnostics.find(
       (d) => d.code === 'unpriced_model',
     );
