@@ -286,6 +286,19 @@ for (const [subpath, target] of Object.entries(installedJson.exports)) {
     fail(`missing type declarations for ${subpath}: ${target.types}`);
 }
 
+// New exports must also be usable by a clean TypeScript consumer.
+if (registryVersion === null) {
+  writeFileSync(
+    path.join(consumerDir, 'codex-consumer.ts'),
+    `
+import { fromCodexUsage, type CodexUsageDiagnostics, type TaskCostUsage } from '@hokusai/costs';
+const diagnostics: CodexUsageDiagnostics = {};
+export const usage: TaskCostUsage = fromCodexUsage({input_tokens: 100, cached_input_tokens: 80}, diagnostics);
+export const overflows: number | undefined = diagnostics.codex_cache_exceeds_input;
+`,
+  );
+}
+
 // ── 7. Type-check the quickstart + router-compat bridge ─────────────
 writeFileSync(
   path.join(consumerDir, 'consumer.ts'),
@@ -323,7 +336,7 @@ writeFileSync(
         noEmit: true,
         skipLibCheck: true,
       },
-      include: ['consumer.ts'],
+      include: ['consumer.ts', 'codex-consumer.ts'],
     },
     null,
     2,

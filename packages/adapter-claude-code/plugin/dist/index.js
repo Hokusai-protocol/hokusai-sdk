@@ -18253,6 +18253,165 @@ function extractClaudeCodeUsage(options) {
 // ../costs/src/sources/claude-code/index.ts
 init_types();
 
+// ../costs/src/measure/usage.ts
+var USAGE_FIELD_MAP = [
+  ["inputTokens", "input_tokens"],
+  ["outputTokens", "output_tokens"],
+  ["cacheReadTokens", "cache_read_tokens"],
+  ["cacheWriteTokens", "cache_write_tokens"],
+  ["reasoningTokens", "reasoning_tokens"]
+];
+function emptyUsage() {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null
+  };
+}
+function toContractUsage(usage) {
+  const projected = {};
+  if (typeof usage !== "object" || usage === null) return projected;
+  for (const [camel, snake] of USAGE_FIELD_MAP) {
+    if (Object.prototype.hasOwnProperty.call(usage, camel)) {
+      const value = usage[camel];
+      projected[snake] = value === void 0 ? null : value;
+    }
+  }
+  return projected;
+}
+function toCamelUsage(usage) {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheReadTokens: usage.cache_read_tokens,
+    cacheWriteTokens: usage.cache_write_tokens,
+    reasoningTokens: usage.reasoning_tokens
+  };
+}
+function countOrNull2(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+function asRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+}
+function fromCodexUsage(usage, diagnostics) {
+  const record = asRecord2(usage);
+  const input = countOrNull2(record.input_tokens);
+  const cached = countOrNull2(record.cached_input_tokens);
+  const cacheWrite = countOrNull2(record.cache_write_input_tokens);
+  const cacheTotal = (cached ?? 0) + (cacheWrite ?? 0);
+  if (input !== null && cacheTotal > input && diagnostics !== void 0) {
+    diagnostics.codex_cache_exceeds_input = (diagnostics.codex_cache_exceeds_input ?? 0) + 1;
+  }
+  return {
+    inputTokens: input === null ? null : Math.max(0, input - cacheTotal),
+    outputTokens: countOrNull2(record.output_tokens),
+    cacheReadTokens: cached,
+    cacheWriteTokens: cacheWrite,
+    reasoningTokens: countOrNull2(record.reasoning_output_tokens)
+  };
+}
+var USAGE_RECORD_ALLOWED_KEYS = [
+  "model",
+  "usage",
+  "harness",
+  "providerCostUsd",
+  "costBasis",
+  "eventId",
+  "sessionId",
+  "turnId",
+  "occurredAt",
+  "usageKind",
+  "isSubagent",
+  "replayOfEventId",
+  "aggregate"
+];
+var FRIENDLY_ALLOWED_KEYS = [
+  "eventId",
+  "taskId",
+  "sessionId",
+  "turnId",
+  "sequence",
+  "harness",
+  "harnessVersion",
+  "providerContractVersion",
+  "observedModel",
+  "usage",
+  "usageKind",
+  "actualCostUsd",
+  "observedAt",
+  "costBasis",
+  "replayOfEventId",
+  "parentEventId",
+  "isSubagent",
+  "diagnostics",
+  "estimatedCostUsd",
+  "pricingSource",
+  "priceTable",
+  "aggregate"
+];
+var PREBUILT_ALLOWED_KEYS = [
+  "schema_version",
+  "event_id",
+  "task_id",
+  "session_id",
+  "turn_id",
+  "sequence",
+  "parent_event_id",
+  "is_subagent",
+  "replay_of_event_id",
+  "harness",
+  "harness_version",
+  "provider_contract_version",
+  "observed_model",
+  "usage_kind",
+  "usage",
+  "usage_coverage",
+  "actual_cost_usd",
+  "estimated_cost_usd",
+  "cost_source",
+  "cost_basis",
+  "pricing_source",
+  "pricing_revision",
+  "price_table",
+  "observed_at",
+  "diagnostics"
+];
+function projectAllowed(source, allowed) {
+  const projected = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      projected[key] = source[key];
+    }
+  }
+  return projected;
+}
+function projectUsageRecord(record) {
+  const projected = projectAllowed(
+    record,
+    USAGE_RECORD_ALLOWED_KEYS
+  );
+  if (projected.usage !== void 0) {
+    const usage = asRecord2(projected.usage);
+    const clean = {};
+    for (const [camel] of USAGE_FIELD_MAP) {
+      if (Object.prototype.hasOwnProperty.call(usage, camel)) {
+        clean[camel] = usage[camel];
+      }
+    }
+    projected.usage = clean;
+  }
+  return projected;
+}
+function projectIngestInput(record) {
+  return projectAllowed(record, FRIENDLY_ALLOWED_KEYS);
+}
+function projectPrebuiltEvent(record) {
+  return projectAllowed(record, PREBUILT_ALLOWED_KEYS);
+}
+
 // ../costs/src/sources/codex/adapter.ts
 init_types();
 
@@ -18342,18 +18501,17 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
 
 // ../costs/src/sources/codex/adapter.ts
 function normalizeCodexBuckets(usage, diagnostics) {
-  const input = usage.input_tokens;
-  if (input === null || input === void 0) return usage;
-  const cached = usage.cache_read_tokens ?? 0;
-  const cacheWrite = usage.cache_write_tokens ?? 0;
-  const sub = cached + cacheWrite;
-  if (sub <= 0) return usage;
-  const normalized = input - sub;
-  if (normalized < 0) {
-    countDiagnostic(diagnostics, "codex_cache_exceeds_input");
-    return { ...usage, input_tokens: 0 };
-  }
-  return { ...usage, input_tokens: normalized };
+  const normalized = fromCodexUsage(
+    {
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cached_input_tokens: usage.cache_read_tokens,
+      cache_write_input_tokens: usage.cache_write_tokens,
+      reasoning_output_tokens: usage.reasoning_tokens
+    },
+    diagnostics
+  );
+  return usage.input_tokens === void 0 ? usage : { ...usage, input_tokens: normalized.inputTokens };
 }
 var CODEX_STANDARD_SERVICE_TIER = "default";
 function extractCodexUsage(options) {
@@ -18361,7 +18519,11 @@ function extractCodexUsage(options) {
   const diagnostics = {};
   const byIdentity = /* @__PURE__ */ new Map();
   for (const content of options.files) {
-    const session = parseCodexRollout(content, diagnostics, options.parseOptions);
+    const session = parseCodexRollout(
+      content,
+      diagnostics,
+      options.parseOptions
+    );
     if (session.sessionId === null) {
       countDiagnostic(diagnostics, "missing_session_id");
       continue;
@@ -18568,145 +18730,6 @@ function toLedgerEntries(events17) {
 
 // ../costs/src/measure/tracker.ts
 init_types();
-
-// ../costs/src/measure/usage.ts
-var USAGE_FIELD_MAP = [
-  ["inputTokens", "input_tokens"],
-  ["outputTokens", "output_tokens"],
-  ["cacheReadTokens", "cache_read_tokens"],
-  ["cacheWriteTokens", "cache_write_tokens"],
-  ["reasoningTokens", "reasoning_tokens"]
-];
-function emptyUsage() {
-  return {
-    inputTokens: null,
-    outputTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
-    reasoningTokens: null
-  };
-}
-function toContractUsage(usage) {
-  const projected = {};
-  if (typeof usage !== "object" || usage === null) return projected;
-  for (const [camel, snake] of USAGE_FIELD_MAP) {
-    if (Object.prototype.hasOwnProperty.call(usage, camel)) {
-      const value = usage[camel];
-      projected[snake] = value === void 0 ? null : value;
-    }
-  }
-  return projected;
-}
-function toCamelUsage(usage) {
-  return {
-    inputTokens: usage.input_tokens,
-    outputTokens: usage.output_tokens,
-    cacheReadTokens: usage.cache_read_tokens,
-    cacheWriteTokens: usage.cache_write_tokens,
-    reasoningTokens: usage.reasoning_tokens
-  };
-}
-function asRecord2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
-}
-var USAGE_RECORD_ALLOWED_KEYS = [
-  "model",
-  "usage",
-  "harness",
-  "providerCostUsd",
-  "costBasis",
-  "eventId",
-  "sessionId",
-  "turnId",
-  "occurredAt",
-  "usageKind",
-  "isSubagent",
-  "replayOfEventId",
-  "aggregate"
-];
-var FRIENDLY_ALLOWED_KEYS = [
-  "eventId",
-  "taskId",
-  "sessionId",
-  "turnId",
-  "sequence",
-  "harness",
-  "harnessVersion",
-  "providerContractVersion",
-  "observedModel",
-  "usage",
-  "usageKind",
-  "actualCostUsd",
-  "observedAt",
-  "costBasis",
-  "replayOfEventId",
-  "parentEventId",
-  "isSubagent",
-  "diagnostics",
-  "estimatedCostUsd",
-  "pricingSource",
-  "priceTable",
-  "aggregate"
-];
-var PREBUILT_ALLOWED_KEYS = [
-  "schema_version",
-  "event_id",
-  "task_id",
-  "session_id",
-  "turn_id",
-  "sequence",
-  "parent_event_id",
-  "is_subagent",
-  "replay_of_event_id",
-  "harness",
-  "harness_version",
-  "provider_contract_version",
-  "observed_model",
-  "usage_kind",
-  "usage",
-  "usage_coverage",
-  "actual_cost_usd",
-  "estimated_cost_usd",
-  "cost_source",
-  "cost_basis",
-  "pricing_source",
-  "pricing_revision",
-  "price_table",
-  "observed_at",
-  "diagnostics"
-];
-function projectAllowed(source, allowed) {
-  const projected = {};
-  for (const key of allowed) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      projected[key] = source[key];
-    }
-  }
-  return projected;
-}
-function projectUsageRecord(record) {
-  const projected = projectAllowed(
-    record,
-    USAGE_RECORD_ALLOWED_KEYS
-  );
-  if (projected.usage !== void 0) {
-    const usage = asRecord2(projected.usage);
-    const clean = {};
-    for (const [camel] of USAGE_FIELD_MAP) {
-      if (Object.prototype.hasOwnProperty.call(usage, camel)) {
-        clean[camel] = usage[camel];
-      }
-    }
-    projected.usage = clean;
-  }
-  return projected;
-}
-function projectIngestInput(record) {
-  return projectAllowed(record, FRIENDLY_ALLOWED_KEYS);
-}
-function projectPrebuiltEvent(record) {
-  return projectAllowed(record, PREBUILT_ALLOWED_KEYS);
-}
 
 // ../costs/src/measure/report.ts
 function roundNanoUsd(value) {
