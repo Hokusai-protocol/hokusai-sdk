@@ -1,3 +1,4 @@
+import type { NativeProviderExecution, StageFailureEvidence } from './provider-execution.js';
 /**
  * Build redacted Hokusai contribution rows from safe Wavemill projections.
  *
@@ -485,6 +486,8 @@ export interface StageCostInput {
 }
 
 export interface StageExecutionProjection {
+  providerExecutions?: readonly NativeProviderExecution[];
+  failure?: StageFailureEvidence;
   stage: StageExecutionStage;
   executedModel: string;
   modelEvidence: ModelEvidence;
@@ -570,6 +573,8 @@ export function buildTechnicalTaskRouterRowV4(
   }
 
   const stageExecutions: StageExecution[] = projection.stageExecutions.map((stage) => ({
+    ...(stage.providerExecutions ? { provider_executions: structuredClone([...stage.providerExecutions]) } : {}),
+    ...(stage.failure ? { failure: { ...stage.failure } } : {}),
     stage: stage.stage,
     executed_model: stage.executedModel,
     model_evidence: stage.modelEvidence,
