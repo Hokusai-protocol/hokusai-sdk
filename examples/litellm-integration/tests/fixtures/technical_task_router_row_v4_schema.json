@@ -27,6 +27,8 @@
   ],
   "stageExecution": {
     "fields": [
+      "provider_executions",
+      "failure",
       "stage",
       "executed_model",
       "model_evidence",
