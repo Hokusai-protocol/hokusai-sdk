@@ -258,11 +258,11 @@ function buildRules(config) {
     ...LOG_PATTERNS.map((pattern) => ({ category: "log", pattern }))
   ];
 }
-function detectPattern(text, patterns) {
+function detectPattern(text2, patterns) {
   return patterns.some((pattern) => {
     const copy = new RegExp(pattern.source, pattern.flags);
     copy.lastIndex = 0;
-    return copy.test(text);
+    return copy.test(text2);
   });
 }
 function aggregateSummary(redactions) {
@@ -349,14 +349,14 @@ function hashPayload(payload, salt) {
 function anonymizeText(input, options = {}) {
   const patterns = options.patterns ?? defaultPatterns;
   const redactions = [];
-  let text = input;
+  let text2 = input;
   for (const { label: label2, pattern } of patterns) {
-    text = text.replace(pattern, (value) => {
+    text2 = text2.replace(pattern, (value) => {
       redactions.push({ label: label2, value });
       return options.defaultReplacement ?? `<redacted:${label2}>`;
     });
   }
-  return { text, redactions };
+  return { text: text2, redactions };
 }
 
 // ../core/src/consent.ts
@@ -5549,8 +5549,8 @@ var DEEP_REASONING_PATTERNS = [
   /\broot cause\b/i,
   /\bcompare\b/i
 ];
-function normalizeText(text) {
-  return text.trim().toLowerCase();
+function normalizeText(text2) {
+  return text2.trim().toLowerCase();
 }
 function classifyTaskFamily(input) {
   const haystack = [input.text, ...input.hints ?? []].join("\n");
@@ -14670,6 +14670,142 @@ var unroutedTelemetryRoutingFixture = routerRow(
   true
 );
 
+// ../core/src/contribution/provider-execution.ts
+var EXECUTION_FAULT_CLASSES = [
+  "model-fault",
+  "provider-fault",
+  "harness-fault",
+  "selection-fault",
+  "unknown-fault"
+];
+function object(value, allowed, label2) {
+  const record = requireObject(value, label2);
+  for (const key of Object.keys(record))
+    if (!allowed.includes(key)) fail2(`${label2}.${key} is not allowed`);
+  return record;
+}
+function text(value, label2, nullable2 = false) {
+  if (nullable2 && value === null) return;
+  if (typeof value !== "string" || !value.trim() || value.length > 256)
+    fail2(`${label2} must be a non-empty string`);
+}
+function amount(value, label2, nullable2 = false) {
+  if (nullable2 && value === null) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+    fail2(`${label2} must be non-negative and finite`);
+}
+function validateNativeProviderExecution(value) {
+  assertNoForbiddenKeys(value);
+  const row = object(
+    value,
+    [
+      "observationId",
+      "sessionRef",
+      "ownershipAttemptIds",
+      "responseId",
+      "transport",
+      "requestedModel",
+      "responseModel",
+      "generation",
+      "requestedRouting",
+      "pricingSnapshot",
+      "usage"
+    ],
+    "provider execution"
+  );
+  if (row.usage !== void 0) {
+    const usage = object(row.usage, TASK_COST_TOKEN_FIELDS, "usage");
+    for (const field of TASK_COST_TOKEN_FIELDS)
+      amount(usage[field], `usage.${field}`, true);
+  }
+  if (row.observationId !== void 0)
+    requireId(row.observationId, "observationId");
+  requireId(row.sessionRef, "sessionRef");
+  if (!Array.isArray(row.ownershipAttemptIds) || new Set(row.ownershipAttemptIds).size !== row.ownershipAttemptIds.length)
+    fail2("ownershipAttemptIds must be unique IDs");
+  for (const id2 of row.ownershipAttemptIds)
+    requireId(id2, "ownershipAttemptIds");
+  if (row.responseId !== null) requireId(row.responseId, "responseId");
+  text(row.transport, "transport");
+  text(row.requestedModel, "requestedModel", true);
+  text(row.responseModel, "responseModel", true);
+  if (row.generation !== null) {
+    if (row.transport !== "openrouter")
+      fail2("generation evidence requires the openrouter transport");
+    const generation = object(
+      row.generation,
+      [
+        "totalCostUsd",
+        "providerName",
+        "modelPermaslug",
+        "cacheDiscountUsd",
+        "nativeTokensPrompt",
+        "nativeTokensCached",
+        "nativeTokensCompletion"
+      ],
+      "generation"
+    );
+    amount(generation.totalCostUsd, "generation.totalCostUsd", true);
+    for (const key of ["providerName", "modelPermaslug"])
+      if (generation[key] !== void 0) text(generation[key], key);
+    for (const key of [
+      "cacheDiscountUsd",
+      "nativeTokensPrompt",
+      "nativeTokensCached",
+      "nativeTokensCompletion"
+    ])
+      if (generation[key] !== void 0) amount(generation[key], key);
+  }
+  if (row.requestedRouting != null) {
+    const routing = object(
+      row.requestedRouting,
+      [
+        "order",
+        "only",
+        "ignore",
+        "quantizations",
+        "allow_fallbacks",
+        "require_parameters"
+      ],
+      "requestedRouting"
+    );
+    for (const [key, entry2] of Object.entries(routing)) {
+      if (key === "allow_fallbacks" || key === "require_parameters") {
+        if (typeof entry2 !== "boolean")
+          fail2(`requestedRouting.${key} must be boolean`);
+      } else {
+        if (!Array.isArray(entry2) || entry2.length === 0)
+          fail2(`requestedRouting.${key} must be a non-empty array`);
+        for (const item of entry2) text(item, key);
+      }
+    }
+  }
+  if (row.pricingSnapshot != null) {
+    const pricing = object(
+      row.pricingSnapshot,
+      [
+        "scope",
+        "inputCostPerMTok",
+        "outputCostPerMTok",
+        "cacheReadCostPerMTok",
+        "cacheWriteCostPerMTok"
+      ],
+      "pricingSnapshot"
+    );
+    if (pricing.scope !== "model" && pricing.scope !== "endpoint")
+      fail2("pricingSnapshot.scope must be model or endpoint");
+    for (const key of ["inputCostPerMTok", "outputCostPerMTok"])
+      amount(pricing[key], key);
+    for (const key of ["cacheReadCostPerMTok", "cacheWriteCostPerMTok"])
+      if (pricing[key] !== void 0) amount(pricing[key], key);
+  }
+}
+function validateStageFailureEvidence(value) {
+  const row = object(value, ["fault_class"], "failure");
+  if (!EXECUTION_FAULT_CLASSES.includes(row.fault_class))
+    fail2("failure.fault_class is invalid");
+}
+
 // ../core/src/contribution/schema.ts
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION = "technical_task_router_row/v1";
 var TECHNICAL_TASK_ROUTER_ROW_SCHEMA_VERSION_V2 = "technical_task_router_row/v2";
@@ -14793,6 +14929,8 @@ var TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
   ...ROUTER_ROW_V4_EXTRA_FIELDS
 ]);
 var STAGE_EXECUTION_FIELDS = Object.freeze([
+  "provider_executions",
+  "failure",
   "stage",
   "executed_model",
   "model_evidence",
@@ -15285,6 +15423,41 @@ function stageExecutionErrors(row) {
           errors.push(`${label2}.task_cost: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
+      try {
+        if (entry2.failure !== void 0)
+          validateStageFailureEvidence(entry2.failure);
+        if (entry2.provider_executions !== void 0) {
+          if (!Array.isArray(entry2.provider_executions))
+            throw new Error("provider_executions must be an array");
+          const keys = /* @__PURE__ */ new Set();
+          const observations = /* @__PURE__ */ new Set();
+          for (const execution of entry2.provider_executions) {
+            validateNativeProviderExecution(execution);
+            if (execution.observationId) {
+              if (observations.has(execution.observationId)) throw new Error("duplicate provider observation");
+              observations.add(execution.observationId);
+            }
+            const cost = entry2.task_cost;
+            if (!cost.session_ids.includes(execution.sessionRef))
+              throw new Error(
+                "provider execution must belong to a stage session"
+              );
+            if (execution.responseId !== null) {
+              const key = JSON.stringify([
+                execution.sessionRef,
+                execution.transport,
+                execution.responseId
+              ]);
+              if (keys.has(key)) throw new Error("duplicate provider response");
+              keys.add(key);
+            }
+          }
+        }
+      } catch (error) {
+        errors.push(
+          `${label2}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
       if (isBaseStage(entry2.stage)) {
         lastByStage.set(entry2.stage, entry2.executed_model);
       }
@@ -15542,6 +15715,8 @@ function buildTechnicalTaskRouterRowV4(projection) {
     throw new Error("stageExecutions must list at least one stage");
   }
   const stageExecutions = projection.stageExecutions.map((stage2) => ({
+    ...stage2.providerExecutions ? { provider_executions: structuredClone([...stage2.providerExecutions]) } : {},
+    ...stage2.failure ? { failure: { ...stage2.failure } } : {},
     stage: stage2.stage,
     executed_model: stage2.executedModel,
     model_evidence: stage2.modelEvidence,

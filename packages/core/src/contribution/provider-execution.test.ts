@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import Ajv2020 from 'ajv/dist/2020.js';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   validateNativeProviderExecution,
   validateStageFailureEvidence,

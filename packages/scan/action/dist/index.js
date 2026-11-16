@@ -9591,6 +9591,8 @@ var TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
   ...ROUTER_ROW_V4_EXTRA_FIELDS
 ]);
 var STAGE_EXECUTION_FIELDS = Object.freeze([
+  "provider_executions",
+  "failure",
   "stage",
   "executed_model",
   "model_evidence",
