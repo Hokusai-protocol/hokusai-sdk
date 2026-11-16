@@ -15,11 +15,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./token-prices": "./prices/hokusai_token_prices.v1.json"
   },
   "files": [
     "dist",
-    "schemas"
+    "schemas",
+    "prices"
   ],
   "publishConfig": {
     "access": "public"

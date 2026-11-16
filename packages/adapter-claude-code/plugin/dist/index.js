@@ -8218,10 +8218,17 @@ var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
 var CACHE_READ_INPUT_MULTIPLIER = 0.1;
 var ANTHROPIC_MODEL_PRICING = {
   "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
+  "claude-opus-5-5": {
+    inputPerMTokUsd: 4,
+    outputPerMTokUsd: 20,
+    cachedInputPerMTokUsd: 0.2
+  },
+  "claude-opus-5": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-sonnet-4-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
   "claude-opus-4-7": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
   "claude-opus-4-6": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
-  "claude-sonnet-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-sonnet-5": { inputPerMTokUsd: 2, outputPerMTokUsd: 10 },
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
@@ -8270,7 +8277,7 @@ var OPENAI_MODEL_PRICING = {
     cacheWritePerMTokUsd: null,
     longContext: openAiLong(0.2, 0.02, 0.75)
   },
-  // Promotional pricing "through at least 2026-11-21": re-verify after then.
+  // Promotional pricing "until 2026-11-30": re-verify after then.
   "gpt-5.6-sol": {
     inputPerMTokUsd: 4,
     cachedInputPerMTokUsd: 0.4,
@@ -8316,22 +8323,82 @@ var OPENAI_MODEL_PRICING = {
     outputPerMTokUsd: 180,
     longContext: openAiLong(60, null, 270)
   },
-  "gpt-5.4-mini": { inputPerMTokUsd: 0.75, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 4.5 },
-  "gpt-5.4-nano": { inputPerMTokUsd: 0.2, cachedInputPerMTokUsd: 0.02, outputPerMTokUsd: 1.25 },
-  "gpt-5.3-codex": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
-  "gpt-5.2": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
-  "gpt-5.2-pro": { inputPerMTokUsd: 21, cachedInputPerMTokUsd: null, outputPerMTokUsd: 168 },
-  "gpt-5.1": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
-  "gpt-5": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
-  "gpt-5-mini": { inputPerMTokUsd: 0.25, cachedInputPerMTokUsd: 0.025, outputPerMTokUsd: 2 },
-  "gpt-5-nano": { inputPerMTokUsd: 0.05, cachedInputPerMTokUsd: 5e-3, outputPerMTokUsd: 0.4 },
-  "gpt-5-pro": { inputPerMTokUsd: 15, cachedInputPerMTokUsd: null, outputPerMTokUsd: 120 },
-  "gpt-4.1": { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
-  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, cachedInputPerMTokUsd: 0.1, outputPerMTokUsd: 1.6 },
-  "gpt-4o": { inputPerMTokUsd: 2.5, cachedInputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
-  "gpt-4o-mini": { inputPerMTokUsd: 0.15, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 0.6 },
+  "gpt-5.4-mini": {
+    inputPerMTokUsd: 0.75,
+    cachedInputPerMTokUsd: 0.075,
+    outputPerMTokUsd: 4.5
+  },
+  "gpt-5.4-nano": {
+    inputPerMTokUsd: 0.2,
+    cachedInputPerMTokUsd: 0.02,
+    outputPerMTokUsd: 1.25
+  },
+  "gpt-5.3-codex": {
+    inputPerMTokUsd: 1.75,
+    cachedInputPerMTokUsd: 0.175,
+    outputPerMTokUsd: 14
+  },
+  "gpt-5.2": {
+    inputPerMTokUsd: 1.75,
+    cachedInputPerMTokUsd: 0.175,
+    outputPerMTokUsd: 14
+  },
+  "gpt-5.2-pro": {
+    inputPerMTokUsd: 21,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 168
+  },
+  "gpt-5.1": {
+    inputPerMTokUsd: 1.25,
+    cachedInputPerMTokUsd: 0.125,
+    outputPerMTokUsd: 10
+  },
+  "gpt-5": {
+    inputPerMTokUsd: 1.25,
+    cachedInputPerMTokUsd: 0.125,
+    outputPerMTokUsd: 10
+  },
+  "gpt-5-mini": {
+    inputPerMTokUsd: 0.25,
+    cachedInputPerMTokUsd: 0.025,
+    outputPerMTokUsd: 2
+  },
+  "gpt-5-nano": {
+    inputPerMTokUsd: 0.05,
+    cachedInputPerMTokUsd: 5e-3,
+    outputPerMTokUsd: 0.4
+  },
+  "gpt-5-pro": {
+    inputPerMTokUsd: 15,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 120
+  },
+  "gpt-4.1": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.5,
+    outputPerMTokUsd: 8
+  },
+  "gpt-4.1-mini": {
+    inputPerMTokUsd: 0.4,
+    cachedInputPerMTokUsd: 0.1,
+    outputPerMTokUsd: 1.6
+  },
+  "gpt-4o": {
+    inputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 1.25,
+    outputPerMTokUsd: 10
+  },
+  "gpt-4o-mini": {
+    inputPerMTokUsd: 0.15,
+    cachedInputPerMTokUsd: 0.075,
+    outputPerMTokUsd: 0.6
+  },
   o3: { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
-  "o3-pro": { inputPerMTokUsd: 20, cachedInputPerMTokUsd: null, outputPerMTokUsd: 80 },
+  "o3-pro": {
+    inputPerMTokUsd: 20,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 80
+  },
   // Not on the current page: earlier per-model pages, legacy cache multipliers.
   "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
   "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
@@ -8347,12 +8414,160 @@ var GOOGLE_MODEL_PRICING = {
   "gemini-2.0-flash": { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 },
   "gemini-2.0-flash-001": { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 }
 };
+var OPENROUTER_MODEL_PRICING = {
+  // Moonshot AI provider list rate, verified 2026-11-16; not a routing-floor quote.
+  "kimi-k3.1-pro": {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 0.2,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-chat": {
+    inputPerMTokUsd: 0.2574,
+    outputPerMTokUsd: 1.0287,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-v3.2": {
+    inputPerMTokUsd: 0.26,
+    outputPerMTokUsd: 0.38,
+    cachedInputPerMTokUsd: 0.13,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-v4-flash": {
+    inputPerMTokUsd: 0.091,
+    outputPerMTokUsd: 0.182,
+    cachedInputPerMTokUsd: 0.0182,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-v4-pro": {
+    inputPerMTokUsd: 1.6,
+    outputPerMTokUsd: 3.2,
+    cachedInputPerMTokUsd: 0.135,
+    cacheWritePerMTokUsd: null
+  },
+  "gemini-3.1-pro-preview": {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 12,
+    cachedInputPerMTokUsd: 0.2,
+    cacheWritePerMTokUsd: 0.375
+  },
+  "llama-3.3-70b-instruct": {
+    inputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 0.52,
+    cachedInputPerMTokUsd: 0.1,
+    cacheWritePerMTokUsd: null
+  },
+  "minimax-m3": {
+    inputPerMTokUsd: 0.3,
+    outputPerMTokUsd: 1.2,
+    cachedInputPerMTokUsd: 0.06,
+    cacheWritePerMTokUsd: null
+  },
+  "mistral-large-2407": {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 6,
+    cachedInputPerMTokUsd: 0.2,
+    cacheWritePerMTokUsd: null
+  },
+  "mistral-small-2603": {
+    inputPerMTokUsd: 0.15,
+    outputPerMTokUsd: 0.6,
+    cachedInputPerMTokUsd: 0.015,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2": {
+    inputPerMTokUsd: 0.57,
+    outputPerMTokUsd: 2.3,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2-thinking": {
+    inputPerMTokUsd: 0.6,
+    outputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 0.15,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2.6": {
+    inputPerMTokUsd: 0.65,
+    outputPerMTokUsd: 3.41,
+    cachedInputPerMTokUsd: 0.15,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2.7-code": {
+    inputPerMTokUsd: 0.6,
+    outputPerMTokUsd: 3.5,
+    cachedInputPerMTokUsd: 0.15,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k3": {
+    inputPerMTokUsd: 0.192,
+    outputPerMTokUsd: 15,
+    cachedInputPerMTokUsd: 0.182,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen-2.5-coder-32b-instruct": {
+    inputPerMTokUsd: 0.66,
+    outputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen3-235b-a22b-2507": {
+    inputPerMTokUsd: 0.09,
+    outputPerMTokUsd: 0.55,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen3-coder": {
+    inputPerMTokUsd: 0.3,
+    outputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: 0.1,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen3.7-max": {
+    inputPerMTokUsd: 1.475,
+    outputPerMTokUsd: 4.425,
+    cachedInputPerMTokUsd: 0.295,
+    cacheWritePerMTokUsd: 1.84375
+  },
+  "qwen3.7-plus": {
+    inputPerMTokUsd: 0.32,
+    outputPerMTokUsd: 1.28,
+    cachedInputPerMTokUsd: 0.064,
+    cacheWritePerMTokUsd: 0.4
+  },
+  "glm-5.2": {
+    inputPerMTokUsd: 6e-3,
+    outputPerMTokUsd: 6.8,
+    cachedInputPerMTokUsd: 5e-3,
+    cacheWritePerMTokUsd: null
+  },
+  "glm-5.3": {
+    inputPerMTokUsd: 0.08,
+    outputPerMTokUsd: 3.6,
+    cachedInputPerMTokUsd: 0.076,
+    cacheWritePerMTokUsd: null
+  },
+  "glm-5.3-flash": {
+    inputPerMTokUsd: 0.0285,
+    outputPerMTokUsd: 0.0923,
+    cachedInputPerMTokUsd: 0.0285,
+    cacheWritePerMTokUsd: null
+  }
+};
+var MODEL_PRICE_ALIASES = {
+  "kimi-k3-1-pro": "kimi-k3.1-pro",
+  "qwen-3-coder": "qwen3-coder",
+  "llama-3.3-70b": "llama-3.3-70b-instruct",
+  "mistral-large-2": "mistral-large-2407"
+};
 var MODEL_PRICING = {
+  ...OPENROUTER_MODEL_PRICING,
   ...ANTHROPIC_MODEL_PRICING,
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
-var MODEL_PRICING_AS_OF = "2026-11-04";
+var MODEL_PRICING_AS_OF = "2026-11-16";
 var COMPACT_DATE_SUFFIX = /-\d{8}$/;
 var DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
 var GEMINI_STABLE_SUFFIX = /-001$/;
@@ -8373,9 +8588,11 @@ var KNOWN_PROVIDER_PREFIXES = [
   "z-ai/"
 ];
 function normalizeModelId(id2) {
-  let normalized = id2.trim().toLowerCase();
+  let normalized = id2.trim().toLowerCase().replace(/^openrouter:/, "");
   for (let index = 0; index < 5; index += 1) {
-    const prefix = KNOWN_PROVIDER_PREFIXES.find((candidate) => normalized.startsWith(candidate));
+    const prefix = KNOWN_PROVIDER_PREFIXES.find(
+      (candidate) => normalized.startsWith(candidate)
+    );
     if (!prefix) {
       break;
     }
@@ -8384,7 +8601,7 @@ function normalizeModelId(id2) {
   if (normalized.startsWith("claude-")) {
     normalized = normalized.replaceAll(".", "-");
   }
-  return normalized;
+  return MODEL_PRICE_ALIASES[normalized] ?? normalized;
 }
 function stripKnownSnapshotSuffixes(model) {
   const compactDate = model.replace(COMPACT_DATE_SUFFIX, "");
@@ -8428,7 +8645,12 @@ function appliedRates(model, price, promptTokens, requestScoped) {
     return {
       input: long.inputPerMTokUsd,
       output: long.outputPerMTokUsd,
-      cacheRead: cacheRate(long.cachedInputPerMTokUsd, long.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, false),
+      cacheRead: cacheRate(
+        long.cachedInputPerMTokUsd,
+        long.inputPerMTokUsd,
+        CACHE_READ_INPUT_MULTIPLIER,
+        false
+      ),
       // Long-context cache writes share the TTL ambiguity: never priced.
       cacheWrite: void 0
     };
@@ -8436,8 +8658,18 @@ function appliedRates(model, price, promptTokens, requestScoped) {
   return {
     input: price.inputPerMTokUsd,
     output: price.outputPerMTokUsd,
-    cacheRead: cacheRate(price.cachedInputPerMTokUsd, price.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, legacyEligible),
-    cacheWrite: cacheRate(price.cacheWritePerMTokUsd, price.inputPerMTokUsd, CACHE_WRITE_INPUT_MULTIPLIER, legacyEligible)
+    cacheRead: cacheRate(
+      price.cachedInputPerMTokUsd,
+      price.inputPerMTokUsd,
+      CACHE_READ_INPUT_MULTIPLIER,
+      legacyEligible
+    ),
+    cacheWrite: cacheRate(
+      price.cacheWritePerMTokUsd,
+      price.inputPerMTokUsd,
+      CACHE_WRITE_INPUT_MULTIPLIER,
+      legacyEligible
+    )
   };
 }
 function computeActualCostUsd(input) {
@@ -8469,7 +8701,9 @@ function isAnthropicModel(model) {
   if (ANTHROPIC_MODEL_PRICING[normalized]) {
     return true;
   }
-  return Boolean(ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]);
+  return Boolean(
+    ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]
+  );
 }
 function isOpenAIModel(model) {
   const normalized = normalizeModelId(model);
