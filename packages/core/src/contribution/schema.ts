@@ -10,6 +10,7 @@ import type {
   HokusaiAvailableModels,
   HokusaiTaskDescriptor,
 } from './descriptor-types.js';
+import { validateNativeProviderExecution, validateStageFailureEvidence, type NativeProviderExecution, type StageFailureEvidence } from './provider-execution.js';
 import type { TaskCostSummaryV1 } from '../task-cost/summary.js';
 import { MINTED_ID_PATTERN, validateTaskCostSummaryV1 } from '../task-cost/validators.js';
 
@@ -268,6 +269,8 @@ export type ModelEvidence = (typeof MODEL_EVIDENCE_KINDS)[number];
 
 /** One stage that ran, with its executed model and token facts. */
 export interface StageExecution {
+  provider_executions?: NativeProviderExecution[];
+  failure?: StageFailureEvidence;
   stage: StageExecutionStage;
   executed_model: string;
   model_evidence: ModelEvidence;
@@ -352,6 +355,8 @@ export const TECHNICAL_TASK_ROUTER_ROW_V4_FIELDS = Object.freeze([
   ...ROUTER_ROW_V4_EXTRA_FIELDS,
 ] as const);
 export const STAGE_EXECUTION_FIELDS = Object.freeze([
+  'provider_executions',
+  'failure',
   'stage',
   'executed_model',
   'model_evidence',
@@ -1076,6 +1081,41 @@ export function stageExecutionErrors(row: unknown): string[] {
         } catch (error) {
           errors.push(`${label}.task_cost: ${error instanceof Error ? error.message : String(error)}`);
         }
+      }
+      try {
+        if (entry.failure !== undefined)
+          validateStageFailureEvidence(entry.failure);
+        if (entry.provider_executions !== undefined) {
+          if (!Array.isArray(entry.provider_executions))
+            throw new Error('provider_executions must be an array');
+          const keys = new Set<string>();
+          const observations = new Set<string>();
+          for (const execution of entry.provider_executions) {
+            validateNativeProviderExecution(execution);
+            if (execution.observationId) {
+              if (observations.has(execution.observationId)) throw new Error('duplicate provider observation');
+              observations.add(execution.observationId);
+            }
+            const cost = entry.task_cost as TaskCostSummaryV1;
+            if (!cost.session_ids.includes(execution.sessionRef))
+              throw new Error(
+                'provider execution must belong to a stage session',
+              );
+            if (execution.responseId !== null) {
+              const key = JSON.stringify([
+                execution.sessionRef,
+                execution.transport,
+                execution.responseId,
+              ]);
+              if (keys.has(key)) throw new Error('duplicate provider response');
+              keys.add(key);
+            }
+          }
+        }
+      } catch (error) {
+        errors.push(
+          `${label}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       if (isBaseStage(entry.stage)) {
         lastByStage.set(entry.stage, entry.executed_model);
