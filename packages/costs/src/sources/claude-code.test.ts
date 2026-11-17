@@ -50,8 +50,19 @@ describe('golden fixture parity: sanitized transcript -> adapter -> engine', () 
         const engine = createTaskCostEngine({
           taskId: expected.task_id,
           collectedAt: expected.collected_at,
+          priceOverrides: [
+            {
+              model: 'claude-sonnet-5',
+              inputPerMTokUsd: 3,
+              outputPerMTokUsd: 15,
+              cacheReadMultiplier: 0.1,
+              cacheWriteMultiplier: 1.25,
+              asOf: '2026-07-15',
+              priceTable: 'anthropic',
+            },
+          ],
           // The goldens were priced at a pinned revision; the estimates
-          // themselves must still match the live table exactly.
+          // themselves stay at that historical snapshot, not the live rates.
           ...(expected.pricing_revision !== undefined
             ? { pricingRevision: expected.pricing_revision }
             : {}),
@@ -210,7 +221,11 @@ describe('fail-soft parsing', () => {
     const transcript = [
       'this is not json',
       JSON.stringify({ type: 'assistant', sessionId: sessionA }),
-      claudeAssistantLine({ sessionId: sessionA, uuid: 'ua-x', timestamp: 'nonsense' }),
+      claudeAssistantLine({
+        sessionId: sessionA,
+        uuid: 'ua-x',
+        timestamp: 'nonsense',
+      }),
       JSON.stringify({
         type: 'assistant',
         uuid: 'no-session',

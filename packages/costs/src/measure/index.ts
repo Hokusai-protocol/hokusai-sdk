@@ -11,7 +11,12 @@ export {
   TaskCostMeasureError,
   type TaskCostMeasureErrorCode,
 } from './errors.js';
-export { fromAnthropicUsage, fromOpenAIUsage } from './usage.js';
+export {
+  fromAnthropicUsage,
+  fromOpenAIUsage,
+  fromCodexUsage,
+  type CodexUsageDiagnostics,
+} from './usage.js';
 export {
   TASK_COST_CAPTURE_KINDS,
   type LedgerFlushResult,

@@ -33,6 +33,7 @@ jobs:
       - run: pnpm check:versions
       - run: pnpm check:docs
       - run: pnpm -r build
+      - run: pnpm check:token-prices
       - run: pnpm check:arbiter-report
       - run: node scripts/export-router-row-schema.mjs --check
       - run: pnpm -r test

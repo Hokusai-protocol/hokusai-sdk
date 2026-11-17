@@ -13,6 +13,7 @@
 
 import type { TaskCostTokenUsage } from '@hokusai/core';
 import type { IngestUsageInput } from '../../engine.js';
+import { fromCodexUsage } from '../../measure/usage.js';
 import { assembleInputs, type AcceptedUsageRow } from '../assemble.js';
 import {
   CumulativeUsageTracker,
@@ -26,7 +27,10 @@ import {
   type TaskCostSourceDiagnostics,
   type TaskCostSourceResult,
 } from '../types.js';
-import { CODEX_PROVIDER_CONTRACT_VERSION, parseCodexRollout } from './parser.js';
+import {
+  CODEX_PROVIDER_CONTRACT_VERSION,
+  parseCodexRollout,
+} from './parser.js';
 
 export interface ExtractCodexUsageOptions {
   /** Explicit task boundary; the only correlation signal used. */
@@ -48,18 +52,21 @@ function normalizeCodexBuckets(
   usage: Partial<TaskCostTokenUsage>,
   diagnostics: TaskCostSourceDiagnostics,
 ): Partial<TaskCostTokenUsage> {
-  const input = usage.input_tokens;
-  if (input === null || input === undefined) return usage;
-  const cached = usage.cache_read_tokens ?? 0;
-  const cacheWrite = usage.cache_write_tokens ?? 0;
-  const sub = cached + cacheWrite;
-  if (sub <= 0) return usage;
-  const normalized = input - sub;
-  if (normalized < 0) {
-    countDiagnostic(diagnostics, 'codex_cache_exceeds_input');
-    return { ...usage, input_tokens: 0 };
-  }
-  return { ...usage, input_tokens: normalized };
+  const normalized = fromCodexUsage(
+    {
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cached_input_tokens: usage.cache_read_tokens,
+      cache_write_input_tokens: usage.cache_write_tokens,
+      reasoning_output_tokens: usage.reasoning_tokens,
+    },
+    diagnostics,
+  );
+  // Preserve the source's existing partial shape. Only inclusive input needs
+  // normalization; all other counters are already projected by the parser.
+  return usage.input_tokens === undefined
+    ? usage
+    : { ...usage, input_tokens: normalized.inputTokens };
 }
 
 /** The Codex service tier the built-in price table represents (Standard). */
@@ -77,7 +84,11 @@ export function extractCodexUsage(
   const byIdentity = new Map<string, AcceptedUsageRow>();
 
   for (const content of options.files) {
-    const session = parseCodexRollout(content, diagnostics, options.parseOptions);
+    const session = parseCodexRollout(
+      content,
+      diagnostics,
+      options.parseOptions,
+    );
     if (session.sessionId === null) {
       countDiagnostic(diagnostics, 'missing_session_id');
       continue;
@@ -121,7 +132,9 @@ export function extractCodexUsage(
         turnOrdinals.set(observation.turnId, ordinal + 1);
         turnId = observation.turnId;
         eventId =
-          ordinal === 0 ? observation.turnId : `${observation.turnId}.${ordinal + 1}`;
+          ordinal === 0
+            ? observation.turnId
+            : `${observation.turnId}.${ordinal + 1}`;
       } else {
         orphanCount += 1;
         turnId = `${sessionId}.tc${orphanCount}`;
@@ -142,7 +155,8 @@ export function extractCodexUsage(
       // Only Standard (`default`) is in the built-in table; Fast / Flex /
       // Batch responses are left unpriced rather than billed at Standard.
       const unpriced =
-        observation.serviceTier !== null && observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
+        observation.serviceTier !== null &&
+        observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
       if (unpriced) countDiagnostic(diagnostics, 'unpriced_service_tier');
       byIdentity.set(eventId, {
         eventId,

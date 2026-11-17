@@ -2,7 +2,7 @@
  * Usage shape conversion and allow-list projection for the drop-in API.
  *
  * - camelCase `TaskCostUsage` <-> the contract's snake_case token usage;
- * - `fromAnthropicUsage` / `fromOpenAIUsage` map the two provider payload
+ * - `fromAnthropicUsage` / `fromOpenAIUsage` / `fromCodexUsage` map provider payload
  *   shapes most harnesses emit;
  * - every caller-supplied object is rebuilt from an explicit key allow-list
  *   before it can reach an engine, so extra keys (`prompt`, `cwd`, `apiKey`,
@@ -106,9 +106,9 @@ export function fromAnthropicUsage(usage: unknown): TaskCostUsage {
  * OpenAI's `prompt_tokens` *includes* cached tokens, so the cached subset is
  * subtracted out of `inputTokens` (and clamped at zero) — pricing bills the
  * two tiers separately and must not double count. `completion_tokens` already
- * includes reasoning tokens, so `reasoningTokens` is informational here: do
- * not combine this mapper with `harness: 'codex'`, whose pricing adds
- * reasoning tokens on top of output (Codex rollouts report them disjointly).
+ * includes reasoning tokens, so `reasoningTokens` is informational here. Do not
+ * use this mapper for Codex usage: its keys differ. Use `fromCodexUsage`
+ * instead. Both APIs report reasoning as a subset of output; never add it.
  */
 export function fromOpenAIUsage(usage: unknown): TaskCostUsage {
   const record = asRecord(usage);
@@ -129,6 +129,46 @@ export function fromOpenAIUsage(usage: unknown): TaskCostUsage {
     reasoningTokens: countOrNull(
       asRecord(record.completion_tokens_details).reasoning_tokens,
     ),
+  };
+}
+
+/** Optional count-only diagnostics for {@link fromCodexUsage}. */
+export interface CodexUsageDiagnostics {
+  /** Cache reads plus writes exceeded inclusive input; uncached input was clamped. */
+  codex_cache_exceeds_input?: number;
+}
+
+/**
+ * Map Codex `exec --json` turn.completed.usage or rollout token counters to
+ * {@link TaskCostUsage}. `input_tokens` includes both `cached_input_tokens`
+ * and `cache_write_input_tokens`: subtract those subsets exactly once and
+ * clamp uncached input at zero. The optional diagnostic accumulator counts
+ * clamping without storing any raw payload. Missing/malformed counters remain
+ * null; absent cache counters contribute nothing to the subtraction.
+ *
+ * `reasoning_output_tokens` is a reporting-only subset of `output_tokens`.
+ * Do not add it to output when pricing. Apply this mapper to per-turn deltas;
+ * cumulative rollout counters must be differenced before normalization.
+ */
+export function fromCodexUsage(
+  usage: unknown,
+  diagnostics?: CodexUsageDiagnostics,
+): TaskCostUsage {
+  const record = asRecord(usage);
+  const input = countOrNull(record.input_tokens);
+  const cached = countOrNull(record.cached_input_tokens);
+  const cacheWrite = countOrNull(record.cache_write_input_tokens);
+  const cacheTotal = (cached ?? 0) + (cacheWrite ?? 0);
+  if (input !== null && cacheTotal > input && diagnostics !== undefined) {
+    diagnostics.codex_cache_exceeds_input =
+      (diagnostics.codex_cache_exceeds_input ?? 0) + 1;
+  }
+  return {
+    inputTokens: input === null ? null : Math.max(0, input - cacheTotal),
+    outputTokens: countOrNull(record.output_tokens),
+    cacheReadTokens: cached,
+    cacheWriteTokens: cacheWrite,
+    reasoningTokens: countOrNull(record.reasoning_output_tokens),
   };
 }
 

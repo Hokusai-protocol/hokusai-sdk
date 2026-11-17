@@ -12,8 +12,20 @@ import { taskCostFixtures } from './index.js';
 
 /** Price an event the way the fixtures' estimates were derived. */
 function priceEvent(event: TaskCostEventV1): number | undefined {
-  const { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens } = event.usage;
+  const { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens } =
+    event.usage;
   if (input_tokens === null || output_tokens === null) return undefined;
+  // These hand-written goldens intentionally retain their July price revision.
+  if (event.observed_model === 'claude-sonnet-5') {
+    return (
+      Math.round(
+        input_tokens * 3 +
+          output_tokens * 15 +
+          (cache_read_tokens ?? 0) * 0.3 +
+          (cache_write_tokens ?? 0) * 3.75,
+      ) / 1e6
+    );
+  }
   // `codex/2` disjoint-buckets contract (HOK-3104): `reasoning_tokens` is a
   // reporting-only breakdown of `output_tokens` — never billed separately —
   // for every harness; cache tokens are already disjoint from input tokens.
@@ -46,10 +58,14 @@ describe('task-cost fixtures', () => {
       'partial-usage',
       'wavemill-parity',
     ]);
-    expect(new Set(taskCostFixtures.map((fixture) => fixture.name)).size).toBe(taskCostFixtures.length);
+    expect(new Set(taskCostFixtures.map((fixture) => fixture.name)).size).toBe(
+      taskCostFixtures.length,
+    );
   });
 
-  describe.each(taskCostFixtures.map((fixture) => [fixture.name, fixture] as const))('%s', (_name, fixture) => {
+  describe.each(
+    taskCostFixtures.map((fixture) => [fixture.name, fixture] as const),
+  )('%s', (_name, fixture) => {
     it('has a valid ledger and valid events', () => {
       expect(() => validateTaskCostLedgerV1(fixture.ledger)).not.toThrow();
       for (const event of fixture.events) {
@@ -59,7 +75,9 @@ describe('task-cost fixtures', () => {
     });
 
     it('has one valid expected summary per task', () => {
-      expect(fixture.expectedSummaries.map((summary) => summary.task_id)).toEqual(fixture.ledger.task_ids);
+      expect(
+        fixture.expectedSummaries.map((summary) => summary.task_id),
+      ).toEqual(fixture.ledger.task_ids);
       for (const summary of fixture.expectedSummaries) {
         expect(() => validateTaskCostSummaryV1(summary)).not.toThrow();
       }
@@ -67,37 +85,60 @@ describe('task-cost fixtures', () => {
 
     it('reduces to the hand-written expected summaries', () => {
       for (const expected of fixture.expectedSummaries) {
-        expect(aggregateTaskCost(fixture.events, { taskId: expected.task_id })).toEqual(expected);
+        expect(
+          aggregateTaskCost(fixture.events, { taskId: expected.task_id }),
+        ).toEqual(expected);
       }
     });
 
     it('is order-independent for events (replay and cumulative rules use ids/sequence, not array order)', () => {
       for (const expected of fixture.expectedSummaries) {
         const reversed = [...fixture.events].reverse();
-        expect(aggregateTaskCost(reversed, { taskId: expected.task_id })).toEqual(expected);
+        expect(
+          aggregateTaskCost(reversed, { taskId: expected.task_id }),
+        ).toEqual(expected);
       }
     });
 
-    it('keeps local estimates consistent with the SDK price table', () => {
+    it('keeps local estimates consistent with their recorded price snapshot', () => {
       for (const event of fixture.events) {
-        if (event.estimated_cost_usd === null || event.observed_model === 'claude-haiku-4-5') continue;
+        if (
+          event.estimated_cost_usd === null ||
+          event.observed_model === 'claude-haiku-4-5'
+        )
+          continue;
         if (event.usage_kind === 'cumulative') continue;
-        expect(event.estimated_cost_usd).toBeCloseTo(priceEvent(event) ?? Number.NaN, 9);
+        expect(event.estimated_cost_usd).toBeCloseTo(
+          priceEvent(event) ?? Number.NaN,
+          9,
+        );
       }
     });
 
     it('contains no forbidden keys and no path/credential/identity-shaped values', () => {
       assertNoForbiddenKeys(fixture.ledger);
-      for (const summary of fixture.expectedSummaries) assertNoForbiddenKeys(summary);
+      for (const summary of fixture.expectedSummaries)
+        assertNoForbiddenKeys(summary);
 
-      const serialized = JSON.stringify([fixture.ledger, fixture.expectedSummaries]);
-      const strings = [...serialized.matchAll(/"([^"\\]*)"/g)].map((match) => match[1] ?? '');
+      const serialized = JSON.stringify([
+        fixture.ledger,
+        fixture.expectedSummaries,
+      ]);
+      const strings = [...serialized.matchAll(/"([^"\\]*)"/g)].map(
+        (match) => match[1] ?? '',
+      );
       for (const value of strings) {
-        expect(value, `value ${value}`).not.toMatch(/^\/|^~|^[A-Za-z]:\\|\\|\.\.\//);
+        expect(value, `value ${value}`).not.toMatch(
+          /^\/|^~|^[A-Za-z]:\\|\\|\.\.\//,
+        );
         expect(value, `value ${value}`).not.toMatch(/@/);
-        expect(value, `value ${value}`).not.toMatch(/(^|[^A-Za-z])sk-[A-Za-z0-9]|bearer |api[_-]?key|password|secret/i);
+        expect(value, `value ${value}`).not.toMatch(
+          /(^|[^A-Za-z])sk-[A-Za-z0-9]|bearer |api[_-]?key|password|secret/i,
+        );
         expect(value, `value ${value}`).not.toMatch(/https?:\/\//i);
-        expect(value, `value ${value}`).not.toMatch(/\.(md|ts|js|json|jsonl|txt)$/i);
+        expect(value, `value ${value}`).not.toMatch(
+          /\.(md|ts|js|json|jsonl|txt)$/i,
+        );
       }
     });
 
@@ -114,7 +155,9 @@ describe('task-cost fixtures', () => {
 
 describe('fixture scenario assertions', () => {
   const byName = (name: string) => {
-    const fixture = taskCostFixtures.find((candidate) => candidate.name === name);
+    const fixture = taskCostFixtures.find(
+      (candidate) => candidate.name === name,
+    );
     if (!fixture) throw new Error(`missing fixture ${name}`);
     return fixture;
   };
@@ -122,18 +165,25 @@ describe('fixture scenario assertions', () => {
   it('retry: superseded event is excluded and no replay_dropped is reported', () => {
     const summary = aggregateTaskCost(byName('claude-code-retry').events);
     expect(summary.event_count).toBe(3);
-    expect(summary.event_ids).not.toContain('01900000-0000-7000-8000-000000000002');
+    expect(summary.event_ids).not.toContain(
+      '01900000-0000-7000-8000-000000000002',
+    );
     expect(summary.diagnostics).not.toContain('replay_dropped');
   });
 
   it('cumulative: never produces negative usage and flags the backward jump', () => {
-    const summary = aggregateTaskCost(byName('claude-code-cumulative-snapshot').events);
+    const summary = aggregateTaskCost(
+      byName('claude-code-cumulative-snapshot').events,
+    );
     expect(summary.diagnostics).toContain('cumulative_backward_jump');
-    for (const value of Object.values(summary.usage)) expect(value).toBeGreaterThanOrEqual(0);
+    for (const value of Object.values(summary.usage))
+      expect(value).toBeGreaterThanOrEqual(0);
   });
 
   it('subscription: actual is null, estimate is positive, diagnostic present', () => {
-    const summary = aggregateTaskCost(byName('claude-code-subscription').events);
+    const summary = aggregateTaskCost(
+      byName('claude-code-subscription').events,
+    );
     expect(summary.actual_cost_usd).toBeNull();
     expect(summary.estimated_cost_usd).toBeGreaterThan(0);
     expect(summary.diagnostics).toContain('subscription_basis_no_charge');
@@ -148,7 +198,9 @@ describe('fixture scenario assertions', () => {
   it('unknown pricing: unpriced cost is null, never 0', () => {
     const summary = aggregateTaskCost(byName('codex-unknown-pricing').events);
     expect(summary.total_cost_usd).toBeNull();
-    const unpriced = summary.model_segments.find((segment) => segment.model === 'codex-unlisted-model');
+    const unpriced = summary.model_segments.find(
+      (segment) => segment.model === 'codex-unlisted-model',
+    );
     expect(unpriced?.estimated_cost_usd).toBeNull();
   });
 
@@ -156,7 +208,9 @@ describe('fixture scenario assertions', () => {
     const fixture = byName('concurrent-tasks');
     expect(fixture.ledger.task_ids).toEqual(['task-0001', 'task-0002']);
     const [first, second] = fixture.expectedSummaries;
-    expect(first?.event_ids.filter((id) => second?.event_ids.includes(id))).toEqual([]);
+    expect(
+      first?.event_ids.filter((id) => second?.event_ids.includes(id)),
+    ).toEqual([]);
   });
 
   it('native: known-zero counters are 0, not null', () => {

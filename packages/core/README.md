@@ -361,3 +361,28 @@ default value for unavailable evidence.
 - [Reference Pattern](../../docs/reference-pattern.md) — the route → execute → contribute loop
 - [Payload Schemas](../../docs/payload-schemas.md) — the wire contracts
 - [`examples/reference-harness`](../../examples/reference-harness) — the smallest complete integration
+
+
+## Shared token price artifact
+
+`@hokusai/core/token-prices` exports `prices/hokusai_token_prices.v1.json` (JSON,
+`hokusai_token_prices/v1`). It is generated from `src/pricing.ts`, the same resolver
+used by `computeActualCostUsd` and `@hokusai/costs`, with explicit USD-per-million
+input/output/cache rates, source URL, as-of date, identity aliases and optional
+request-scoped long-context tiers. A null rate means unpriced; never substitute
+another rate for nonzero usage. Reasoning is already included in output tokens.
+
+API-equivalent resource cost is comparable across organizations regardless of
+subscription, discount or subsidy. A provider-reported charge remains separate
+evidence. A new table revision does not rewrite stored historical costs.
+
+Run `pnpm export:token-prices` after changing prices. CI and release run
+`pnpm check:token-prices`; it rejects stale JSON or comparison vectors. Server
+consumers vendor the JSON and `fixtures/token-prices/parity.v1.json` together,
+verify their hashes against the SDK commit, and run the computation vectors.
+
+On 2026-11-16 the provider pages confirmed Sonnet 5 at $2 input / $10 output,
+GPT-5.6 Terra at $2 / $12, and GPT-5.3 Codex cached input at $0.175 per million.
+OpenRouter-only rows retain the deliberately pinned 2026-11-02 list-price source,
+not rates copied from historical eval records. Legacy provider rows retain their
+previous rates unless explicitly refreshed; each row records its own date.

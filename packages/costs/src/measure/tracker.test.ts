@@ -42,9 +42,9 @@ describe('createTaskCostTracker: totals (REQ-F3)', () => {
 
     const report = t.summary();
     expect(report.taskId).toBe('task-0001');
-    expect(report.byModel['claude-sonnet-5']?.totalUsd).toBeCloseTo(3, 9);
+    expect(report.byModel['claude-sonnet-5']?.totalUsd).toBeCloseTo(2, 9);
     expect(report.byModel['gpt-5']?.totalUsd).toBeCloseTo(10, 9);
-    expect(report.byHarness.native?.totalUsd).toBeCloseTo(13, 9);
+    expect(report.byHarness.native?.totalUsd).toBeCloseTo(12, 9);
     const sumOfModels = Object.values(report.byModel).reduce(
       (sum, slice) => sum + (slice.totalUsd ?? 0),
       0,
@@ -154,7 +154,7 @@ describe('createTaskCostTracker: multi-harness and replay', () => {
     // One harness is unpriced, so the combined total must be null, while the
     // estimated lower bound survives.
     expect(report.totalUsd).toBeNull();
-    expect(report.estimatedUsd).toBeCloseTo(0.0045, 9);
+    expect(report.estimatedUsd).toBeCloseTo(0.003, 9);
     expect(report.coverage.status).toBe('partial');
   });
 
@@ -219,7 +219,7 @@ describe('createTaskCostTracker: cost semantics', () => {
     t.recordUsage({ model: 'claude-sonnet-5', usage: usage(1_000_000, 0) });
     const report = t.summary();
     expect(report.actualUsd).toBeNull();
-    expect(report.estimatedUsd).toBeCloseTo(3, 9);
+    expect(report.estimatedUsd).toBeCloseTo(2, 9);
     expect(report.source.basis).toBe('subscription');
     expect(
       report.diagnostics.some((d) => d.code === 'subscription_basis_no_charge'),
@@ -266,7 +266,7 @@ describe('createTaskCostTracker: cost semantics', () => {
     });
     const report = t.summary();
     expect(report.usage.inputTokens).toBe(3_000_000);
-    expect(report.totalUsd).toBeCloseTo(9, 9);
+    expect(report.totalUsd).toBeCloseTo(6, 9);
   });
 
   it('maps Anthropic and OpenAI usage payload shapes', () => {

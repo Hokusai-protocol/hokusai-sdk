@@ -8218,10 +8218,17 @@ var CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
 var CACHE_READ_INPUT_MULTIPLIER = 0.1;
 var ANTHROPIC_MODEL_PRICING = {
   "claude-fable-5": { inputPerMTokUsd: 10, outputPerMTokUsd: 50 },
+  "claude-opus-5-5": {
+    inputPerMTokUsd: 4,
+    outputPerMTokUsd: 20,
+    cachedInputPerMTokUsd: 0.2
+  },
+  "claude-opus-5": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
+  "claude-sonnet-4-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-opus-4-8": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
   "claude-opus-4-7": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
   "claude-opus-4-6": { inputPerMTokUsd: 5, outputPerMTokUsd: 25 },
-  "claude-sonnet-5": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
+  "claude-sonnet-5": { inputPerMTokUsd: 2, outputPerMTokUsd: 10 },
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
@@ -8270,7 +8277,7 @@ var OPENAI_MODEL_PRICING = {
     cacheWritePerMTokUsd: null,
     longContext: openAiLong(0.2, 0.02, 0.75)
   },
-  // Promotional pricing "through at least 2026-11-21": re-verify after then.
+  // Promotional pricing "until 2026-11-30": re-verify after then.
   "gpt-5.6-sol": {
     inputPerMTokUsd: 4,
     cachedInputPerMTokUsd: 0.4,
@@ -8316,22 +8323,82 @@ var OPENAI_MODEL_PRICING = {
     outputPerMTokUsd: 180,
     longContext: openAiLong(60, null, 270)
   },
-  "gpt-5.4-mini": { inputPerMTokUsd: 0.75, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 4.5 },
-  "gpt-5.4-nano": { inputPerMTokUsd: 0.2, cachedInputPerMTokUsd: 0.02, outputPerMTokUsd: 1.25 },
-  "gpt-5.3-codex": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
-  "gpt-5.2": { inputPerMTokUsd: 1.75, cachedInputPerMTokUsd: 0.175, outputPerMTokUsd: 14 },
-  "gpt-5.2-pro": { inputPerMTokUsd: 21, cachedInputPerMTokUsd: null, outputPerMTokUsd: 168 },
-  "gpt-5.1": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
-  "gpt-5": { inputPerMTokUsd: 1.25, cachedInputPerMTokUsd: 0.125, outputPerMTokUsd: 10 },
-  "gpt-5-mini": { inputPerMTokUsd: 0.25, cachedInputPerMTokUsd: 0.025, outputPerMTokUsd: 2 },
-  "gpt-5-nano": { inputPerMTokUsd: 0.05, cachedInputPerMTokUsd: 5e-3, outputPerMTokUsd: 0.4 },
-  "gpt-5-pro": { inputPerMTokUsd: 15, cachedInputPerMTokUsd: null, outputPerMTokUsd: 120 },
-  "gpt-4.1": { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
-  "gpt-4.1-mini": { inputPerMTokUsd: 0.4, cachedInputPerMTokUsd: 0.1, outputPerMTokUsd: 1.6 },
-  "gpt-4o": { inputPerMTokUsd: 2.5, cachedInputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
-  "gpt-4o-mini": { inputPerMTokUsd: 0.15, cachedInputPerMTokUsd: 0.075, outputPerMTokUsd: 0.6 },
+  "gpt-5.4-mini": {
+    inputPerMTokUsd: 0.75,
+    cachedInputPerMTokUsd: 0.075,
+    outputPerMTokUsd: 4.5
+  },
+  "gpt-5.4-nano": {
+    inputPerMTokUsd: 0.2,
+    cachedInputPerMTokUsd: 0.02,
+    outputPerMTokUsd: 1.25
+  },
+  "gpt-5.3-codex": {
+    inputPerMTokUsd: 1.75,
+    cachedInputPerMTokUsd: 0.175,
+    outputPerMTokUsd: 14
+  },
+  "gpt-5.2": {
+    inputPerMTokUsd: 1.75,
+    cachedInputPerMTokUsd: 0.175,
+    outputPerMTokUsd: 14
+  },
+  "gpt-5.2-pro": {
+    inputPerMTokUsd: 21,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 168
+  },
+  "gpt-5.1": {
+    inputPerMTokUsd: 1.25,
+    cachedInputPerMTokUsd: 0.125,
+    outputPerMTokUsd: 10
+  },
+  "gpt-5": {
+    inputPerMTokUsd: 1.25,
+    cachedInputPerMTokUsd: 0.125,
+    outputPerMTokUsd: 10
+  },
+  "gpt-5-mini": {
+    inputPerMTokUsd: 0.25,
+    cachedInputPerMTokUsd: 0.025,
+    outputPerMTokUsd: 2
+  },
+  "gpt-5-nano": {
+    inputPerMTokUsd: 0.05,
+    cachedInputPerMTokUsd: 5e-3,
+    outputPerMTokUsd: 0.4
+  },
+  "gpt-5-pro": {
+    inputPerMTokUsd: 15,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 120
+  },
+  "gpt-4.1": {
+    inputPerMTokUsd: 2,
+    cachedInputPerMTokUsd: 0.5,
+    outputPerMTokUsd: 8
+  },
+  "gpt-4.1-mini": {
+    inputPerMTokUsd: 0.4,
+    cachedInputPerMTokUsd: 0.1,
+    outputPerMTokUsd: 1.6
+  },
+  "gpt-4o": {
+    inputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 1.25,
+    outputPerMTokUsd: 10
+  },
+  "gpt-4o-mini": {
+    inputPerMTokUsd: 0.15,
+    cachedInputPerMTokUsd: 0.075,
+    outputPerMTokUsd: 0.6
+  },
   o3: { inputPerMTokUsd: 2, cachedInputPerMTokUsd: 0.5, outputPerMTokUsd: 8 },
-  "o3-pro": { inputPerMTokUsd: 20, cachedInputPerMTokUsd: null, outputPerMTokUsd: 80 },
+  "o3-pro": {
+    inputPerMTokUsd: 20,
+    cachedInputPerMTokUsd: null,
+    outputPerMTokUsd: 80
+  },
   // Not on the current page: earlier per-model pages, legacy cache multipliers.
   "gpt-5-codex": { inputPerMTokUsd: 1.25, outputPerMTokUsd: 10 },
   "codex-mini-latest": { inputPerMTokUsd: 1.5, outputPerMTokUsd: 6 },
@@ -8347,12 +8414,160 @@ var GOOGLE_MODEL_PRICING = {
   "gemini-2.0-flash": { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 },
   "gemini-2.0-flash-001": { inputPerMTokUsd: 0.1, outputPerMTokUsd: 0.4 }
 };
+var OPENROUTER_MODEL_PRICING = {
+  // Moonshot AI provider list rate, verified 2026-11-16; not a routing-floor quote.
+  "kimi-k3.1-pro": {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 10,
+    cachedInputPerMTokUsd: 0.2,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-chat": {
+    inputPerMTokUsd: 0.2574,
+    outputPerMTokUsd: 1.0287,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-v3.2": {
+    inputPerMTokUsd: 0.26,
+    outputPerMTokUsd: 0.38,
+    cachedInputPerMTokUsd: 0.13,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-v4-flash": {
+    inputPerMTokUsd: 0.091,
+    outputPerMTokUsd: 0.182,
+    cachedInputPerMTokUsd: 0.0182,
+    cacheWritePerMTokUsd: null
+  },
+  "deepseek-v4-pro": {
+    inputPerMTokUsd: 1.6,
+    outputPerMTokUsd: 3.2,
+    cachedInputPerMTokUsd: 0.135,
+    cacheWritePerMTokUsd: null
+  },
+  "gemini-3.1-pro-preview": {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 12,
+    cachedInputPerMTokUsd: 0.2,
+    cacheWritePerMTokUsd: 0.375
+  },
+  "llama-3.3-70b-instruct": {
+    inputPerMTokUsd: 0.2,
+    outputPerMTokUsd: 0.52,
+    cachedInputPerMTokUsd: 0.1,
+    cacheWritePerMTokUsd: null
+  },
+  "minimax-m3": {
+    inputPerMTokUsd: 0.3,
+    outputPerMTokUsd: 1.2,
+    cachedInputPerMTokUsd: 0.06,
+    cacheWritePerMTokUsd: null
+  },
+  "mistral-large-2407": {
+    inputPerMTokUsd: 2,
+    outputPerMTokUsd: 6,
+    cachedInputPerMTokUsd: 0.2,
+    cacheWritePerMTokUsd: null
+  },
+  "mistral-small-2603": {
+    inputPerMTokUsd: 0.15,
+    outputPerMTokUsd: 0.6,
+    cachedInputPerMTokUsd: 0.015,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2": {
+    inputPerMTokUsd: 0.57,
+    outputPerMTokUsd: 2.3,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2-thinking": {
+    inputPerMTokUsd: 0.6,
+    outputPerMTokUsd: 2.5,
+    cachedInputPerMTokUsd: 0.15,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2.6": {
+    inputPerMTokUsd: 0.65,
+    outputPerMTokUsd: 3.41,
+    cachedInputPerMTokUsd: 0.15,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k2.7-code": {
+    inputPerMTokUsd: 0.6,
+    outputPerMTokUsd: 3.5,
+    cachedInputPerMTokUsd: 0.15,
+    cacheWritePerMTokUsd: null
+  },
+  "kimi-k3": {
+    inputPerMTokUsd: 0.192,
+    outputPerMTokUsd: 15,
+    cachedInputPerMTokUsd: 0.182,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen-2.5-coder-32b-instruct": {
+    inputPerMTokUsd: 0.66,
+    outputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen3-235b-a22b-2507": {
+    inputPerMTokUsd: 0.09,
+    outputPerMTokUsd: 0.55,
+    cachedInputPerMTokUsd: null,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen3-coder": {
+    inputPerMTokUsd: 0.3,
+    outputPerMTokUsd: 1,
+    cachedInputPerMTokUsd: 0.1,
+    cacheWritePerMTokUsd: null
+  },
+  "qwen3.7-max": {
+    inputPerMTokUsd: 1.475,
+    outputPerMTokUsd: 4.425,
+    cachedInputPerMTokUsd: 0.295,
+    cacheWritePerMTokUsd: 1.84375
+  },
+  "qwen3.7-plus": {
+    inputPerMTokUsd: 0.32,
+    outputPerMTokUsd: 1.28,
+    cachedInputPerMTokUsd: 0.064,
+    cacheWritePerMTokUsd: 0.4
+  },
+  "glm-5.2": {
+    inputPerMTokUsd: 6e-3,
+    outputPerMTokUsd: 6.8,
+    cachedInputPerMTokUsd: 5e-3,
+    cacheWritePerMTokUsd: null
+  },
+  "glm-5.3": {
+    inputPerMTokUsd: 0.08,
+    outputPerMTokUsd: 3.6,
+    cachedInputPerMTokUsd: 0.076,
+    cacheWritePerMTokUsd: null
+  },
+  "glm-5.3-flash": {
+    inputPerMTokUsd: 0.0285,
+    outputPerMTokUsd: 0.0923,
+    cachedInputPerMTokUsd: 0.0285,
+    cacheWritePerMTokUsd: null
+  }
+};
+var MODEL_PRICE_ALIASES = {
+  "kimi-k3-1-pro": "kimi-k3.1-pro",
+  "qwen-3-coder": "qwen3-coder",
+  "llama-3.3-70b": "llama-3.3-70b-instruct",
+  "mistral-large-2": "mistral-large-2407"
+};
 var MODEL_PRICING = {
+  ...OPENROUTER_MODEL_PRICING,
   ...ANTHROPIC_MODEL_PRICING,
   ...OPENAI_MODEL_PRICING,
   ...GOOGLE_MODEL_PRICING
 };
-var MODEL_PRICING_AS_OF = "2026-11-04";
+var MODEL_PRICING_AS_OF = "2026-11-16";
 var COMPACT_DATE_SUFFIX = /-\d{8}$/;
 var DASHED_DATE_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
 var GEMINI_STABLE_SUFFIX = /-001$/;
@@ -8373,9 +8588,11 @@ var KNOWN_PROVIDER_PREFIXES = [
   "z-ai/"
 ];
 function normalizeModelId(id2) {
-  let normalized = id2.trim().toLowerCase();
+  let normalized = id2.trim().toLowerCase().replace(/^openrouter:/, "");
   for (let index = 0; index < 5; index += 1) {
-    const prefix = KNOWN_PROVIDER_PREFIXES.find((candidate) => normalized.startsWith(candidate));
+    const prefix = KNOWN_PROVIDER_PREFIXES.find(
+      (candidate) => normalized.startsWith(candidate)
+    );
     if (!prefix) {
       break;
     }
@@ -8384,7 +8601,7 @@ function normalizeModelId(id2) {
   if (normalized.startsWith("claude-")) {
     normalized = normalized.replaceAll(".", "-");
   }
-  return normalized;
+  return MODEL_PRICE_ALIASES[normalized] ?? normalized;
 }
 function stripKnownSnapshotSuffixes(model) {
   const compactDate = model.replace(COMPACT_DATE_SUFFIX, "");
@@ -8428,7 +8645,12 @@ function appliedRates(model, price, promptTokens, requestScoped) {
     return {
       input: long.inputPerMTokUsd,
       output: long.outputPerMTokUsd,
-      cacheRead: cacheRate(long.cachedInputPerMTokUsd, long.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, false),
+      cacheRead: cacheRate(
+        long.cachedInputPerMTokUsd,
+        long.inputPerMTokUsd,
+        CACHE_READ_INPUT_MULTIPLIER,
+        false
+      ),
       // Long-context cache writes share the TTL ambiguity: never priced.
       cacheWrite: void 0
     };
@@ -8436,8 +8658,18 @@ function appliedRates(model, price, promptTokens, requestScoped) {
   return {
     input: price.inputPerMTokUsd,
     output: price.outputPerMTokUsd,
-    cacheRead: cacheRate(price.cachedInputPerMTokUsd, price.inputPerMTokUsd, CACHE_READ_INPUT_MULTIPLIER, legacyEligible),
-    cacheWrite: cacheRate(price.cacheWritePerMTokUsd, price.inputPerMTokUsd, CACHE_WRITE_INPUT_MULTIPLIER, legacyEligible)
+    cacheRead: cacheRate(
+      price.cachedInputPerMTokUsd,
+      price.inputPerMTokUsd,
+      CACHE_READ_INPUT_MULTIPLIER,
+      legacyEligible
+    ),
+    cacheWrite: cacheRate(
+      price.cacheWritePerMTokUsd,
+      price.inputPerMTokUsd,
+      CACHE_WRITE_INPUT_MULTIPLIER,
+      legacyEligible
+    )
   };
 }
 function computeActualCostUsd(input) {
@@ -8469,7 +8701,9 @@ function isAnthropicModel(model) {
   if (ANTHROPIC_MODEL_PRICING[normalized]) {
     return true;
   }
-  return Boolean(ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]);
+  return Boolean(
+    ANTHROPIC_MODEL_PRICING[stripKnownSnapshotSuffixes(normalized)]
+  );
 }
 function isOpenAIModel(model) {
   const normalized = normalizeModelId(model);
@@ -18019,6 +18253,165 @@ function extractClaudeCodeUsage(options) {
 // ../costs/src/sources/claude-code/index.ts
 init_types();
 
+// ../costs/src/measure/usage.ts
+var USAGE_FIELD_MAP = [
+  ["inputTokens", "input_tokens"],
+  ["outputTokens", "output_tokens"],
+  ["cacheReadTokens", "cache_read_tokens"],
+  ["cacheWriteTokens", "cache_write_tokens"],
+  ["reasoningTokens", "reasoning_tokens"]
+];
+function emptyUsage() {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null
+  };
+}
+function toContractUsage(usage) {
+  const projected = {};
+  if (typeof usage !== "object" || usage === null) return projected;
+  for (const [camel, snake] of USAGE_FIELD_MAP) {
+    if (Object.prototype.hasOwnProperty.call(usage, camel)) {
+      const value = usage[camel];
+      projected[snake] = value === void 0 ? null : value;
+    }
+  }
+  return projected;
+}
+function toCamelUsage(usage) {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheReadTokens: usage.cache_read_tokens,
+    cacheWriteTokens: usage.cache_write_tokens,
+    reasoningTokens: usage.reasoning_tokens
+  };
+}
+function countOrNull2(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+function asRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+}
+function fromCodexUsage(usage, diagnostics) {
+  const record = asRecord2(usage);
+  const input = countOrNull2(record.input_tokens);
+  const cached = countOrNull2(record.cached_input_tokens);
+  const cacheWrite = countOrNull2(record.cache_write_input_tokens);
+  const cacheTotal = (cached ?? 0) + (cacheWrite ?? 0);
+  if (input !== null && cacheTotal > input && diagnostics !== void 0) {
+    diagnostics.codex_cache_exceeds_input = (diagnostics.codex_cache_exceeds_input ?? 0) + 1;
+  }
+  return {
+    inputTokens: input === null ? null : Math.max(0, input - cacheTotal),
+    outputTokens: countOrNull2(record.output_tokens),
+    cacheReadTokens: cached,
+    cacheWriteTokens: cacheWrite,
+    reasoningTokens: countOrNull2(record.reasoning_output_tokens)
+  };
+}
+var USAGE_RECORD_ALLOWED_KEYS = [
+  "model",
+  "usage",
+  "harness",
+  "providerCostUsd",
+  "costBasis",
+  "eventId",
+  "sessionId",
+  "turnId",
+  "occurredAt",
+  "usageKind",
+  "isSubagent",
+  "replayOfEventId",
+  "aggregate"
+];
+var FRIENDLY_ALLOWED_KEYS = [
+  "eventId",
+  "taskId",
+  "sessionId",
+  "turnId",
+  "sequence",
+  "harness",
+  "harnessVersion",
+  "providerContractVersion",
+  "observedModel",
+  "usage",
+  "usageKind",
+  "actualCostUsd",
+  "observedAt",
+  "costBasis",
+  "replayOfEventId",
+  "parentEventId",
+  "isSubagent",
+  "diagnostics",
+  "estimatedCostUsd",
+  "pricingSource",
+  "priceTable",
+  "aggregate"
+];
+var PREBUILT_ALLOWED_KEYS = [
+  "schema_version",
+  "event_id",
+  "task_id",
+  "session_id",
+  "turn_id",
+  "sequence",
+  "parent_event_id",
+  "is_subagent",
+  "replay_of_event_id",
+  "harness",
+  "harness_version",
+  "provider_contract_version",
+  "observed_model",
+  "usage_kind",
+  "usage",
+  "usage_coverage",
+  "actual_cost_usd",
+  "estimated_cost_usd",
+  "cost_source",
+  "cost_basis",
+  "pricing_source",
+  "pricing_revision",
+  "price_table",
+  "observed_at",
+  "diagnostics"
+];
+function projectAllowed(source, allowed) {
+  const projected = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      projected[key] = source[key];
+    }
+  }
+  return projected;
+}
+function projectUsageRecord(record) {
+  const projected = projectAllowed(
+    record,
+    USAGE_RECORD_ALLOWED_KEYS
+  );
+  if (projected.usage !== void 0) {
+    const usage = asRecord2(projected.usage);
+    const clean = {};
+    for (const [camel] of USAGE_FIELD_MAP) {
+      if (Object.prototype.hasOwnProperty.call(usage, camel)) {
+        clean[camel] = usage[camel];
+      }
+    }
+    projected.usage = clean;
+  }
+  return projected;
+}
+function projectIngestInput(record) {
+  return projectAllowed(record, FRIENDLY_ALLOWED_KEYS);
+}
+function projectPrebuiltEvent(record) {
+  return projectAllowed(record, PREBUILT_ALLOWED_KEYS);
+}
+
 // ../costs/src/sources/codex/adapter.ts
 init_types();
 
@@ -18108,18 +18501,17 @@ function parseCodexRollout(content, diagnostics, parseOptions) {
 
 // ../costs/src/sources/codex/adapter.ts
 function normalizeCodexBuckets(usage, diagnostics) {
-  const input = usage.input_tokens;
-  if (input === null || input === void 0) return usage;
-  const cached = usage.cache_read_tokens ?? 0;
-  const cacheWrite = usage.cache_write_tokens ?? 0;
-  const sub = cached + cacheWrite;
-  if (sub <= 0) return usage;
-  const normalized = input - sub;
-  if (normalized < 0) {
-    countDiagnostic(diagnostics, "codex_cache_exceeds_input");
-    return { ...usage, input_tokens: 0 };
-  }
-  return { ...usage, input_tokens: normalized };
+  const normalized = fromCodexUsage(
+    {
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cached_input_tokens: usage.cache_read_tokens,
+      cache_write_input_tokens: usage.cache_write_tokens,
+      reasoning_output_tokens: usage.reasoning_tokens
+    },
+    diagnostics
+  );
+  return usage.input_tokens === void 0 ? usage : { ...usage, input_tokens: normalized.inputTokens };
 }
 var CODEX_STANDARD_SERVICE_TIER = "default";
 function extractCodexUsage(options) {
@@ -18127,7 +18519,11 @@ function extractCodexUsage(options) {
   const diagnostics = {};
   const byIdentity = /* @__PURE__ */ new Map();
   for (const content of options.files) {
-    const session = parseCodexRollout(content, diagnostics, options.parseOptions);
+    const session = parseCodexRollout(
+      content,
+      diagnostics,
+      options.parseOptions
+    );
     if (session.sessionId === null) {
       countDiagnostic(diagnostics, "missing_session_id");
       continue;
@@ -18334,145 +18730,6 @@ function toLedgerEntries(events17) {
 
 // ../costs/src/measure/tracker.ts
 init_types();
-
-// ../costs/src/measure/usage.ts
-var USAGE_FIELD_MAP = [
-  ["inputTokens", "input_tokens"],
-  ["outputTokens", "output_tokens"],
-  ["cacheReadTokens", "cache_read_tokens"],
-  ["cacheWriteTokens", "cache_write_tokens"],
-  ["reasoningTokens", "reasoning_tokens"]
-];
-function emptyUsage() {
-  return {
-    inputTokens: null,
-    outputTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
-    reasoningTokens: null
-  };
-}
-function toContractUsage(usage) {
-  const projected = {};
-  if (typeof usage !== "object" || usage === null) return projected;
-  for (const [camel, snake] of USAGE_FIELD_MAP) {
-    if (Object.prototype.hasOwnProperty.call(usage, camel)) {
-      const value = usage[camel];
-      projected[snake] = value === void 0 ? null : value;
-    }
-  }
-  return projected;
-}
-function toCamelUsage(usage) {
-  return {
-    inputTokens: usage.input_tokens,
-    outputTokens: usage.output_tokens,
-    cacheReadTokens: usage.cache_read_tokens,
-    cacheWriteTokens: usage.cache_write_tokens,
-    reasoningTokens: usage.reasoning_tokens
-  };
-}
-function asRecord2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
-}
-var USAGE_RECORD_ALLOWED_KEYS = [
-  "model",
-  "usage",
-  "harness",
-  "providerCostUsd",
-  "costBasis",
-  "eventId",
-  "sessionId",
-  "turnId",
-  "occurredAt",
-  "usageKind",
-  "isSubagent",
-  "replayOfEventId",
-  "aggregate"
-];
-var FRIENDLY_ALLOWED_KEYS = [
-  "eventId",
-  "taskId",
-  "sessionId",
-  "turnId",
-  "sequence",
-  "harness",
-  "harnessVersion",
-  "providerContractVersion",
-  "observedModel",
-  "usage",
-  "usageKind",
-  "actualCostUsd",
-  "observedAt",
-  "costBasis",
-  "replayOfEventId",
-  "parentEventId",
-  "isSubagent",
-  "diagnostics",
-  "estimatedCostUsd",
-  "pricingSource",
-  "priceTable",
-  "aggregate"
-];
-var PREBUILT_ALLOWED_KEYS = [
-  "schema_version",
-  "event_id",
-  "task_id",
-  "session_id",
-  "turn_id",
-  "sequence",
-  "parent_event_id",
-  "is_subagent",
-  "replay_of_event_id",
-  "harness",
-  "harness_version",
-  "provider_contract_version",
-  "observed_model",
-  "usage_kind",
-  "usage",
-  "usage_coverage",
-  "actual_cost_usd",
-  "estimated_cost_usd",
-  "cost_source",
-  "cost_basis",
-  "pricing_source",
-  "pricing_revision",
-  "price_table",
-  "observed_at",
-  "diagnostics"
-];
-function projectAllowed(source, allowed) {
-  const projected = {};
-  for (const key of allowed) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      projected[key] = source[key];
-    }
-  }
-  return projected;
-}
-function projectUsageRecord(record) {
-  const projected = projectAllowed(
-    record,
-    USAGE_RECORD_ALLOWED_KEYS
-  );
-  if (projected.usage !== void 0) {
-    const usage = asRecord2(projected.usage);
-    const clean = {};
-    for (const [camel] of USAGE_FIELD_MAP) {
-      if (Object.prototype.hasOwnProperty.call(usage, camel)) {
-        clean[camel] = usage[camel];
-      }
-    }
-    projected.usage = clean;
-  }
-  return projected;
-}
-function projectIngestInput(record) {
-  return projectAllowed(record, FRIENDLY_ALLOWED_KEYS);
-}
-function projectPrebuiltEvent(record) {
-  return projectAllowed(record, PREBUILT_ALLOWED_KEYS);
-}
 
 // ../costs/src/measure/report.ts
 function roundNanoUsd(value) {
