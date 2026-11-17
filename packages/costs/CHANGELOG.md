@@ -1,6 +1,26 @@
 # @hokusai/costs
 
+## 0.9.0
+
+Released 2026-11-17.
+
+### Minor Changes
+
+- 40a018d: Export `fromCodexUsage` and `CodexUsageDiagnostics` for harnesses consuming Codex CLI usage. The rollout adapter uses the same cache normalization: subtract cache reads/writes from inclusive input, clamp underflow with an optional count-only diagnostic, keep unreported counters null, and retain reasoning as an informational subset of output. The `codex/2` contract and historical golden fixtures are unchanged.
+- 40a018d: Publish the versioned `@hokusai/core/token-prices` JSON artifact generated from the SDK pricing resolver. Include pinned OpenRouter models and explicit unpriced cache dimensions, aliases, context tiers and per-row source/date provenance. Refresh the verified Sonnet 5 rate to $2/$10 and add Opus 5.5 with its explicit cache rate. Cross-language parity vectors let server consumers prove they use the same rates and null semantics. API-equivalent measurement is independent of subscriptions. Frozen historical records are unchanged.
+
+### Patch Changes
+
+- Updated dependencies [db0dc6e]
+- Updated dependencies [50f0c6d]
+- Updated dependencies [7d0b8f1]
+- Updated dependencies [54bb506]
+- Updated dependencies [40a018d]
+  - @hokusai/core@0.9.0
+
 ## 0.8.0
+
+Released 2026-11-05.
 
 ### Minor Changes
 

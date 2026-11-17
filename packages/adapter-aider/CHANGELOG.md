@@ -1,6 +1,23 @@
 # @hokusai/adapter-aider
 
+## 0.7.1
+
+Released 2026-11-17.
+
+### Patch Changes
+
+- Updated dependencies [40a018d]
+- Updated dependencies [db0dc6e]
+- Updated dependencies [50f0c6d]
+- Updated dependencies [7d0b8f1]
+- Updated dependencies [54bb506]
+- Updated dependencies [40a018d]
+  - @hokusai/costs@0.9.0
+  - @hokusai/core@0.9.0
+
 ## 0.7.0
+
+Released 2026-11-05.
 
 ### Minor Changes
 
