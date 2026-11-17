@@ -24,7 +24,9 @@
     "sync:versions": "node scripts/sync-versions.mjs",
     "check:versions": "node scripts/sync-versions.mjs --check",
     "check:docs": "node scripts/check-docs.mjs",
-    "smoke:costs": "node scripts/smoke-costs-consumer.mjs"
+    "smoke:costs": "node scripts/smoke-costs-consumer.mjs",
+    "export:token-prices": "pnpm --filter @hokusai/core build && node scripts/export-token-prices.mjs",
+    "check:token-prices": "pnpm --filter @hokusai/core build && node scripts/export-token-prices.mjs --check"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

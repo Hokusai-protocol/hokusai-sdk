@@ -29,6 +29,7 @@ describe('@hokusai/costs public surface', () => {
     expect(root.createTaskCostTracker).toBeTypeOf('function');
     expect(root.fromAnthropicUsage).toBeTypeOf('function');
     expect(root.fromOpenAIUsage).toBeTypeOf('function');
+    expect(root.fromCodexUsage).toBeTypeOf('function');
     expect(root.TaskCostMeasureError).toBeTypeOf('function');
     expect(root.toLedgerEntries).toBeTypeOf('function');
   });
@@ -60,6 +61,7 @@ describe('@hokusai/costs public surface', () => {
         'createTaskCostTracker',
         'fromAnthropicUsage',
         'fromOpenAIUsage',
+        'fromCodexUsage',
         'measureTask',
       ].sort(),
     );

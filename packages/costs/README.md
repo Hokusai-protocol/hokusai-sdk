@@ -51,7 +51,7 @@ Nothing is ever inferred or discovered implicitly:
   `addListener`/`removeListener`, or an `EventTarget`; subscribed to
   `eventName`, default `'usage'`, for the duration of the run) or an
   `Iterable`/`AsyncIterable` consumed after the run. Payloads are friendly
-  usage records; `fromAnthropicUsage` / `fromOpenAIUsage` map the two provider
+  usage records; `fromAnthropicUsage` / `fromOpenAIUsage` / `fromCodexUsage` map provider
   `usage` payload shapes, and `mapEvent` adapts anything else.
 - **Session files** — pass `sessionFiles` for Claude Code or Codex transcripts,
   always behind an **explicit boundary**: the harness, non-empty `sessionIds`,
@@ -141,8 +141,33 @@ harness, an invalid task id, bad price overrides) throw `TaskCostMeasureError`
   `completion_tokens`, `prompt_tokens_details.cached_tokens`,
   `completion_tokens_details.reasoning_tokens`). OpenAI's `prompt_tokens`
   _includes_ cached tokens; the mapper separates the tiers so pricing never
-  double counts. Don't combine it with `harness: 'codex'` (Codex rollouts
-  report reasoning tokens disjointly from output; the OpenAI API does not).
+  double counts. For Codex CLI payloads use `fromCodexUsage`, whose keys differ.
+- `fromCodexUsage(u, diagnostics?)` — Codex CLI `turn.completed.usage` or
+  per-turn rollout usage (`input_tokens`, `cached_input_tokens`,
+  `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`).
+  Subtracts cache reads and writes from inclusive input once. Underflow clamps
+  uncached input to zero and increments the optional
+  `CodexUsageDiagnostics.codex_cache_exceeds_input` counter. Missing or malformed
+  counters stay `null`, while reported zeros stay zero. Reasoning remains a
+  reporting-only subset of output; never add it when pricing. Difference
+  cumulative counters before applying the mapper, as the rollout adapter does.
+
+```ts
+import { fromCodexUsage, type CodexUsageDiagnostics } from '@hokusai/costs';
+
+const diagnostics: CodexUsageDiagnostics = {};
+const usage = fromCodexUsage({
+  input_tokens: 1000,
+  cached_input_tokens: 800,
+  output_tokens: 300,
+  reasoning_output_tokens: 200,
+}, diagnostics);
+// inputTokens=200, cacheReadTokens=800, outputTokens=300, reasoningTokens=200.
+// Pass usage to tracker.recordUsage({ model, usage }); no billing-plan detection.
+```
+
+Run the shipped example with
+`node node_modules/@hokusai/costs/examples/codex-usage.mjs`.
 
 ## Privacy
 
@@ -300,7 +325,7 @@ Codex `token_count` events report cached input as a subset of
 The `codex/2` adapter (HOK-3104) restores disjoint buckets on ingest:
 `cache_read` + `cache_write` are subtracted from `input_tokens` (clamped to
 zero, with a `codex_cache_exceeds_input` diagnostic on underflow), and
-`reasoning_tokens` is reporting-only — never billed as output. Historical
+`reasoning_tokens` is reporting-only — never added to output billing. Historical
 `codex/1` rows keep their old interpretation. Claude Code's thinking tokens
 are already inside `output_tokens` and are left alone.
 
