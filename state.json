@@ -1,10 +1,10 @@
 {
   "schema_version": "arbiter_shadow_state/v1",
   "repo": "Hokusai-protocol/hokusai-sdk",
-  "last_seen_merge_sha": "a522039554b57c5b556cbbfeb6992cee4bedc56a",
-  "last_run_at": "2026-11-17T11:48:15.705Z",
+  "last_seen_merge_sha": "40a018d33671d5bc773c6c9ac5d64998a76ce222",
+  "last_run_at": "2026-11-17T20:59:11.644Z",
   "last_run_status": "ok",
-  "last_error_code": null,
+  "last_error_code": "CURSOR_RESET",
   "scorer_id": "baseline-v0",
   "scorer_version": "0.1.0"
 }
