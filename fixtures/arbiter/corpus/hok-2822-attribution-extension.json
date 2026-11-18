@@ -1,0 +1,19 @@
+{
+  "extension_version": "1.1.0",
+  "status": "exploratory_after_sample_review",
+  "parent_protocol": "1.0.0",
+  "reason": "The fixed v1 review sample revealed explicit generic AI and named documentation-agent disclosures missed by the frozen named-tool markers.",
+  "scope": "Historical PR body only, same fixed cohort, merge window and non-null label eligibility. No model outcome is used.",
+  "rules": [
+    "explicit_ai_generated_change",
+    "explicit_agent_authored",
+    "explicit_named_agent_creator",
+    "checked_airflow_ai_disclosure"
+  ],
+  "limitations": [
+    "Rules were selected after reviewing the v1 sample, not predeclared for that sample.",
+    "Counts are an exploratory sensitivity measurement, not independently validated recall or precision.",
+    "Do not alter the frozen feature manifest, training rows, primary v1 union or sample membership.",
+    "No repo-specific account inference is made from a generic bot name or AI product affiliation."
+  ]
+}

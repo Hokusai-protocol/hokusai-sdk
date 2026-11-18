@@ -1,0 +1,1112 @@
+{
+  "measurement_version": "1.0.0",
+  "protocol_version": "1.0.0",
+  "protocol_sha256": "d90339c9dbf8484406222574003f7dd75edddb970edfa2d01240456e40a9cdac",
+  "baseline_sha256": "144b2d011ffd129d50f5fe6cf1910fad7dea6b87be83308ab17e3f2711f17d51",
+  "source_run_id": "b7afd6a32f066a72",
+  "window": {
+    "from": "2026-02-02T00:00:00.000Z",
+    "until": "2026-08-01T00:00:00.000Z"
+  },
+  "totals": {
+    "eligible": 117991,
+    "baseline_marked": 28209,
+    "full_union": 28209,
+    "added_unique": 0,
+    "baseline_rate": 0.23907755676280396,
+    "full_union_rate": 0.23907755676280396,
+    "signal_counts": {
+      "known_agent_account": 966,
+      "agent_branch": 2531,
+      "agent_commit_or_landing": 23170,
+      "agent_body": 12415,
+      "explicit_agent_label": 0,
+      "bound_executed_route": 0,
+      "declared_harness_metadata": 0,
+      "owner_mapping": 0
+    },
+    "additional_by_signal_overlapping": {
+      "known_agent_account": 0,
+      "agent_branch": 0,
+      "agent_commit_or_landing": 0,
+      "agent_body": 0,
+      "explicit_agent_label": 0,
+      "bound_executed_route": 0,
+      "declared_harness_metadata": 0,
+      "owner_mapping": 0
+    },
+    "strata": {
+      "unmarked": 87226,
+      "baseline_positive": 28209,
+      "bot_without_agent_evidence": 2556
+    },
+    "generic_bot_authors": 3885,
+    "bot_without_agent_evidence": 2556,
+    "dependency_bot_without_agent_evidence": 1064,
+    "legacy_union_if_every_bot_counted": 30765,
+    "harness_metadata": 0,
+    "bound_executed_model": 0,
+    "heuristic_exact_model": 10778,
+    "unavailable_body": 111,
+    "unavailable_labels": 2,
+    "conflicting_metadata_head": 0
+  },
+  "macro_full_union_rate": 0.22732901228110286,
+  "repos_at_60_percent": 0,
+  "review_sample_size": 116,
+  "independent_human_precision": null,
+  "exploratory_extension": {
+    "extension_version": "1.1.0",
+    "status": "exploratory_after_sample_review",
+    "parent_protocol": "1.0.0",
+    "reason": "The fixed v1 review sample revealed explicit generic AI and named documentation-agent disclosures missed by the frozen named-tool markers.",
+    "scope": "Historical PR body only, same fixed cohort, merge window and non-null label eligibility. No model outcome is used.",
+    "rules": [
+      "explicit_ai_generated_change",
+      "explicit_agent_authored",
+      "explicit_named_agent_creator",
+      "checked_airflow_ai_disclosure"
+    ],
+    "limitations": [
+      "Rules were selected after reviewing the v1 sample, not predeclared for that sample.",
+      "Counts are an exploratory sensitivity measurement, not independently validated recall or precision.",
+      "Do not alter the frozen feature manifest, training rows, primary v1 union or sample membership.",
+      "No repo-specific account inference is made from a generic bot name or AI product affiliation."
+    ],
+    "sha256": "474dfd03a9f06c589479785e2fb2f5f04369f256f1c9a4dead72d6eeda4807b4",
+    "added_unique": 1124,
+    "union": 29333,
+    "rate": 0.24860370706240306,
+    "repos": [
+      {
+        "repo": "apache/airflow",
+        "added_unique": 466,
+        "union": 1745,
+        "eligible": 4484,
+        "rate": 0.3891614629794826
+      },
+      {
+        "repo": "ClickHouse/ClickHouse",
+        "added_unique": 7,
+        "union": 3775,
+        "eligible": 6911,
+        "rate": 0.5462306467949646
+      },
+      {
+        "repo": "cockroachdb/cockroach",
+        "added_unique": 0,
+        "union": 888,
+        "eligible": 2214,
+        "rate": 0.4010840108401084
+      },
+      {
+        "repo": "discourse/discourse",
+        "added_unique": 0,
+        "union": 50,
+        "eligible": 3834,
+        "rate": 0.013041210224308816
+      },
+      {
+        "repo": "django/django",
+        "added_unique": 0,
+        "union": 4,
+        "eligible": 431,
+        "rate": 0.009280742459396751
+      },
+      {
+        "repo": "dotnet/runtime",
+        "added_unique": 0,
+        "union": 2140,
+        "eligible": 3616,
+        "rate": 0.5918141592920354
+      },
+      {
+        "repo": "elastic/kibana",
+        "added_unique": 0,
+        "union": 2668,
+        "eligible": 10901,
+        "rate": 0.24474818823961106
+      },
+      {
+        "repo": "getsentry/sentry",
+        "added_unique": 0,
+        "union": 3403,
+        "eligible": 9998,
+        "rate": 0.34036807361472293
+      },
+      {
+        "repo": "grafana/grafana",
+        "added_unique": 0,
+        "union": 1006,
+        "eligible": 6423,
+        "rate": 0.15662463023509263
+      },
+      {
+        "repo": "home-assistant/core",
+        "added_unique": 0,
+        "union": 1539,
+        "eligible": 8290,
+        "rate": 0.1856453558504222
+      },
+      {
+        "repo": "kubernetes/kubernetes",
+        "added_unique": 3,
+        "union": 14,
+        "eligible": 1781,
+        "rate": 0.007860752386299831
+      },
+      {
+        "repo": "llvm/llvm-project",
+        "added_unique": 0,
+        "union": 1485,
+        "eligible": 22623,
+        "rate": 0.06564116164964859
+      },
+      {
+        "repo": "mattermost/mattermost",
+        "added_unique": 0,
+        "union": 428,
+        "eligible": 1112,
+        "rate": 0.38489208633093525
+      },
+      {
+        "repo": "PostHog/posthog",
+        "added_unique": 647,
+        "union": 7841,
+        "eligible": 19402,
+        "rate": 0.4041335944747964
+      },
+      {
+        "repo": "python/cpython",
+        "added_unique": 0,
+        "union": 314,
+        "eligible": 2490,
+        "rate": 0.12610441767068273
+      },
+      {
+        "repo": "pytorch/pytorch",
+        "added_unique": 1,
+        "union": 1732,
+        "eligible": 7503,
+        "rate": 0.2308409969345595
+      },
+      {
+        "repo": "rust-lang/rust",
+        "added_unique": 0,
+        "union": 15,
+        "eligible": 3788,
+        "rate": 0.00395987328405491
+      },
+      {
+        "repo": "vercel/next.js",
+        "added_unique": 0,
+        "union": 286,
+        "eligible": 2190,
+        "rate": 0.13059360730593608
+      }
+    ]
+  },
+  "missing_capture_batches": 0,
+  "repos": [
+    {
+      "repo": "apache/airflow",
+      "eligible": 4484,
+      "baseline_marked": 1279,
+      "full_union": 1279,
+      "added_unique": 0,
+      "baseline_rate": 0.2852363960749331,
+      "full_union_rate": 0.2852363960749331,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 31,
+        "agent_commit_or_landing": 239,
+        "agent_body": 1189,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 2933,
+        "baseline_positive": 1279,
+        "bot_without_agent_evidence": 272
+      },
+      "generic_bot_authors": 272,
+      "bot_without_agent_evidence": 272,
+      "dependency_bot_without_agent_evidence": 241,
+      "legacy_union_if_every_bot_counted": 1551,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 120,
+      "unavailable_body": 1,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "ClickHouse/ClickHouse",
+      "eligible": 6911,
+      "baseline_marked": 3768,
+      "full_union": 3768,
+      "added_unique": 0,
+      "baseline_rate": 0.5452177687744176,
+      "full_union_rate": 0.5452177687744176,
+      "signal_counts": {
+        "known_agent_account": 2,
+        "agent_branch": 87,
+        "agent_commit_or_landing": 3692,
+        "agent_body": 701,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "baseline_positive": 3768,
+        "unmarked": 3040,
+        "bot_without_agent_evidence": 103
+      },
+      "generic_bot_authors": 107,
+      "bot_without_agent_evidence": 103,
+      "dependency_bot_without_agent_evidence": 23,
+      "legacy_union_if_every_bot_counted": 3871,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 3222,
+      "unavailable_body": 0,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "cockroachdb/cockroach",
+      "eligible": 2214,
+      "baseline_marked": 888,
+      "full_union": 888,
+      "added_unique": 0,
+      "baseline_rate": 0.4010840108401084,
+      "full_union_rate": 0.4010840108401084,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 884,
+        "agent_body": 59,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": { "unmarked": 1326, "baseline_positive": 888 },
+      "generic_bot_authors": 0,
+      "bot_without_agent_evidence": 0,
+      "dependency_bot_without_agent_evidence": 0,
+      "legacy_union_if_every_bot_counted": 888,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 228,
+      "unavailable_body": 1,
+      "unavailable_labels": 1,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "discourse/discourse",
+      "eligible": 3834,
+      "baseline_marked": 50,
+      "full_union": 50,
+      "added_unique": 0,
+      "baseline_rate": 0.013041210224308816,
+      "full_union_rate": 0.013041210224308816,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 7,
+        "agent_commit_or_landing": 44,
+        "agent_body": 6,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "bot_without_agent_evidence": 321,
+        "unmarked": 3463,
+        "baseline_positive": 50
+      },
+      "generic_bot_authors": 321,
+      "bot_without_agent_evidence": 321,
+      "dependency_bot_without_agent_evidence": 305,
+      "legacy_union_if_every_bot_counted": 371,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 41,
+      "unavailable_body": 17,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "django/django",
+      "eligible": 431,
+      "baseline_marked": 4,
+      "full_union": 4,
+      "added_unique": 0,
+      "baseline_rate": 0.009280742459396751,
+      "full_union_rate": 0.009280742459396751,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 2,
+        "agent_commit_or_landing": 0,
+        "agent_body": 2,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": { "unmarked": 427, "baseline_positive": 4 },
+      "generic_bot_authors": 0,
+      "bot_without_agent_evidence": 0,
+      "dependency_bot_without_agent_evidence": 0,
+      "legacy_union_if_every_bot_counted": 4,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 0,
+      "unavailable_body": 1,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "dotnet/runtime",
+      "eligible": 3616,
+      "baseline_marked": 2140,
+      "full_union": 2140,
+      "added_unique": 0,
+      "baseline_rate": 0.5918141592920354,
+      "full_union_rate": 0.5918141592920354,
+      "signal_counts": {
+        "known_agent_account": 684,
+        "agent_branch": 722,
+        "agent_commit_or_landing": 2138,
+        "agent_body": 1,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 1394,
+        "baseline_positive": 2140,
+        "bot_without_agent_evidence": 82
+      },
+      "generic_bot_authors": 800,
+      "bot_without_agent_evidence": 82,
+      "dependency_bot_without_agent_evidence": 28,
+      "legacy_union_if_every_bot_counted": 2222,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 6,
+      "unavailable_body": 7,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "elastic/kibana",
+      "eligible": 10901,
+      "baseline_marked": 2668,
+      "full_union": 2668,
+      "added_unique": 0,
+      "baseline_rate": 0.24474818823961106,
+      "full_union_rate": 0.24474818823961106,
+      "signal_counts": {
+        "known_agent_account": 157,
+        "agent_branch": 207,
+        "agent_commit_or_landing": 2628,
+        "agent_body": 1184,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 8067,
+        "baseline_positive": 2668,
+        "bot_without_agent_evidence": 166
+      },
+      "generic_bot_authors": 340,
+      "bot_without_agent_evidence": 166,
+      "dependency_bot_without_agent_evidence": 0,
+      "legacy_union_if_every_bot_counted": 2834,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 923,
+      "unavailable_body": 26,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "getsentry/sentry",
+      "eligible": 9998,
+      "baseline_marked": 3403,
+      "full_union": 3403,
+      "added_unique": 0,
+      "baseline_rate": 0.34036807361472293,
+      "full_union_rate": 0.34036807361472293,
+      "signal_counts": {
+        "known_agent_account": 9,
+        "agent_branch": 81,
+        "agent_commit_or_landing": 3399,
+        "agent_body": 238,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 6438,
+        "baseline_positive": 3403,
+        "bot_without_agent_evidence": 157
+      },
+      "generic_bot_authors": 201,
+      "bot_without_agent_evidence": 157,
+      "dependency_bot_without_agent_evidence": 43,
+      "legacy_union_if_every_bot_counted": 3560,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 1485,
+      "unavailable_body": 9,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "grafana/grafana",
+      "eligible": 6423,
+      "baseline_marked": 1006,
+      "full_union": 1006,
+      "added_unique": 0,
+      "baseline_rate": 0.15662463023509263,
+      "full_union_rate": 0.15662463023509263,
+      "signal_counts": {
+        "known_agent_account": 23,
+        "agent_branch": 47,
+        "agent_commit_or_landing": 869,
+        "agent_body": 578,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 5104,
+        "bot_without_agent_evidence": 313,
+        "baseline_positive": 1006
+      },
+      "generic_bot_authors": 338,
+      "bot_without_agent_evidence": 313,
+      "dependency_bot_without_agent_evidence": 131,
+      "legacy_union_if_every_bot_counted": 1319,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 705,
+      "unavailable_body": 2,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "home-assistant/core",
+      "eligible": 8290,
+      "baseline_marked": 1539,
+      "full_union": 1539,
+      "added_unique": 0,
+      "baseline_rate": 0.1856453558504222,
+      "full_union_rate": 0.1856453558504222,
+      "signal_counts": {
+        "known_agent_account": 3,
+        "agent_branch": 133,
+        "agent_commit_or_landing": 1510,
+        "agent_body": 168,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 6519,
+        "baseline_positive": 1539,
+        "bot_without_agent_evidence": 232
+      },
+      "generic_bot_authors": 238,
+      "bot_without_agent_evidence": 232,
+      "dependency_bot_without_agent_evidence": 232,
+      "legacy_union_if_every_bot_counted": 1771,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 759,
+      "unavailable_body": 0,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "kubernetes/kubernetes",
+      "eligible": 1781,
+      "baseline_marked": 11,
+      "full_union": 11,
+      "added_unique": 0,
+      "baseline_rate": 0.006176305446378439,
+      "full_union_rate": 0.006176305446378439,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 2,
+        "agent_commit_or_landing": 6,
+        "agent_body": 5,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": { "unmarked": 1770, "baseline_positive": 11 },
+      "generic_bot_authors": 0,
+      "bot_without_agent_evidence": 0,
+      "dependency_bot_without_agent_evidence": 0,
+      "legacy_union_if_every_bot_counted": 11,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 1,
+      "unavailable_body": 0,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "llvm/llvm-project",
+      "eligible": 22623,
+      "baseline_marked": 1485,
+      "full_union": 1485,
+      "added_unique": 0,
+      "baseline_rate": 0.06564116164964859,
+      "full_union_rate": 0.06564116164964859,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 8,
+        "agent_commit_or_landing": 1471,
+        "agent_body": 955,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "baseline_positive": 1485,
+        "unmarked": 21011,
+        "bot_without_agent_evidence": 127
+      },
+      "generic_bot_authors": 127,
+      "bot_without_agent_evidence": 127,
+      "dependency_bot_without_agent_evidence": 6,
+      "legacy_union_if_every_bot_counted": 1612,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 285,
+      "unavailable_body": 39,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "mattermost/mattermost",
+      "eligible": 1112,
+      "baseline_marked": 428,
+      "full_union": 428,
+      "added_unique": 0,
+      "baseline_rate": 0.38489208633093525,
+      "full_union_rate": 0.38489208633093525,
+      "signal_counts": {
+        "known_agent_account": 85,
+        "agent_branch": 169,
+        "agent_commit_or_landing": 406,
+        "agent_body": 255,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 669,
+        "baseline_positive": 428,
+        "bot_without_agent_evidence": 15
+      },
+      "generic_bot_authors": 100,
+      "bot_without_agent_evidence": 15,
+      "dependency_bot_without_agent_evidence": 1,
+      "legacy_union_if_every_bot_counted": 443,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 102,
+      "unavailable_body": 0,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "PostHog/posthog",
+      "eligible": 19402,
+      "baseline_marked": 7194,
+      "full_union": 7194,
+      "added_unique": 0,
+      "baseline_rate": 0.3707865168539326,
+      "full_union_rate": 0.3707865168539326,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 884,
+        "agent_commit_or_landing": 3646,
+        "agent_body": 5551,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "baseline_positive": 7194,
+        "unmarked": 11473,
+        "bot_without_agent_evidence": 735
+      },
+      "generic_bot_authors": 1004,
+      "bot_without_agent_evidence": 735,
+      "dependency_bot_without_agent_evidence": 15,
+      "legacy_union_if_every_bot_counted": 7929,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 2467,
+      "unavailable_body": 2,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "python/cpython",
+      "eligible": 2490,
+      "baseline_marked": 314,
+      "full_union": 314,
+      "added_unique": 0,
+      "baseline_rate": 0.12610441767068273,
+      "full_union_rate": 0.12610441767068273,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 7,
+        "agent_commit_or_landing": 298,
+        "agent_body": 91,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 2172,
+        "baseline_positive": 314,
+        "bot_without_agent_evidence": 4
+      },
+      "generic_bot_authors": 4,
+      "bot_without_agent_evidence": 4,
+      "dependency_bot_without_agent_evidence": 4,
+      "legacy_union_if_every_bot_counted": 318,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 282,
+      "unavailable_body": 2,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "pytorch/pytorch",
+      "eligible": 7503,
+      "baseline_marked": 1731,
+      "full_union": 1731,
+      "added_unique": 0,
+      "baseline_rate": 0.23070771691323472,
+      "full_union_rate": 0.23070771691323472,
+      "signal_counts": {
+        "known_agent_account": 2,
+        "agent_branch": 27,
+        "agent_commit_or_landing": 1714,
+        "agent_body": 1387,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": {
+        "unmarked": 5743,
+        "baseline_positive": 1731,
+        "bot_without_agent_evidence": 29
+      },
+      "generic_bot_authors": 31,
+      "bot_without_agent_evidence": 29,
+      "dependency_bot_without_agent_evidence": 27,
+      "legacy_union_if_every_bot_counted": 1760,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 121,
+      "unavailable_body": 0,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "rust-lang/rust",
+      "eligible": 3788,
+      "baseline_marked": 15,
+      "full_union": 15,
+      "added_unique": 0,
+      "baseline_rate": 0.00395987328405491,
+      "full_union_rate": 0.00395987328405491,
+      "signal_counts": {
+        "known_agent_account": 0,
+        "agent_branch": 1,
+        "agent_commit_or_landing": 13,
+        "agent_body": 2,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": { "unmarked": 3773, "baseline_positive": 15 },
+      "generic_bot_authors": 0,
+      "bot_without_agent_evidence": 0,
+      "dependency_bot_without_agent_evidence": 8,
+      "legacy_union_if_every_bot_counted": 15,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 3,
+      "unavailable_body": 2,
+      "unavailable_labels": 0,
+      "conflicting_metadata_head": 0
+    },
+    {
+      "repo": "vercel/next.js",
+      "eligible": 2190,
+      "baseline_marked": 286,
+      "full_union": 286,
+      "added_unique": 0,
+      "baseline_rate": 0.13059360730593608,
+      "full_union_rate": 0.13059360730593608,
+      "signal_counts": {
+        "known_agent_account": 1,
+        "agent_branch": 116,
+        "agent_commit_or_landing": 213,
+        "agent_body": 43,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "additional_by_signal_overlapping": {
+        "known_agent_account": 0,
+        "agent_branch": 0,
+        "agent_commit_or_landing": 0,
+        "agent_body": 0,
+        "explicit_agent_label": 0,
+        "bound_executed_route": 0,
+        "declared_harness_metadata": 0,
+        "owner_mapping": 0
+      },
+      "strata": { "unmarked": 1904, "baseline_positive": 286 },
+      "generic_bot_authors": 2,
+      "bot_without_agent_evidence": 0,
+      "dependency_bot_without_agent_evidence": 0,
+      "legacy_union_if_every_bot_counted": 286,
+      "harness_metadata": 0,
+      "bound_executed_model": 0,
+      "heuristic_exact_model": 28,
+      "unavailable_body": 2,
+      "unavailable_labels": 1,
+      "conflicting_metadata_head": 0
+    }
+  ],
+  "provenance": [
+    {
+      "repo": "apache/airflow",
+      "prs_sha256": "cd076dc5f84a4130c7715090868c599cb4d7643a5803867375f8bc43e2efed84",
+      "evidence_sha256": "923cb0e806d71a28e086ae2662a97ddce9b479d736ca8b06cfea6ab1999e2994",
+      "feature_sha256": "1d0dd1174efc41f551817194b872c517029d72eb0523a83f6ea1c64b79652c04",
+      "s2_sha256": "f1f509c171e1b8838774cf8ec14cbf567dd5f4c267b830a4be0a9909f0415a52"
+    },
+    {
+      "repo": "ClickHouse/ClickHouse",
+      "prs_sha256": "1b1088d8c7b800e16fe1444c79f1121b1d61bfe035476c27f8a8534291c00144",
+      "evidence_sha256": "a3af749f4075e0bf4ab716f1f11696b78bbb84fe96d64f7af039a77b405e5aba",
+      "feature_sha256": "047a525e1869ba9d469b6c20322fbbf7cb2317ecc5294a8f446d09257f23fbae",
+      "s2_sha256": "e547abc0574a68774454af7e48118dce7c9ec248f9e256a988b577afb74ec3f7"
+    },
+    {
+      "repo": "cockroachdb/cockroach",
+      "prs_sha256": "c67d313451ff5b9027a099b477d18f74e1f62c7ccccfda3fd95719d9caaed7b3",
+      "evidence_sha256": "0d619a718d0985be4f412cbdfb0a5c8e5450a828108f07d0c434a1c864e7f89d",
+      "feature_sha256": "4bde773f96fd502ca9521fbf81fe62983dad7eec6e8436b101d2ff3562336a92",
+      "s2_sha256": "634dd2a7889254a937be19da15cfd7dc24d5f99054b29eca8b031f71e848452f"
+    },
+    {
+      "repo": "discourse/discourse",
+      "prs_sha256": "1f2e7c332fd519819da74b2cda4b013ef6c3b6d136441f039aa7969dff66f62e",
+      "evidence_sha256": "2ad0de70eb7aa0c2d9301b2e4b43305438d4e5b105e64b2a660b85f59f7168f1",
+      "feature_sha256": "2032de2a9880a0464e2ab4396c35e03bd91e06d8ed9b21762747f82fb85b1b7c",
+      "s2_sha256": "af6cef987b1f522ae2bc62b85a61849fe41acb804b71a38ea0bf700e99e419ab"
+    },
+    {
+      "repo": "django/django",
+      "prs_sha256": "c9a21c8fe23f3a81f8779313aedac7f926b8afad3b6130b0fa9c693cec7d5c73",
+      "evidence_sha256": "4ee97ba65cdc57d74babc430610717249111ca8bf0a4bcb96a211ad4e0af0b99",
+      "feature_sha256": "4f5061dadf783f794a89a61051b1c1738dfae8b542970be58c0ee9321d01c163",
+      "s2_sha256": "a834bdb5d47e6578e8d248b8ff53ceef035dc6c9ec4dc7c0eff5fc789f3adc9c"
+    },
+    {
+      "repo": "dotnet/runtime",
+      "prs_sha256": "0976ab4ca1facf3bd7cd0498798ba37ad4ad282a4606c9017d15fa56315dd4da",
+      "evidence_sha256": "4ac8dbe4249afdfa5973b3f707a2fee76b15529304d38e1b13ab8f69568e0d40",
+      "feature_sha256": "e37c296ff0994a587dd28667e3afda782eb7bab4789c004906443e5f2e2c8ab9",
+      "s2_sha256": "d7059ac5244291fc02f83bb7846da6e4df78671e69dbedd75ad2cc549dd68571"
+    },
+    {
+      "repo": "elastic/kibana",
+      "prs_sha256": "3930a9420ec454f19ce147e3c04d0abf4579daa6763ef2d55b65edefba88955c",
+      "evidence_sha256": "5653ebbbcc9644d6a0a1f8ba9ddd9020d022bc741702da16e6996ec345acd509",
+      "feature_sha256": "e1cabcf8380c6f98fe50af16813ad21e7e5bcf6a2423403ec309578616527c11",
+      "s2_sha256": "c98d96a42cee9d92b9653aa368cc883304b677bf2f81f0bd8682a03707b535cc"
+    },
+    {
+      "repo": "getsentry/sentry",
+      "prs_sha256": "a8a4aea5d9f7ac3282061577f3d2ff6fc56d6836bf6b07aca0dee17284a88253",
+      "evidence_sha256": "bbcb77f2bb600c716d488779605d42feff2f4a7c00064cfea900bda9fedaa2f8",
+      "feature_sha256": "183727cbdd7b1b164aad6f860592f5e8bf200bd107b581b4700694db3e2638dc",
+      "s2_sha256": "4ea9e4a0b367cecd64812a2ce5e3c212bc863090d07210e449966811d7028988"
+    },
+    {
+      "repo": "grafana/grafana",
+      "prs_sha256": "17e2afcb03244b9f641dd49fa5e66d28638bb9a5831d25d4d90f52716f5a86a9",
+      "evidence_sha256": "d263e0364f8685f01cbb4744ff7d09160aa8da96715142e9b8d54df1363eb5bc",
+      "feature_sha256": "38c3ba0c3e4d02820035408ecaca64431747c71236ca664a8a5461c671e8ff1e",
+      "s2_sha256": "f4431636bc9f0ebe0fd181516ba8d9cb8aeaef41895d51dc5bb88cf5931b5611"
+    },
+    {
+      "repo": "home-assistant/core",
+      "prs_sha256": "9fd70e36a6ec4bd2fd45c34da08df9f03e2afdb89af61fe6a714292566932466",
+      "evidence_sha256": "66f09c331dd6c02fed9495df2322c5c2928971a4bec14bd972d45776226dc712",
+      "feature_sha256": "6676f8b48ecae9d0a1e1ef179b8f5758ba1f761f1b4f6541ace2eed5eb19e922",
+      "s2_sha256": "30c052d5392d2b6a6516ec56c48a8a746e14c6961ebfda1a04fb1e59af878759"
+    },
+    {
+      "repo": "kubernetes/kubernetes",
+      "prs_sha256": "06257181e7043df1619c0ceeddfa2fdd4d9d2819a17baae6bc6e0ec1f352ddb3",
+      "evidence_sha256": "b44060918f945385cd811273c5f5dda64a3664dce9bc21ec3fc93ba3deadfbd6",
+      "feature_sha256": "ddc6e1a946ead89d7daa9842f2f34f4f99176c110d93f3684f9c521efb0e6985",
+      "s2_sha256": "51c1e37b9079210ed97585f0781222b7067aa9479b8835b4ea7f6c7634917ef6"
+    },
+    {
+      "repo": "llvm/llvm-project",
+      "prs_sha256": "92b09a3824991d65a36ebe963c5c9c30474c0e9d538b58326b49cdedc30162fb",
+      "evidence_sha256": "4020212d47f97630f6ba4df17324081fd68de0cfbe214948f27802dba3ed7a47",
+      "feature_sha256": "96aa511afc8b209c62d7fd0e68e3f2b5b38ee7b429aabcd35646c5e4cfd7c815",
+      "s2_sha256": "828621e04ed0bf256ae03d694b1f7f34be380d645978f3d653a5b60c4087c561"
+    },
+    {
+      "repo": "mattermost/mattermost",
+      "prs_sha256": "0fd8c9bee3a3d5cee8924ae9c2a93adb30b36fd37d04232b37ee77b8bc50af95",
+      "evidence_sha256": "f6b9a9489f6a07db61da1f47fdca1d9d41ff2dd8643c91cec43995beef35899d",
+      "feature_sha256": "9dd348a808c9a8631900c563676fed1bcd905a52f7dd68c3bd4e44190ebcb5c8",
+      "s2_sha256": "35d052a1698d404fbfaeb33f84844cf1b5ce514384e946607a8cba8fba13fbd8"
+    },
+    {
+      "repo": "PostHog/posthog",
+      "prs_sha256": "891cf80897632fb7fd378898d7e412dc4c60486c6ee99f262739bee9e892a111",
+      "evidence_sha256": "f277674158e238563c51a1d46b20c63b9b095441adca38b0351651c1ea3e85c3",
+      "feature_sha256": "604c4e1ace247a45dd9c5d9735aaca3e67645cc8a71e6b634eace78e306c3af9",
+      "s2_sha256": "838c6c5b0eb8811718a62394b6ab715e9c8cfc70321e8b9f201731ce0cf064f7"
+    },
+    {
+      "repo": "python/cpython",
+      "prs_sha256": "ab2b965baac09a7dfa979bfcc45bc70bf5670a5ae7d7b30a8c70ff9598163db3",
+      "evidence_sha256": "34e071cd49d595293292edebe607f569a3547b1186e38ba88e0348d67930dafd",
+      "feature_sha256": "a89a0005cc64566a0c026e8c1b0397eb59fcdb5bccf38acf2b578c1cab87bed5",
+      "s2_sha256": "2bf06a6712035faa088d99919d4caa45a44f39201a7d59846155d90328874d45"
+    },
+    {
+      "repo": "pytorch/pytorch",
+      "prs_sha256": "29095aeaa463e68cab55b74083bc120ce144bde3acdd478279aa40ebb9ea76b3",
+      "evidence_sha256": "7ae52151ac19fba913f8ec2522a9fd41bea6c709f761642f1538cc03a8cafc90",
+      "feature_sha256": "3fb10dac1b19994116362172a01423e329cb1c04bea887e608dc68d89b563932",
+      "s2_sha256": "4ee5c751ed7981617d91df8e4d46540d37bc51e1b6cf877d99b607c59695678d"
+    },
+    {
+      "repo": "rust-lang/rust",
+      "prs_sha256": "5f3a87af25e82d813c169f95e4c8c5c51a003bc080a321bf1c25145decc79dc5",
+      "evidence_sha256": "ef3647814d5808c1e8e234d0bc257651354d860186eb9eabe1408db46c3f8e03",
+      "feature_sha256": "73b03f8de8b160043ffdbc48f8a60ab06d21e76cc2c1a0de60a6c7f1f14ba400",
+      "s2_sha256": "a972aba836f80ea033ee8ec6f3d889e64b6fa2d7d2186b3a3d2da15702680d94"
+    },
+    {
+      "repo": "vercel/next.js",
+      "prs_sha256": "338934e000140637538eeaad552bb31c58ef0395ec2c5904464b5b7724fe854f",
+      "evidence_sha256": "3c1ace3219bf1d74b3f7fcaf55a71ff06c44ddaea7d0dfa7a62f0935fd91cb19",
+      "feature_sha256": "54b7c738da535777ceb0be6214a7b808d887e069ba30b21507aa27a41ff16259",
+      "s2_sha256": "c564b11d6e44c49858053a7d0ea8ea0be3cecbef3f6a13481144b00eea4bbf0e"
+    }
+  ]
+}

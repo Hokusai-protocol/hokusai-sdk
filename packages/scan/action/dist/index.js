@@ -17045,26 +17045,58 @@ var AttributionConfigError = class extends Error {
     this.name = "AttributionConfigError";
   }
 };
-var HARNESS_REGISTRY = Object.freeze(["aider", "claude-code", "codex", "openhands", "wavemill"]);
-var MODEL_SIGNATURES = Object.freeze(["claude-", "gpt-", "o1", "o3", "gemini-"]);
+var HARNESS_REGISTRY = Object.freeze([
+  "aider",
+  "claude-code",
+  "codex",
+  "openhands",
+  "wavemill"
+]);
+var MODEL_SIGNATURES = Object.freeze([
+  "claude-",
+  "gpt-",
+  "o1",
+  "o3",
+  "gemini-"
+]);
 var GENERIC_AGENT_SIGNATURES = Object.freeze(["bot", "[bot]"]);
-var known = /* @__PURE__ */ new Set(["botLogins", "branchPrefixes", "labels", "extraBotLogins", "extraBranchPrefixes"]);
+var known = /* @__PURE__ */ new Set([
+  "botLogins",
+  "branchPrefixes",
+  "labels",
+  "extraBotLogins",
+  "extraBranchPrefixes"
+]);
 function resolveAttributionConfig(input = {}) {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) throw new AttributionConfigError("Attribution config must be an object");
+  if (input === null || typeof input !== "object" || Array.isArray(input))
+    throw new AttributionConfigError("Attribution config must be an object");
   const config = input;
   const unknown = Object.keys(config).filter((key) => !known.has(key));
-  if (unknown.length) throw new AttributionConfigError(`Unknown attribution config key: ${unknown[0]}`);
-  for (const key of ["botLogins", "branchPrefixes", "extraBotLogins", "extraBranchPrefixes"]) {
+  if (unknown.length)
+    throw new AttributionConfigError(
+      `Unknown attribution config key: ${unknown[0]}`
+    );
+  for (const key of [
+    "botLogins",
+    "branchPrefixes",
+    "extraBotLogins",
+    "extraBranchPrefixes"
+  ]) {
     const values = config[key];
     if (values !== void 0 && (!Array.isArray(values) || values.some((value) => typeof value !== "string" || value.length > 200))) {
-      throw new AttributionConfigError(`${key} must be an array of bounded strings`);
+      throw new AttributionConfigError(
+        `${key} must be an array of bounded strings`
+      );
     }
   }
-  if (config.labels !== void 0 && (!config.labels || typeof config.labels !== "object" || Array.isArray(config.labels))) throw new AttributionConfigError("labels must be an object");
+  if (config.labels !== void 0 && (!config.labels || typeof config.labels !== "object" || Array.isArray(config.labels)))
+    throw new AttributionConfigError("labels must be an object");
   return config;
 }
 var unique = (values) => [...new Set(values)];
-var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some((signature) => value.toLowerCase().startsWith(signature));
+var recognizedModel = (value) => !!value && MODEL_SIGNATURES.some(
+  (signature) => value.toLowerCase().startsWith(signature)
+);
 function attributePullRequest(pr2, config = {}) {
   const metadata = extractMetadataBlock(pr2.body);
   const markers = detectAgentMarkers({
@@ -17080,7 +17112,9 @@ function attributePullRequest(pr2, config = {}) {
   let identifiedAgent = false;
   const routeRole = typeof metadata?.["executedroute"] === "string" ? metadata["executedroute"].toLowerCase() : "";
   const metadataHead = typeof metadata?.["headsha"] === "string" ? metadata["headsha"].toLowerCase() : null;
-  const routeVerified = routeRole === "coder" && recognizedModel(typeof metadata?.["model"] === "string" ? metadata["model"] : null) && (!metadataHead || metadataHead === pr2.headSha.toLowerCase());
+  const routeVerified = routeRole === "coder" && recognizedModel(
+    typeof metadata?.["model"] === "string" ? metadata["model"] : null
+  ) && (!metadataHead || metadataHead === pr2.headSha.toLowerCase());
   if (routeVerified) {
     identifiedAgent = true;
     agentMethods.push("first_party_route_metadata");
@@ -17088,8 +17122,11 @@ function attributePullRequest(pr2, config = {}) {
     modelMethods.push("first_party_route_metadata");
   }
   const login = (pr2.authorLogin ?? "").toLowerCase();
-  const configuredBot = [...config.botLogins ?? [], ...config.extraBotLogins ?? []].some((value) => value.toLowerCase() === login);
-  const botAuthor = configuredBot || /\[bot\]$/i.test(pr2.authorLogin ?? "") || (pr2.authorType ?? "").toLowerCase() === "bot";
+  const configuredBot = [
+    ...config.botLogins ?? [],
+    ...config.extraBotLogins ?? []
+  ].some((value) => value.toLowerCase() === login);
+  const botAuthor = configuredBot || markers.markedByAccount;
   if (botAuthor) {
     identifiedAgent = true;
     agentMethods.push(configuredBot ? "owner_config" : "bot_author");
@@ -17098,14 +17135,20 @@ function attributePullRequest(pr2, config = {}) {
     identifiedAgent = true;
     agentMethods.push("co_authored_by_trailer");
   }
-  const configuredPrefix = config.branchPrefixes?.find((value) => pr2.headRef.startsWith(value));
-  const ownerPrefix = config.extraBranchPrefixes?.find((value) => pr2.headRef.startsWith(value));
+  const configuredPrefix = config.branchPrefixes?.find(
+    (value) => pr2.headRef.startsWith(value)
+  );
+  const ownerPrefix = config.extraBranchPrefixes?.find(
+    (value) => pr2.headRef.startsWith(value)
+  );
   const builtInPrefix = branchAgentFamily(pr2.headRef) !== null;
   if (configuredPrefix || ownerPrefix || builtInPrefix) {
     identifiedAgent = true;
     agentMethods.push(ownerPrefix ? "owner_config" : "branch_prefix");
   }
-  const matchedLabel = pr2.labels.find((label2) => config.labels?.[label2] !== void 0);
+  const matchedLabel = pr2.labels.find(
+    (label2) => config.labels?.[label2] !== void 0
+  );
   if (matchedLabel) {
     identifiedAgent = true;
     agentMethods.push("pr_label");
@@ -17119,24 +17162,61 @@ function attributePullRequest(pr2, config = {}) {
   const labelHarness = matchedLabel ? config.labels?.[matchedLabel]?.harness?.toLowerCase() ?? null : null;
   const prefixFamily = branchAgentFamily(pr2.headRef);
   const prefixHarness = prefixFamily === "claude" ? "claude-code" : prefixFamily;
-  const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter((value) => !!value);
-  const harnessIds = [...new Set(harnessEvidence.filter((value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)))];
+  const harnessEvidence = routeVerified ? [metadataHarness] : [metadataHarness, labelHarness, prefixHarness].filter(
+    (value) => !!value
+  );
+  const harnessIds = [
+    ...new Set(
+      harnessEvidence.filter(
+        (value) => typeof value === "string" && HARNESS_REGISTRY.includes(value)
+      )
+    )
+  ];
   const harness = harnessIds.length === 1 ? harnessIds[0] : null;
-  if (harness && !routeVerified) harnessMethods.push(metadataHarness ? "first_party_route_metadata" : labelHarness ? "pr_label" : "branch_prefix");
+  if (harness && !routeVerified)
+    harnessMethods.push(
+      metadataHarness ? "first_party_route_metadata" : labelHarness ? "pr_label" : "branch_prefix"
+    );
   const metadataModel = typeof metadata?.["model"] === "string" ? metadata["model"].toLowerCase() : null;
   const labelModel = matchedLabel ? config.labels?.[matchedLabel]?.model?.toLowerCase() ?? null : null;
-  const modelEvidence = routeVerified ? [metadataModel] : [labelModel, ...signatureModels].filter((value) => !!value && recognizedModel(value));
-  const modelIds = [...new Set(modelEvidence.filter((value) => recognizedModel(value)))];
+  const modelEvidence = routeVerified ? [metadataModel] : [labelModel, ...signatureModels].filter(
+    (value) => !!value && recognizedModel(value)
+  );
+  const modelIds = [
+    ...new Set(
+      modelEvidence.filter((value) => recognizedModel(value))
+    )
+  ];
   const exactModel = modelIds.length === 1 ? modelIds[0] : null;
-  if (exactModel && !routeVerified) modelMethods.push(signatureModels.includes(exactModel) ? "commit_signature" : "pr_label");
+  if (exactModel && !routeVerified)
+    modelMethods.push(
+      signatureModels.includes(exactModel) ? "commit_signature" : "pr_label"
+    );
   return {
-    agent: { status: identifiedAgent ? "agent" : "unknown", confidence: identifiedAgent ? 1 : null, methods: unique(agentMethods) },
-    harness: { id: harness, confidence: harness ? routeVerified ? 1 : 0.8 : null, methods: unique(harnessMethods) },
-    exactModel: { id: exactModel, confidence: exactModel ? routeVerified ? 1 : 0.5 : null, methods: unique(modelMethods), evidence: exactModel ? routeVerified ? "first_party_executed" : "heuristic" : null }
+    agent: {
+      status: identifiedAgent ? "agent" : "unknown",
+      confidence: identifiedAgent ? 1 : null,
+      methods: unique(agentMethods)
+    },
+    harness: {
+      id: harness,
+      confidence: harness ? routeVerified ? 1 : 0.8 : null,
+      methods: unique(harnessMethods)
+    },
+    exactModel: {
+      id: exactModel,
+      confidence: exactModel ? routeVerified ? 1 : 0.5 : null,
+      methods: unique(modelMethods),
+      evidence: exactModel ? routeVerified ? "first_party_executed" : "heuristic" : null
+    }
   };
 }
 function toReportAttribution(value) {
-  return { agent: value.agent, harness: value.harness, exact_model: value.exactModel };
+  return {
+    agent: value.agent,
+    harness: value.harness,
+    exact_model: value.exactModel
+  };
 }
 
 // src/orchestrate/enumerate.ts
