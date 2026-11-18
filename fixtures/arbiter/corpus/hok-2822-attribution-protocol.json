@@ -1,0 +1,49 @@
+{
+  "protocol_version": "1.0.0",
+  "issue": "HOK-2822",
+  "cohort": "hok-3022-cohort.json",
+  "baseline": "hok-2822-exit-audit.json",
+  "window": {
+    "from": "2026-02-02T00:00:00.000Z",
+    "until": "2026-08-01T00:00:00.000Z"
+  },
+  "denominator": "30-day labelled PRs in the fixed merge-time window",
+  "seed": "hok-2822-attribution-review-v1",
+  "sample_per_repo_stratum": {
+    "baseline_positive": 3,
+    "added_positive": 3,
+    "bot_without_agent_evidence": 2,
+    "unmarked": 2
+  },
+  "label_semantics": {
+    "ai-generated": "agent",
+    "ai-authored": "agent",
+    "agent-generated": "agent",
+    "agent-authored": "agent",
+    "generated-by-ai": "agent",
+    "ai-assisted": "agent",
+    "copilot-authored": "agent",
+    "claude-authored": "agent",
+    "codex-authored": "agent"
+  },
+  "ambiguous_tool_labels": [
+    "ai",
+    "copilot",
+    "claude",
+    "codex",
+    "cursor",
+    "gemini"
+  ],
+  "owner_mappings": {},
+  "rules": [
+    "Preserve the frozen marker baseline; do not change the feature manifest or training rows.",
+    "Only labels whose names explicitly assert generation, authorship or assistance count by default; bare tool names do not.",
+    "No repo-specific owner mappings are inferred or invented.",
+    "Read body and label state at merge; missing historical evidence remains unavailable.",
+    "Generic Bot authorship is counted separately and never establishes agent involvement.",
+    "Known harness metadata is observed harness evidence; it is not verified executed-model identity.",
+    "Sample within each repo and disjoint stratum by ascending sha256(seed|repo|stratum|PR number).",
+    "No rework outcome values are used in sampling beyond the fixed non-null eligibility predicate.",
+    "AI evidence review is reported separately from independent human validation; unmarked does not mean human."
+  ]
+}
