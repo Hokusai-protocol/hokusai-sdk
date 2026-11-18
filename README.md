@@ -450,6 +450,7 @@ pnpm -r test
 
 ## Documentation
 
+- [Phase 2 Exit Review](docs/arbiter/phase-two-exit.md) - reproducible corpus base rates, attribution evidence and outstanding scanner gate requirements
 - [SDK Overview](docs/sdk-overview.md) - package installation, public interfaces, core vs adapter APIs, schemas, model mapping, and adapter lifecycle
 - [Integration Guide](docs/integration-guide.md) - recommended integration flow and adapter reuse
 - [Reference Pattern](docs/reference-pattern.md) - the route/report loop with code examples
