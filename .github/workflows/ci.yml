@@ -38,6 +38,7 @@ jobs:
       - run: node scripts/export-router-row-schema.mjs --check
       - run: pnpm -r test
       - run: node --test scripts/corpus/phase-two-exit.test.mjs
+      - run: node --test scripts/corpus/attribution-pass.test.mjs
 
       # Clean-consumer proof for @hokusai/costs: pack, install the tarballs
       # into a temp project, and run the shipped offline examples with the
