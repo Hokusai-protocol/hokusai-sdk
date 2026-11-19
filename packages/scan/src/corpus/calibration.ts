@@ -71,6 +71,15 @@ export interface CalibrationPlan {
    * the bar HOK-3028 §6 checks the pinned target against.
    */
   pick_needs_human_precision?: boolean;
+  /**
+   * How a stratum's allocation is spread across repos. Omitted: round-robin,
+   * an equal share per repo. `proportional`: every repo first gets
+   * `min_per_repo` (or its whole population, if smaller), and the rest is
+   * split by population with largest remainders. Proportional allocation keeps
+   * the effective sample size near the item count when one repo dominates the
+   * population (revert-signal confirmation, rs-1.1.0).
+   */
+  repo_allocation?: { mode: 'proportional'; min_per_repo: number };
 }
 
 export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
@@ -98,6 +107,11 @@ export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
     }
   }
   if (plan.pick_needs_human_precision !== undefined && typeof plan.pick_needs_human_precision !== 'boolean') throw new Error('plan.pick_needs_human_precision must be a boolean');
+  const repoAllocation = plan.repo_allocation as { mode?: unknown; min_per_repo?: unknown } | undefined;
+  if (repoAllocation !== undefined) {
+    if (!repoAllocation || repoAllocation.mode !== 'proportional') throw new Error("plan.repo_allocation.mode must be 'proportional'");
+    if (!Number.isInteger(repoAllocation.min_per_repo) || (repoAllocation.min_per_repo as number) < 0) throw new Error('plan.repo_allocation.min_per_repo must be a non-negative integer');
+  }
   return {
     plan_version: plan.plan_version,
     horizon_days: num('horizon_days', (v) => Number.isInteger(v) && v > 0),
@@ -111,6 +125,7 @@ export function parseCalibrationPlan(raw: unknown): CalibrationPlan {
     definition_precision_floor: num('definition_precision_floor', (v) => v > 0 && v <= 1),
     ...(byStratum !== undefined && { human_audit_share_by_stratum: plan.human_audit_share_by_stratum }),
     ...(plan.pick_needs_human_precision !== undefined && { pick_needs_human_precision: plan.pick_needs_human_precision }),
+    ...(repoAllocation !== undefined && { repo_allocation: { mode: 'proportional' as const, min_per_repo: repoAllocation.min_per_repo as number } }),
   };
 }
 
@@ -256,6 +271,46 @@ export interface CalibrationSample {
 }
 
 /**
+ * Per-repo quotas for `repo_allocation: proportional`: a floor of `min` (capped
+ * at the repo's population, and given in seeded repo order while `want` lasts),
+ * then the remainder split by population, largest remainders first. Capped
+ * repos hand their excess to the others, so the total is `want` unless the
+ * stratum runs out.
+ */
+export function proportionalQuotas(repos: readonly string[], population: (repo: string) => number, want: number, min: number): Map<string, number> {
+  let floorLeft = want;
+  const quota = new Map(
+    repos.map((r) => {
+      const q = Math.min(min, population(r), floorLeft);
+      floorLeft -= q;
+      return [r, q];
+    }),
+  );
+  let left = floorLeft;
+  while (left > 0) {
+    const open = repos.filter((r) => quota.get(r)! < population(r));
+    if (!open.length) break;
+    const total = open.reduce((a, r) => a + population(r), 0);
+    const share = open.map((r) => ({ r, exact: (left * population(r)) / total }));
+    let given = 0;
+    for (const { r, exact } of share) {
+      const add = Math.min(Math.floor(exact), population(r) - quota.get(r)!);
+      quota.set(r, quota.get(r)! + add);
+      given += add;
+    }
+    const byRemainder = share.filter(({ r }) => quota.get(r)! < population(r)).sort((x, y) => (y.exact % 1) - (x.exact % 1));
+    for (const { r } of byRemainder) {
+      if (given >= left) break;
+      quota.set(r, quota.get(r)! + 1);
+      given++;
+    }
+    left -= given;
+    if (!given) break;
+  }
+  return quota;
+}
+
+/**
  * Within each stratum, repos take turns (in seeded order), each giving its
  * next PR in seeded order, until the allocation is met or the stratum runs
  * out. Small repos are not crowded out by llvm's 74k PRs, and per-repo
@@ -280,16 +335,23 @@ export function drawCalibrationSample(units: readonly PopulationUnit[], plan: Ca
     const repos = seededOrder([...byRepo.keys()], (repo) => sha256(seed, 'repo', stratum, repo));
     const want = plan.allocation[stratum];
     const picked: PopulationUnit[] = [];
-    for (let round = 0; picked.length < want; round++) {
-      let any = false;
-      for (const repo of repos) {
-        const unit = byRepo.get(repo)![round];
-        if (!unit || picked.length >= want) continue;
-        picked.push(unit);
-        cells.get(`${repo}\0${stratum}`)!.sampled++;
-        any = true;
+    if (plan.repo_allocation) {
+      for (const [repo, quota] of proportionalQuotas(repos, (repo) => byRepo.get(repo)!.length, want, plan.repo_allocation.min_per_repo)) {
+        picked.push(...byRepo.get(repo)!.slice(0, quota));
+        cells.get(`${repo}\0${stratum}`)!.sampled += quota;
       }
-      if (!any) break;
+    } else {
+      for (let round = 0; picked.length < want; round++) {
+        let any = false;
+        for (const repo of repos) {
+          const unit = byRepo.get(repo)![round];
+          if (!unit || picked.length >= want) continue;
+          picked.push(unit);
+          cells.get(`${repo}\0${stratum}`)!.sampled++;
+          any = true;
+        }
+        if (!any) break;
+      }
     }
     if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
     const doubles = new Set(
