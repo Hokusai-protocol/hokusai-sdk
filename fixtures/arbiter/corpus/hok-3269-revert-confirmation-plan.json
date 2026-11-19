@@ -1,0 +1,26 @@
+{
+  "issue": "HOK-3269",
+  "plan_version": "rs-1.1.0",
+  "status": "FROZEN 2026-11-19, before the draw: revert-signal confirmation; see docs/arbiter/revert-signal-study.md §9",
+  "horizon_days": 30,
+  "allocation": {
+    "revert": 100,
+    "repair_reference": 0,
+    "regression_issue": 0,
+    "szz_strong": 0,
+    "szz_weak": 0,
+    "rejected": 0,
+    "negative": 0
+  },
+  "repo_allocation": { "mode": "proportional", "min_per_repo": 4 },
+  "double_label_share": 1.0,
+  "human_audit_share": 1.0,
+  "min_repos": 5,
+  "szz_strong_min_lines": 3,
+  "kappa_floor": 0.6,
+  "definition_precision_floor": 0.8,
+  "labellers": {
+    "a": "claude-opus-5-5",
+    "b": "claude-sonnet-5-5"
+  }
+}
