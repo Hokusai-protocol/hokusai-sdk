@@ -57,6 +57,8 @@ import {
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
 import { runCorpusCli } from './corpus/cli.js';
+import { SCAN_VERSION } from './version.js';
+import { runExampleCli } from './examples/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
 import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
@@ -137,6 +139,11 @@ corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slic
                  (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
 corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
                  (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
+
+example-review   --report <json> --repo <owner/name> --manifest <example manifest> [--rescan <json>] [--page <html>] [--out <json>]
+                 (automated honesty checks on one example report; exit 1 means it cannot be published; HOK-3515)
+example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force]
+                 (scan, re-scan and review every eligible repo of a batch; resumable; HOK-3515)
 `;
 
 const OPTION_SPEC = {
@@ -201,6 +208,10 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         log: (line) => io.writeStdout(`${line}\n`),
         cwd: process.cwd(),
       });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (command.startsWith('example-')) {
+      const result = runExampleCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd(), env: io.env });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command.startsWith('corpus-')) {
@@ -383,7 +394,7 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit, labeller: reportDeps.deps, github: scanGithub, now: () => asOf,
       onDiagnostic: (line) => io.writeStderr(`${line.startsWith('info:') || line.startsWith('warn:') || line.startsWith('error:') ? '' : 'info: '}${line}\n`),
-    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: '0.4.0', onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: SCAN_VERSION, onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
     const output = emitReport(draft);
     const outSpec = (values.out as string | undefined) ?? '-';
     const outputPath = outSpec === '-' ? null : resolve(outSpec);

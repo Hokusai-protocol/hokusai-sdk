@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_REPORT_POLICY } from '../report/suppression.js';
-import { EXCLUDED_REASON, TrainingExclusion, decideExample, hashRepo, parseExampleManifest, type ExampleProbeInput, type ExampleThresholds } from './example-select.js';
+import { EXCLUDED_REASON, TrainingExclusion, decideExample, hashRepo, parseExampleManifest, type ExampleProbeInput, type ExampleThresholds } from './select.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 type Json = { repos: { repo: string }[]; alternates: { repo: string }[] } & Record<string, unknown>;

@@ -31,33 +31,33 @@
       "role": "primary"
     },
     {
+      "repo": "denoland/deno",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "n8n-io/n8n",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
       "repo": "calcom/cal.diy",
       "batch": "first-5",
-      "role": "primary",
+      "role": "swap",
       "note": "renamed from calcom/cal.com"
     },
     {
       "repo": "withastro/astro",
       "batch": "first-5",
-      "role": "primary"
-    },
-    {
-      "repo": "denoland/deno",
-      "batch": "first-5",
-      "role": "swap"
-    },
-    {
-      "repo": "n8n-io/n8n",
-      "batch": "first-5",
       "role": "swap"
     },
     {
       "repo": "biomejs/biome",
-      "batch": "first-5",
-      "role": "swap"
-    },
-    {
-      "repo": "tldraw/tldraw",
       "batch": "first-5",
       "role": "swap"
     }
@@ -68,6 +68,11 @@
       "repo": "calcom/cal.com",
       "change": "renamed -> calcom/cal.diy",
       "reason": "GitHub redirects the old name, but search does not, so the probe measured 0 PRs under it. Not in any corpus manifest under either name."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "first-5 set: codex, zed, uv, deno, n8n primary; tldraw spare; cal.diy and astro to swap",
+      "reason": "Owner approved the probe recommendation and kept the thresholds as declared (reverts >= 20/yr, agent share >= 2%). cal.diy (14) and astro (16) miss the revert screen; biome (13) too."
     }
   ]
 }
