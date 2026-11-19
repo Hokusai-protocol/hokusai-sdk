@@ -204,4 +204,5 @@ export { readScanState, writeScanState, scanConfigHash, type ScanStateHeader, ty
 export { enumerateCorpusRepo, type CorpusEnumerateDeps, type CorpusEnumerateTarget, type CorpusEnumerationStats, type CorpusPrRecord, type GraphqlRunner, type LandedBy } from './corpus/enumerate.js';
 export { extractCorpusPrNumbers } from './corpus/pr-refs.js';
 export { parseCohortManifest, runnableRepos, RUNNABLE_STATUSES, type CohortManifest, type CohortRepo, type CohortStatus } from './corpus/manifest.js';
+export { decideExample, hashRepo, parseExampleManifest, repoKey, TrainingExclusion, EXAMPLE_SELECTION_VERSION, EXCLUDED_REASON, type ExampleCandidate, type ExampleDecision, type ExampleManifest, type ExampleProbeInput, type ExampleProbeMetrics, type ExampleThresholds } from './corpus/example-select.js';
 export { buildContributionPayload, submitReport, ContributionPayloadError } from './report/contribute.js';

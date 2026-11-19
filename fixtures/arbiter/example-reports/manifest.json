@@ -1,0 +1,73 @@
+{
+  "manifest_version": "0.1.0",
+  "issue": "HOK-3515",
+  "declared_at": "2026-11-19",
+  "purpose": "Candidate public repos for Rework Risk example reports. Kept apart from the corpus manifests, so corpus and example repos never mix. A repo is eligible only if the probe (scripts/example-reports/probe.mjs) passes every threshold below and the repo is in none of the corpus manifests listed in exclude_corpus_manifests. Every change to candidates or thresholds is recorded in changes.",
+  "exclude_corpus_manifests": ["fixtures/arbiter/corpus/hok-3022-cohort.json"],
+  "window_days": 365,
+  "horizon_days": 30,
+  "thresholds": {
+    "min_merged_prs_per_year": 300,
+    "min_base_is_default_share": 0.5,
+    "min_pr_mapped_commit_share": 0.8,
+    "min_revert_prs_per_year": 20,
+    "min_agent_share": 0.02,
+    "supported_conventions": ["squash", "merge_commit", "rebase_or_mixed"]
+  },
+  "candidates": [
+    {
+      "repo": "openai/codex",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "zed-industries/zed",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "astral-sh/uv",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "calcom/cal.diy",
+      "batch": "first-5",
+      "role": "primary",
+      "note": "renamed from calcom/cal.com"
+    },
+    {
+      "repo": "withastro/astro",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "denoland/deno",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
+      "repo": "n8n-io/n8n",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
+      "repo": "biomejs/biome",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "batch": "first-5",
+      "role": "swap"
+    }
+  ],
+  "changes": [
+    {
+      "date": "2026-11-19",
+      "repo": "calcom/cal.com",
+      "change": "renamed -> calcom/cal.diy",
+      "reason": "GitHub redirects the old name, but search does not, so the probe measured 0 PRs under it. Not in any corpus manifest under either name."
+    }
+  ]
+}
