@@ -145,8 +145,9 @@ export function runExampleCli(command: string, argv: readonly string[], io: Exam
     },
     {
       // Example repos merge PRs into the default branch (the probe's base_is_default bar), so the scan runs in direct mode.
+      // One large scan can spend most of an hour's REST budget, so scans wait out rate limits rather than lose their work.
       runScan: (repo, at, outPath) => {
-        const r = spawnSync(process.execPath, [cliPath, 'report', repo, '--integration-mode', 'direct', '--as-of', at, '--out', outPath, '--no-state'], { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        const r = spawnSync(process.execPath, [cliPath, 'report', repo, '--integration-mode', 'direct', '--as-of', at, '--out', outPath, '--no-state', '--wait-on-rate-limit'], { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
         return { exitCode: r.status ?? 1, stderrTail: (r.stderr ?? '').split('\n').slice(-5).join('\n') };
       },
       rateLimit: () => {

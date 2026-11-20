@@ -11317,6 +11317,37 @@ function classifyUpstreamFailure(result) {
   }
   return `GitHub request failed (gh exit ${result.exitCode})`;
 }
+var isRateLimited = (stderr) => /rate limit|HTTP 429/i.test(stderr);
+var SECONDARY_LIMIT_WAIT_MS = 6e4;
+function ghRateLimitResetMs(env) {
+  const result = execArgvCommand("gh", ["api", "rate_limit"], { env });
+  if (result.exitCode !== 0) return null;
+  try {
+    const resources = JSON.parse(result.stdout).resources ?? {};
+    const exhausted = Object.values(resources).filter((r) => r.remaining === 0 && typeof r.reset === "number");
+    return exhausted.length ? Math.max(...exhausted.map((r) => r.reset * 1e3)) : null;
+  } catch {
+    return null;
+  }
+}
+function withRateLimitWait(run, wait, env) {
+  if (!wait) return run;
+  const sleep = wait.sleep ?? ((ms2) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms2));
+  const nowMs = wait.nowMs ?? Date.now;
+  const resetAtMs = wait.resetAtMs ?? (() => ghRateLimitResetMs(env));
+  let waited = 0;
+  return (args) => {
+    for (; ; ) {
+      const result = run(args);
+      if (result.exitCode === 0 || !isRateLimited(result.stderr) || waited >= wait.maxWaitMs) return result;
+      const reset = resetAtMs();
+      const ms2 = Math.min(wait.maxWaitMs - waited, reset === null ? SECONDARY_LIMIT_WAIT_MS : Math.max(0, reset - nowMs()) + 5e3);
+      wait.onWait?.(ms2);
+      sleep(ms2);
+      waited += ms2;
+    }
+  };
+}
 function createDefaultDeps(target, options = {}) {
   const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
   const strict = options.strictUpstream === true;
@@ -11324,7 +11355,11 @@ function createDefaultDeps(target, options = {}) {
     env,
     maxBuffer: GIT_OUTPUT_MAX_BUFFER
   });
-  const runGh = (args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir });
+  const runGh = withRateLimitWait(
+    (args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir }),
+    options.rateLimitWait,
+    env
+  );
   const github = {
     getPrMetadata(prUrl) {
       const result = runGh([
@@ -11385,13 +11420,21 @@ function createOfflineGitHubClient() {
     listCrossReferences: () => []
   };
 }
-function createDefaultScanGitHubClient(target) {
+function createDefaultScanGitHubClient(target, options = {}) {
   const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+  const runGh = withRateLimitWait(
+    options.runGh ?? ((args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 })),
+    options.rateLimitWait,
+    env
+  );
+  const fail2 = (result) => {
+    throw new ScanUpstreamError(classifyUpstreamFailure(result));
+  };
   const api = (path4) => {
-    const result = execArgvCommand("gh", ["api", path4, "-H", "Accept: application/vnd.github+json"], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 });
+    const result = runGh(["api", path4, "-H", "Accept: application/vnd.github+json"]);
     if (result.exitCode !== 0) {
       if (/HTTP 404/i.test(result.stderr)) return "";
-      throw new ScanUpstreamError(classifyUpstreamFailure(result));
+      return fail2(result);
     }
     return result.stdout;
   };
@@ -11402,6 +11445,27 @@ function createDefaultScanGitHubClient(target) {
       throw new ScanUpstreamError("GitHub returned malformed JSON");
     }
   };
+  const toPull = (raw) => {
+    if (!raw) return null;
+    if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
+    return { number: raw.number, title: raw.title ?? "", body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label2) => label2.name ? [label2.name] : []), mergedAt: raw.merged_at };
+  };
+  const pullViaGraphql = (number) => {
+    const query = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){number title body author{login __typename} headRefName headRefOid labels(first:100){nodes{name}} mergedAt}}}";
+    const result = runGh(["api", "graphql", "-f", `query=${query}`, "-f", `o=${target.owner}`, "-f", `r=${target.repo}`, "-F", `n=${number}`]);
+    if (result.exitCode !== 0) return fail2(result);
+    const pr2 = parse(result.stdout)?.data?.repository?.pullRequest;
+    if (!pr2) return null;
+    return toPull({
+      ...pr2.number !== void 0 ? { number: pr2.number } : {},
+      ...pr2.title !== void 0 ? { title: pr2.title } : {},
+      body: pr2.body ?? null,
+      user: pr2.author ? { ...pr2.author.login !== void 0 ? { login: pr2.author.login } : {}, ...pr2.author.__typename !== void 0 ? { type: pr2.author.__typename } : {} } : null,
+      head: { ...pr2.headRefName !== void 0 ? { ref: pr2.headRefName } : {}, ...pr2.headRefOid !== void 0 ? { sha: pr2.headRefOid } : {} },
+      labels: pr2.labels?.nodes ?? [],
+      merged_at: pr2.mergedAt ?? null
+    });
+  };
   return {
     async getRepo() {
       await Promise.resolve();
@@ -11411,10 +11475,13 @@ function createDefaultScanGitHubClient(target) {
     },
     async getPullRequest(number) {
       await Promise.resolve();
-      const raw = parse(api(`repos/${target.owner}/${target.repo}/pulls/${number}`));
-      if (!raw) return null;
-      if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
-      return { number: raw.number, title: raw.title ?? "", body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label2) => label2.name ? [label2.name] : []), mergedAt: raw.merged_at };
+      const result = runGh(["api", `repos/${target.owner}/${target.repo}/pulls/${number}`, "-H", "Accept: application/vnd.github+json"]);
+      if (result.exitCode !== 0) {
+        if (/HTTP 404/i.test(result.stderr)) return null;
+        if (/HTTP 422/i.test(result.stderr) && /too many files/i.test(result.stderr)) return pullViaGraphql(number);
+        return fail2(result);
+      }
+      return toPull(parse(result.stdout));
     },
     async listPullCommits(number) {
       await Promise.resolve();
@@ -17225,8 +17292,9 @@ function runExampleCli(command, argv, io) {
     },
     {
       // Example repos merge PRs into the default branch (the probe's base_is_default bar), so the scan runs in direct mode.
+      // One large scan can spend most of an hour's REST budget, so scans wait out rate limits rather than lose their work.
       runScan: (repo, at2, outPath) => {
-        const r = spawnSync2(process.execPath, [cliPath, "report", repo, "--integration-mode", "direct", "--as-of", at2, "--out", outPath, "--no-state"], { env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        const r = spawnSync2(process.execPath, [cliPath, "report", repo, "--integration-mode", "direct", "--as-of", at2, "--out", outPath, "--no-state", "--wait-on-rate-limit"], { env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
         return { exitCode: r.status ?? 1, stderrTail: (r.stderr ?? "").split("\n").slice(-5).join("\n") };
       },
       rateLimit: () => {
@@ -17970,7 +18038,7 @@ scan     --repo <path> --integration-branch <name> --pr <n> [common options]
 report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
          [--integration-mode promotion|direct]
          [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
-         [--state-dir <path>] [--contribute [--dry-run]]
+         [--state-dir <path>] [--contribute [--dry-run]] [--wait-on-rate-limit]
 
 shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--threshold 0.5]
@@ -18036,6 +18104,7 @@ var OPTION_SPEC = {
   "static-analysis": { type: "string" },
   "state-dir": { type: "string" },
   "no-state": { type: "boolean" },
+  "wait-on-rate-limit": { type: "boolean" },
   "attribution-config": { type: "string" },
   "contribute": { type: "boolean" },
   "dry-run": { type: "boolean" },
@@ -18207,8 +18276,9 @@ async function runReportCli(argv, io) {
     }
     const resolvedGithub = requireGithubRepo(context, repoDir, github ?? void 0);
     const asOf = validateAsOf(values["as-of"]) ?? /* @__PURE__ */ new Date();
-    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...context.token ? { token: context.token } : {} });
-    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: "develop", githubRepo: resolvedGithub });
+    const rateLimitWait = values["wait-on-rate-limit"] === true ? { maxWaitMs: 2 * 60 * 60 * 1e3, onWait: (ms2) => makeDiagnostics(context).warn(`GitHub rate limit reached; waiting ${Math.ceil(ms2 / 1e3)}s`) } : void 0;
+    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...context.token ? { token: context.token } : {} }, { rateLimitWait });
+    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: "develop", githubRepo: resolvedGithub, rateLimitWait });
     if (offline) reportDeps.deps.github = createOfflineGitHubClient();
     const repoMetadata = offline ? { defaultBranch: values["integration-branch"] ?? "", private: false } : await scanGithub.getRepo();
     const explicitBranch = values["integration-branch"];
@@ -18386,7 +18456,8 @@ function buildLabellerWorld(context, params) {
   const asOf = params.asOf;
   const deps = createDefaultDeps(target, {
     strictUpstream: true,
-    ...asOf ? { now: () => asOf } : {}
+    ...asOf ? { now: () => asOf } : {},
+    rateLimitWait: params.rateLimitWait
   });
   if (params.offline) {
     deps.github = createOfflineGitHubClient();
