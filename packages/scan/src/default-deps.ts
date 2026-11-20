@@ -67,6 +67,62 @@ export interface CreateDefaultDepsOptions {
   strictUpstream?: boolean | undefined;
   /** Clock override (e.g. a pinned `--as-of` instant). Default: wall clock. */
   now?: (() => Date) | undefined;
+  /** Wait out GitHub rate limits instead of failing. Default: fail at once. */
+  rateLimitWait?: RateLimitWait | undefined;
+}
+
+type GhResult = GitCommandResult & { failed: boolean };
+
+/**
+ * Opt-in waiting on GitHub rate limits, for long unattended scans (the
+ * example-report batch). A report scan makes several REST calls per PR, so
+ * one large repo can spend most of an hour's budget; without waiting, the
+ * next scan fails part-way and its work is lost.
+ */
+export interface RateLimitWait {
+  /** Total time one client may spend waiting. */
+  maxWaitMs: number;
+  sleep?: (ms: number) => void;
+  nowMs?: () => number;
+  /** Epoch ms when the exhausted budget resets, or null when unknown (secondary limits). */
+  resetAtMs?: () => number | null;
+  onWait?: (ms: number) => void;
+}
+
+export const isRateLimited = (stderr: string): boolean => /rate limit|HTTP 429/i.test(stderr);
+
+const SECONDARY_LIMIT_WAIT_MS = 60_000;
+
+function ghRateLimitResetMs(env: NodeJS.ProcessEnv): number | null {
+  const result = execArgvCommand('gh', ['api', 'rate_limit'], { env });
+  if (result.exitCode !== 0) return null;
+  try {
+    const resources = (JSON.parse(result.stdout) as { resources?: Record<string, { remaining?: number; reset?: number }> }).resources ?? {};
+    const exhausted = Object.values(resources).filter((r) => r.remaining === 0 && typeof r.reset === 'number');
+    return exhausted.length ? Math.max(...exhausted.map((r) => r.reset! * 1000)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Wraps a `gh` runner so a rate-limited call waits for the reset and retries, within `maxWaitMs`. */
+export function withRateLimitWait<A>(run: (args: A) => GhResult, wait: RateLimitWait | undefined, env: NodeJS.ProcessEnv): (args: A) => GhResult {
+  if (!wait) return run;
+  const sleep = wait.sleep ?? ((ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms));
+  const nowMs = wait.nowMs ?? Date.now;
+  const resetAtMs = wait.resetAtMs ?? (() => ghRateLimitResetMs(env));
+  let waited = 0;
+  return (args) => {
+    for (;;) {
+      const result = run(args);
+      if (result.exitCode === 0 || !isRateLimited(result.stderr) || waited >= wait.maxWaitMs) return result;
+      const reset = resetAtMs();
+      const ms = Math.min(wait.maxWaitMs - waited, reset === null ? SECONDARY_LIMIT_WAIT_MS : Math.max(0, reset - nowMs()) + 5_000);
+      wait.onWait?.(ms);
+      sleep(ms);
+      waited += ms;
+    }
+  };
 }
 
 /** Default deps: local `git`, `gh` for PR metadata/cross-references, wall clock. */
@@ -81,8 +137,11 @@ export function createDefaultDeps(
       env,
       maxBuffer: GIT_OUTPUT_MAX_BUFFER,
     });
-  const runGh = (args: readonly string[]): GitCommandResult & { failed: boolean } =>
-    execArgvCommand('gh', [...args], { env, cwd: target.repoDir });
+  const runGh = withRateLimitWait(
+    (args: readonly string[]): GhResult => execArgvCommand('gh', [...args], { env, cwd: target.repoDir }),
+    options.rateLimitWait,
+    env,
+  );
   const github: SurvivalGitHubClient = {
     getPrMetadata(prUrl) {
       const result = runGh([
@@ -161,17 +220,53 @@ export function createOfflineGitHubClient(): SurvivalGitHubClient {
 
 
 /** GitHub API adapter for report scans. This ambient shell is the only place the token is read. */
-export function createDefaultScanGitHubClient(target: { owner: string; repo: string; repoDir: string; token?: string }): ScanGitHubClient {
+export function createDefaultScanGitHubClient(
+  target: { owner: string; repo: string; repoDir: string; token?: string },
+  options: { rateLimitWait?: RateLimitWait | undefined; runGh?: ((args: readonly string[]) => GhResult) | undefined } = {},
+): ScanGitHubClient {
   const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+  const runGh = withRateLimitWait(
+    options.runGh ?? ((args: readonly string[]): GhResult => execArgvCommand('gh', [...args], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 })),
+    options.rateLimitWait,
+    env,
+  );
+  const fail = (result: GhResult): never => {
+    throw new ScanUpstreamError(classifyUpstreamFailure(result));
+  };
   const api = (path: string): string => {
-    const result = execArgvCommand('gh', ['api', path, '-H', 'Accept: application/vnd.github+json'], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 });
+    const result = runGh(['api', path, '-H', 'Accept: application/vnd.github+json']);
     if (result.exitCode !== 0) {
       if (/HTTP 404/i.test(result.stderr)) return '';
-      throw new ScanUpstreamError(classifyUpstreamFailure(result));
+      return fail(result);
     }
     return result.stdout;
   };
   const parse = <T>(text: string): T | null => { try { return text ? JSON.parse(text) as T : null; } catch { throw new ScanUpstreamError('GitHub returned malformed JSON'); } };
+  const toPull = (raw: { number?: number; title?: string; body?: string | null; user?: { login?: string; type?: string } | null; head?: { ref?: string; sha?: string }; labels?: { name?: string }[]; merged_at?: string | null } | null): ScanPullRequest | null => {
+    if (!raw) return null;
+    if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
+    return { number: raw.number, title: raw.title ?? '', body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label) => label.name ? [label.name] : []), mergedAt: raw.merged_at };
+  };
+  /**
+   * REST `pulls/{n}` answers 422 for a PR that changed too many files (it
+   * computes diff stats). GraphQL returns the same fields without them.
+   */
+  const pullViaGraphql = (number: number): ScanPullRequest | null => {
+    const query = 'query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){number title body author{login __typename} headRefName headRefOid labels(first:100){nodes{name}} mergedAt}}}';
+    const result = runGh(['api', 'graphql', '-f', `query=${query}`, '-f', `o=${target.owner}`, '-f', `r=${target.repo}`, '-F', `n=${number}`]);
+    if (result.exitCode !== 0) return fail(result);
+    const pr = parse<{ data?: { repository?: { pullRequest?: { number?: number; title?: string; body?: string | null; author?: { login?: string; __typename?: string } | null; headRefName?: string; headRefOid?: string; labels?: { nodes?: { name?: string }[] }; mergedAt?: string | null } | null } } }>(result.stdout)?.data?.repository?.pullRequest;
+    if (!pr) return null;
+    return toPull({
+      ...(pr.number !== undefined ? { number: pr.number } : {}),
+      ...(pr.title !== undefined ? { title: pr.title } : {}),
+      body: pr.body ?? null,
+      user: pr.author ? { ...(pr.author.login !== undefined ? { login: pr.author.login } : {}), ...(pr.author.__typename !== undefined ? { type: pr.author.__typename } : {}) } : null,
+      head: { ...(pr.headRefName !== undefined ? { ref: pr.headRefName } : {}), ...(pr.headRefOid !== undefined ? { sha: pr.headRefOid } : {}) },
+      labels: pr.labels?.nodes ?? [],
+      merged_at: pr.mergedAt ?? null,
+    });
+  };
   return {
     async getRepo() {
       await Promise.resolve();
@@ -181,10 +276,13 @@ export function createDefaultScanGitHubClient(target: { owner: string; repo: str
     },
     async getPullRequest(number: number): Promise<ScanPullRequest | null> {
       await Promise.resolve();
-      const raw = parse<{ number?: number; title?: string; body?: string | null; user?: { login?: string; type?: string } | null; head?: { ref?: string; sha?: string }; labels?: { name?: string }[]; merged_at?: string | null }>(api(`repos/${target.owner}/${target.repo}/pulls/${number}`));
-      if (!raw) return null;
-      if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
-      return { number: raw.number, title: raw.title ?? '', body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label) => label.name ? [label.name] : []), mergedAt: raw.merged_at };
+      const result = runGh(['api', `repos/${target.owner}/${target.repo}/pulls/${number}`, '-H', 'Accept: application/vnd.github+json']);
+      if (result.exitCode !== 0) {
+        if (/HTTP 404/i.test(result.stderr)) return null;
+        if (/HTTP 422/i.test(result.stderr) && /too many files/i.test(result.stderr)) return pullViaGraphql(number);
+        return fail(result);
+      }
+      return toPull(parse(result.stdout));
     },
     async listPullCommits(number: number): Promise<string[]> {
       await Promise.resolve();

@@ -1,0 +1,543 @@
+{
+  "manifest_version": "0.1.0",
+  "issue": "HOK-3515",
+  "declared_at": "2026-11-19",
+  "purpose": "Candidate public repos for Rework Risk example reports. Kept apart from the corpus manifests, so corpus and example repos never mix. A repo is eligible only if the probe (scripts/example-reports/probe.mjs) passes every threshold below and the repo is in none of the corpus manifests listed in exclude_corpus_manifests. Every change to candidates or thresholds is recorded in changes.",
+  "exclude_corpus_manifests": ["fixtures/arbiter/corpus/hok-3022-cohort.json"],
+  "window_days": 365,
+  "horizon_days": 30,
+  "thresholds": {
+    "min_merged_prs_per_year": 300,
+    "min_base_is_default_share": 0.5,
+    "min_pr_mapped_commit_share": 0.8,
+    "min_revert_prs_per_year": 20,
+    "min_agent_share": 0.02,
+    "supported_conventions": ["squash", "merge_commit", "rebase_or_mixed"]
+  },
+  "candidates": [
+    {
+      "repo": "openai/codex",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "zed-industries/zed",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "astral-sh/uv",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "denoland/deno",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "n8n-io/n8n",
+      "batch": "first-5",
+      "role": "primary"
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
+      "repo": "calcom/cal.diy",
+      "batch": "first-5",
+      "role": "swap",
+      "note": "renamed from calcom/cal.com"
+    },
+    {
+      "repo": "withastro/astro",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
+      "repo": "biomejs/biome",
+      "batch": "first-5",
+      "role": "swap"
+    },
+    {
+      "repo": "langchain-ai/langchain",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "vllm-project/vllm",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "huggingface/transformers",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "ollama/ollama",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "oven-sh/bun",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "vitejs/vite",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "vercel/ai",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "microsoft/TypeScript",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "facebook/react",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "sveltejs/svelte",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "vuejs/core",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "nodejs/node",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "prisma/prisma",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "payloadcms/payload",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "strapi/strapi",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "appsmithorg/appsmith",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "ToolJet/ToolJet",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "directus/directus",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "hashicorp/terraform",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "prometheus/prometheus",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "temporalio/temporal",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "dagger/dagger",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "pulumi/pulumi",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "open-telemetry/opentelemetry-collector-contrib",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "containerd/containerd",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "istio/istio",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "envoyproxy/envoy",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "argoproj/argo-cd",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "backstage/backstage",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "mui/material-ui",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "storybookjs/storybook",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "nrwl/nx",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "vercel/turborepo",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "web-infra-dev/rspack",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "electron/electron",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "tauri-apps/tauri",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "bevyengine/bevy",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "rust-lang/rust-analyzer",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "astral-sh/ruff",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "pydantic/pydantic",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "pola-rs/polars",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "apache/arrow",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "duckdb/duckdb",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "apache/superset",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "metabase/metabase",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "airbytehq/airbyte",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "dbt-labs/dbt-core",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "ray-project/ray",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "mlflow/mlflow",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "langfuse/langfuse",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "lobehub/lobe-chat",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "open-webui/open-webui",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "continuedev/continue",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "cline/cline",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "RooCodeInc/Roo-Code",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "All-Hands-AI/OpenHands",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "microsoft/autogen",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "run-llama/llama_index",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "google-gemini/gemini-cli",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "sst/opencode",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "excalidraw/excalidraw",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "outline/outline",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "twentyhq/twenty",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "documenso/documenso",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "formbricks/formbricks",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "novuhq/novu",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "hoppscotch/hoppscotch",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "immich-app/immich",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "go-gitea/gitea",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "coder/coder",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "nuxt/nuxt",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "TanStack/router",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "trpc/trpc",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "drizzle-team/drizzle-orm",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "valkey-io/valkey",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "pingcap/tidb",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "milvus-io/milvus",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "qdrant/qdrant",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "meilisearch/meilisearch",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "gradio-app/gradio",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "streamlit/streamlit",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "jupyterlab/jupyterlab",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "mastodon/mastodon",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "WordPress/gutenberg",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "keycloak/keycloak",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "apache/kafka",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "opensearch-project/OpenSearch",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "chatwoot/chatwoot",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "langgenius/dify",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "FlowiseAI/Flowise",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    },
+    {
+      "repo": "browser-use/browser-use",
+      "batch": "dry-run-50",
+      "role": "dry_run"
+    }
+  ],
+  "changes": [
+    {
+      "date": "2026-11-19",
+      "repo": "calcom/cal.com",
+      "change": "renamed -> calcom/cal.diy",
+      "reason": "GitHub redirects the old name, but search does not, so the probe measured 0 PRs under it. Not in any corpus manifest under either name."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "first-5 set: codex, zed, uv, deno, n8n primary; tldraw spare; cal.diy and astro to swap",
+      "reason": "Owner approved the probe recommendation and kept the thresholds as declared (reverts >= 20/yr, agent share >= 2%). cal.diy (14) and astro (16) miss the revert screen; biome (13) too."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "dry-run-50 pool: 92 candidates, role dry_run",
+      "reason": "Pool for the 50-repo dry run (yield, unit cost, failure modes). Over-provisioned so ~50 pass the probe; corpus repos are excluded by the probe. Dry-run reports are never published."
+    }
+  ]
+}

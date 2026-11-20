@@ -24,6 +24,7 @@ import {
   createDefaultDeps,
   createOfflineGitHubClient,
   createDefaultScanGitHubClient,
+  type RateLimitWait,
 } from './default-deps.js';
 import {
   ScanInputError,
@@ -57,6 +58,8 @@ import {
 } from './survival-labeller.js';
 import { runShadowCli } from './shadow/cli.js';
 import { runCorpusCli } from './corpus/cli.js';
+import { SCAN_VERSION } from './version.js';
+import { runExampleCli } from './examples/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
 import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
@@ -99,7 +102,7 @@ scan     --repo <path> --integration-branch <name> --pr <n> [common options]
 report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
          [--integration-mode promotion|direct]
          [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
-         [--state-dir <path>] [--contribute [--dry-run]]
+         [--state-dir <path>] [--contribute [--dry-run]] [--wait-on-rate-limit]
 
 shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--threshold 0.5]
@@ -137,6 +140,11 @@ corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slic
                  (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
 corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
                  (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
+
+example-review   --report <json> --repo <owner/name> --manifest <example manifest> [--rescan <json>] [--page <html>] [--out <json>]
+                 (automated honesty checks on one example report; exit 1 means it cannot be published; HOK-3515)
+example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force] [--no-rescan]
+                 (scan, re-scan and review every eligible repo of a batch; resumable; HOK-3515)
 `;
 
 const OPTION_SPEC = {
@@ -161,6 +169,7 @@ const OPTION_SPEC = {
   'static-analysis': { type: 'string' },
   'state-dir': { type: 'string' },
   'no-state': { type: 'boolean' },
+  'wait-on-rate-limit': { type: 'boolean' },
   'attribution-config': { type: 'string' },
   'contribute': { type: 'boolean' },
   'dry-run': { type: 'boolean' },
@@ -201,6 +210,10 @@ export function runScanCli(argv: readonly string[], io: CliIo): CliRunResult {
         log: (line) => io.writeStdout(`${line}\n`),
         cwd: process.cwd(),
       });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
+    if (command.startsWith('example-')) {
+      const result = runExampleCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd(), env: io.env });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command.startsWith('corpus-')) {
@@ -339,8 +352,12 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     }
     const resolvedGithub = requireGithubRepo(context, repoDir, github ?? undefined);
     const asOf = validateAsOf(values['as-of'] as string | undefined) ?? new Date();
-    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...(context.token ? { token: context.token } : {}) });
-    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: 'develop', githubRepo: resolvedGithub });
+    // --wait-on-rate-limit: long unattended scans (the example batch) wait out GitHub limits, up to 2 hours per client.
+    const rateLimitWait: RateLimitWait | undefined = values['wait-on-rate-limit'] === true
+      ? { maxWaitMs: 2 * 60 * 60 * 1000, onWait: (ms) => makeDiagnostics(context).warn(`GitHub rate limit reached; waiting ${Math.ceil(ms / 1000)}s`) }
+      : undefined;
+    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...(context.token ? { token: context.token } : {}) }, { rateLimitWait });
+    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: 'develop', githubRepo: resolvedGithub, rateLimitWait });
     if (offline) reportDeps.deps.github = createOfflineGitHubClient();
     const repoMetadata = offline ? { defaultBranch: (values['integration-branch'] as string | undefined) ?? '', private: false } : await scanGithub.getRepo();
     const explicitBranch = values['integration-branch'] as string | undefined;
@@ -383,7 +400,7 @@ async function runReportCli(argv: readonly string[], io: CliIo): Promise<CliRunR
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit, labeller: reportDeps.deps, github: scanGithub, now: () => asOf,
       onDiagnostic: (line) => io.writeStderr(`${line.startsWith('info:') || line.startsWith('warn:') || line.startsWith('error:') ? '' : 'info: '}${line}\n`),
-    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: '0.4.0', onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: SCAN_VERSION, onStateSave: (save) => { saveState = save; }, ...(stateDir ? { stateDir } : {}) });
     const output = emitReport(draft);
     const outSpec = (values.out as string | undefined) ?? '-';
     const outputPath = outSpec === '-' ? null : resolve(outSpec);
@@ -486,7 +503,7 @@ interface LabelParams {
 
 function buildLabellerWorld(
   context: CommandContext,
-  params: Pick<LabelParams, 'repoDir' | 'offline' | 'asOf' | 'integrationBranch' | 'githubRepo'> & { integrationMode?: IntegrationMode },
+  params: Pick<LabelParams, 'repoDir' | 'offline' | 'asOf' | 'integrationBranch' | 'githubRepo'> & { integrationMode?: IntegrationMode; rateLimitWait?: RateLimitWait | undefined },
 ): { target: SurvivalLabellerTarget; deps: SurvivalLabellerDeps } {
   const diag = makeDiagnostics(context);
   const githubRepo = requireGithubRepo(context, params.repoDir, params.githubRepo);
@@ -502,6 +519,7 @@ function buildLabellerWorld(
   const deps = createDefaultDeps(target, {
     strictUpstream: true,
     ...(asOf ? { now: () => asOf } : {}),
+    rateLimitWait: params.rateLimitWait,
   });
   if (params.offline) {
     deps.github = createOfflineGitHubClient();
