@@ -73,6 +73,8 @@ export interface BatchOptions {
   minRateRemaining?: number;
   /** Re-run steps that already succeeded. */
   force?: boolean;
+  /** Skip the re-scan (dry runs that measure yield and cost); review then fails rescan_reproduces. Default true. */
+  rescan?: boolean;
   only?: string;
 }
 
@@ -108,7 +110,7 @@ export function runExampleBatch(opts: BatchOptions, deps: BatchDeps): BatchState
     mkdirSync(dir, { recursive: true });
     const paths = { scan: join(dir, 'report.json'), rescan: join(dir, 'rescan.json'), review: join(dir, 'review.json') };
 
-    for (const step of ['scan', 'rescan'] as const) {
+    for (const step of opts.rescan === false ? (['scan'] as const) : (['scan', 'rescan'] as const)) {
       if (!opts.force && rs.steps[step]?.status === 'done' && existsSync(paths[step])) continue;
       waitForRateLimit(deps, opts.minRateRemaining ?? 500);
       deps.log(`${step} ${repo}`);

@@ -99,6 +99,13 @@ describe('runExampleBatch', () => {
     expect(h.calls).toEqual(['acme/one', 'acme/one', 'acme/spare', 'acme/spare']);
   });
 
+  it('skips the re-scan when asked, and review then fails rescan_reproduces', () => {
+    const h = harness();
+    const state = runExampleBatch({ ...h.opts, rescan: false }, h.deps);
+    expect(h.calls).toEqual(['acme/one']);
+    expect(state.repos['acme/one']!.review?.failed).toContain('rescan_reproduces');
+  });
+
   it('records a failed scan and skips its re-scan', () => {
     const h = harness({ runScan: (repo) => (h.calls.push(repo), { exitCode: 3, stderrTail: 'error: clone failed' }) });
     const state = runExampleBatch(h.opts, h.deps);

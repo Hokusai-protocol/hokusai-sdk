@@ -6,7 +6,7 @@
  *     Exit 0 when every check passes, 1 when any fails, 2 on bad input.
  *
  *   example-batch  --manifest <example manifest> --probe <probe.json> --batch <name>
- *                  --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force]
+ *                  --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force] [--no-rescan]
  *     Scans, re-scans and reviews every eligible repo of the batch. Resumable.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -21,6 +21,9 @@ import { SCAN_VERSION } from '../version.js';
 import { runExampleBatch } from './batch.js';
 import { htmlToText, reviewExampleReport } from './review.js';
 import { TrainingExclusion, parseExampleManifest, type ExampleManifest } from './select.js';
+
+/** A hung clone or API call must not stall an unattended batch; above the 2-hour rate-limit wait. */
+const SCAN_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 export const EXAMPLE_COMMANDS = ['example-review', 'example-batch'] as const;
 
@@ -43,6 +46,7 @@ const OPTIONS = {
   'as-of': { type: 'string' },
   roles: { type: 'string' },
   force: { type: 'boolean' },
+  'no-rescan': { type: 'boolean' },
 } as const;
 
 const sha256File = (p: string) => createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -141,13 +145,15 @@ export function runExampleCli(command: string, argv: readonly string[], io: Exam
         probe_sha256: sha256File(probePath),
       },
       force: values.force === true,
+      rescan: values['no-rescan'] !== true,
       ...(typeof values.repo === 'string' ? { only: values.repo } : {}),
     },
     {
       // Example repos merge PRs into the default branch (the probe's base_is_default bar), so the scan runs in direct mode.
       // One large scan can spend most of an hour's REST budget, so scans wait out rate limits rather than lose their work.
       runScan: (repo, at, outPath) => {
-        const r = spawnSync(process.execPath, [cliPath, 'report', repo, '--integration-mode', 'direct', '--as-of', at, '--out', outPath, '--no-state', '--wait-on-rate-limit'], { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        const r = spawnSync(process.execPath, [cliPath, 'report', repo, '--integration-mode', 'direct', '--as-of', at, '--out', outPath, '--no-state', '--wait-on-rate-limit'], { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: SCAN_TIMEOUT_MS });
+        if (r.error) return { exitCode: 1, stderrTail: `scan did not finish: ${r.error.message}` };
         return { exitCode: r.status ?? 1, stderrTail: (r.stderr ?? '').split('\n').slice(-5).join('\n') };
       },
       rateLimit: () => {

@@ -143,7 +143,7 @@ corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manif
 
 example-review   --report <json> --repo <owner/name> --manifest <example manifest> [--rescan <json>] [--page <html>] [--out <json>]
                  (automated honesty checks on one example report; exit 1 means it cannot be published; HOK-3515)
-example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force]
+example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force] [--no-rescan]
                  (scan, re-scan and review every eligible repo of a batch; resumable; HOK-3515)
 `;
 

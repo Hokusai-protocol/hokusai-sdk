@@ -17145,7 +17145,7 @@ function runExampleBatch(opts, deps) {
     const dir = join11(opts.outDir, repoSlug(repo));
     mkdirSync6(dir, { recursive: true });
     const paths = { scan: join11(dir, "report.json"), rescan: join11(dir, "rescan.json"), review: join11(dir, "review.json") };
-    for (const step of ["scan", "rescan"]) {
+    for (const step of opts.rescan === false ? ["scan"] : ["scan", "rescan"]) {
       if (!opts.force && rs.steps[step]?.status === "done" && existsSync8(paths[step])) continue;
       waitForRateLimit(deps, opts.minRateRemaining ?? 500);
       deps.log(`${step} ${repo}`);
@@ -17180,6 +17180,7 @@ function waitForRateLimit(deps, minRemaining) {
 }
 
 // src/examples/cli.ts
+var SCAN_TIMEOUT_MS = 4 * 60 * 60 * 1e3;
 var EXAMPLE_COMMANDS = ["example-review", "example-batch"];
 var OPTIONS2 = {
   report: { type: "string" },
@@ -17192,7 +17193,8 @@ var OPTIONS2 = {
   out: { type: "string" },
   "as-of": { type: "string" },
   roles: { type: "string" },
-  force: { type: "boolean" }
+  force: { type: "boolean" },
+  "no-rescan": { type: "boolean" }
 };
 var sha256File = (p) => createHash11("sha256").update(readFileSync9(p)).digest("hex");
 var readJson = (p) => JSON.parse(readFileSync9(p, "utf8"));
@@ -17288,13 +17290,15 @@ function runExampleCli(command, argv, io) {
         probe_sha256: sha256File(probePath)
       },
       force: values.force === true,
+      rescan: values["no-rescan"] !== true,
       ...typeof values.repo === "string" ? { only: values.repo } : {}
     },
     {
       // Example repos merge PRs into the default branch (the probe's base_is_default bar), so the scan runs in direct mode.
       // One large scan can spend most of an hour's REST budget, so scans wait out rate limits rather than lose their work.
       runScan: (repo, at2, outPath) => {
-        const r = spawnSync2(process.execPath, [cliPath, "report", repo, "--integration-mode", "direct", "--as-of", at2, "--out", outPath, "--no-state", "--wait-on-rate-limit"], { env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        const r = spawnSync2(process.execPath, [cliPath, "report", repo, "--integration-mode", "direct", "--as-of", at2, "--out", outPath, "--no-state", "--wait-on-rate-limit"], { env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: SCAN_TIMEOUT_MS });
+        if (r.error) return { exitCode: 1, stderrTail: `scan did not finish: ${r.error.message}` };
         return { exitCode: r.status ?? 1, stderrTail: (r.stderr ?? "").split("\n").slice(-5).join("\n") };
       },
       rateLimit: () => {
@@ -18079,7 +18083,7 @@ corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manif
 
 example-review   --report <json> --repo <owner/name> --manifest <example manifest> [--rescan <json>] [--page <html>] [--out <json>]
                  (automated honesty checks on one example report; exit 1 means it cannot be published; HOK-3515)
-example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force]
+example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force] [--no-rescan]
                  (scan, re-scan and review every eligible repo of a batch; resumable; HOK-3515)
 `;
 var OPTION_SPEC = {
