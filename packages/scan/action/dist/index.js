@@ -14498,6 +14498,11 @@ function parseCalibrationPlan(raw) {
     }
   }
   if (plan.pick_needs_human_precision !== void 0 && typeof plan.pick_needs_human_precision !== "boolean") throw new Error("plan.pick_needs_human_precision must be a boolean");
+  const repoAllocation = plan.repo_allocation;
+  if (repoAllocation !== void 0) {
+    if (!repoAllocation || repoAllocation.mode !== "proportional") throw new Error("plan.repo_allocation.mode must be 'proportional'");
+    if (!Number.isInteger(repoAllocation.min_per_repo) || repoAllocation.min_per_repo < 0) throw new Error("plan.repo_allocation.min_per_repo must be a non-negative integer");
+  }
   return {
     plan_version: plan.plan_version,
     horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
@@ -14510,7 +14515,8 @@ function parseCalibrationPlan(raw) {
     kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
     definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1),
     ...byStratum !== void 0 && { human_audit_share_by_stratum: plan.human_audit_share_by_stratum },
-    ...plan.pick_needs_human_precision !== void 0 && { pick_needs_human_precision: plan.pick_needs_human_precision }
+    ...plan.pick_needs_human_precision !== void 0 && { pick_needs_human_precision: plan.pick_needs_human_precision },
+    ...repoAllocation !== void 0 && { repo_allocation: { mode: "proportional", min_per_repo: repoAllocation.min_per_repo } }
   };
 }
 function auditShare(plan, stratum) {
@@ -14577,6 +14583,38 @@ function classifyCalibrationRepo(input) {
   }
   return units;
 }
+function proportionalQuotas(repos, population, want, min) {
+  let floorLeft = want;
+  const quota = new Map(
+    repos.map((r) => {
+      const q = Math.min(min, population(r), floorLeft);
+      floorLeft -= q;
+      return [r, q];
+    })
+  );
+  let left = floorLeft;
+  while (left > 0) {
+    const open = repos.filter((r) => quota.get(r) < population(r));
+    if (!open.length) break;
+    const total = open.reduce((a, r) => a + population(r), 0);
+    const share = open.map((r) => ({ r, exact: left * population(r) / total }));
+    let given = 0;
+    for (const { r, exact } of share) {
+      const add2 = Math.min(Math.floor(exact), population(r) - quota.get(r));
+      quota.set(r, quota.get(r) + add2);
+      given += add2;
+    }
+    const byRemainder = share.filter(({ r }) => quota.get(r) < population(r)).sort((x, y) => y.exact % 1 - x.exact % 1);
+    for (const { r } of byRemainder) {
+      if (given >= left) break;
+      quota.set(r, quota.get(r) + 1);
+      given++;
+    }
+    left -= given;
+    if (!given) break;
+  }
+  return quota;
+}
 function drawCalibrationSample(units, plan, seed) {
   const items = [];
   const cells = /* @__PURE__ */ new Map();
@@ -14596,16 +14634,23 @@ function drawCalibrationSample(units, plan, seed) {
     const repos = seededOrder([...byRepo.keys()], (repo) => sha2562(seed, "repo", stratum, repo));
     const want = plan.allocation[stratum];
     const picked = [];
-    for (let round = 0; picked.length < want; round++) {
-      let any = false;
-      for (const repo of repos) {
-        const unit = byRepo.get(repo)[round];
-        if (!unit || picked.length >= want) continue;
-        picked.push(unit);
-        cells.get(`${repo}\0${stratum}`).sampled++;
-        any = true;
+    if (plan.repo_allocation) {
+      for (const [repo, quota] of proportionalQuotas(repos, (repo2) => byRepo.get(repo2).length, want, plan.repo_allocation.min_per_repo)) {
+        picked.push(...byRepo.get(repo).slice(0, quota));
+        cells.get(`${repo}\0${stratum}`).sampled += quota;
       }
-      if (!any) break;
+    } else {
+      for (let round = 0; picked.length < want; round++) {
+        let any = false;
+        for (const repo of repos) {
+          const unit = byRepo.get(repo)[round];
+          if (!unit || picked.length >= want) continue;
+          picked.push(unit);
+          cells.get(`${repo}\0${stratum}`).sampled++;
+          any = true;
+        }
+        if (!any) break;
+      }
     }
     if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
     const doubles = new Set(
