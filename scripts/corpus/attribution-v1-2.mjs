@@ -300,7 +300,7 @@ export async function runV12({
         labels_at_merge: e ? labelsAt(e, f.as_of) : null,
         commit_evidence: e?.commits ?? null,
         landing_message: landing,
-        _row: row,
+        row,
       };
     })
     // The auditor's files are ordered by id, which reveals no stratum.
@@ -309,7 +309,7 @@ export async function runV12({
     repo,
     ...summarizeV12(rows.filter((r) => r.repo === repo)),
   }));
-  const publicItems = items.map(({ _row, ...item }) => item);
+  const publicItems = items.map((item) => ({ ...item, row: undefined }));
   const sheet = JSON.stringify(
     publicItems.map(({ id, pr_url }) => ({
       id,
@@ -376,7 +376,7 @@ export async function runV12({
   write(
     'review-strata.json',
     JSON.stringify(
-      items.map(({ id, _row: r }) => ({
+      items.map(({ id, row: r }) => ({
         id,
         repo: r.repo,
         stratum: r.stratum,
