@@ -71,7 +71,7 @@ export const TASK_COST_SOURCE_DIAGNOSTIC_CODES = [
   'codex_cache_exceeds_input',
   /**
    * Codex: a response ran on a service tier the built-in table does not
-   * price (only Standard, `service_tier: "default"`, is priced); it was
+   * price (Standard, `service_tier: "default"`, and Fast, `"priority"`, are priced); it was
    * left unpriced instead of billed at Standard rates.
    */
   'unpriced_service_tier',

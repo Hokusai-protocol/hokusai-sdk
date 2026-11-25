@@ -4,6 +4,8 @@ import {
   ANTHROPIC_MODEL_PRICING_AS_OF,
   GOOGLE_MODEL_PRICING,
   MODEL_PRICING_AS_OF,
+  OPENAI_FAST_TIER_MODELS,
+  OPENAI_FAST_TIER_MULTIPLIER,
   OPENAI_MODEL_PRICING,
   computeActualCostUsd,
   normalizeModelId,
@@ -329,5 +331,83 @@ describe('OpenAI price table (pricing page, 2026-11-04)', () => {
     for (const model of ['gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2', 'gpt-5.1', 'gpt-5-nano', 'o3-pro']) {
       expect(computeActualCostUsd({ model, inputTokens: 1000, outputTokens: 1000 }), model).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('OpenAI Fast tier (pricing page, 2026-11-25)', () => {
+  const usage = {
+    inputTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    cacheReadTokens: 1_000_000,
+  };
+
+  it('bills Fast at exactly 2x Standard for every verified model', () => {
+    for (const model of OPENAI_FAST_TIER_MODELS) {
+      const standard = computeActualCostUsd({ model, ...usage });
+      const fast = computeActualCostUsd({
+        model,
+        ...usage,
+        serviceTier: 'fast',
+      });
+      expect(standard).toBeDefined();
+      expect(fast).toBe(
+        Math.round(standard! * OPENAI_FAST_TIER_MULTIPLIER * 1e6) / 1e6,
+      );
+    }
+  });
+
+  it('matches the published Fast rows', () => {
+    // gpt-6.1-terra Fast: $2 input, $0.10 cached, $10 output.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-6.1-terra',
+        ...usage,
+        serviceTier: 'fast',
+      }),
+    ).toBe(12.1);
+    // gpt-5.6-sol Fast: $8 input, $0.80 cached, $40 output.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-5.6-sol',
+        ...usage,
+        serviceTier: 'fast',
+      }),
+    ).toBe(48.8);
+  });
+
+  it('doubles the long-context rates too', () => {
+    // gpt-6.1-terra Fast long context: $4 input, $15 output.
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-6.1-terra',
+        inputTokens: 300_000,
+        outputTokens: 1_000,
+        requestScoped: true,
+        serviceTier: 'fast',
+      }),
+    ).toBe(1.215);
+  });
+
+  it('never prices Fast for a model whose Fast rates were not verified', () => {
+    for (const model of [
+      'gpt-5.5',
+      'gpt-4o',
+      'claude-sonnet-5',
+      'unknown-model',
+    ]) {
+      expect(
+        computeActualCostUsd({ model, ...usage, serviceTier: 'fast' }),
+      ).toBeUndefined();
+    }
+  });
+
+  it('treats an omitted tier and `standard` alike', () => {
+    expect(
+      computeActualCostUsd({
+        model: 'gpt-6.1-terra',
+        ...usage,
+        serviceTier: 'standard',
+      }),
+    ).toBe(computeActualCostUsd({ model: 'gpt-6.1-terra', ...usage }));
   });
 });

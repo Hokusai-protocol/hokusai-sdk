@@ -73,6 +73,13 @@ function normalizeCodexBuckets(
 export const CODEX_STANDARD_SERVICE_TIER = 'default';
 
 /**
+ * What Codex records in `thread_settings.service_tier` for Fast mode. Taken
+ * from real rollouts on codex-cli 0.172.0 (2026-11-25): a run requested with
+ * `service_tier="fast"` records `priority`, on both gpt-6.1 and gpt-5.6 models.
+ */
+export const CODEX_FAST_SERVICE_TIER = 'priority';
+
+/**
  * Extract normalized per-turn usage for one task from Codex rollouts. Never
  * throws on malformed input; a misconfigured boundary throws `TypeError`.
  */
@@ -152,11 +159,13 @@ export function extractCodexUsage(
       if (byIdentity.has(eventId)) {
         countDiagnostic(diagnostics, 'duplicate_row');
       }
-      // Only Standard (`default`) is in the built-in table; Fast / Flex /
-      // Batch responses are left unpriced rather than billed at Standard.
+      // Standard (`default`) and Fast (`priority`) are priced. Any other tier
+      // value is left unpriced rather than billed at Standard.
+      const fast = observation.serviceTier === CODEX_FAST_SERVICE_TIER;
       const unpriced =
         observation.serviceTier !== null &&
-        observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
+        observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER &&
+        !fast;
       if (unpriced) countDiagnostic(diagnostics, 'unpriced_service_tier');
       byIdentity.set(eventId, {
         eventId,
@@ -170,6 +179,7 @@ export function extractCodexUsage(
         harnessVersion: session.harnessVersion,
         usageInvalid: observation.usageInvalid,
         ...(unpriced ? { unpriced: true } : {}),
+        ...(fast ? { serviceTier: 'fast' as const } : {}),
       });
     }
   }

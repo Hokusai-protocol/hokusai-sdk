@@ -45,7 +45,7 @@ var init_types = __esm({
       "codex_cache_exceeds_input",
       /**
        * Codex: a response ran on a service tier the built-in table does not
-       * price (only Standard, `service_tier: "default"`, is priced); it was
+       * price (Standard, `service_tier: "default"`, and Fast, `"priority"`, are priced); it was
        * left unpriced instead of billed at Standard rates.
        */
       "unpriced_service_tier",
@@ -8232,6 +8232,17 @@ var ANTHROPIC_MODEL_PRICING = {
   "claude-sonnet-4-6": { inputPerMTokUsd: 3, outputPerMTokUsd: 15 },
   "claude-haiku-4-5": { inputPerMTokUsd: 1, outputPerMTokUsd: 5 }
 };
+var OPENAI_FAST_TIER_MULTIPLIER = 2;
+var OPENAI_FAST_TIER_MODELS = [
+  "gpt-6-astra",
+  "gpt-6.1-sol",
+  "gpt-6.1-terra",
+  "gpt-6-sol",
+  "gpt-6-luna",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna"
+];
 var OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272e3;
 function openAiLong(inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd) {
   return {
@@ -8684,17 +8695,38 @@ function computeActualCostUsd(input) {
   if (inputTokens === null || outputTokens === null || cacheCreationTokens === null || cacheReadTokens === null) {
     return void 0;
   }
-  const rates = appliedRates(
+  const tierMultiplier = serviceTierMultiplier(input.model, input.serviceTier);
+  if (tierMultiplier === void 0) {
+    return void 0;
+  }
+  const standard = appliedRates(
     input.model,
     price,
     inputTokens + cacheReadTokens + cacheCreationTokens,
     input.requestScoped === true
   );
+  const scale = (rate) => rate === void 0 ? void 0 : rate * tierMultiplier;
+  const rates = {
+    input: standard.input * tierMultiplier,
+    output: standard.output * tierMultiplier,
+    cacheRead: scale(standard.cacheRead),
+    cacheWrite: scale(standard.cacheWrite)
+  };
   if (cacheReadTokens > 0 && rates.cacheRead === void 0 || cacheCreationTokens > 0 && rates.cacheWrite === void 0) {
     return void 0;
   }
   const cost = inputTokens / 1e6 * rates.input + cacheCreationTokens / 1e6 * (rates.cacheWrite ?? 0) + cacheReadTokens / 1e6 * (rates.cacheRead ?? 0) + outputTokens / 1e6 * rates.output;
   return Math.round(cost * 1e6) / 1e6;
+}
+function serviceTierMultiplier(model, tier) {
+  if (tier === void 0 || tier === "standard") {
+    return 1;
+  }
+  if (tier !== "fast") {
+    return void 0;
+  }
+  const normalized = normalizeModelId(model);
+  return OPENAI_FAST_TIER_MODELS.includes(normalized) || OPENAI_FAST_TIER_MODELS.includes(stripKnownSnapshotSuffixes(normalized)) ? OPENAI_FAST_TIER_MULTIPLIER : void 0;
 }
 function isAnthropicModel(model) {
   const normalized = normalizeModelId(model);
@@ -17638,7 +17670,7 @@ function priceWithOverride(override, usage, inputTokens, outputTokens, ctx) {
   );
   return { estimated: toMicroUsd(pico), ...provenance, diagnostics: [] };
 }
-function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx, requestScoped) {
+function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx, requestScoped, serviceTier) {
   const price = resolveModelPrice(model);
   if (price === void 0) {
     return {
@@ -17653,7 +17685,8 @@ function priceWithBuiltInTable(model, usage, inputTokens, outputTokens, ctx, req
     outputTokens,
     cacheCreationTokens: usage.cache_write_tokens ?? 0,
     cacheReadTokens: usage.cache_read_tokens ?? 0,
-    requestScoped
+    requestScoped,
+    ...serviceTier !== void 0 ? { serviceTier } : {}
   });
   if (estimated === void 0) {
     return {
@@ -17706,7 +17739,8 @@ function resolveEstimate(req, ctx) {
     inputTokens,
     outputTokens,
     ctx,
-    req.requestScoped === true
+    req.requestScoped === true,
+    req.serviceTier
   );
 }
 function resolveEventPrice(req, ctx = {}) {
@@ -17877,6 +17911,7 @@ function createTaskCostEngine(options) {
         // A delta event is one provider request (a cumulative snapshot or a
         // declared aggregate is not), so a long-context tier may apply.
         requestScoped: (input.usageKind ?? "delta") === "delta" && input.aggregate !== true,
+        ...input.serviceTier !== void 0 ? { serviceTier: input.serviceTier } : {},
         ...input.actualCostUsd !== void 0 ? { actualCostUsd: input.actualCostUsd } : {},
         ...input.costBasis !== void 0 ? { costBasis: input.costBasis } : {},
         ...input.estimatedCostUsd !== void 0 ? { estimatedCostUsd: input.estimatedCostUsd } : {},
@@ -17956,7 +17991,9 @@ function assembleInputs(taskId, harness, providerContractVersion, rows) {
   const inputs = [];
   const sourceVersions = [];
   for (const sessionRows of bySession.values()) {
-    const ordered = [...sessionRows].sort((a, b) => a.observedMs - b.observedMs);
+    const ordered = [...sessionRows].sort(
+      (a, b) => a.observedMs - b.observedMs
+    );
     for (const [index, row] of ordered.entries()) {
       if (row.harnessVersion !== null && !sourceVersions.includes(row.harnessVersion)) {
         sourceVersions.push(row.harnessVersion);
@@ -17977,6 +18014,7 @@ function assembleInputs(taskId, harness, providerContractVersion, rows) {
         ...row.isSubagent !== void 0 ? { isSubagent: row.isSubagent } : {},
         observedAt: row.observedAt,
         ...row.unpriced ? { estimatedCostUsd: null } : {},
+        ...row.serviceTier !== void 0 && !row.unpriced ? { serviceTier: row.serviceTier } : {},
         ...row.usageInvalid || row.unpriced ? {
           diagnostics: [
             ...row.usageInvalid ? ["invalid_token_usage"] : [],
@@ -18514,6 +18552,7 @@ function normalizeCodexBuckets(usage, diagnostics) {
   return usage.input_tokens === void 0 ? usage : { ...usage, input_tokens: normalized.inputTokens };
 }
 var CODEX_STANDARD_SERVICE_TIER = "default";
+var CODEX_FAST_SERVICE_TIER = "priority";
 function extractCodexUsage(options) {
   const boundary = resolveTaskBoundary(options.boundary);
   const diagnostics = {};
@@ -18572,7 +18611,8 @@ function extractCodexUsage(options) {
       if (byIdentity.has(eventId2)) {
         countDiagnostic(diagnostics, "duplicate_row");
       }
-      const unpriced = observation.serviceTier !== null && observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER;
+      const fast = observation.serviceTier === CODEX_FAST_SERVICE_TIER;
+      const unpriced = observation.serviceTier !== null && observation.serviceTier !== CODEX_STANDARD_SERVICE_TIER && !fast;
       if (unpriced) countDiagnostic(diagnostics, "unpriced_service_tier");
       byIdentity.set(eventId2, {
         eventId: eventId2,
@@ -18585,7 +18625,8 @@ function extractCodexUsage(options) {
         actualCostUsd: null,
         harnessVersion: session.harnessVersion,
         usageInvalid: observation.usageInvalid,
-        ...unpriced ? { unpriced: true } : {}
+        ...unpriced ? { unpriced: true } : {},
+        ...fast ? { serviceTier: "fast" } : {}
       });
     }
   }
@@ -18873,7 +18914,7 @@ var DIAGNOSTIC_MESSAGES = {
   duplicate_row: "a source row repeated an already-seen identity",
   cumulative_counter_reset: "a cumulative counter regressed; the baseline was reset",
   codex_cache_exceeds_input: "reported cache tokens exceeded input tokens; uncached input was clamped to zero",
-  unpriced_service_tier: "a response ran on a non-Standard service tier, which the built-in table does not price; it was left unpriced",
+  unpriced_service_tier: "a response ran on a service tier the built-in table does not price; it was left unpriced",
   // Mapped / tracker-level codes.
   malformed_line: "a session-file line was malformed and skipped",
   invalid_record: "a record was not a usable record shape",

@@ -8,7 +8,11 @@
  * @module sources/assemble
  */
 
-import type { TaskCostHarness, TaskCostTokenUsage } from '@hokusai/core';
+import type {
+  OpenAiServiceTier,
+  TaskCostHarness,
+  TaskCostTokenUsage,
+} from '@hokusai/core';
 import type { IngestUsageInput } from '../engine.js';
 
 /** A boundary-accepted row, ready to become one ingest input. */
@@ -30,6 +34,8 @@ export interface AcceptedUsageRow {
    * response on a non-Standard service tier): no estimate, `no_pricing_data`.
    */
   unpriced?: boolean;
+  /** A non-Standard service tier the built-in table prices (Codex Fast mode). */
+  serviceTier?: OpenAiServiceTier;
 }
 
 export interface AssembledInputs {
@@ -53,7 +59,9 @@ export function assembleInputs(
   const inputs: IngestUsageInput[] = [];
   const sourceVersions: string[] = [];
   for (const sessionRows of bySession.values()) {
-    const ordered = [...sessionRows].sort((a, b) => a.observedMs - b.observedMs);
+    const ordered = [...sessionRows].sort(
+      (a, b) => a.observedMs - b.observedMs,
+    );
     for (const [index, row] of ordered.entries()) {
       if (
         row.harnessVersion !== null &&
@@ -78,11 +86,12 @@ export function assembleInputs(
         ...(row.actualCostUsd !== null
           ? { actualCostUsd: row.actualCostUsd }
           : {}),
-        ...(row.isSubagent !== undefined
-          ? { isSubagent: row.isSubagent }
-          : {}),
+        ...(row.isSubagent !== undefined ? { isSubagent: row.isSubagent } : {}),
         observedAt: row.observedAt,
         ...(row.unpriced ? { estimatedCostUsd: null } : {}),
+        ...(row.serviceTier !== undefined && !row.unpriced
+          ? { serviceTier: row.serviceTier }
+          : {}),
         ...(row.usageInvalid || row.unpriced
           ? {
               diagnostics: [

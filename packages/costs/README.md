@@ -217,9 +217,12 @@ These figures are **estimates, not invoices**:
   `aggregate: true` on a `recordUsage` record that sums several requests (a
   session total); it, and any `cumulative` snapshot, is billed at the
   standard rates.
-- Codex service tier: only Standard (`service_tier: "default"`) is in the
-  table. A response on another tier (Fast, Flex) is left unpriced with an
-  `unpriced_service_tier` diagnostic rather than billed at Standard rates.
+- Codex service tier: Standard (`service_tier: "default"`) and Fast are
+  priced. Codex records Fast mode as `service_tier: "priority"`; it is billed
+  at 2x Standard for the models in `OPENAI_FAST_TIER_MODELS`. A Fast response
+  on any other model, or a response on any other tier value, is left unpriced
+  rather than billed at Standard rates. An unrecognized tier value also gets
+  an `unpriced_service_tier` diagnostic.
 - `pricing.revision` is the latest price revision used and
   `pricing.revisions` lists all of them; more than one implies a
   `stale_pricing_revision` diagnostic.

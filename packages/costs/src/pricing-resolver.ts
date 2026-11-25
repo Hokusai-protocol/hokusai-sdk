@@ -24,6 +24,7 @@ import {
   normalizeModelId,
   resolveModelPrice,
   type ModelPrice,
+  type OpenAiServiceTier,
   type TaskCostBasis,
   type TaskCostDiagnosticCode,
   type TaskCostEventSource,
@@ -88,6 +89,11 @@ export interface EventPricingRequest {
    * tier applies when the prompt exceeds its threshold. Default `false`.
    */
   requestScoped?: boolean;
+  /**
+   * The OpenAI service tier the request ran on, when the source knows it.
+   * Applies to the built-in table only; a host override states its own price.
+   */
+  serviceTier?: OpenAiServiceTier;
 }
 
 export interface ResolvedEventPricing {
@@ -233,6 +239,7 @@ function priceWithBuiltInTable(
   outputTokens: number,
   ctx: EventPricingContext,
   requestScoped: boolean,
+  serviceTier: OpenAiServiceTier | undefined,
 ): EstimateResolution {
   const price = resolveModelPrice(model);
   if (price === undefined) {
@@ -250,10 +257,12 @@ function priceWithBuiltInTable(
     cacheCreationTokens: usage.cache_write_tokens ?? 0,
     cacheReadTokens: usage.cache_read_tokens ?? 0,
     requestScoped,
+    ...(serviceTier !== undefined ? { serviceTier } : {}),
   });
   if (estimated === undefined) {
     // The model is priced but this usage is not: cache tokens with no rate
-    // in the table (Gemini, OpenAI pro models, TTL-dependent cache writes).
+    // in the table (Gemini, OpenAI pro models, TTL-dependent cache writes),
+    // or a service tier the table does not price for this model.
     return {
       estimated: null,
       pricingSource: 'none',
@@ -323,6 +332,7 @@ function resolveEstimate(
     outputTokens,
     ctx,
     req.requestScoped === true,
+    req.serviceTier,
   );
 }
 

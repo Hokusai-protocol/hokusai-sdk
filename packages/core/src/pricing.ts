@@ -83,6 +83,36 @@ export const ANTHROPIC_MODEL_PRICING: Readonly<Record<string, ModelPrice>> = {
 /** ISO date the OpenAI table was last verified against the pricing page. */
 export const OPENAI_MODEL_PRICING_AS_OF = '2026-11-04';
 
+/**
+ * OpenAI service tiers this table can price. `standard` is the table itself.
+ * `fast` (formerly Priority) is exactly 2x Standard on every rate, including
+ * the long-context rates, for the models in {@link OPENAI_FAST_TIER_MODELS}.
+ * Flex, Batch and Ultrafast are not represented.
+ */
+export type OpenAiServiceTier = 'standard' | 'fast';
+
+/** Fast-mode rates relative to Standard, per the pricing page's Fast table. */
+export const OPENAI_FAST_TIER_MULTIPLIER = 2;
+
+/** ISO date the Fast tier rates were verified against the pricing page. */
+export const OPENAI_SERVICE_TIER_PRICING_AS_OF = '2026-11-25';
+
+/**
+ * Models whose Fast rates were checked against the page and equal 2x Standard.
+ * A Fast-tier usage on any other model is unpriced, never billed at Standard
+ * or at an assumed multiple.
+ */
+export const OPENAI_FAST_TIER_MODELS: readonly string[] = [
+  'gpt-6-astra',
+  'gpt-6.1-sol',
+  'gpt-6.1-terra',
+  'gpt-6-sol',
+  'gpt-6-luna',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+];
+
 /** OpenAI bills prompts above this many input tokens at the long-context rates. */
 export const OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272_000;
 
@@ -102,8 +132,9 @@ function openAiLong(
 /**
  * OpenAI pricing source, Standard tier:
  * https://developers.openai.com/api/docs/pricing (read 2026-11-04).
- * Batch / Flex / Fast (formerly Priority) tiers are not represented. A usage
- * source that knows its tier must leave a non-Standard request unpriced.
+ * Fast (formerly Priority) is priced as a multiple of these rows for the models
+ * in `OPENAI_FAST_TIER_MODELS` (read 2026-11-25). Batch / Flex / Ultrafast are
+ * not represented: a usage source that knows its tier must leave those unpriced.
  * Regional and FedRAMP uplifts are out of scope.
  *
  * - `cachedInputPerMTokUsd` is per model (the ratio to input varies: 0.05x for
@@ -583,6 +614,12 @@ export interface TokenCostInput {
    * cannot be split back into requests and are billed at the standard rates.
    */
   requestScoped?: boolean;
+  /**
+   * The OpenAI service tier the usage ran on. Default `standard`. `fast` is
+   * priced only for {@link OPENAI_FAST_TIER_MODELS}; any other model yields no
+   * cost rather than a Standard-rate one.
+   */
+  serviceTier?: OpenAiServiceTier;
 }
 
 /** A finite, non-negative number, or 0 when the value is absent/invalid-as-zero. */
@@ -693,12 +730,24 @@ export function computeActualCostUsd(
     return undefined;
   }
 
-  const rates = appliedRates(
+  const tierMultiplier = serviceTierMultiplier(input.model, input.serviceTier);
+  if (tierMultiplier === undefined) {
+    return undefined;
+  }
+  const standard = appliedRates(
     input.model,
     price,
     inputTokens + cacheReadTokens + cacheCreationTokens,
     input.requestScoped === true,
   );
+  const scale = (rate: number | undefined): number | undefined =>
+    rate === undefined ? undefined : rate * tierMultiplier;
+  const rates: AppliedRates = {
+    input: standard.input * tierMultiplier,
+    output: standard.output * tierMultiplier,
+    cacheRead: scale(standard.cacheRead),
+    cacheWrite: scale(standard.cacheWrite),
+  };
   if (
     (cacheReadTokens > 0 && rates.cacheRead === undefined) ||
     (cacheCreationTokens > 0 && rates.cacheWrite === undefined)
@@ -713,6 +762,24 @@ export function computeActualCostUsd(
     (outputTokens / 1_000_000) * rates.output;
   // Round to 6 decimal places (micro-dollar) to avoid floating-point noise.
   return Math.round(cost * 1_000_000) / 1_000_000;
+}
+
+/** The rate multiple for a service tier, or `undefined` when the tier is not priced for the model. */
+function serviceTierMultiplier(
+  model: string,
+  tier: OpenAiServiceTier | undefined,
+): number | undefined {
+  if (tier === undefined || tier === 'standard') {
+    return 1;
+  }
+  if (tier !== 'fast') {
+    return undefined;
+  }
+  const normalized = normalizeModelId(model);
+  return OPENAI_FAST_TIER_MODELS.includes(normalized) ||
+    OPENAI_FAST_TIER_MODELS.includes(stripKnownSnapshotSuffixes(normalized))
+    ? OPENAI_FAST_TIER_MULTIPLIER
+    : undefined;
 }
 
 function isAnthropicModel(model: string): boolean {
