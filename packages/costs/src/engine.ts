@@ -28,6 +28,7 @@ import {
   aggregateTaskCost,
   normalizeModelId,
   validateTaskCostEventV1,
+  type OpenAiServiceTier,
   type TaskCostBasis,
   type TaskCostDiagnosticCode,
   type TaskCostEventV1,
@@ -101,6 +102,8 @@ export interface IngestUsageInput {
    * Default `false`: an event is one request.
    */
   aggregate?: boolean;
+  /** The OpenAI service tier the request ran on, when the source knows it. Default Standard. */
+  serviceTier?: OpenAiServiceTier;
 }
 
 export type IngestResult =
@@ -246,7 +249,11 @@ export function createTaskCostEngine(
         harness: input.harness,
         // A delta event is one provider request (a cumulative snapshot or a
         // declared aggregate is not), so a long-context tier may apply.
-        requestScoped: (input.usageKind ?? 'delta') === 'delta' && input.aggregate !== true,
+        requestScoped:
+          (input.usageKind ?? 'delta') === 'delta' && input.aggregate !== true,
+        ...(input.serviceTier !== undefined
+          ? { serviceTier: input.serviceTier }
+          : {}),
         ...(input.actualCostUsd !== undefined
           ? { actualCostUsd: input.actualCostUsd }
           : {}),
