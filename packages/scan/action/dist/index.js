@@ -16730,9 +16730,9 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
 }
 
 // src/version.ts
-var SCAN_VERSION = "0.8.0";
+var SCAN_VERSION = "0.9.0";
 
-// src/examples/cli.ts
+// src/example-reports/cli.ts
 import { execFileSync as execFileSync2, spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash11 } from "node:crypto";
 import { existsSync as existsSync9, readFileSync as readFileSync9, writeFileSync as writeFileSync7 } from "node:fs";
@@ -16881,14 +16881,14 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
   return valid.value;
 }
 
-// src/examples/batch.ts
+// src/example-reports/batch.ts
 import { existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync8, writeFileSync as writeFileSync6 } from "node:fs";
 import { join as join11 } from "node:path";
 
-// src/examples/review.ts
+// src/example-reports/review.ts
 import { isDeepStrictEqual } from "node:util";
 
-// src/examples/select.ts
+// src/example-reports/select.ts
 import { createHash as createHash10 } from "node:crypto";
 var repoKey = (repo) => repo.trim().toLowerCase();
 function hashRepo(salt, repo) {
@@ -16951,7 +16951,7 @@ var TrainingExclusion = class {
   }
 };
 
-// src/examples/review.ts
+// src/example-reports/review.ts
 var EXAMPLE_REVIEW_VERSION = "0.1.0";
 var APPROVED_PHRASES = [/possible defect revert \(lower confidence\)/gi];
 var HARD_COPY_RULES = [
@@ -17114,7 +17114,7 @@ function reviewExampleReport(input) {
   return finish();
 }
 
-// src/examples/batch.ts
+// src/example-reports/batch.ts
 var EXAMPLE_BATCH_VERSION = "0.1.0";
 var repoSlug = (repo) => repo.replace("/", "__");
 function runExampleBatch(opts, deps) {
@@ -17179,7 +17179,7 @@ function waitForRateLimit(deps, minRemaining) {
   deps.sleep(waitMs);
 }
 
-// src/examples/cli.ts
+// src/example-reports/cli.ts
 var SCAN_TIMEOUT_MS = 4 * 60 * 60 * 1e3;
 var EXAMPLE_COMMANDS = ["example-review", "example-batch"];
 var OPTIONS2 = {

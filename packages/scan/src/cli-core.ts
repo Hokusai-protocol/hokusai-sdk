@@ -59,7 +59,7 @@ import {
 import { runShadowCli } from './shadow/cli.js';
 import { runCorpusCli } from './corpus/cli.js';
 import { SCAN_VERSION } from './version.js';
-import { runExampleCli } from './examples/cli.js';
+import { runExampleCli } from './example-reports/cli.js';
 import { createOfflineScanGitHubClient } from './orchestrate/github.js';
 import { IntegrationBranchError, resolveIntegrationBranch } from './orchestrate/integration-branch.js';
 import { runReportScan } from './orchestrate/scan-report.js';
