@@ -93,6 +93,24 @@ if (match[2] !== CORE) {
   }
 }
 
+// SCAN_VERSION is stamped on every Rework Risk report payload (HOK-3515).
+const scanFile = 'packages/scan/src/version.ts';
+const scanPath = path.join(repoRoot, scanFile);
+const scanSource = readFileSync(scanPath, 'utf8');
+const scanVersionPattern = /(export const SCAN_VERSION = ')([^']+)(';)/;
+const scanMatch = scanVersionPattern.exec(scanSource);
+if (!scanMatch) {
+  console.error(`could not find SCAN_VERSION in ${scanFile}`);
+  process.exit(1);
+}
+const SCAN = packageVersion('scan');
+if (scanMatch[2] !== SCAN) {
+  drift.push(`${scanFile}: SCAN_VERSION ${scanMatch[2]} → ${SCAN}`);
+  if (!checkOnly) {
+    writeFileSync(scanPath, scanSource.replace(scanVersionPattern, `$1${SCAN}$3`));
+  }
+}
+
 if (drift.length === 0) {
   console.log('Versions are in sync.');
   process.exit(0);

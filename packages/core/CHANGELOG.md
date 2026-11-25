@@ -1,6 +1,31 @@
 # @hokusai/core
 
+## 0.9.0
+
+Released 2026-11-17.
+
+### Minor Changes
+
+- db0dc6e: Corrective-rework definitions are now a table (HOK-3269).
+  - **Core.** `CORRECTIVE_REWORK_DEFINITIONS` lists every definition by version, and `admittedProxiesFor` returns the proxies one admits. `deriveCorrectiveLabel` reads the admitted proxies from the envelope's `definition_version` and throws on a version it does not know. Adds `cr-0.2.0`: reverts and repair references only. `cr-0.1.0` stays the default.
+  - **Scan.** `hokusai-scan corpus-corrective-derive --definition <cr-x.y.z>` writes `corrective.<definition>.jsonl.gz` from the repair pairs `corpus-corrective` already wrote, without re-running detection.
+
+- 50f0c6d: Adds `cr-0.3.0`, the defect-repair definition: repair references and regression issues only. It is reported alongside the Rework Risk target and never gates. Calibration scoring shows it as `defect_repair`, a report-only variant that the pick rules skip, so frozen plans pick as before. `corpus-calibration-sample` gains `--exclude-sample <sample.json>` (repeatable), which leaves an earlier sample's PRs out of a new draw and records that sample's SHA-256.
+- 7d0b8f1: Add the Rework Risk merge-time feature manifest and leakage validator (HOK-3023).
+  - **Manifest.** `REWORK_RISK_FEATURE_MANIFEST` (`rr-merge-features/1.0.0`, frozen by the leakage audit) declares every field an arm may use, with its `as_of` source and null meaning. Provenance and CI fields are `segment.*` and cannot be arm inputs.
+  - **Validator.** `validateFeatureManifest`, `validateFeatureColumns` and `validateEvidenceAsOf` reject post-merge sources, `label.*` fields, denylisted label-side fields and undeclared columns.
+  - **Agent markers.** `feature.agent.*` gives every arm the evidence that an agent tool worked on a PR, including one opened under a person's account. `segment.agent.exact_model` and `segment.author.dependency_bot` are reported separately.
+  - **Attribution.** `attributePullRequest` now recognizes Claude and Copilot co-author trailers, agent footers, `Assisted-by` trailers and authorship statements ("Authored by Claude Code") in commits and PR bodies, an organization's own agent accounts such as `acme-claude-bot`, and `claude/`, `copilot/`, `cursor/`, `devin/`, `gemini/` and `openhands/` branches. It no longer calls a PR agent-written because a commit names a model or has a bot co-author such as dependabot. Agent coverage in scan reports will change as a result.
+  - **Extraction.** `hokusai-scan corpus-features` captures timestamped evidence and builds one row per PR with a pure, offline extractor. Timeline events are captured in their own step, because GitHub silently truncates them in large batches.
+  - **Audit.** `hokusai-scan corpus-feature-replay` replays sampled development-repo PRs with git and evidence cut at the merge, and with fabricated post-merge activity, and requires byte-identical rows.
+  - **CLI.** `hokusai-scan corpus-feature-audit` gives other languages the same validator: exit 0 passes, 1 means leakage, 2 means bad input.
+
+- 54bb506: Add optional provider execution observations and stage failure attribution to router row v4. Preserve billed zeros, missing charges, request restrictions, scoped price snapshots, token facts, and pseudonymous ownership links through the canonical builder. Export the shared strict provider-evidence validator and JSON schema; existing rows remain valid.
+- 40a018d: Publish the versioned `@hokusai/core/token-prices` JSON artifact generated from the SDK pricing resolver. Include pinned OpenRouter models and explicit unpriced cache dimensions, aliases, context tiers and per-row source/date provenance. Refresh the verified Sonnet 5 rate to $2/$10 and add Opus 5.5 with its explicit cache rate. Cross-language parity vectors let server consumers prove they use the same rates and null semantics. API-equivalent measurement is independent of subscriptions. Frozen historical records are unchanged.
+
 ## 0.8.0
+
+Released 2026-11-05.
 
 ### Minor Changes
 

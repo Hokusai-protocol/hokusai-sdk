@@ -18,6 +18,58 @@ git push origin v0.x.y
 
 ## Releases
 
+### 0.9.0 — 2026-11-17
+
+**Requires:** `fromCodexUsage` and `CodexUsageDiagnostics` need
+**`@hokusai/costs` ≥ 0.9.0**; the `@hokusai/core/token-prices` JSON export
+(`hokusai_token_prices/v1`) needs **`@hokusai/core` ≥ 0.9.0**. Emitting
+`stage_executions[].provider_executions` or `failure` on router row v4 needs a
+server whose ingestion accepts them; deploy that before enabling an emitting
+host. Purely additive: the task-cost contract (`1.2.0`) and every row and
+label schema version are unchanged. See the
+[version-to-export table](versioning-policy.md#exports-added-after-the-task-cost-contract).
+
+- **One Codex usage mapper (HOK-3408).** `@hokusai/costs` exports
+  `fromCodexUsage(usage, diagnostics?)` for hosts holding a Codex CLI
+  `turn.completed.usage` payload. It subtracts cache reads/writes from the
+  inclusive input once, clamps an overflow at zero (counted in the optional
+  `CodexUsageDiagnostics` as `codex_cache_exceeds_input`), keeps unreported
+  counters null, and treats reasoning as an informational subset of output. The
+  Codex rollout source now uses the same mapper; the `codex/2` contract and the
+  golden fixtures are unchanged.
+- **One price table (HOK-3421).** `@hokusai/core/token-prices` is the versioned
+  JSON price artifact generated from the SDK pricing resolver: explicit
+  input/output/cache rates (null = unpriced, never zero), aliases,
+  long-context tiers and per-row source/date provenance, plus the pinned
+  OpenRouter rows. `fixtures/token-prices/parity.v1.json` gives server
+  consumers cross-language vectors to prove they price identically.
+- **Price changes (`MODEL_PRICING_AS_OF` → `2026-11-16`).** Sonnet 5 moves from
+  $3 / $15 to **$2 / $10** per million input/output tokens, so new Sonnet 5
+  estimates drop by a third. Opus 5.5 is added with its own cache-read rate.
+  `ANTHROPIC_MODEL_PRICING_AS_OF` moves to `2026-11-16`. Stored historical
+  costs are not rewritten.
+- **Provider execution evidence (HOK-3495).** Router row v4 accepts optional
+  `stage_executions[].provider_executions` and stage `failure` attribution
+  through the canonical builder. Billed zeros, missing charges, request
+  restrictions, scoped price snapshots and token facts are preserved; ownership
+  links must be pseudonymous. Ships a strict validator and
+  `provider-execution.v1.schema.json`. See
+  [Provider execution evidence](provider-execution-evidence.md).
+- **Rework Risk merge-time features (HOK-3023).** `REWORK_RISK_FEATURE_MANIFEST`
+  (`rr-merge-features/1.0.0`) and its leakage validators, plus
+  `hokusai-scan corpus-features`, `corpus-feature-replay` and
+  `corpus-feature-audit`.
+- **Corrective-rework definitions (HOK-3269).** `CORRECTIVE_REWORK_DEFINITIONS`
+  adds `cr-0.2.0` (reverts and repair references) and `cr-0.3.0` (report-only
+  defect repair); `cr-0.1.0` stays the default. `hokusai-scan` gains
+  `corpus-corrective-derive`, `corpus-calibration-sample --exclude-sample`, and
+  the `corpus-calibration-gold` / `-screen` / `-score` auditor checks.
+- **Behavior change:** `attributePullRequest` recognizes more agent markers
+  (co-author trailers, `Assisted-by`, authorship statements, org agent
+  accounts, agent branch prefixes) and no longer treats a model name in a
+  commit or a bot co-author such as dependabot as agent authorship. Agent
+  coverage in scan reports will change.
+
 ### 0.8.0 — 2026-11-05
 
 **Requires:** `technical_task_router_row/v4` rows need a server that accepts

@@ -1,0 +1,147 @@
+{
+  "analysis_version": "1.0.0",
+  "protocol_version": "1.0.0",
+  "reviewer_type": "independent_human",
+  "sample_size": 116,
+  "reviewer_count": 1,
+  "as_labelled": {
+    "baseline_positive": {
+      "sample": 54,
+      "sampling_cells": 18,
+      "population": 28209,
+      "verdicts": {
+        "agent_evidence": 51,
+        "ordinary_automation": 2,
+        "no_evidence": 1,
+        "ambiguous": 0
+      },
+      "agent_evidence_inherited_upstream": 3,
+      "weighted_agent_evidence": {
+        "estimate": 0.9402082077823862,
+        "standard_error": 0.046185180525513,
+        "estimated_count": 26522,
+        "raw": "51/54",
+        "raw_wilson95": [0.848927855800376, 0.9809267316938132]
+      }
+    },
+    "bot_without_agent_evidence": {
+      "sample": 26,
+      "sampling_cells": 13,
+      "population": 2556,
+      "verdicts": {
+        "agent_evidence": 6,
+        "ordinary_automation": 18,
+        "no_evidence": 0,
+        "ambiguous": 2
+      },
+      "agent_evidence_inherited_upstream": 0,
+      "weighted_agent_evidence": {
+        "estimate": 0.25,
+        "standard_error": 0.14824139330461744,
+        "estimated_count": 639,
+        "raw": "6/26",
+        "raw_wilson95": [0.11033849341513308, 0.4205155423848758]
+      }
+    },
+    "unmarked": {
+      "sample": 36,
+      "sampling_cells": 18,
+      "population": 87226,
+      "verdicts": {
+        "agent_evidence": 3,
+        "ordinary_automation": 3,
+        "no_evidence": 30,
+        "ambiguous": 0
+      },
+      "agent_evidence_inherited_upstream": 0,
+      "weighted_agent_evidence": {
+        "estimate": 0.11549881915942495,
+        "standard_error": 0.07543368998512706,
+        "estimated_count": 10075,
+        "raw": "3/36",
+        "raw_wilson95": [0.028748611111890116, 0.21826691386217598]
+      }
+    }
+  },
+  "adjudicated": {
+    "adjudicated_items": 7,
+    "changed_verdicts": 3,
+    "strata": {
+      "baseline_positive": {
+        "sample": 54,
+        "sampling_cells": 18,
+        "population": 28209,
+        "verdicts": {
+          "agent_evidence": 54,
+          "ordinary_automation": 0,
+          "no_evidence": 0,
+          "ambiguous": 0
+        },
+        "agent_evidence_inherited_upstream": 3,
+        "weighted_agent_evidence": {
+          "estimate": 1,
+          "standard_error": 0,
+          "estimated_count": 28209,
+          "raw": "54/54",
+          "raw_wilson95": [0.933586410930963, 1]
+        }
+      },
+      "bot_without_agent_evidence": {
+        "sample": 26,
+        "sampling_cells": 13,
+        "population": 2556,
+        "verdicts": {
+          "agent_evidence": 6,
+          "ordinary_automation": 18,
+          "no_evidence": 0,
+          "ambiguous": 2
+        },
+        "agent_evidence_inherited_upstream": 0,
+        "weighted_agent_evidence": {
+          "estimate": 0.25,
+          "standard_error": 0.14824139330461744,
+          "estimated_count": 639,
+          "raw": "6/26",
+          "raw_wilson95": [0.11033849341513308, 0.4205155423848758]
+        }
+      },
+      "unmarked": {
+        "sample": 36,
+        "sampling_cells": 18,
+        "population": 87226,
+        "verdicts": {
+          "agent_evidence": 3,
+          "ordinary_automation": 3,
+          "no_evidence": 30,
+          "ambiguous": 0
+        },
+        "agent_evidence_inherited_upstream": 0,
+        "weighted_agent_evidence": {
+          "estimate": 0.11549881915942495,
+          "standard_error": 0.07543368998512706,
+          "estimated_count": 10075,
+          "raw": "3/36",
+          "raw_wilson95": [0.028748611111890116, 0.21826691386217598]
+        }
+      }
+    }
+  },
+  "adjudicator": "owner",
+  "inputs": {
+    "labels_sha256": "972a509ba71a465423309d2070300c0365fd8df55ff6633249aaa1a89d807ca7",
+    "strata_sha256": "95ecf042f0f25fde0cd0e207b177e223e8aef175c30eacc0014187677e27f251",
+    "adjudication_sha256": "0ca235848899c28c0f7880b6da72ad02c377ad7c61358fd46387b3830630531e"
+  },
+  "notes": [
+    "Weights are sampling-cell populations; raw sample fractions are not population rates.",
+    "A cell with one sampled item, or with unanimous verdicts, contributes no estimated variance, so standard errors understate uncertainty.",
+    "no_evidence does not establish human authorship."
+  ],
+  "disclosure_rule_checks": {
+    "checked_airflow_ai_disclosure": { "matched": 4, "agent_evidence": 4 },
+    "explicit_named_agent_creator": { "matched": 2, "agent_evidence": 2 },
+    "explicit_agent_authored": { "matched": 1, "agent_evidence": 1 },
+    "ai_codemod_subject": { "matched": 1, "agent_evidence": 1 },
+    "explicit_ai_generated_change": { "matched": 1, "agent_evidence": 1 }
+  }
+}
