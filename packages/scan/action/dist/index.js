@@ -17177,7 +17177,7 @@ function runExampleBatch(opts, deps) {
 `);
   const roles = new Set(opts.roles ?? ["primary"]);
   const eligible = new Map(opts.probe.results.map((r) => [r.repo.toLowerCase(), r.eligible]));
-  const targets = opts.manifest.candidates.filter((c) => c.batch === opts.batch && roles.has(c.role) && (!opts.only || c.repo === opts.only));
+  const targets = opts.manifest.candidates.filter((c) => c.batch === opts.batch && roles.has(c.role) && (!opts.only || repoKey(c.repo) === repoKey(opts.only)));
   const stamp = () => new Date(deps.now()).toISOString();
   for (const candidate of targets) {
     const repo = candidate.repo;
