@@ -1,0 +1,57 @@
+{
+  "protocol_version": "1.2.0",
+  "issue": "HOK-2822",
+  "parent_protocol": "1.0.0",
+  "parent_protocol_file": "hok-2822-attribution-protocol.json",
+  "status": "predeclared_before_population_measurement_and_fresh_sample",
+  "cohort": "hok-3022-cohort.json",
+  "baseline": "hok-2822-exit-audit.json",
+  "window": {
+    "from": "2026-02-02T00:00:00.000Z",
+    "until": "2026-08-01T00:00:00.000Z"
+  },
+  "denominator": "30-day labelled PRs in the fixed merge-time window",
+  "basis": "Rules come from the returned v1 human review of 116 PRs and the owner adjudication of seven disputed items. They are tuned on that sample, so their precision and the remaining miss rate are measured on a fresh sample that excludes it.",
+  "body_disclosure_rules": [
+    "explicit_ai_generated_change",
+    "explicit_agent_authored",
+    "explicit_named_agent_creator",
+    "checked_airflow_ai_disclosure"
+  ],
+  "commit_rules": {
+    "ai_codemod_subject": "A commit of the PR has a subject that opens with [AI Codemod], case-insensitive."
+  },
+  "owner_mappings": {
+    "getsentry/sentry": { "agent_branch_prefixes": ["seer/"] },
+    "llvm/llvm-project": { "agent_accounts": ["forking-google-bazel-bot"] }
+  },
+  "owner_mapping_basis": "Owner adjudication of the v1 sample, 2026-11-25. These are repo-specific decisions, not generic bot rules, and are not re-validated by the auditor.",
+  "scope_rule": {
+    "inherited_upstream": "The title at merge matches a subtree update or sync, a '[branch] Source code updates from <repo>' codeflow title, or 'sync upstream'. The scope is reported beside the union; it does not add or remove a PR."
+  },
+  "fresh_sample": {
+    "seed": "hok-2822-attribution-review-v2",
+    "design": "Simple random sample within each stratum pooled across repositories: ascending sha256(seed|stratum|repo|PR number). PRs in the v1 review sample are excluded before selection.",
+    "strata": {
+      "added_body_disclosure": 30,
+      "added_ai_codemod": 15,
+      "bot_without_agent_evidence": 40,
+      "unmarked": 300
+    },
+    "stratum_assignment": "First match of: frozen v1 positive; body disclosure; AI Codemod subject; owner mapping; generic bot; unmarked. Frozen v1 positives and owner-mapped PRs are not sampled.",
+    "estimands": {
+      "added_body_disclosure": "precision of the body disclosure rules",
+      "added_ai_codemod": "precision of the AI Codemod rule",
+      "bot_without_agent_evidence": "share of remaining bot PRs with agent evidence",
+      "unmarked": "share of remaining unmarked PRs with agent evidence"
+    }
+  },
+  "rules": [
+    "Preserve the frozen marker baseline, the feature manifest, training rows and the v1 union; 1.2.0 is reported beside them.",
+    "Read title, body, branch and commits as of merge; missing historical evidence remains unavailable.",
+    "Generic Bot authorship still never establishes agent involvement.",
+    "No rework outcome values are used beyond the fixed non-null eligibility predicate.",
+    "The auditor receives no strata, rule matches or AI verdicts.",
+    "No precision or miss-rate threshold is attached to the fresh sample; results are reported with their uncertainty."
+  ]
+}

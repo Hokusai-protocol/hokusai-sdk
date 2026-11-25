@@ -1,0 +1,47 @@
+{
+  "review_version": "1.0.0",
+  "reviewer_type": "AI",
+  "independent_human_precision": null,
+  "independent_human_validation": "pending",
+  "sample_size": 116,
+  "method": "Inspect historical metadata, marker contexts and commit/landing excerpts in the predeclared stratified sample. This is an AI-assisted evidence review, not human ground truth.",
+  "strata": {
+    "baseline_positive": {
+      "sample": 54,
+      "verdicts": {
+        "agent_evidence": 50,
+        "ordinary_automation": 0,
+        "no_evidence": 0,
+        "ambiguous": 4
+      }
+    },
+    "bot_without_agent_evidence": {
+      "sample": 26,
+      "verdicts": {
+        "agent_evidence": 2,
+        "ordinary_automation": 22,
+        "no_evidence": 0,
+        "ambiguous": 2
+      }
+    },
+    "unmarked": {
+      "sample": 36,
+      "verdicts": {
+        "agent_evidence": 3,
+        "ordinary_automation": 0,
+        "no_evidence": 33,
+        "ambiguous": 0
+      }
+    }
+  },
+  "population_precision_estimate": null,
+  "limitations": [
+    "Equal-per-repo stratification is not self-weighting; raw sample percentages must not be reported as population precision.",
+    "No-evidence findings do not certify human authorship or establish recall.",
+    "Four baseline positives have unclear direct merged-change authorship: one non-committed reproduction example and three subtree imports.",
+    "Five previously unmarked/automation PRs have affirmative disclosures missed by named-tool rules; they motivated a separately disclosed exploratory extension.",
+    "Independent human labels remain blank and are not overwritten by this AI review."
+  ],
+  "protocol_sha256": "d90339c9dbf8484406222574003f7dd75edddb970edfa2d01240456e40a9cdac",
+  "private_ai_labels_sha256": "48f5ec7a24b9315506a6821f7c36c792298e22174b48e2253e189c7e404b423a"
+}

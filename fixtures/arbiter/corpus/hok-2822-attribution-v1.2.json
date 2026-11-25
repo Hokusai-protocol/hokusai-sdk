@@ -1,0 +1,341 @@
+{
+  "measurement_version": "1.2.0",
+  "protocol_version": "1.2.0",
+  "protocol_sha256": "fc4eb061e029e6f3cc134e52eef6d8cd857e69f044468b1a99db622b6f1c6a2a",
+  "window": {
+    "from": "2026-02-02T00:00:00.000Z",
+    "until": "2026-08-01T00:00:00.000Z"
+  },
+  "totals": {
+    "eligible": 117991,
+    "v1_union": 28209,
+    "v1_2_union": 29557,
+    "added_unique": 1348,
+    "v1_rate": 0.23907755676280396,
+    "v1_2_rate": 0.2505021569441737,
+    "added_by_rule_overlapping": {
+      "checked_airflow_ai_disclosure": 466,
+      "explicit_named_agent_creator": 50,
+      "owner_mapping": 213,
+      "explicit_ai_generated_change": 4,
+      "explicit_agent_authored": 604,
+      "ai_codemod_subject": 12
+    },
+    "inherited_upstream_among_positives": 18,
+    "strata": {
+      "unmarked": 86180,
+      "v1_positive": 28209,
+      "added_body_disclosure": 1124,
+      "bot_without_agent_evidence": 2254,
+      "added_owner_mapping": 213,
+      "added_ai_codemod": 11
+    }
+  },
+  "macro_v1_2_rate": 0.23598369594765695,
+  "repos_at_60_percent": 0,
+  "repos_with_agent_sample": 15,
+  "fresh_sample": {
+    "seed": "hok-2822-attribution-review-v2",
+    "size": 380,
+    "excluded_v1_sample": 116,
+    "strata": [
+      { "stratum": "added_body_disclosure", "population": 1119, "sample": 30 },
+      { "stratum": "added_ai_codemod", "population": 10, "sample": 10 },
+      {
+        "stratum": "bot_without_agent_evidence",
+        "population": 2234,
+        "sample": 40
+      },
+      { "stratum": "unmarked", "population": 86147, "sample": 300 }
+    ],
+    "unfilled_sheet_sha256": "2d821e92dc41940658df275e0b6a673df0cf60b32d943e8756e740529dab82fe",
+    "evidence_sha256": "c53f55b043b904d907af9011c30f8a306c1799f6d5075d3cf70ccc8fdd2ccc3c",
+    "independent_human_validation": "pending"
+  },
+  "repos": [
+    {
+      "repo": "apache/airflow",
+      "eligible": 4484,
+      "v1_union": 1279,
+      "v1_2_union": 1745,
+      "added_unique": 466,
+      "v1_rate": 0.2852363960749331,
+      "v1_2_rate": 0.3891614629794826,
+      "added_by_rule_overlapping": { "checked_airflow_ai_disclosure": 466 },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 2467,
+        "v1_positive": 1279,
+        "added_body_disclosure": 466,
+        "bot_without_agent_evidence": 272
+      }
+    },
+    {
+      "repo": "ClickHouse/ClickHouse",
+      "eligible": 6911,
+      "v1_union": 3768,
+      "v1_2_union": 3775,
+      "added_unique": 7,
+      "v1_rate": 0.5452177687744176,
+      "v1_2_rate": 0.5462306467949646,
+      "added_by_rule_overlapping": { "explicit_named_agent_creator": 7 },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "v1_positive": 3768,
+        "unmarked": 3040,
+        "bot_without_agent_evidence": 96,
+        "added_body_disclosure": 7
+      }
+    },
+    {
+      "repo": "cockroachdb/cockroach",
+      "eligible": 2214,
+      "v1_union": 888,
+      "v1_2_union": 888,
+      "added_unique": 0,
+      "v1_rate": 0.4010840108401084,
+      "v1_2_rate": 0.4010840108401084,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": { "unmarked": 1326, "v1_positive": 888 }
+    },
+    {
+      "repo": "discourse/discourse",
+      "eligible": 3834,
+      "v1_union": 50,
+      "v1_2_union": 50,
+      "added_unique": 0,
+      "v1_rate": 0.013041210224308816,
+      "v1_2_rate": 0.013041210224308816,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "bot_without_agent_evidence": 321,
+        "unmarked": 3463,
+        "v1_positive": 50
+      }
+    },
+    {
+      "repo": "django/django",
+      "eligible": 431,
+      "v1_union": 4,
+      "v1_2_union": 4,
+      "added_unique": 0,
+      "v1_rate": 0.009280742459396751,
+      "v1_2_rate": 0.009280742459396751,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": { "unmarked": 427, "v1_positive": 4 }
+    },
+    {
+      "repo": "dotnet/runtime",
+      "eligible": 3616,
+      "v1_union": 2140,
+      "v1_2_union": 2140,
+      "added_unique": 0,
+      "v1_rate": 0.5918141592920354,
+      "v1_2_rate": 0.5918141592920354,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 8,
+      "strata": {
+        "unmarked": 1394,
+        "v1_positive": 2140,
+        "bot_without_agent_evidence": 82
+      }
+    },
+    {
+      "repo": "elastic/kibana",
+      "eligible": 10901,
+      "v1_union": 2668,
+      "v1_2_union": 2668,
+      "added_unique": 0,
+      "v1_rate": 0.24474818823961106,
+      "v1_2_rate": 0.24474818823961106,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 8067,
+        "v1_positive": 2668,
+        "bot_without_agent_evidence": 166
+      }
+    },
+    {
+      "repo": "getsentry/sentry",
+      "eligible": 9998,
+      "v1_union": 3403,
+      "v1_2_union": 3489,
+      "added_unique": 86,
+      "v1_rate": 0.34036807361472293,
+      "v1_2_rate": 0.34896979395879174,
+      "added_by_rule_overlapping": { "owner_mapping": 86 },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 6432,
+        "v1_positive": 3403,
+        "bot_without_agent_evidence": 77,
+        "added_owner_mapping": 86
+      }
+    },
+    {
+      "repo": "grafana/grafana",
+      "eligible": 6423,
+      "v1_union": 1006,
+      "v1_2_union": 1006,
+      "added_unique": 0,
+      "v1_rate": 0.15662463023509263,
+      "v1_2_rate": 0.15662463023509263,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 5104,
+        "bot_without_agent_evidence": 313,
+        "v1_positive": 1006
+      }
+    },
+    {
+      "repo": "home-assistant/core",
+      "eligible": 8290,
+      "v1_union": 1539,
+      "v1_2_union": 1539,
+      "added_unique": 0,
+      "v1_rate": 0.1856453558504222,
+      "v1_2_rate": 0.1856453558504222,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 6519,
+        "v1_positive": 1539,
+        "bot_without_agent_evidence": 232
+      }
+    },
+    {
+      "repo": "kubernetes/kubernetes",
+      "eligible": 1781,
+      "v1_union": 11,
+      "v1_2_union": 14,
+      "added_unique": 3,
+      "v1_rate": 0.006176305446378439,
+      "v1_2_rate": 0.007860752386299831,
+      "added_by_rule_overlapping": { "explicit_ai_generated_change": 3 },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 1767,
+        "v1_positive": 11,
+        "added_body_disclosure": 3
+      }
+    },
+    {
+      "repo": "llvm/llvm-project",
+      "eligible": 22623,
+      "v1_union": 1485,
+      "v1_2_union": 1612,
+      "added_unique": 127,
+      "v1_rate": 0.06564116164964859,
+      "v1_2_rate": 0.07125491756177342,
+      "added_by_rule_overlapping": { "owner_mapping": 127 },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "v1_positive": 1485,
+        "unmarked": 21011,
+        "added_owner_mapping": 127
+      }
+    },
+    {
+      "repo": "mattermost/mattermost",
+      "eligible": 1112,
+      "v1_union": 428,
+      "v1_2_union": 428,
+      "added_unique": 0,
+      "v1_rate": 0.38489208633093525,
+      "v1_2_rate": 0.38489208633093525,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 669,
+        "v1_positive": 428,
+        "bot_without_agent_evidence": 15
+      }
+    },
+    {
+      "repo": "PostHog/posthog",
+      "eligible": 19402,
+      "v1_union": 7194,
+      "v1_2_union": 7841,
+      "added_unique": 647,
+      "v1_rate": 0.3707865168539326,
+      "v1_2_rate": 0.4041335944747964,
+      "added_by_rule_overlapping": {
+        "explicit_agent_authored": 604,
+        "explicit_named_agent_creator": 43
+      },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "v1_positive": 7194,
+        "unmarked": 10912,
+        "bot_without_agent_evidence": 649,
+        "added_body_disclosure": 647
+      }
+    },
+    {
+      "repo": "python/cpython",
+      "eligible": 2490,
+      "v1_union": 314,
+      "v1_2_union": 314,
+      "added_unique": 0,
+      "v1_rate": 0.12610441767068273,
+      "v1_2_rate": 0.12610441767068273,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 2172,
+        "v1_positive": 314,
+        "bot_without_agent_evidence": 4
+      }
+    },
+    {
+      "repo": "pytorch/pytorch",
+      "eligible": 7503,
+      "v1_union": 1731,
+      "v1_2_union": 1743,
+      "added_unique": 12,
+      "v1_rate": 0.23070771691323472,
+      "v1_2_rate": 0.23230707716913235,
+      "added_by_rule_overlapping": {
+        "ai_codemod_subject": 12,
+        "explicit_ai_generated_change": 1
+      },
+      "inherited_upstream_among_positives": 0,
+      "strata": {
+        "unmarked": 5733,
+        "v1_positive": 1731,
+        "bot_without_agent_evidence": 27,
+        "added_ai_codemod": 11,
+        "added_body_disclosure": 1
+      }
+    },
+    {
+      "repo": "rust-lang/rust",
+      "eligible": 3788,
+      "v1_union": 15,
+      "v1_2_union": 15,
+      "added_unique": 0,
+      "v1_rate": 0.00395987328405491,
+      "v1_2_rate": 0.00395987328405491,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 10,
+      "strata": { "unmarked": 3773, "v1_positive": 15 }
+    },
+    {
+      "repo": "vercel/next.js",
+      "eligible": 2190,
+      "v1_union": 286,
+      "v1_2_union": 286,
+      "added_unique": 0,
+      "v1_rate": 0.13059360730593608,
+      "v1_2_rate": 0.13059360730593608,
+      "added_by_rule_overlapping": {},
+      "inherited_upstream_among_positives": 0,
+      "strata": { "unmarked": 1904, "v1_positive": 286 }
+    }
+  ]
+}

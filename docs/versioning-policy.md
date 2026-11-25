@@ -104,6 +104,17 @@ Rules:
   }
   ```
 
+## Exports Added After the Task-cost Contract
+
+Hosts that need one of these exports must pin at least the version listed.
+Reinstalling an older release cannot add them.
+
+| Export | First version | Notes |
+| --- | --- | --- |
+| `fromCodexUsage`, `CodexUsageDiagnostics` (`@hokusai/costs`) | **0.9.0** (2026-11-17) | One Codex CLI usage mapper, shared with the Codex rollout source. `codex/2` contract unchanged. |
+| `@hokusai/core/token-prices` (`hokusai_token_prices/v1` JSON) | **0.9.0** (2026-11-17) | Generated from the SDK pricing resolver; vendor it together with `fixtures/token-prices/parity.v1.json`. |
+| Router row v4 `provider_executions` / `failure`, `provider-execution.v1.schema.json` (`@hokusai/core`) | **0.9.0** (2026-11-17) | Optional additions to `technical_task_router_row/v4`; existing v4 rows stay valid. |
+
 ## The Scan Contract
 
 `@hokusai/scan` exports `SCAN_CONTRACT`, the frozen tuple a consumer uses to
