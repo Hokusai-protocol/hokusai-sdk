@@ -33,10 +33,13 @@ before model work began.
 
 The subsequent [full attribution measurement and gate proposal](./attribution-measurement.md)
 completed the historical signal pass on the same cohort: 23.91% primary coverage,
-24.86% with a separately disclosed exploratory generic-disclosure extension. The
-116-item AI evidence review and independent human review packet are complete;
-independent human labels remain pending. The original findings below describe
-the initial marker-only audit, not unfinished measurement work.
+24.86% with a separately disclosed exploratory generic-disclosure extension, and
+25.05% under predeclared protocol 1.2.0. Independent human labels for the 116-item
+sample returned on 2026-11-25: the frozen markers have 94.0% weighted precision as
+labelled, and all 54 sampled positives are agent evidence after owner adjudication.
+On the same date the program owner adopted the replacement attribution gate. The
+original 60% requirement is recorded as failed, not passed. The original findings
+below describe the initial marker-only audit, not unfinished measurement work.
 
 The audited merge-time agent-marker evidence identifies 28,209 of 117,991
 30-day-labelled PRs in the lookback: **23.91% micro coverage, 22.73% macro coverage**.
@@ -118,8 +121,10 @@ exit means evidence was processed successfully, not that Phase 2 passed.
 
 The initial gap list below is retained for traceability. The full signal pass
 has since been executed; its results and the proposed replacement for the 60%
-condition are in the linked attribution measurement. Human validation, genuine
-report renders and the final program decision are still open.
+condition are in the linked attribution measurement. Human validation of the
+frozen markers and the gate decision are complete. Genuine report renders, the
+second review sample for the 1.2.0 rules and the Program Brief's final exit call
+are still open.
 
 1. Predeclare the missing acquisition/attribution cohort and merge-time window,
    including multiple agent ecosystems and merge conventions. Reuse persisted

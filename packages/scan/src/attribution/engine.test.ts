@@ -133,4 +133,24 @@ describe('scan attribution', () => {
     expect(assistedAutomation.agent.status).toBe('agent');
     expect(assistedAutomation.agent.methods).not.toContain('bot_author');
   });
+  it('accepts explicit disclosures that name no recognized tool', () => {
+    expect(
+      attributePullRequest({
+        ...base,
+        body: 'Summary:\nThis is an AI generated diff. It is human reviewed.',
+      }).agent,
+    ).toMatchObject({ status: 'agent', methods: ['commit_signature'] });
+    expect(
+      attributePullRequest({
+        ...base,
+        commitMessages: ['[AI Codemod][Perf] Skip a scan'],
+      }).agent.status,
+    ).toBe('agent');
+    expect(
+      attributePullRequest({
+        ...base,
+        body: 'Adds an option to label an AI generated diff.',
+      }).agent.status,
+    ).toBe('unknown');
+  });
 });

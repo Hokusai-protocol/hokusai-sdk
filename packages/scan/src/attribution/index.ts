@@ -3,3 +3,5 @@ export type { AttributionPrInput, AttributionConfig, PrAttribution, AttributionM
 export { agentMarkerColumns, branchAgentFamily, detectAgentMarkers, isDependencyBotLogin } from './agent-markers.js';
 export type { AgentMarkerCommit, AgentMarkerInput, AgentMarkers } from './agent-markers.js';
 export { extractMetadataBlock } from './metadata-block.js';
+export { detectBodyDisclosure, hasAiCodemodSubject, isUpstreamImportTitle } from './disclosures.js';
+export type { BodyDisclosureRule } from './disclosures.js';

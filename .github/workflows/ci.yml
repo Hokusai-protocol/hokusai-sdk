@@ -39,6 +39,8 @@ jobs:
       - run: pnpm -r test
       - run: node --test scripts/corpus/phase-two-exit.test.mjs
       - run: node --test scripts/corpus/attribution-pass.test.mjs
+      - run: node --test scripts/corpus/attribution-v1-2.test.mjs
+      - run: node --test scripts/corpus/attribution-review-analysis.test.mjs
 
       # Clean-consumer proof for @hokusai/costs: pack, install the tarballs
       # into a temp project, and run the shipped offline examples with the
