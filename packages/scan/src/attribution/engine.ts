@@ -7,6 +7,7 @@ export type AttributionMethod =
   | 'commit_signature'
   | 'owner_config';
 import { branchAgentFamily, detectAgentMarkers } from './agent-markers.js';
+import { detectBodyDisclosure, hasAiCodemodSubject } from './disclosures.js';
 import { extractMetadataBlock } from './metadata-block.js';
 
 export interface AttributionPrInput {
@@ -198,6 +199,14 @@ export function attributePullRequest(
   const signatureModels = markers.modelIds;
   // The report's closed method list has one name for a tool signature in commits or the body.
   if (markers.signature) {
+    identifiedAgent = true;
+    agentMethods.push('commit_signature');
+  }
+  // An affirmative disclosure that names no recognized tool (protocol 1.2.0).
+  if (
+    detectBodyDisclosure(pr.body) !== null ||
+    hasAiCodemodSubject(pr.commitMessages)
+  ) {
     identifiedAgent = true;
     agentMethods.push('commit_signature');
   }
