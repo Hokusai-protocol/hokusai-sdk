@@ -19,7 +19,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { reviewExampleReport, type ExampleReviewResult } from './review.js';
-import type { ExampleManifest, TrainingExclusion } from './select.js';
+import { repoKey, type ExampleManifest, type TrainingExclusion } from './select.js';
 
 export const EXAMPLE_BATCH_VERSION = '0.1.0';
 
@@ -95,7 +95,7 @@ export function runExampleBatch(opts: BatchOptions, deps: BatchDeps): BatchState
 
   const roles = new Set(opts.roles ?? ['primary']);
   const eligible = new Map(opts.probe.results.map((r) => [r.repo.toLowerCase(), r.eligible]));
-  const targets = opts.manifest.candidates.filter((c) => c.batch === opts.batch && roles.has(c.role) && (!opts.only || c.repo === opts.only));
+  const targets = opts.manifest.candidates.filter((c) => c.batch === opts.batch && roles.has(c.role) && (!opts.only || repoKey(c.repo) === repoKey(opts.only)));
   const stamp = () => new Date(deps.now()).toISOString();
 
   for (const candidate of targets) {

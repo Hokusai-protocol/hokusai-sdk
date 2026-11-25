@@ -93,6 +93,12 @@ describe('runExampleBatch', () => {
     expect(h.calls).toHaveLength(4);
   });
 
+  it('matches --repo case-insensitively, as GitHub resolves names', () => {
+    const h = harness();
+    runExampleBatch({ ...h.opts, only: 'Acme/One' }, h.deps);
+    expect(new Set(h.calls)).toEqual(new Set(['acme/one']));
+  });
+
   it('runs swaps only when asked', () => {
     const h = harness();
     runExampleBatch({ ...h.opts, roles: ['primary', 'swap'] }, h.deps);
