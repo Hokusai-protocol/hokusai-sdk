@@ -1,5 +1,9 @@
 # Arbiter report content contract (`arbiter_report/v1`)
 
+A successor, `arbiter_report/v2`, is proposed in
+[report-contract-v2.md](report-contract-v2.md) (HOK-2826). v1 remains the
+emitted version until consumers accept v2.
+
 **Canonical schema SHA-256:** `d4e141fd08c2febf59491c15a9fa05ba53aa0c6f27c4ea128dc33386ae0b12c3`
 
 ## Fields

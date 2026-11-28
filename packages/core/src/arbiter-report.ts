@@ -614,9 +614,30 @@ export const ARBITER_REPORT_V1_JSON_SCHEMA = Object.freeze({
   $defs: { candidateFeatures: featureSchema },
 });
 
+/** Schema builders shared with later report versions. Internal to core. */
+export const reportSchemaKit = Object.freeze({
+  str,
+  en,
+  num,
+  int,
+  nullable,
+  arr,
+  obj,
+  ref,
+  id,
+  modelId,
+  timestamp,
+  date,
+  semver,
+  reasons,
+  basis,
+  cell,
+  horizon,
+});
+
 // The runtime walker deliberately supports only the JSON Schema keywords used
 // above. The exported schema remains the wire authority for other languages.
-function structural(
+export function structural(
   schema: Schema,
   value: unknown,
   path: string,
@@ -722,12 +743,23 @@ function structural(
   else if (schema.type === 'null' && value !== null)
     fail('invalid_type', 'Expected null.');
 }
-function invariant(report: ArbiterReportV1): HokusaiFieldError[] {
-  const errors: HokusaiFieldError[] = [];
-  const add = (
-    code: (typeof ARBITER_REPORT_INVARIANT_CODES)[number],
-    path: string,
-  ) => errors.push({ code: 'invalid_value', path, message: code });
+/** The report fields every arbiter_report version shares (v1 and v2). */
+export type DescriptiveReportCore = Pick<
+  ArbiterReportV1,
+  'scan' | 'coverage' | 'aggregates' | 'eligibility' | 'cost'
+> & { prs: readonly Pick<ArbiterReportV1['prs'][number], 'labels'>[] };
+export type InvariantAdd = (code: string, path: string) => void;
+
+/**
+ * Invariants on the descriptive core, shared by every report version.
+ * `hasProvenance` says whether the version's model provenance is present.
+ * Internal to core: not exported from the package index.
+ */
+export function descriptiveInvariants(
+  report: DescriptiveReportCore,
+  hasProvenance: boolean,
+  add: InvariantAdd,
+): { checkCell: (c: ReportCell, path: string, basis?: ReportBasis) => void } {
   if (
     report.scan.horizons_days.some(
       (horizon, index) =>
@@ -751,7 +783,7 @@ function invariant(report: ArbiterReportV1): HokusaiFieldError[] {
       add('ci_out_of_order', path);
     if (basis && c.basis !== basis)
       add('descriptive_section_with_prediction_cell', path);
-    if (c.basis === 'out_of_sample_prediction' && !report.model_provenance)
+    if (c.basis === 'out_of_sample_prediction' && !hasProvenance)
       add('prediction_without_provenance', path);
   };
   const sections = report.aggregates as Record<
@@ -759,7 +791,7 @@ function invariant(report: ArbiterReportV1): HokusaiFieldError[] {
     ReportSection<Record<string, unknown>>
   >;
   for (const [name, s] of Object.entries(sections)) {
-    if (s.basis === 'out_of_sample_prediction' && !report.model_provenance)
+    if (s.basis === 'out_of_sample_prediction' && !hasProvenance)
       add('prediction_without_provenance', `aggregates.${name}`);
     if (s.status === 'suppressed' && !s.suppression_reasons.length)
       add('section_status_mismatch', `aggregates.${name}`);
@@ -830,8 +862,6 @@ function invariant(report: ArbiterReportV1): HokusaiFieldError[] {
   )
     add('coverage_sum_mismatch', 'coverage');
   report.prs.forEach((pr, i) => {
-    if (pr.prediction && !report.model_provenance)
-      add('prediction_without_provenance', `prs[${i}].prediction`);
     if (
       pr.labels.length !== report.scan.horizons_days.length ||
       new Set(pr.labels.map((l) => l.horizon_days)).size !==
@@ -848,6 +878,24 @@ function invariant(report: ArbiterReportV1): HokusaiFieldError[] {
           `prs[${i}].labels[${j}].outcome.report_outcome`,
         );
     });
+  });
+  return { checkCell };
+}
+
+function invariant(report: ArbiterReportV1): HokusaiFieldError[] {
+  const errors: HokusaiFieldError[] = [];
+  const add = (
+    code: (typeof ARBITER_REPORT_INVARIANT_CODES)[number],
+    path: string,
+  ) => errors.push({ code: 'invalid_value', path, message: code });
+  const { checkCell } = descriptiveInvariants(
+    report,
+    report.model_provenance !== null,
+    add as InvariantAdd,
+  );
+  report.prs.forEach((pr, i) => {
+    if (pr.prediction && !report.model_provenance)
+      add('prediction_without_provenance', `prs[${i}].prediction`);
   });
   if (report.retrospective) {
     if (!report.model_provenance)
