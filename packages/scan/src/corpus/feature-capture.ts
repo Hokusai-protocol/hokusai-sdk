@@ -154,6 +154,37 @@ function drainContexts(pr: PrResponse, repo: string, graphql: GraphqlRunner): vo
 
 export type CapturedItem<T> = { pr_number: number; value: T | null; error: string | null };
 
+/** Capture one PR in memory, without writing raw evidence or upstream errors to disk or diagnostics. */
+export function capturePrEvidence(repo: string, number: number, graphql: GraphqlRunner): PrEvidence | null {
+  const evidence = fetchBatch<PrEvidence>('evidence', repo, [number], graphql, () => {})[0];
+  const timeline = fetchTimeline(repo, [number], graphql, () => {})[0];
+  if (evidence?.error || timeline?.error || !evidence?.value || !timeline?.value) return null;
+  return { ...evidence.value, ...timeline.value };
+}
+
+/** Capture CI from an immutable commit, never the PR's mutable current head. */
+export function captureCommitCi(repo: string, number: number, sha: string, graphql: GraphqlRunner): CiEvidence | null {
+  if (!/^[0-9a-f]{40}$/i.test(sha)) throw new TypeError('Invalid commit SHA');
+  const contexts: CiEvidence['contexts'] = [];
+  let cursor: string | null = null;
+  const seen = new Set<string>();
+  do {
+    const after = cursor === null ? '' : `,after:${JSON.stringify(cursor)}`;
+    const result = runQuery(graphql, repo, `commit: object(oid:${JSON.stringify(sha)}){ ... on Commit { statusCheckRollup { contexts(first:100${after}){ ${CONTEXTS} } } } }`);
+    const commit = result['commit'] as unknown as { statusCheckRollup?: { contexts: Connection<RawContext> } | null } | null;
+    const connection = commit?.statusCheckRollup?.contexts;
+    if (!connection) return null;
+    for (const context of (connection.nodes ?? []).filter((node): node is RawContext => node !== null)) {
+      contexts.push({ at: context.completedAt ?? context.createdAt ?? null, failed: CI_FAILED_STATES.includes(context.conclusion ?? context.state ?? '') });
+    }
+    cursor = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+    if (connection.pageInfo.hasNextPage && cursor === null) throw new Error('CI pagination cursor unavailable');
+    if (cursor !== null && seen.has(cursor)) throw new Error('CI pagination cursor repeated');
+    if (cursor !== null) seen.add(cursor);
+  } while (cursor !== null);
+  return { pr_number: number, contexts };
+}
+
 /** A batch that fails is split, so one oversized PR cannot lose its neighbours. */
 function fetchBatch<T>(kind: CaptureKind, repo: string, numbers: readonly number[], graphql: GraphqlRunner, log: (line: string) => void): CapturedItem<T>[] {
   if (kind === 'timeline') return fetchTimeline(repo, numbers, graphql, log) as CapturedItem<T>[];

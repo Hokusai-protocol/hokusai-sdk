@@ -81,17 +81,20 @@ function byTime<T extends { at: string }>(events: readonly T[]): T[] {
 }
 
 /** The title at `as_of`, from rename events. */
-export function titleAt(evidence: PrEvidence, asOf: string): string {
+export function titleAt(evidence: PrEvidence, asOf: string): string;
+export function titleAt(evidence: PrEvidence, asOf: string, historicalOnly: true): string | null;
+export function titleAt(evidence: PrEvidence, asOf: string, historicalOnly = false): string | null {
   const renames = byTime(evidence.renames);
-  if (renames.length === 0) return evidence.title;
+  if (renames.length === 0) return historicalOnly ? null : evidence.title;
   const cutoff = ms(asOf);
   const seen = renames.filter((rename) => ms(rename.at) <= cutoff);
+  if (historicalOnly) return seen.at(-1)?.to ?? null;
   return seen.at(-1)?.to ?? renames[0]!.from;
 }
 
 /** The body at `as_of`, from edit history, or null when that version is gone. */
-export function bodyAt(evidence: PrEvidence, asOf: string): string | null {
-  if (evidence.body_edits.length === 0) return evidence.body ?? '';
+export function bodyAt(evidence: PrEvidence, asOf: string, historicalOnly = false): string | null {
+  if (evidence.body_edits.length === 0) return historicalOnly ? null : evidence.body ?? '';
   const cutoff = ms(asOf);
   return byTime(evidence.body_edits).filter((edit) => ms(edit.at) <= cutoff).at(-1)?.body ?? null;
 }
@@ -140,7 +143,7 @@ function assertReadableEvidence(evidence: PrEvidence, ci: CiEvidence | null, asO
   if (errors.length) throw new Error(`pr evidence: ${errors[0]!.message}`);
 }
 
-function processColumns(evidence: PrEvidence | null, ci: CiEvidence | null, asOf: string): GitFeatureColumns {
+function processColumns(evidence: PrEvidence | null, ci: CiEvidence | null, asOf: string, historicalOnly: boolean): GitFeatureColumns {
   const empty = {
     'feature.process.review_count': null,
     'feature.process.approvals': null,
@@ -169,23 +172,24 @@ function processColumns(evidence: PrEvidence | null, ci: CiEvidence | null, asOf
   if (!evidence) return { ...empty, ...ciColumns };
 
   const reviews = reviewsAt(evidence, asOf);
+  const reviewStatesKnown = !historicalOnly || !evidence.dismissals.some((event) => ms(event.at) > ms(asOf) && event.review_id !== null && event.previous_state === null && evidence.reviews.some((review) => review.id === event.review_id && review.submitted_at !== null && ms(review.submitted_at) <= ms(asOf)));
   const created = ms(evidence.created_at);
   const open = ms(asOf) - created;
   const first = reviews.length ? Math.min(...reviews.map((review) => ms(review.submitted_at))) : null;
   const labels = labelsAt(evidence, asOf);
-  const title = titleAt(evidence, asOf);
-  const body = bodyAt(evidence, asOf);
+  const title = historicalOnly ? titleAt(evidence, asOf, true) : titleAt(evidence, asOf);
+  const body = bodyAt(evidence, asOf, historicalOnly);
   return {
     'feature.process.review_count': reviews.length,
-    'feature.process.approvals': reviews.filter((review) => review.state === 'APPROVED').length,
-    'feature.process.changes_requested': reviews.filter((review) => review.state === 'CHANGES_REQUESTED').length,
+    'feature.process.approvals': reviewStatesKnown ? reviews.filter((review) => review.state === 'APPROVED').length : null,
+    'feature.process.changes_requested': reviewStatesKnown ? reviews.filter((review) => review.state === 'CHANGES_REQUESTED').length : null,
     'feature.process.distinct_reviewers': new Set(reviews.flatMap((review) => (review.author ? [review.author] : []))).size,
     'feature.process.hours_open': open >= 0 ? hours(open) : null,
     'feature.process.hours_to_first_review': first !== null && first >= created ? hours(first - created) : null,
     'feature.process.github_label_count': labels ? labels.length : null,
-    'feature.process.title_chars': title.length,
+    'feature.process.title_chars': title === null ? null : title.length,
     'feature.process.body_chars': body === null ? null : body.length,
-    'feature.content.title_sha256': sha256(title),
+    'feature.content.title_sha256': title === null ? null : sha256(title),
     'feature.content.body_sha256': body === null ? null : sha256(body),
     ...ciColumns,
   };
@@ -212,12 +216,16 @@ export interface ExtractInput {
   /** The landing commit's message; omit for a batched landing, which also holds other PRs. */
   landingMessage?: string | null;
   git: GitFeatureColumns;
+  /** For customer scans, never infer text from a current-state snapshot. */
+  historicalOnly?: boolean;
 }
 
 /** One row. Every manifest column is present, and no others. */
 export function extractPrFeatures(input: ExtractInput): FeatureRow {
   const { record, evidence, ci, git } = input;
   const asOf = record.merged_at;
+  const cutoffErrors = validateEvidenceAsOf([], asOf);
+  if (cutoffErrors.length) throw new Error('pr evidence: invalid merge timestamp');
   if (evidence) {
     assertReadableEvidence(evidence, ci, asOf);
     if (evidence.pr_number !== record.pr_number) throw new Error(`evidence is for PR ${evidence.pr_number}, not ${record.pr_number}`);
@@ -226,12 +234,12 @@ export function extractPrFeatures(input: ExtractInput): FeatureRow {
     assertReadableEvidence({ pr_number: record.pr_number, created_at: asOf, merged_at: null, title: '', body: null, head_ref: null, reviews: [], dismissals: [], label_events: [], renames: [], body_edits: [], commits: [] }, ci, asOf);
   }
 
-  const body = evidence ? bodyAt(evidence, asOf) : null;
+  const body = evidence ? bodyAt(evidence, asOf, input.historicalOnly) : null;
   const markers = detectAgentMarkers({
-    authorLogin: record.author_login,
-    authorType: record.author_type,
-    headRef: evidence?.head_ref ?? null,
-    commits: markerCommits(evidence),
+    authorLogin: input.historicalOnly ? null : record.author_login,
+    authorType: input.historicalOnly ? null : record.author_type,
+    headRef: input.historicalOnly ? null : evidence?.head_ref ?? null,
+    commits: input.historicalOnly ? null : markerCommits(evidence),
     body,
     ...(body === null ? { bodyUnavailable: true } : {}),
     ...(input.landingMessage ? { landingMessage: input.landingMessage } : {}),
@@ -241,10 +249,11 @@ export function extractPrFeatures(input: ExtractInput): FeatureRow {
     ...Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, null])),
     'feature.shape.member_commits': record.member_commits,
     'feature.shape.diff_uncertain': record.batched,
-    'feature.author.is_bot': record.author_type === null ? null : record.author_type === 'Bot',
+    'feature.author.is_bot': input.historicalOnly || record.author_type === null ? null : record.author_type === 'Bot',
     ...git,
-    ...processColumns(evidence, ci, asOf),
+    ...processColumns(evidence, ci, asOf, input.historicalOnly === true),
     ...agentMarkerColumns(markers),
+    ...(input.historicalOnly ? { 'segment.agent.marked_by_account': null, 'segment.agent.marked_by_branch': null, 'segment.author.dependency_bot': null } : {}),
   };
   const undeclared = Object.keys(features).filter((column) => !MANIFEST_COLUMNS.includes(column));
   if (undeclared.length) throw new Error(`undeclared feature columns: ${undeclared.join(', ')}`);

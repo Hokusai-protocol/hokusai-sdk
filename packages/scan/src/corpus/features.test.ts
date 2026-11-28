@@ -80,6 +80,18 @@ describe('state at as_of', () => {
 });
 
 describe('extractPrFeatures', () => {
+  it('keeps unavailable historical text missing after later edits', () => {
+    const before = { ...evidence, title: 'initial', body: 'initial', renames: [], body_edits: [] };
+    const after = { ...before, title: 'later', body: 'later', renames: [{ at: AFTER, from: 'initial', to: 'later' }], body_edits: [{ at: AFTER, body: 'later' }] };
+    const project = (value: PrEvidence) => extractPrFeatures({ record, evidence: value, ci: null, git: {}, historicalOnly: true }).features;
+    expect(project(before)).toEqual(project(after));
+    expect(project(before)).toMatchObject({ 'feature.process.title_chars': null, 'feature.process.body_chars': null });
+    expect(project({ ...before, renames: [{ at: BEFORE, from: 'initial', to: 'changed' }] })['feature.process.title_chars']).toBe(7);
+  });
+
+  it('rejects an invalid cutoff even without captured evidence', () => {
+    expect(() => extractPrFeatures({ record: { ...record, merged_at: 'invalid' }, evidence: null, ci: null, git: {} })).toThrow();
+  });
   it('writes every manifest column and no others', () => {
     const row = extract(evidence);
     expect(Object.keys(row.features).sort()).toEqual([...MANIFEST_COLUMNS].sort());
