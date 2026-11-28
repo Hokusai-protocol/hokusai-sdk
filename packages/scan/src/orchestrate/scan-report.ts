@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { projectSurvivalLabel, type ArbiterReportV1, type HorizonDays, type ReportPolicy } from '@hokusai/core';
 import { buildReportDraft } from '../report/build.js';
 import { attributePullRequest, resolveAttributionConfig, toReportAttribution, type AttributionConfig } from '../attribution/engine.js';
-import { enumerateWindow } from './enumerate.js';
+import { enumerateWindow, type WindowMerge } from './enumerate.js';
 import type { ScanGitHubClient } from './github.js';
 import type { GitRunner, SurvivalLabellerDeps, SurvivalLabellerTarget } from '../survival-labeller.js';
 import { labelMergedPr, type MergedPrRef } from '../survival-labeller.js';
@@ -14,6 +14,7 @@ import { isAncestor } from '../shadow/discover.js';
 import { SCAN_CONTRACT } from '../contract.js';
 import { ScanUpstreamError } from '../default-deps.js';
 import { readScanState, writeScanState, type ScanStateVersions } from './state.js';
+import { collectMergeEvidence, discoverMergeAssociations, unavailableMergeEvidence, type MergeEvidenceResult } from './merge-evidence.js';
 
 export interface ScanReportDeps {
   runGit: GitRunner; github: ScanGitHubClient; labeller: SurvivalLabellerDeps; now: () => Date;
@@ -27,6 +28,8 @@ export interface RunReportScanOptions {
   attributionConfig?: AttributionConfig; staticAnalysis?: 'off' | 'committed'; policy?: ReportPolicy; scannerVersion: string; stateDir?: string;
   /** Allows the CLI to checkpoint only after it has successfully emitted the report. */
   onStateSave?: (save: () => void) => void;
+  /** Internal evidence sink; never added to the report or persisted to checkpoints. */
+  onMergeEvidence?: (evidence: MergeEvidenceResult) => void;
 }
 export type ScanReportTarget = SurvivalLabellerTarget;
 
@@ -44,13 +47,36 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
   if (requested > maxLookback) deps.onDiagnostic?.(`warn: lookback clamped to ${maxLookback} days`);
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 86_400_000);
-  const stateVersions: ScanStateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? 'off', features: ['candidate_features/v1'] } };
+  let evidenceTarget = target;
+  const bySha = new Map<string, number>();
+  const byPr = new Map<number, string>();
+  const ambiguous = new Set<string>();
+  if (deps.github.graphql) {
+    try {
+      const tip = deps.runGit(['rev-parse', '--verify', `${target.integrationBranch}^{commit}`]);
+      const sha = tip.stdout.trim();
+      if (tip.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(sha)) throw new Error();
+      evidenceTarget = { ...target, integrationBranch: sha };
+      for (const item of discoverMergeAssociations({ target: evidenceTarget, runGit: deps.runGit, graphql: deps.github.graphql, from, to: now })) {
+        if (bySha.has(item.mergeSha) && bySha.get(item.mergeSha) !== item.prNumber) ambiguous.add(item.mergeSha);
+        else bySha.set(item.mergeSha, item.prNumber);
+        byPr.set(item.prNumber, item.mergeSha);
+      }
+    } catch { throw new Error('Unable to discover historical PR landings'); }
+  }
+  const associate = (merge: WindowMerge): WindowMerge => {
+    const mapped = ambiguous.has(merge.mergeSha) ? undefined : bySha.get(merge.mergeSha);
+    if (mapped !== undefined) return { ...merge, prNumber: mapped };
+    if (merge.prNumber !== null && byPr.has(merge.prNumber) && byPr.get(merge.prNumber) !== merge.mergeSha) return { ...merge, prNumber: null };
+    return merge;
+  };
+  const stateVersions: ScanStateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? 'off', features: ['candidate_features/v1', 'historical-evidence/v1'] } };
   const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha) => isAncestor(deps.runGit, sha, target.integrationBranch)) : null;
   if (cached?.invalidated) deps.onDiagnostic?.('info: incremental cache invalidated; performing a full rescan');
-  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
-  let merges = enumerated.merges;
+  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: evidenceTarget.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
+  let merges = enumerated.merges.map(associate);
   if (merges.length > maxPrs) { merges = merges.slice(-maxPrs); deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`); }
-  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: new Date(0), to: now }).merges;
+  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: evidenceTarget.integrationBranch, from: new Date(0), to: now }).merges.map(associate);
   const reportMergeShas = new Set(allLocal.filter((merge) => merge.mergedAtEpoch >= Math.floor(from.getTime() / 1000) && merge.mergedAtEpoch <= Math.floor(now.getTime() / 1000)).slice(-maxPrs).map((merge) => merge.mergeSha));
   merges = merges.filter((merge) => reportMergeShas.has(merge.mergeSha));
   const config = resolveAttributionConfig(options.attributionConfig);
@@ -167,13 +193,22 @@ export async function runReportScan(target: ScanReportTarget, deps: ScanReportDe
     stateBySha.set(previous.merge_sha, { ...previous, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
   }
   if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
+  const rows = [...reportRows.values()];
+  if (rows.length || options.onMergeEvidence) {
+    try {
+      const prs = [...reportRows.entries()].map(([merge_sha, row]) => ({ merge_sha, pr_number: row.pr_number }));
+      const evidence = deps.github.graphql && prs.length ? collectMergeEvidence({ target: evidenceTarget, runGit: deps.runGit, graphql: deps.github.graphql, from, to: now, prs }) : unavailableMergeEvidence(prs);
+      options.onMergeEvidence?.(evidence);
+    } catch {
+      throw new Error('Unable to reconstruct historical evidence');
+    }
+  }
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
     const save = () => writeScanState(options.stateDir!, stateVersions, lastSeen, [...stateBySha.values()]);
     if (options.onStateSave) options.onStateSave(save);
     else save();
   }
-  const rows = [...reportRows.values()];
   const dates = rows.map((pr) => pr.merged_at).sort();
   return buildReportDraft({
     owner: target.owner, repo: target.repo, integrationBranch: target.integrationBranch,

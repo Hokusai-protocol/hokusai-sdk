@@ -66,9 +66,9 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync3, readFileSync as readFileSync11, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync9 } from "node:fs";
-import { dirname as dirname5, join as join14, resolve as resolve7 } from "node:path";
-import { tmpdir as tmpdir3 } from "node:os";
+import { existsSync as existsSync11, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync4, readFileSync as readFileSync11, rmSync as rmSync6, statSync as statSync4, writeFileSync as writeFileSync9 } from "node:fs";
+import { dirname as dirname5, join as join15, resolve as resolve7 } from "node:path";
+import { tmpdir as tmpdir4 } from "node:os";
 import { parseArgs as parseArgs5 } from "node:util";
 
 // src/candidate-features.ts
@@ -11663,6 +11663,17 @@ function createDefaultScanGitHubClient(target2, options = {}) {
     });
   };
   return {
+    graphql(query, variables) {
+      const args = ["api", "graphql", "-f", `query=${query}`];
+      for (const [key, value] of Object.entries(variables)) {
+        if (value !== null) args.push(typeof value === "number" ? "-F" : "-f", `${key}=${value}`);
+      }
+      const result2 = runGh(args);
+      if (result2.exitCode !== 0) return fail2(result2);
+      const response = parse(result2.stdout);
+      if (!response?.data || response.errors?.length) throw new ScanUpstreamError("GitHub historical evidence is unavailable");
+      return response.data;
+    },
     async getRepo() {
       await Promise.resolve();
       const repo = parse(api(`repos/${target2.owner}/${target2.repo}`));
@@ -13158,6 +13169,26 @@ function drainConnections(pr2, repo, graphql, followUps = FOLLOW_UPS) {
     }
   }
 }
+function drainCompleteConnections(pr2, repo, graphql, followUps) {
+  for (const [key, follow] of Object.entries(followUps)) {
+    const first = pr2[key];
+    if (!first) throw new Error("Missing evidence connection");
+    let page = first;
+    const seen = /* @__PURE__ */ new Set();
+    for (; ; ) {
+      if (!page.pageInfo || typeof page.pageInfo.hasNextPage !== "boolean" || !Array.isArray(page.nodes) || page.nodes.some((node) => node === null)) throw new Error("Incomplete evidence page");
+      if (!page.pageInfo.hasNextPage) break;
+      const cursor = page.pageInfo.endCursor;
+      if (!cursor || seen.has(cursor)) throw new Error("Invalid evidence cursor");
+      seen.add(cursor);
+      const result2 = runQuery(graphql, repo, `pr: pullRequest(number:${pr2.number}){ ${key}(${follow.args}first:100,after:${JSON.stringify(cursor)}){ ${follow.nodes} } }`);
+      const next = result2["pr"]?.[key];
+      if (!next || !Array.isArray(next.nodes)) throw new Error("Missing evidence page");
+      first.nodes = [...first.nodes ?? [], ...next.nodes];
+      page = next;
+    }
+  }
+}
 var present = (connection) => (connection.nodes ?? []).filter((node) => node !== null);
 function normalizeTimeline(pr2) {
   const timeline = present(pr2["timelineItems"]);
@@ -13207,6 +13238,41 @@ function drainContexts(pr2, repo, graphql) {
     rollup.contexts.nodes = [...rollup.contexts.nodes ?? [], ...next.nodes ?? []];
     info = next.pageInfo;
   }
+}
+function capturePrEvidence(repo, number, graphql) {
+  try {
+    const pr2 = runQuery(graphql, repo, `pr: pullRequest(number:${number}){ ${EVIDENCE_FIELDS} }`)["pr"];
+    const timeline = runQuery(graphql, repo, `pr: pullRequest(number:${number}){ ${TIMELINE_FIELDS} }`)["pr"];
+    if (!pr2 || !timeline) return null;
+    drainCompleteConnections(pr2, repo, graphql, FOLLOW_UPS);
+    drainCompleteConnections(timeline, repo, graphql, TIMELINE_FOLLOW_UP);
+    if (pr2.number !== number || timeline.number !== number || typeof pr2["title"] !== "string" || pr2["body"] !== null && typeof pr2["body"] !== "string") return null;
+    if (present(timeline["timelineItems"]).some((event17) => event17.__typename === "RenamedTitleEvent" && (typeof event17.previousTitle !== "string" || typeof event17.currentTitle !== "string"))) return null;
+    return { ...normalizeEvidence(pr2), ...normalizeTimeline(timeline), history_complete: { title: true, body: true } };
+  } catch {
+    return null;
+  }
+}
+function captureCommitCi(repo, number, sha2, graphql) {
+  if (!/^[0-9a-f]{40}$/i.test(sha2)) throw new TypeError("Invalid commit SHA");
+  const contexts = [];
+  let cursor = null;
+  const seen = /* @__PURE__ */ new Set();
+  do {
+    const after = cursor === null ? "" : `,after:${JSON.stringify(cursor)}`;
+    const result2 = runQuery(graphql, repo, `commit: object(oid:${JSON.stringify(sha2)}){ ... on Commit { statusCheckRollup { contexts(first:100${after}){ ${CONTEXTS} } } } }`);
+    const commit = result2["commit"];
+    const connection = commit?.statusCheckRollup?.contexts;
+    if (!connection) return null;
+    for (const context of (connection.nodes ?? []).filter((node) => node !== null)) {
+      contexts.push({ at: context.completedAt ?? context.createdAt ?? null, failed: CI_FAILED_STATES.includes(context.conclusion ?? context.state ?? "") });
+    }
+    cursor = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+    if (connection.pageInfo.hasNextPage && cursor === null) throw new Error("CI pagination cursor unavailable");
+    if (cursor !== null && seen.has(cursor)) throw new Error("CI pagination cursor repeated");
+    if (cursor !== null) seen.add(cursor);
+  } while (cursor !== null);
+  return { pr_number: number, contexts };
 }
 function fetchBatch(kind, repo, numbers, graphql, log) {
   if (kind === "timeline") return fetchTimeline(repo, numbers, graphql, log);
@@ -18146,6 +18212,119 @@ function writeScanState(dir, versions, lastSeenMergeSha, rows) {
 `);
 }
 
+// src/orchestrate/merge-evidence.ts
+import { mkdtempSync as mkdtempSync2, rmSync as rmSync4 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
+import { join as join13 } from "node:path";
+var TEXT_DESCRIPTOR_FIELDS = 3;
+var DAY_MS3 = 864e5;
+var corpusUntil = (to) => new Date(Math.floor(to.getTime() / DAY_MS3) * DAY_MS3 + DAY_MS3);
+function unavailableMergeEvidence(prs) {
+  return {
+    rows: prs.map((pr2) => ({ ...pr2, agent_at_merge: "unknown", text_descriptor: { task_type: null, complexity: null, description_length_bucket: null }, values: Object.fromEntries(REWORK_RISK_FEATURE_MANIFEST.entries.map((entry2) => [entry2.name, null])) })),
+    missing: { git: 0, github_history: 0, ci: 0, agent: 0, instrumentation: 0, landing_unavailable: prs.length * (REWORK_RISK_FEATURE_MANIFEST.entries.length + TEXT_DESCRIPTOR_FIELDS) }
+  };
+}
+function landingCommits(runGit3, record) {
+  const parents = runGit3(["rev-list", "--parents", "-n", "1", record.merge_sha]);
+  if (parents.exitCode !== 0) return null;
+  const parts = parents.stdout.trim().split(/\s+/);
+  const mergeCommit = parts.length === 3;
+  const head2 = mergeCommit ? parts[2] : record.merge_sha;
+  if (!head2 || !/^[0-9a-f]{40}$/.test(head2)) return null;
+  const list = runGit3(["log", "--format=%H%x00%an%x00%ae%x00%B%x00", `${record.base_sha}..${head2}`]);
+  if (list.exitCode !== 0) return null;
+  const fields = list.stdout.split("\0");
+  const commits = [];
+  for (let i = 0; i + 3 < fields.length; i += 4) {
+    const oid = fields[i].trim();
+    if (!/^[0-9a-f]{40}$/.test(oid)) return null;
+    commits.push({ oid, author_name: fields[i + 1] || null, author_email: fields[i + 2] || null, author_login: null, message: fields[i + 3] });
+  }
+  return { commits, oids: new Set(commits.map((commit) => commit.oid)), ciHead: mergeCommit ? head2 : null, mergeCommit };
+}
+function discoverMergeAssociations(input) {
+  const { target: target2, runGit: runGit3, graphql, from, to } = input;
+  return enumerateCorpusRepo({ repo: `${target2.owner}/${target2.repo}`, branch: target2.integrationBranch, defaultBranchNames: [target2.integrationBranch], from, until: corpusUntil(to) }, { runGit: runGit3, graphql }).records.map((record) => ({ mergeSha: record.merge_sha, prNumber: record.pr_number }));
+}
+function collectMergeEvidence(input) {
+  const { target: target2, runGit: runGit3, graphql } = input;
+  const tip = runGit3(["rev-parse", "--verify", `${target2.integrationBranch}^{commit}`]);
+  const sha2 = tip.stdout.trim();
+  if (tip.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(sha2)) throw new Error("Historical evidence: integration history unavailable");
+  const repo = `${target2.owner}/${target2.repo}`;
+  const prNumbers = new Set(input.prs.map((pr2) => pr2.pr_number));
+  const records = enumerateCorpusRepo({ repo, branch: sha2, defaultBranchNames: [target2.integrationBranch], from: input.from, until: corpusUntil(input.to) }, { runGit: runGit3, graphql }).records.filter((record) => prNumbers.has(record.pr_number));
+  const temp = mkdtempSync2(join13(tmpdir2(), "hokusai-evidence-"));
+  try {
+    const index = buildHistoryIndex(target2.repoDir, sha2, join13(temp, "index"), new Set(records.map((record) => record.merge_sha)));
+    const missing = { git: 0, github_history: 0, ci: 0, agent: 0, instrumentation: 0, landing_unavailable: 0 };
+    const rows = records.map((record) => {
+      const evidence3 = input.capture ? input.capture(record.pr_number) : capturePrEvidence(repo, record.pr_number, graphql);
+      const landed = landingCommits(runGit3, record);
+      const pinned = landed?.mergeCommit ? landed : null;
+      const safeEvidence = evidence3 && pinned ? { ...evidence3, commits: pinned.commits } : evidence3;
+      let ci2 = null;
+      if (pinned?.ciHead) {
+        try {
+          ci2 = input.captureCi ? input.captureCi(record.pr_number, pinned.ciHead) : captureCommitCi(repo, record.pr_number, pinned.ciHead, graphql);
+        } catch {
+        }
+      }
+      const git2 = pinned ? gitColumns({ index, gitDir: target2.repoDir, record, authorEmails: null }) : {};
+      git2["feature.author.repo_commits_prior"] = null;
+      git2["feature.author.touched_file_commits_prior"] = null;
+      const extracted = extractPrFeatures({
+        record,
+        evidence: safeEvidence,
+        ci: ci2,
+        git: git2,
+        historicalOnly: true,
+        ...pinned ? { mergedHeadCommitOids: pinned.oids } : {},
+        landingMessage: record.batched ? null : index.landingMessages.get(record.merge_sha) ?? null
+      });
+      const values = { ...extracted.features, "segment.agent.exact_model": null };
+      if (record.author_login === null || record.author_type === null) values["segment.agent.marked_by_account"] = null;
+      if (record.author_login === null) values["segment.author.dependency_bot"] = null;
+      if (evidence3?.head_ref == null) values["segment.agent.marked_by_branch"] = null;
+      if (!pinned) {
+        values["feature.shape.member_commits"] = null;
+        values["feature.shape.diff_uncertain"] = null;
+      }
+      const title = evidence3 ? titleAt(evidence3, record.merged_at, true) : null;
+      const body = evidence3 ? bodyAt(evidence3, record.merged_at, true) : null;
+      const text = title !== null && body !== null ? `${title}
+
+${body}` : void 0;
+      const descriptor3 = text === void 0 ? {} : deriveTaskDescriptor({ taskText: text });
+      const text_descriptor = { task_type: descriptor3.task_type ?? null, complexity: descriptor3.complexity ?? null, description_length_bucket: bucketDescription(text) };
+      missing.github_history += Object.values(text_descriptor).filter((value) => value === null).length;
+      const identityKnown = evidence3 !== null && record.author_login !== null && record.author_type !== null && evidence3.head_ref !== null;
+      if (!identityKnown && values["feature.agent.marker_present"] === false) {
+        values["feature.agent.marker_present"] = null;
+        values["feature.agent.tool_family"] = null;
+      }
+      const marker = values["feature.agent.marker_present"];
+      const agent_at_merge = marker === true ? "agent" : marker === false && identityKnown ? "not_agent_signal" : "unknown";
+      for (const entry2 of REWORK_RISK_FEATURE_MANIFEST.entries) {
+        if (values[entry2.name] !== null) continue;
+        const reason = entry2.name.startsWith("segment.ci.") ? "ci" : entry2.name.startsWith("segment.provenance.") ? "instrumentation" : entry2.name.startsWith("feature.agent.") || entry2.name.startsWith("segment.agent.") ? "agent" : entry2.as_of_source.startsWith("git_") ? "git" : "github_history";
+        missing[reason]++;
+      }
+      return { pr_number: record.pr_number, merge_sha: record.merge_sha, agent_at_merge, text_descriptor, values };
+    });
+    const seen = new Set(rows.map((row) => row.pr_number));
+    for (const pr2 of input.prs) if (!seen.has(pr2.pr_number)) {
+      missing.landing_unavailable += REWORK_RISK_FEATURE_MANIFEST.entries.length + TEXT_DESCRIPTOR_FIELDS;
+      rows.push({ ...pr2, agent_at_merge: "unknown", text_descriptor: { task_type: null, complexity: null, description_length_bucket: null }, values: Object.fromEntries(REWORK_RISK_FEATURE_MANIFEST.entries.map((entry2) => [entry2.name, null])) });
+    }
+    rows.sort((a, b) => a.pr_number - b.pr_number);
+    return { rows, missing };
+  } finally {
+    rmSync4(temp, { recursive: true, force: true });
+  }
+}
+
 // src/orchestrate/scan-report.ts
 var ScanStageFailureError = class extends Error {
   constructor() {
@@ -18161,16 +18340,41 @@ async function runReportScan(target2, deps, options) {
   if (requested > maxLookback) deps.onDiagnostic?.(`warn: lookback clamped to ${maxLookback} days`);
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 864e5);
-  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target2.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
+  let evidenceTarget = target2;
+  const bySha = /* @__PURE__ */ new Map();
+  const byPr = /* @__PURE__ */ new Map();
+  const ambiguous = /* @__PURE__ */ new Set();
+  if (deps.github.graphql) {
+    try {
+      const tip = deps.runGit(["rev-parse", "--verify", `${target2.integrationBranch}^{commit}`]);
+      const sha2 = tip.stdout.trim();
+      if (tip.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(sha2)) throw new Error();
+      evidenceTarget = { ...target2, integrationBranch: sha2 };
+      for (const item of discoverMergeAssociations({ target: evidenceTarget, runGit: deps.runGit, graphql: deps.github.graphql, from, to: now })) {
+        if (bySha.has(item.mergeSha) && bySha.get(item.mergeSha) !== item.prNumber) ambiguous.add(item.mergeSha);
+        else bySha.set(item.mergeSha, item.prNumber);
+        byPr.set(item.prNumber, item.mergeSha);
+      }
+    } catch {
+      throw new Error("Unable to discover historical PR landings");
+    }
+  }
+  const associate = (merge) => {
+    const mapped = ambiguous.has(merge.mergeSha) ? void 0 : bySha.get(merge.mergeSha);
+    if (mapped !== void 0) return { ...merge, prNumber: mapped };
+    if (merge.prNumber !== null && byPr.has(merge.prNumber) && byPr.get(merge.prNumber) !== merge.mergeSha) return { ...merge, prNumber: null };
+    return merge;
+  };
+  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target2.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1", "historical-evidence/v1"] } };
   const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha2) => isAncestor(deps.runGit, sha2, target2.integrationBranch)) : null;
   if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
-  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target2.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
-  let merges = enumerated.merges;
+  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: evidenceTarget.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
+  let merges = enumerated.merges.map(associate);
   if (merges.length > maxPrs) {
     merges = merges.slice(-maxPrs);
     deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`);
   }
-  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target2.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges;
+  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: evidenceTarget.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges.map(associate);
   const reportMergeShas = new Set(allLocal.filter((merge) => merge.mergedAtEpoch >= Math.floor(from.getTime() / 1e3) && merge.mergedAtEpoch <= Math.floor(now.getTime() / 1e3)).slice(-maxPrs).map((merge) => merge.mergeSha));
   merges = merges.filter((merge) => reportMergeShas.has(merge.mergeSha));
   const config = resolveAttributionConfig(options.attributionConfig);
@@ -18302,13 +18506,22 @@ ${pr2.body ?? ""}` }
     stateBySha.set(previous.merge_sha, { ...previous, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
   }
   if (attemptedPrs > 0 && failedPrs / attemptedPrs > 0.1) throw new ScanStageFailureError();
+  const rows = [...reportRows.values()];
+  if (rows.length || options.onMergeEvidence) {
+    try {
+      const prs = [...reportRows.entries()].map(([merge_sha, row]) => ({ merge_sha, pr_number: row.pr_number }));
+      const evidence3 = deps.github.graphql && prs.length ? collectMergeEvidence({ target: evidenceTarget, runGit: deps.runGit, graphql: deps.github.graphql, from, to: now, prs }) : unavailableMergeEvidence(prs);
+      options.onMergeEvidence?.(evidence3);
+    } catch {
+      throw new Error("Unable to reconstruct historical evidence");
+    }
+  }
   if (options.stateDir) {
     const lastSeen = allLocal.at(-1)?.mergeSha ?? null;
     const save = () => writeScanState(options.stateDir, stateVersions, lastSeen, [...stateBySha.values()]);
     if (options.onStateSave) options.onStateSave(save);
     else save();
   }
-  const rows = [...reportRows.values()];
   const dates = rows.map((pr2) => pr2.merged_at).sort();
   return buildReportDraft({
     owner: target2.owner,
@@ -18627,7 +18840,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join14(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync4(join15(tmpdir4(), "hokusai-report-"));
       const result2 = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result2.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -18696,7 +18909,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join14(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join15(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -18754,7 +18967,7 @@ async function runReportCli(argv, io) {
     diag.error(`unexpected: ${error.message}`);
     return { exitCode: EXIT_INTERNAL, rowCount: 0, outputPath: null, summaryLines: [] };
   } finally {
-    if (temporaryRepo) rmSync5(temporaryRepo, { recursive: true, force: true });
+    if (temporaryRepo) rmSync6(temporaryRepo, { recursive: true, force: true });
   }
 }
 function parsePositiveInteger(value, fallback, name, maximum) {

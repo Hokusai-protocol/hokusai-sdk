@@ -1,9 +1,12 @@
 import type { ScanUpstreamError } from '../default-deps.js';
+import type { GraphqlRunner } from '../corpus/enumerate.js';
 export interface ScanRepository { defaultBranch: string; private: boolean }
 export interface ScanPullRequest { number: number; title: string; body: string | null; authorLogin: string | null; authorType: string | null; headRef: string; headSha: string; labels: string[]; mergedAt: string }
 export type CheckConclusion = 'success' | 'failure' | 'neutral' | 'none' | null;
 export interface ScanGitHubClient {
   readonly offline?: boolean;
+  /** Historical evidence capture; absent when offline. */
+  graphql?: GraphqlRunner;
   getRepo(): Promise<ScanRepository>;
   getPullRequest(number: number): Promise<ScanPullRequest | null>;
   listPullCommits(number: number): Promise<string[]>;

@@ -2,10 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { completeCandidateFeaturesV1Fixture } from '../../../core/src/fixtures/candidate-features.js';
 import { harvestedSurvivalLabelFixture } from '../../../core/src/fixtures/arbiter-survival-label.js';
 import { runReportScan } from './scan-report.js';
+import type { MergeEvidenceResult } from './merge-evidence.js';
 import type { GitCommandResult } from '../survival-labeller.js';
 const merge = 'a'.repeat(40), parent = 'b'.repeat(40), head = 'c'.repeat(40);
 describe('runReportScan', () => {
+  it('does not expose upstream evidence details in a discovery failure', async () => {
+    const runGit = (): GitCommandResult => ({ stdout: merge, stderr: '', exitCode: 0 });
+    const now = () => new Date('2026-10-16T00:00:00Z');
+    const promise = runReportScan({ owner: 'org', repo: 'repo', repoDir: '/repo', integrationBranch: 'develop' }, {
+      runGit, now, labeller: { runGit, now, github: { getPrMetadata: () => null, listCrossReferences: () => [] } },
+      github: { graphql: () => { throw new Error('PRIVATE_TITLE PRIVATE_PATH PRIVATE_AUTHOR'); }, async getRepo() { await Promise.resolve(); return { defaultBranch: 'develop', private: false }; }, async getPullRequest() { await Promise.resolve(); return null; }, async listPullCommits() { await Promise.resolve(); return []; }, async getCheckConclusion() { await Promise.resolve(); return null; } },
+    }, { scannerVersion: 'test' });
+    await expect(promise).rejects.toThrow('Unable to discover historical PR landings');
+  });
   it('assembles a report from injected dependencies without emitting raw GitHub text', async () => {
+    let historical: MergeEvidenceResult | undefined;
     const runGit = (args: readonly string[]): GitCommandResult => ({
       stdout: args[0] === 'log' ? `${merge}\t${parent} ${head}\t1780272000\tMerge pull request #123 from org/agent` : '', stderr: '', exitCode: 0,
     });
@@ -19,11 +30,14 @@ describe('runReportScan', () => {
       },
       extract: () => completeCandidateFeaturesV1Fixture,
       label,
-    }, { horizons: [harvestedSurvivalLabelFixture.horizon_days], scannerVersion: '1.0.0' });
+    }, { horizons: [harvestedSurvivalLabelFixture.horizon_days], scannerVersion: '1.0.0', onMergeEvidence: (value) => { historical = value; } });
     const bytes = JSON.stringify(draft);
     for (const secret of ['TITLE_SECRET', 'BODY_SECRET', 'AUTHOR_SECRET', 'BRANCH_SECRET', 'TRAILER_SECRET']) expect(bytes).not.toContain(secret);
     expect(draft.prs).toHaveLength(1);
     expect(draft.coverage.prs_enumerated).toBe(1);
+    expect(historical?.rows[0]?.agent_at_merge).toBe('unknown');
+    expect(historical?.missing.landing_unavailable).toBeGreaterThan(0);
+    expect(bytes).not.toContain('agent_at_merge');
   });
 });
 

@@ -268,6 +268,17 @@ export function createDefaultScanGitHubClient(
     });
   };
   return {
+    graphql(query, variables) {
+      const args = ['api', 'graphql', '-f', `query=${query}`];
+      for (const [key, value] of Object.entries(variables)) {
+        if (value !== null) args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`);
+      }
+      const result = runGh(args);
+      if (result.exitCode !== 0) return fail(result);
+      const response = parse<{ data?: unknown; errors?: unknown[] }>(result.stdout);
+      if (!response?.data || response.errors?.length) throw new ScanUpstreamError('GitHub historical evidence is unavailable');
+      return response.data;
+    },
     async getRepo() {
       await Promise.resolve();
       const repo = parse<{ default_branch?: string; private?: boolean }>(api(`repos/${target.owner}/${target.repo}`));
