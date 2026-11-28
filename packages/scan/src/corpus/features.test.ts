@@ -80,6 +80,44 @@ describe('state at as_of', () => {
 });
 
 describe('extractPrFeatures', () => {
+  it('uses unchanged text when capture proves history is complete', () => {
+    const value = { ...evidence, title: 'original', body: 'Generated with Claude Code', renames: [], body_edits: [], head_ref: 'ordinary', commits: [], history_complete: { title: true, body: true } };
+    const row = extractPrFeatures({ record, evidence: value, ci: null, git: {}, historicalOnly: true, mergedHeadCommitOids: new Set() });
+    expect(row.features).toMatchObject({ 'feature.process.title_chars': 8, 'feature.process.body_chars': value.body.length, 'segment.agent.marked_by_body': true });
+  });
+
+  it('recovers the original title from a later rename when history is complete', () => {
+    expect(titleAt({ ...evidence, history_complete: { title: true, body: true }, renames: [{ at: AFTER, from: 'original', to: 'later' }] }, AS_OF, true)).toBe('original');
+  });
+
+  it('keeps text unknown if capture is truncated', () => {
+    const value = { ...evidence, history_complete: { title: false, body: false } };
+    expect(titleAt(value, AS_OF, true)).toBeNull();
+    expect(bodyAt(value, AS_OF, true)).toBeNull();
+  });
+  it('keeps unavailable historical text missing after later edits', () => {
+    const before = { ...evidence, title: 'initial', body: 'initial', renames: [], body_edits: [] };
+    const after = { ...before, title: 'later', body: 'later', renames: [{ at: AFTER, from: 'initial', to: 'later' }], body_edits: [{ at: AFTER, body: 'later' }] };
+    const project = (value: PrEvidence) => extractPrFeatures({ record, evidence: value, ci: null, git: {}, historicalOnly: true }).features;
+    expect(project(before)).toEqual(project(after));
+    expect(project(before)).toMatchObject({ 'feature.process.title_chars': null, 'feature.process.body_chars': null });
+    expect(project({ ...before, history_complete: { title: true, body: true }, renames: [{ at: BEFORE, from: 'initial', to: 'changed' }] })['feature.process.title_chars']).toBe(7);
+  });
+
+  it('rejects an invalid cutoff even without captured evidence', () => {
+    expect(() => extractPrFeatures({ record: { ...record, merged_at: 'invalid' }, evidence: null, ci: null, git: {}, historicalOnly: true })).toThrow();
+  });
+  it('uses fixed attribution evidence and excludes commits outside the merged head', () => {
+    const run = (overRecord: Partial<CorpusPrRecord>, overEvidence: Partial<PrEvidence>) => extractPrFeatures({
+      record: { ...record, ...overRecord }, evidence: { ...evidence, head_ref: 'ordinary', body_edits: [], commits: [], ...overEvidence }, ci: null, git: {}, historicalOnly: true,
+      mergedHeadCommitOids: new Set(['before']),
+    }).features;
+    expect(run({ author_login: 'copilot-swe-agent', author_type: 'Bot' }, {})['segment.agent.marked_by_account']).toBe(true);
+    expect(run({}, { head_ref: 'claude/fix' })['segment.agent.marked_by_branch']).toBe(true);
+    const commit = { oid: 'before', message: 'fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>', author_name: null, author_email: null, author_login: null };
+    expect(run({}, { commits: [commit] })['segment.agent.marked_by_commit']).toBe(true);
+    expect(run({}, { commits: [{ ...commit, oid: 'after' }] })['feature.agent.marker_present']).toBeNull();
+  });
   it('writes every manifest column and no others', () => {
     const row = extract(evidence);
     expect(Object.keys(row.features).sort()).toEqual([...MANIFEST_COLUMNS].sort());

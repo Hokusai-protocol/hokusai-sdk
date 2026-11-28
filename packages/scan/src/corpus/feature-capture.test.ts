@@ -3,10 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GraphqlRunner } from './enumerate.js';
-import { TIMELINE_SPLIT_NODES, captureRepo, chunkNumbers, normalizeCi, normalizeEvidence, normalizeTimeline, readCapturedBatch, type TimelineEvidence } from './feature-capture.js';
+import { TIMELINE_SPLIT_NODES, captureCommitCi, capturePrEvidence, captureRepo, chunkNumbers, normalizeCi, normalizeEvidence, normalizeTimeline, readCapturedBatch, type TimelineEvidence } from './feature-capture.js';
 import type { PrEvidence } from './features.js';
 
 const page = (nodes: unknown[], hasNextPage = false, endCursor: string | null = null) => ({ pageInfo: { hasNextPage, endCursor }, nodes });
+const BEFORE_CI = '2026-01-01T01:00:00Z';
+const AFTER_CI = '2026-01-03T01:00:00Z';
 const apiPr = (number: number, over: Record<string, unknown> = {}) => ({
   number, createdAt: '2026-01-01T00:00:00Z', mergedAt: '2026-01-02T00:00:00Z', title: 't', body: 'b', headRefName: 'x',
   reviews: page([]), timelineItems: page([]), userContentEdits: page([]), commits: page([]),
@@ -24,6 +26,40 @@ const tempDir = (): string => {
 };
 
 const fromBatch = (query: string) => [...query.matchAll(/pr(\d+): pullRequest\(number:\d+\)/g)].map((match) => Number(match[1]));
+
+describe('in-memory capture', () => {
+  it('joins separately captured timeline events and returns no partial evidence on failure', () => {
+    const graphql: GraphqlRunner = () => ({ repository: { pr: apiPr(1, {
+      timelineItems: page([{ __typename: 'LabeledEvent', createdAt: '2026-01-01T01:00:00Z', label: { name: 'bug' } }]),
+    }) } });
+    expect(capturePrEvidence('example/repo', 1, graphql)?.label_events).toEqual([
+      { at: '2026-01-01T01:00:00Z', action: 'added', label: 'bug' },
+    ]);
+    expect(capturePrEvidence('example/repo', 1, graphql)?.history_complete).toEqual({ title: true, body: true });
+    let calls = 0;
+    expect(capturePrEvidence('example/repo', 1, (query, variables) => {
+      if (++calls === 2) throw new Error('private upstream detail');
+      return graphql(query, variables);
+    })).toBeNull();
+  });
+
+  it('rejects missing nodes and repeated pagination cursors', () => {
+    expect(capturePrEvidence('example/repo', 1, () => ({ repository: { pr: apiPr(1, { userContentEdits: page([null]) }) } }))).toBeNull();
+    expect(capturePrEvidence('example/repo', 1, () => ({ repository: { pr: apiPr(1, { userContentEdits: page([], true, 'same') }) } }))).toBeNull();
+    expect(capturePrEvidence('example/repo', 1, () => ({ repository: { pr: apiPr(1, { body: undefined }) } }))).toBeNull();
+  });
+
+  it('marks history complete only after the last edit and timeline pages', () => {
+    const graphql: GraphqlRunner = (query) => {
+      if (query.includes('userContentEdits(first:100,after:')) return { repository: { pr: { userContentEdits: page([{ editedAt: '2026-01-02T01:00:00Z', diff: 'later' }]) } } };
+      if (query.includes('timelineItems(itemTypes:') && query.includes('after:')) return { repository: { pr: { timelineItems: page([]) } } };
+      return { repository: { pr: apiPr(1, { userContentEdits: page([], true, 'edit-next'), timelineItems: page([], true, 'timeline-next') }) } };
+    };
+    const captured = capturePrEvidence('example/repo', 1, graphql);
+    expect(captured?.history_complete).toEqual({ title: true, body: true });
+    expect(captured?.body_edits).toEqual([{ at: '2026-01-02T01:00:00Z', body: 'later' }]);
+  });
+});
 
 describe('normalizeTimeline', () => {
   it('separates timeline events by type', () => {
@@ -74,6 +110,21 @@ describe('timeline capture', () => {
 });
 
 describe('normalizeCi', () => {
+  it('captures paginated CI against the pinned commit', () => {
+    const sha = 'a'.repeat(40);
+    const queries: string[] = [];
+    const ci = captureCommitCi('example/repo', 1, sha, (query) => {
+      queries.push(query);
+      const second = query.includes('after:');
+      return { repository: { commit: { statusCheckRollup: { contexts: second
+        ? page([{ completedAt: AFTER_CI, conclusion: 'FAILURE' }])
+        : page([{ completedAt: BEFORE_CI, conclusion: 'SUCCESS' }], true, 'next') } } } };
+    });
+    expect(queries).toHaveLength(2);
+    expect(queries.every((query) => query.includes(sha))).toBe(true);
+    expect(ci?.contexts).toEqual([{ at: BEFORE_CI, failed: false }, { at: AFTER_CI, failed: true }]);
+    expect(() => captureCommitCi('example/repo', 1, 'HEAD', () => ({}))).toThrow();
+  });
   it('uses the finish time and counts failures, not cancellations', () => {
     const ci = normalizeCi({ number: 1, commits: { nodes: [{ commit: { statusCheckRollup: { contexts: page([
       { __typename: 'CheckRun', completedAt: 'x', conclusion: 'FAILURE' },

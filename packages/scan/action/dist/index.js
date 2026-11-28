@@ -12940,14 +12940,16 @@ function ms(at2) {
 function byTime(events17) {
   return events17.map((event17, index) => ({ event: event17, index })).sort((a, b) => ms(a.event.at) - ms(b.event.at) || a.index - b.index).map(({ event: event17 }) => event17);
 }
-function titleAt(evidence3, asOf) {
+function titleAt(evidence3, asOf, historicalOnly = false) {
+  if (historicalOnly && evidence3.history_complete?.title !== true) return null;
   const renames = byTime(evidence3.renames);
   if (renames.length === 0) return evidence3.title;
   const cutoff = ms(asOf);
   const seen = renames.filter((rename) => ms(rename.at) <= cutoff);
   return seen.at(-1)?.to ?? renames[0].from;
 }
-function bodyAt(evidence3, asOf) {
+function bodyAt(evidence3, asOf, historicalOnly = false) {
+  if (historicalOnly && evidence3.history_complete?.body !== true) return null;
   if (evidence3.body_edits.length === 0) return evidence3.body ?? "";
   const cutoff = ms(asOf);
   return byTime(evidence3.body_edits).filter((edit) => ms(edit.at) <= cutoff).at(-1)?.body ?? null;
@@ -12987,7 +12989,7 @@ function assertReadableEvidence(evidence3, ci2, asOf) {
   const errors = validateEvidenceAsOf(events17, asOf).filter((error) => error.code !== "event_after_as_of");
   if (errors.length) throw new Error(`pr evidence: ${errors[0].message}`);
 }
-function processColumns(evidence3, ci2, asOf) {
+function processColumns(evidence3, ci2, asOf, historicalOnly) {
   const empty = {
     "feature.process.review_count": null,
     "feature.process.approvals": null,
@@ -13015,31 +13017,32 @@ function processColumns(evidence3, ci2, asOf) {
   }
   if (!evidence3) return { ...empty, ...ciColumns };
   const reviews = reviewsAt(evidence3, asOf);
+  const reviewStatesKnown = !historicalOnly || !evidence3.dismissals.some((event17) => ms(event17.at) > ms(asOf) && event17.review_id !== null && event17.previous_state === null && evidence3.reviews.some((review) => review.id === event17.review_id && review.submitted_at !== null && ms(review.submitted_at) <= ms(asOf)));
   const created = ms(evidence3.created_at);
   const open = ms(asOf) - created;
   const first = reviews.length ? Math.min(...reviews.map((review) => ms(review.submitted_at))) : null;
   const labels = labelsAt(evidence3, asOf);
-  const title = titleAt(evidence3, asOf);
-  const body = bodyAt(evidence3, asOf);
+  const title = historicalOnly ? titleAt(evidence3, asOf, true) : titleAt(evidence3, asOf);
+  const body = bodyAt(evidence3, asOf, historicalOnly);
   return {
     "feature.process.review_count": reviews.length,
-    "feature.process.approvals": reviews.filter((review) => review.state === "APPROVED").length,
-    "feature.process.changes_requested": reviews.filter((review) => review.state === "CHANGES_REQUESTED").length,
+    "feature.process.approvals": reviewStatesKnown ? reviews.filter((review) => review.state === "APPROVED").length : null,
+    "feature.process.changes_requested": reviewStatesKnown ? reviews.filter((review) => review.state === "CHANGES_REQUESTED").length : null,
     "feature.process.distinct_reviewers": new Set(reviews.flatMap((review) => review.author ? [review.author] : [])).size,
     "feature.process.hours_open": open >= 0 ? hours(open) : null,
     "feature.process.hours_to_first_review": first !== null && first >= created ? hours(first - created) : null,
     "feature.process.github_label_count": labels ? labels.length : null,
-    "feature.process.title_chars": title.length,
+    "feature.process.title_chars": title === null ? null : title.length,
     "feature.process.body_chars": body === null ? null : body.length,
-    "feature.content.title_sha256": sha2562(title),
+    "feature.content.title_sha256": title === null ? null : sha2562(title),
     "feature.content.body_sha256": body === null ? null : sha2562(body),
     ...ciColumns
   };
 }
 var MERGE_SUBJECT = /^Merge (?:branch|remote-tracking branch|pull request|tag|commit)\b|^Merge .+ into .+/;
-function markerCommits(evidence3) {
+function markerCommits(evidence3, reachable) {
   if (!evidence3) return null;
-  return evidence3.commits.filter((commit) => !MERGE_SUBJECT.test(commit.message)).map((commit) => ({
+  return evidence3.commits.filter((commit) => reachable === void 0 || reachable.has(commit.oid)).filter((commit) => !MERGE_SUBJECT.test(commit.message)).map((commit) => ({
     message: commit.message,
     ...commit.author_name ? { authorName: commit.author_name } : {},
     ...commit.author_email ? { authorEmail: commit.author_email } : {}
@@ -13048,6 +13051,7 @@ function markerCommits(evidence3) {
 function extractPrFeatures(input) {
   const { record, evidence: evidence3, ci: ci2, git: git2 } = input;
   const asOf = record.merged_at;
+  if (input.historicalOnly && validateEvidenceAsOf([], asOf).length) throw new Error("pr evidence: invalid merge timestamp");
   if (evidence3) {
     assertReadableEvidence(evidence3, ci2, asOf);
     if (evidence3.pr_number !== record.pr_number) throw new Error(`evidence is for PR ${evidence3.pr_number}, not ${record.pr_number}`);
@@ -13055,12 +13059,12 @@ function extractPrFeatures(input) {
   } else if (ci2) {
     assertReadableEvidence({ pr_number: record.pr_number, created_at: asOf, merged_at: null, title: "", body: null, head_ref: null, reviews: [], dismissals: [], label_events: [], renames: [], body_edits: [], commits: [] }, ci2, asOf);
   }
-  const body = evidence3 ? bodyAt(evidence3, asOf) : null;
+  const body = evidence3 ? bodyAt(evidence3, asOf, input.historicalOnly) : null;
   const markers = detectAgentMarkers({
     authorLogin: record.author_login,
     authorType: record.author_type,
     headRef: evidence3?.head_ref ?? null,
-    commits: markerCommits(evidence3),
+    commits: input.historicalOnly && input.mergedHeadCommitOids === void 0 ? null : markerCommits(evidence3, input.historicalOnly ? input.mergedHeadCommitOids : void 0),
     body,
     ...body === null ? { bodyUnavailable: true } : {},
     ...input.landingMessage ? { landingMessage: input.landingMessage } : {}
@@ -13071,7 +13075,7 @@ function extractPrFeatures(input) {
     "feature.shape.diff_uncertain": record.batched,
     "feature.author.is_bot": record.author_type === null ? null : record.author_type === "Bot",
     ...git2,
-    ...processColumns(evidence3, ci2, asOf),
+    ...processColumns(evidence3, ci2, asOf, input.historicalOnly === true),
     ...agentMarkerColumns(markers)
   };
   const undeclared = Object.keys(features).filter((column) => !MANIFEST_COLUMNS.includes(column));
