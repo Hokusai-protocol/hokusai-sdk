@@ -29,17 +29,25 @@ so the first 5 reports go through the same path as the next 500.
 - **Window:** the `window_days` before `as_of − horizon_days`, so the counts
   cover PRs whose 30-day outcome is already known.
 
-### Thresholds (manifest 0.1.0)
+### Thresholds (selection 0.2.0)
 
 | Check                                 | Bar                                   | Why                                                                                                            |
 | ------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Merged PRs per year                   | ≥ 300                                 | Enough PRs for report cells (n floor 20)                                                                       |
 | PRs based on the default branch       | ≥ 50%                                 | The labels follow the default branch                                                                           |
 | Default-branch commits mapped to a PR | ≥ 80%                                 | The enumerator maps PRs from commits                                                                           |
+| PRs whose landing commit names them   | ≥ 25%                                 | The scanner finds a PR only by the number in its landing commit's subject; rebase merges carry none            |
 | Revert PRs per year                   | ≥ 20                                  | Lower bound on reworked PRs; must be ≥ the report's retrospective floor (`min_reworked_for_retrospective`, 20) |
 | Agent-authored share of sampled PRs   | ≥ 2%                                  | The report's agent segment needs some agent PRs                                                                |
 | Merge convention                      | squash, merge commit, rebase or mixed | What the enumerator supports                                                                                   |
 | Archived                              | no                                    |                                                                                                                |
+
+The landing-commit screen was added after the dry run. zephyrproject-rtos/zephyr
+passed the probe, with every commit mapped to a PR on GitHub, but it
+rebase-merges, so no landing commit names its PR and the scan found 0 PRs.
+The share is measured on the probe's PR sample. Squash repos ranged from 54% to
+89% and still scanned the full 500 PRs, so the floor is set only to catch
+near-zero visibility.
 
 The revert count is a screen, not the decision. Reworked PRs under cr-0.2.0
 also include explicit repairs, so a repo can clear the retrospective floor
@@ -105,6 +113,7 @@ The checks re-derive what they can instead of trusting the payload.
 | `schema_valid`             | The payload breaks the `arbiter_report/v1` schema or invariants                                            |
 | `real_data`                | `data_origin` is not `scan`, or the repo is a fixture                                                      |
 | `repo_matches_candidate`   | The payload is for a different repo                                                                        |
+| `prs_found`                | The scan found fewer PRs than the cell floor (20), e.g. a rebase-merging repo                              |
 | `not_training_repo`        | The repo is in a corpus manifest, or the payload says it was trained on                                    |
 | `retrospective_present`    | The predictive section is missing or suppressed                                                            |
 | `out_of_sample_provenance` | No model provenance; or, under a time split, a scored PR merged on or before the split date                |

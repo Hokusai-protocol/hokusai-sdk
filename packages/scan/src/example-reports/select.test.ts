@@ -52,6 +52,18 @@ describe('decideExample', () => {
     expect(d.reasons).toContain('base_is_default_share: unmeasured < 0.5');
   });
 
+  it('screens out a rebase-merging repo whose commit subjects carry no PR numbers', () => {
+    const t = { ...thresholds, min_pr_number_in_subject_share: 0.8 };
+    // zephyr in the dry run: every commit maps to a PR on GitHub, none names it in the subject.
+    const zephyrLike = { ...passing, observed_merge_convention: 'rebase_or_mixed', metrics: { ...passing.metrics, pr_mapped_commit_share: 1, pr_number_in_subject_share: 0 } };
+    expect(decideExample(zephyrLike, t, false)).toEqual({ eligible: false, reasons: ['pr_number_in_subject_share: 0 < 0.8'] });
+    expect(decideExample({ ...passing, metrics: { ...passing.metrics, pr_number_in_subject_share: 0.95 } }, t, false).eligible).toBe(true);
+    // A probe from before the metric existed fails the screen rather than passing silently.
+    expect(decideExample(passing, t, false).reasons).toEqual(['pr_number_in_subject_share: unmeasured < 0.8']);
+    // Manifests without the threshold behave as before.
+    expect(decideExample(zephyrLike, thresholds, false).eligible).toBe(true);
+  });
+
   it('excludes a corpus repo even when it would otherwise pass', () => {
     expect(decideExample(passing, thresholds, true)).toEqual({ eligible: false, reasons: [EXCLUDED_REASON] });
   });

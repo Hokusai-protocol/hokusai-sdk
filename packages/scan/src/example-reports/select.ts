@@ -17,12 +17,20 @@
  */
 import { createHash } from 'node:crypto';
 
-export const EXAMPLE_SELECTION_VERSION = '0.1.0';
+export const EXAMPLE_SELECTION_VERSION = '0.2.0';
 
 export interface ExampleThresholds {
   min_merged_prs_per_year: number;
   min_base_is_default_share: number;
   min_pr_mapped_commit_share: number;
+  /**
+   * Share of sampled PRs into the default branch whose landing commit's
+   * subject carries the PR's number ("(#N)" or "Merge pull request #N"). The
+   * scanner finds PRs on the main line only this way, so a rebase-merging repo
+   * can be fully PR-mapped on GitHub yet scan empty (zephyr, HOK-3515 dry
+   * run). Optional for older manifests.
+   */
+  min_pr_number_in_subject_share?: number;
   /** Lower bound on reworked PRs: revert PRs in the last year. Must be at least the report's retrospective floor. */
   min_revert_prs_per_year: number;
   min_agent_share: number;
@@ -58,6 +66,8 @@ export interface ExampleProbeMetrics {
   revert_prs_per_year: number;
   base_is_default_share: number | null;
   pr_mapped_commit_share: number | null;
+  /** Absent in probes before selection 0.2.0. */
+  pr_number_in_subject_share?: number | null;
   agent_share: number | null;
 }
 
@@ -102,6 +112,8 @@ export function parseExampleManifest(value: unknown, minReworked: number): Examp
     if (!Number.isFinite(t[key]) || t[key] < 0) fail(`thresholds.${key} must be a number ≥ 0`);
   for (const key of ['min_base_is_default_share', 'min_pr_mapped_commit_share', 'min_agent_share'] as const)
     if (!Number.isFinite(t[key]) || t[key] < 0 || t[key] > 1) fail(`thresholds.${key} must be in [0, 1]`);
+  if (t.min_pr_number_in_subject_share !== undefined && (!Number.isFinite(t.min_pr_number_in_subject_share) || t.min_pr_number_in_subject_share < 0 || t.min_pr_number_in_subject_share > 1))
+    fail('thresholds.min_pr_number_in_subject_share must be in [0, 1]');
   if (t.min_revert_prs_per_year < minReworked)
     fail(`thresholds.min_revert_prs_per_year ${t.min_revert_prs_per_year} is below the report's retrospective floor ${minReworked}`);
   if (!Array.isArray(t.supported_conventions) || t.supported_conventions.length === 0) fail('thresholds.supported_conventions missing');
@@ -163,6 +175,7 @@ export function decideExample(input: ExampleProbeInput, t: ExampleThresholds, ex
   below('merged_prs_per_year', m.merged_prs_per_year, t.min_merged_prs_per_year);
   below('base_is_default_share', m.base_is_default_share, t.min_base_is_default_share);
   below('pr_mapped_commit_share', m.pr_mapped_commit_share, t.min_pr_mapped_commit_share);
+  if (t.min_pr_number_in_subject_share !== undefined) below('pr_number_in_subject_share', m.pr_number_in_subject_share ?? null, t.min_pr_number_in_subject_share);
   below('revert_prs_per_year', m.revert_prs_per_year, t.min_revert_prs_per_year);
   below('agent_share', m.agent_share, t.min_agent_share);
   if (!t.supported_conventions.includes(input.observed_merge_convention))

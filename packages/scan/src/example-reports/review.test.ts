@@ -87,6 +87,17 @@ describe('reviewExampleReport', () => {
     expect(failed(input({ report, rescan: structuredClone(report) }))).toContain('retrospective_present');
   });
 
+  it('fails a scan that found too few PRs', () => {
+    // The sparse fixture is a valid 12-PR scan: below the 20-PR cell floor.
+    const d = reportDraftFixtures.sparse();
+    d.data_origin = 'scan';
+    d.repo = { host: 'github', owner: 'acme', name: 'widgets' };
+    const report = applyReportSuppression(d, DEFAULT_REPORT_POLICY);
+    const r = reviewExampleReport(input({ report, rescan: structuredClone(report) }));
+    expect(r.checks.find((c) => c.code === 'prs_found')).toMatchObject({ passed: false, detail: expect.stringContaining('found 12 PRs') });
+    expect(reviewExampleReport(input()).checks.find((c) => c.code === 'prs_found')?.passed).toBe(true);
+  });
+
   it('fails flags that do not follow the stated threshold', () => {
     const report = goodReport();
     const pr = report.prs.find((p) => p.prediction)!;

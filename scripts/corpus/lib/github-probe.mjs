@@ -9,7 +9,10 @@
  * thresholds. Requires `gh` authenticated and `pnpm --filter @hokusai/scan build`.
  */
 import { execFileSync } from 'node:child_process';
-import { attributePullRequest } from '../../../packages/scan/dist/index.js';
+import {
+  attributePullRequest,
+  extractPrNumber,
+} from '../../../packages/scan/dist/index.js';
 
 const FIX_TITLE = /\b(?:fix(?:e[sd])?|bug|regression|hotfix)\b|^fix(?:\(|:)/i;
 const FIX_LABEL = /bug|fix|regression/i;
@@ -73,7 +76,7 @@ const COUNTS_QUERY = `query($owner:String!,$name:String!,$merged:String!,$revert
 const PR_SAMPLE_QUERY = `query($q:String!,$n:Int!){
   search(type:ISSUE, query:$q, first:$n){ nodes { ... on PullRequest {
     number title baseRefName headRefName mergedAt body headRefOid
-    mergeCommit{ oid }
+    mergeCommit{ oid messageHeadline }
     author{ login __typename }
     labels(first:20){ nodes{ name } }
     closingIssuesReferences{ totalCount }
@@ -139,11 +142,20 @@ export function probeRepo(repo, { window, defaultBranchAliases = [] }) {
     closesIssue = 0,
     backport = 0,
     infraBot = 0,
-    agent = 0;
+    agent = 0,
+    intoDefault = 0,
+    landedNumbered = 0;
   for (const pr of prs) {
     const labels = pr.labels.nodes.map((label) => label.name);
     const login = pr.author?.login ?? '';
-    if (defaultNames.has(pr.baseRefName)) baseIsDefault += 1;
+    if (defaultNames.has(pr.baseRefName)) {
+      baseIsDefault += 1;
+      // What the scanner can see: it finds a PR on the main line only by the number in the
+      // subject of the commit that landed it. Squash and merge commits carry it; rebase merges don't.
+      intoDefault += 1;
+      if (extractPrNumber(pr.mergeCommit?.messageHeadline ?? '') === pr.number)
+        landedNumbered += 1;
+    }
     if (
       FIX_TITLE.test(pr.title) ||
       labels.some((label) => FIX_LABEL.test(label)) ||
@@ -217,6 +229,7 @@ export function probeRepo(repo, { window, defaultBranchAliases = [] }) {
     agent_share: share(agent, prs.length),
     commit_sample_size: commits.length,
     pr_mapped_commit_share: share(mapped, commits.length),
+    pr_number_in_subject_share: share(landedNumbered, intoDefault),
     pr_merge_commit_share: share(isMergeCommit, commits.length),
     two_parent_commit_share: share(twoParent, commits.length),
   };
