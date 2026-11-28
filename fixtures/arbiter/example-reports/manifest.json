@@ -10,6 +10,7 @@
     "min_merged_prs_per_year": 300,
     "min_base_is_default_share": 0.5,
     "min_pr_mapped_commit_share": 0.8,
+    "min_pr_number_in_subject_share": 0.25,
     "min_revert_prs_per_year": 20,
     "min_agent_share": 0.02,
     "supported_conventions": ["squash", "merge_commit", "rebase_or_mixed"]
@@ -1388,6 +1389,11 @@
       "date": "2026-11-25",
       "change": "dry-run-50 pool: 6 renamed candidates updated to their current names; 169 candidates added",
       "reason": "The first pool of 92 yielded 21 eligible (reverts/yr is the binding screen). A second pool gets the dry run toward 50 eligible. Dry-run reports are never published."
+    },
+    {
+      "date": "2026-11-28",
+      "change": "thresholds: add min_pr_number_in_subject_share 0.25 (selection 0.2.0)",
+      "reason": "The scanner finds a PR on the main line only by the PR number in the subject of the commit that landed it. zephyrproject-rtos/zephyr rebase-merges: the probe mapped every commit to a PR through GitHub, but the scan found 0 PRs. The new metric is the share of sampled PRs into the default branch whose landing commit carries their number: zephyr 0, duckdb 0.81, n8n 0.54, vllm 0.68, uv 0.85, nextcloud 1.0. n8n and vllm scanned the full 500 PRs, so the floor only catches near-zero visibility. Applies to probes from this version on."
     }
   ]
 }

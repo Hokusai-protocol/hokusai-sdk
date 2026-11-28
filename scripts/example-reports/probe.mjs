@@ -202,7 +202,7 @@ for (const candidate of targets) {
 const pct = (v) =>
   v === null || v === undefined ? '–' : `${Math.round(v * 100)}%`;
 const rows = [
-  '| repo | batch | role | PRs/yr | reverts/yr | convention | base=default | PR-mapped | agent | verdict |',
+  '| repo | batch | role | PRs/yr | reverts/yr | convention | base=default | PR-mapped | PR# in subject | agent | verdict |',
   '|---|---|---|---|---|---|---|---|---|---|',
 ];
 for (const c of manifest.candidates) {
@@ -210,16 +210,16 @@ for (const c of manifest.candidates) {
   if (!r) continue;
   if (r.error)
     rows.push(
-      `| ${r.repo} | ${r.batch} | ${r.role} | error: ${r.error.slice(0, 80)} |||||| ✗ |`,
+      `| ${r.repo} | ${r.batch} | ${r.role} | error: ${r.error.slice(0, 80)} ||||||| ✗ |`,
     );
   else if (!r.metrics)
     rows.push(
-      `| ${r.repo} | ${r.batch} | ${r.role} | | | | | | | ✗ ${r.reasons.join('; ')} |`,
+      `| ${r.repo} | ${r.batch} | ${r.role} | | | | | | | | ✗ ${r.reasons.join('; ')} |`,
     );
   else {
     const m = r.metrics;
     rows.push(
-      `| ${r.repo} | ${r.batch} | ${r.role} | ${m.merged_prs_per_year} | ${m.revert_prs_per_year} | ${r.observed_merge_convention} | ${pct(m.base_is_default_share)} | ${pct(m.pr_mapped_commit_share)} | ${pct(m.agent_share)} | ${r.eligible ? '✓' : `✗ ${r.reasons.join('; ')}`} |`,
+      `| ${r.repo} | ${r.batch} | ${r.role} | ${m.merged_prs_per_year} | ${m.revert_prs_per_year} | ${r.observed_merge_convention} | ${pct(m.base_is_default_share)} | ${pct(m.pr_mapped_commit_share)} | ${m.pr_number_in_subject_share == null ? '–' : pct(m.pr_number_in_subject_share)} | ${pct(m.agent_share)} | ${r.eligible ? '✓' : `✗ ${r.reasons.join('; ')}`} |`,
     );
   }
 }

@@ -17,12 +17,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { DEFAULT_REPORT_POLICY, applyReportSuppression } from '../report/suppression.js';
 import { repoKey, type TrainingExclusion } from './select.js';
 
-export const EXAMPLE_REVIEW_VERSION = '0.1.0';
+export const EXAMPLE_REVIEW_VERSION = '0.2.0';
 
 export type ReviewCheckCode =
   | 'schema_valid'
   | 'real_data'
   | 'repo_matches_candidate'
+  | 'prs_found'
   | 'not_training_repo'
   | 'retrospective_present'
   | 'out_of_sample_provenance'
@@ -186,6 +187,9 @@ export function reviewExampleReport(input: ExampleReviewInput): ExampleReviewRes
 
   add('real_data', r.data_origin === 'scan' && repoKey(r.repo.owner) !== 'hokusai-fixtures', r.data_origin === 'scan' ? undefined : `data_origin ${r.data_origin}`);
   add('repo_matches_candidate', repoKey(repo) === repoKey(input.expectedRepo), repoKey(repo) === repoKey(input.expectedRepo) ? undefined : `payload is ${repo}`);
+  // An empty or near-empty scan is not a report: it happens when the repo's commit subjects carry no PR numbers (rebase merges).
+  const found = r.coverage.prs_enumerated;
+  add('prs_found', found >= DEFAULT_REPORT_POLICY.min_cell_n, found >= DEFAULT_REPORT_POLICY.min_cell_n ? undefined : `scan found ${found} PRs (< ${DEFAULT_REPORT_POLICY.min_cell_n}); do the repo's commit subjects carry PR numbers?`);
 
   const inCorpus = input.exclusion.has(repo);
   const claimsTraining = r.model_provenance?.repo_in_training_set === true;

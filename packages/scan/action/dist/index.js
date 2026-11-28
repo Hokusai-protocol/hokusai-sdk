@@ -16957,6 +16957,8 @@ function parseExampleManifest(value, minReworked) {
     if (!Number.isFinite(t[key]) || t[key] < 0) fail2(`thresholds.${key} must be a number \u2265 0`);
   for (const key of ["min_base_is_default_share", "min_pr_mapped_commit_share", "min_agent_share"])
     if (!Number.isFinite(t[key]) || t[key] < 0 || t[key] > 1) fail2(`thresholds.${key} must be in [0, 1]`);
+  if (t.min_pr_number_in_subject_share !== void 0 && (!Number.isFinite(t.min_pr_number_in_subject_share) || t.min_pr_number_in_subject_share < 0 || t.min_pr_number_in_subject_share > 1))
+    fail2("thresholds.min_pr_number_in_subject_share must be in [0, 1]");
   if (t.min_revert_prs_per_year < minReworked)
     fail2(`thresholds.min_revert_prs_per_year ${t.min_revert_prs_per_year} is below the report's retrospective floor ${minReworked}`);
   if (!Array.isArray(t.supported_conventions) || t.supported_conventions.length === 0) fail2("thresholds.supported_conventions missing");
@@ -16997,7 +16999,7 @@ var TrainingExclusion = class {
 };
 
 // src/example-reports/review.ts
-var EXAMPLE_REVIEW_VERSION = "0.1.0";
+var EXAMPLE_REVIEW_VERSION = "0.2.0";
 var APPROVED_PHRASES = [/possible defect revert \(lower confidence\)/gi];
 var HARD_COPY_RULES = [
   {
@@ -17079,6 +17081,8 @@ function reviewExampleReport(input) {
   const repo = `${r.repo.owner}/${r.repo.name}`;
   add2("real_data", r.data_origin === "scan" && repoKey(r.repo.owner) !== "hokusai-fixtures", r.data_origin === "scan" ? void 0 : `data_origin ${r.data_origin}`);
   add2("repo_matches_candidate", repoKey(repo) === repoKey(input.expectedRepo), repoKey(repo) === repoKey(input.expectedRepo) ? void 0 : `payload is ${repo}`);
+  const found = r.coverage.prs_enumerated;
+  add2("prs_found", found >= DEFAULT_REPORT_POLICY.min_cell_n, found >= DEFAULT_REPORT_POLICY.min_cell_n ? void 0 : `scan found ${found} PRs (< ${DEFAULT_REPORT_POLICY.min_cell_n}); do the repo's commit subjects carry PR numbers?`);
   const inCorpus = input.exclusion.has(repo);
   const claimsTraining = r.model_provenance?.repo_in_training_set === true;
   add2("not_training_repo", !inCorpus && !claimsTraining, inCorpus ? "in_training_or_holdout" : claimsTraining ? "model_provenance.repo_in_training_set is true" : void 0);
