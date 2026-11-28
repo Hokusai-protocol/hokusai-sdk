@@ -3,9 +3,9 @@ var __getOwnPropNames = Object.getOwnPropertyNames;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
-var __export = (target, all) => {
+var __export = (target2, all) => {
   for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
+    __defProp(target2, name, { get: all[name], enumerable: true });
 };
 
 // ../costs/src/sources/types.ts
@@ -316,13 +316,13 @@ function redact(input, config) {
   };
 }
 function preview(input, config) {
-  const result = redact(input, config);
+  const result2 = redact(input, config);
   return {
-    mode: result.mode,
-    willSend: result.output,
-    redactionSummary: aggregateSummary(result.redactions),
-    hasRawCode: detectPattern(result.output, CODE_PATTERNS),
-    hasRawLogs: detectPattern(result.output, LOG_PATTERNS)
+    mode: result2.mode,
+    willSend: result2.output,
+    redactionSummary: aggregateSummary(result2.redactions),
+    hasRawCode: detectPattern(result2.output, CODE_PATTERNS),
+    hasRawLogs: detectPattern(result2.output, LOG_PATTERNS)
   };
 }
 function sortKeys(payload) {
@@ -1686,11 +1686,11 @@ function assertNoRawPayloadFields(record, path5 = "") {
     assertNoRawPayloadFields(value, fieldPath);
   }
 }
-function pruneByRetention(records, now, policy) {
-  const minCreatedAt = policy.maxAgeMs === void 0 ? void 0 : now - policy.maxAgeMs;
+function pruneByRetention(records, now, policy2) {
+  const minCreatedAt = policy2.maxAgeMs === void 0 ? void 0 : now - policy2.maxAgeMs;
   let kept = minCreatedAt === void 0 ? [...records] : records.filter((record) => record.createdAt >= minCreatedAt);
-  if (policy.maxRecords !== void 0 && kept.length > policy.maxRecords) {
-    kept = kept.sort((left, right) => left.createdAt - right.createdAt).slice(-policy.maxRecords);
+  if (policy2.maxRecords !== void 0 && kept.length > policy2.maxRecords) {
+    kept = kept.sort((left, right) => left.createdAt - right.createdAt).slice(-policy2.maxRecords);
   }
   return kept;
 }
@@ -1796,26 +1796,26 @@ var FsLocalStore = class {
   deleteConfigRecord(id2) {
     return removeFile(this.#configFilePath(id2));
   }
-  async pruneExpired(now, policy) {
+  async pruneExpired(now, policy2) {
     const correlations = await this.listCorrelations();
     await this.#rewriteRecords(
       this.#correlationsDir(),
       correlations,
-      pruneByRetention(correlations, now, policy),
+      pruneByRetention(correlations, now, policy2),
       (record) => this.#correlationFilePath(record.correlationId)
     );
     const payloadHashes = await this.listPayloadHashes();
     await this.#rewriteRecords(
       this.#hashesDir(),
       payloadHashes,
-      pruneByRetention(payloadHashes, now, policy),
+      pruneByRetention(payloadHashes, now, policy2),
       (record) => this.#payloadHashFilePath(record.hash)
     );
     const auditEntries = await this.listAudit();
     const keptAuditEntries = pruneByRetention(
       auditEntries.map((entry2) => ({ ...entry2, createdAt: entry2.timestamp })),
       now,
-      policy
+      policy2
     ).map((entry2) => ({
       id: entry2.id,
       kind: entry2.kind,
@@ -3004,20 +3004,20 @@ async function parseErrorResponse(response) {
   }
   try {
     const parsed = JSON.parse(rawBody);
-    const result = { retryAfter };
+    const result2 = { retryAfter };
     if (typeof parsed.message === "string" && parsed.message.trim().length > 0) {
-      result.message = parsed.message;
+      result2.message = parsed.message;
     } else if (typeof parsed.error === "string" && parsed.error.trim().length > 0) {
-      result.message = parsed.error;
+      result2.message = parsed.error;
     }
     if (typeof parsed.code === "string" && parsed.code.trim().length > 0) {
-      result.code = parsed.code;
+      result2.code = parsed.code;
     }
     const fieldErrors = parseApiFieldErrors(parsed.fieldErrors);
     if (fieldErrors !== void 0) {
-      result.fieldErrors = fieldErrors;
+      result2.fieldErrors = fieldErrors;
     }
-    return result;
+    return result2;
   } catch {
     return {
       message: rawBody.trim(),
@@ -3742,12 +3742,12 @@ function resolveRetentionPolicy(env = process.env) {
   return resolveRetentionPolicyWithWarnings(env).policy;
 }
 async function pruneStoreForPrivacy(store, env, clock) {
-  const { policy, warnings } = resolveRetentionPolicyWithWarnings(env);
+  const { policy: policy2, warnings } = resolveRetentionPolicyWithWarnings(env);
   if (warnings.length > 0) {
     process.stderr.write(`${warnings.join("\n")}
 `);
   }
-  await store.pruneExpired((clock ?? (() => /* @__PURE__ */ new Date()))().getTime(), policy);
+  await store.pruneExpired((clock ?? (() => /* @__PURE__ */ new Date()))().getTime(), policy2);
   return warnings.length === 0 ? {} : { warnings };
 }
 function maybeWarnings(warnings) {
@@ -5408,14 +5408,14 @@ function buildTaskPacket(context) {
       candidate[field] = value;
     }
   }
-  const result = validateTaskPacket(candidate);
-  if (!result.ok) {
+  const result2 = validateTaskPacket(candidate);
+  if (!result2.ok) {
     throw new TaskPacketBuildError(
-      formatBuildErrorMessage2(result.errors),
-      result.errors
+      formatBuildErrorMessage2(result2.errors),
+      result2.errors
     );
   }
-  return result.packet;
+  return result2.packet;
 }
 function validateLiteralString2(value, path5, expected, errors) {
   if (typeof value !== "string" || value.length === 0) {
@@ -6134,11 +6134,11 @@ function finalizeCandidateFeaturesV1(...projections) {
       candidate[name] = value;
     }
   }
-  const result = validateCandidateFeaturesV1(candidate);
-  if (!result.ok) {
-    throw new CandidateFeaturesBuildError(result.errors);
+  const result2 = validateCandidateFeaturesV1(candidate);
+  if (!result2.ok) {
+    throw new CandidateFeaturesBuildError(result2.errors);
   }
-  return result.value;
+  return result2.value;
 }
 function candidateFeatureValueJsonSchema(name, nullable2 = true) {
   return definitionJsonSchema(CANDIDATE_FEATURE_DEFINITIONS[name], nullable2);
@@ -8095,6 +8095,192 @@ var ARBITER_REPORT_V1_JSON_SCHEMA = Object.freeze({
   }),
   $defs: { candidateFeatures: featureSchema }
 });
+var reportSchemaKit = Object.freeze({
+  str,
+  en,
+  num,
+  int,
+  nullable,
+  arr,
+  obj,
+  ref,
+  id,
+  modelId,
+  timestamp,
+  date,
+  semver,
+  reasons,
+  basis,
+  cell,
+  horizon
+});
+
+// ../core/src/arbiter-report-v2.ts
+var ARBITER_REPORT_V2_SCHEMA_VERSION = "arbiter_report/v2";
+var RETROSPECTIVE_TARGETS = Object.freeze(
+  Object.keys(CORRECTIVE_REWORK_DEFINITIONS)
+);
+var RETROSPECTIVE_SEGMENTS = ["all", "agent_attributed"];
+var RETROSPECTIVE_CALIBRATION_KINDS = [
+  "portable",
+  "repo_calibrated"
+];
+var PREDICTION_EXCLUSION_REASONS = [
+  "merged_before_split",
+  "in_calibration_rows",
+  "dependency_bot"
+];
+var PREDICTION_NOT_SCORED_REASONS = [
+  "missing_merge_time_inputs",
+  "unsupported_input"
+];
+var TARGET_NOT_EVALUABLE_REASONS = [
+  "horizon_not_mature",
+  "label_missing"
+];
+var RETROSPECTIVE_UNAVAILABLE_REASONS = [
+  "no_artifact",
+  "artifact_unverified",
+  "provenance_invalid",
+  "target_not_supported",
+  "local_calibration_undefined",
+  "below_min_local_labels",
+  "class_requirements_unmet"
+];
+var sha256 = reportSchemaKit.str("^[0-9a-f]{64}$");
+var counted = (values) => reportSchemaKit.arr(reportSchemaKit.obj({ reason: reportSchemaKit.en(values), count: reportSchemaKit.int(1) }));
+var horizon2 = reportSchemaKit.horizon;
+var target = reportSchemaKit.en(RETROSPECTIVE_TARGETS);
+var v1 = structuredClone(
+  ARBITER_REPORT_V1_JSON_SCHEMA
+);
+var v1Pr = v1.properties.prs.items;
+var v1Policy = v1.properties.policy;
+var without = (props, drop) => Object.fromEntries(
+  Object.entries(props).filter(([key]) => !drop.includes(key))
+);
+var prProps = without(v1Pr.properties, ["prediction"]);
+var prRow = reportSchemaKit.obj({
+  ...prProps,
+  agent_at_merge: reportSchemaKit.en(["agent", "not_agent_signal", "unknown"]),
+  targets: reportSchemaKit.arr(
+    reportSchemaKit.obj({
+      target,
+      horizon_days: horizon2,
+      status: reportSchemaKit.en(["mature", "immature", "missing"]),
+      positive: reportSchemaKit.nullable({ type: "boolean" })
+    }),
+    RETROSPECTIVE_TARGETS.length * 3
+  ),
+  predictions: reportSchemaKit.arr(
+    reportSchemaKit.obj({
+      calibration_ref: reportSchemaKit.id,
+      status: reportSchemaKit.en(["scored", "not_scored", "excluded"]),
+      reason: reportSchemaKit.nullable(
+        reportSchemaKit.en([
+          ...PREDICTION_EXCLUSION_REASONS,
+          ...PREDICTION_NOT_SCORED_REASONS
+        ])
+      ),
+      score: reportSchemaKit.nullable(reportSchemaKit.num(0, 1)),
+      flagged: reportSchemaKit.nullable({ type: "boolean" })
+    }),
+    16
+  )
+});
+var policy = reportSchemaKit.obj({
+  ...v1Policy.properties,
+  min_local_calibration_labels: reportSchemaKit.nullable(reportSchemaKit.int(1))
+});
+var unavailable = reportSchemaKit.arr(reportSchemaKit.en(RETROSPECTIVE_UNAVAILABLE_REASONS));
+var head = reportSchemaKit.obj({
+  head_ref: reportSchemaKit.id,
+  head_id: reportSchemaKit.id,
+  head_version: reportSchemaKit.semver,
+  artifact_sha256: sha256,
+  artifact_format: reportSchemaKit.id,
+  feature_contract: reportSchemaKit.obj({ id: reportSchemaKit.id, version: reportSchemaKit.semver }),
+  target,
+  horizon_days: horizon2,
+  score_direction: { const: "higher_is_riskier" },
+  training: reportSchemaKit.obj({
+    corpus_id: reportSchemaKit.id,
+    dataset_version: reportSchemaKit.semver,
+    repo_count: reportSchemaKit.int(1),
+    repo_membership: reportSchemaKit.en(["excluded", "included"]),
+    split: reportSchemaKit.en(["leave_repo_out", "time_split"]),
+    split_manifest_sha256: sha256,
+    rows_merged_before: reportSchemaKit.timestamp,
+    labels_observed_by: reportSchemaKit.timestamp
+  }),
+  trained_at: reportSchemaKit.timestamp
+});
+var calibration = reportSchemaKit.obj({
+  calibration_ref: reportSchemaKit.id,
+  head_ref: reportSchemaKit.id,
+  kind: reportSchemaKit.en(RETROSPECTIVE_CALIBRATION_KINDS),
+  version: reportSchemaKit.nullable(reportSchemaKit.semver),
+  status: reportSchemaKit.en(["available", "unavailable"]),
+  unavailable_reasons: unavailable,
+  threshold: reportSchemaKit.nullable(
+    reportSchemaKit.obj({ value: reportSchemaKit.num(0, 1), comparison: { const: "gte" } })
+  ),
+  fit: reportSchemaKit.nullable(
+    reportSchemaKit.obj({
+      method: reportSchemaKit.id,
+      rows_merged_before: reportSchemaKit.timestamp,
+      labels_observed_by: reportSchemaKit.timestamp,
+      n_rows: reportSchemaKit.int(),
+      n_positive: reportSchemaKit.int()
+    })
+  )
+});
+var result = reportSchemaKit.obj({
+  target,
+  horizon_days: horizon2,
+  calibration_ref: reportSchemaKit.id,
+  segment: reportSchemaKit.en(RETROSPECTIVE_SEGMENTS),
+  basis: { const: "out_of_sample_prediction" },
+  status: reportSchemaKit.en(["shown", "suppressed"]),
+  suppression_reasons: reportSchemaKit.reasons,
+  counts: reportSchemaKit.obj({
+    eligible: reportSchemaKit.int(),
+    scored: reportSchemaKit.int(),
+    evaluable: reportSchemaKit.int(),
+    flagged: reportSchemaKit.int(),
+    positive: reportSchemaKit.int(),
+    tp: reportSchemaKit.int(),
+    fp: reportSchemaKit.int(),
+    fn: reportSchemaKit.int(),
+    tn: reportSchemaKit.int()
+  }),
+  excluded: counted(PREDICTION_EXCLUSION_REASONS),
+  not_scored: counted(PREDICTION_NOT_SCORED_REASONS),
+  not_evaluable: counted(TARGET_NOT_EVALUABLE_REASONS),
+  precision: reportSchemaKit.cell,
+  recall: reportSchemaKit.cell,
+  flag_rate: reportSchemaKit.cell
+});
+var keptProps = without(v1.properties, ["retrospective", "model_provenance"]);
+var ARBITER_REPORT_V2_JSON_SCHEMA = Object.freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.hokus.ai/arbiter_report/v2.json",
+  title: "Hokusai arbiter_report/v2 (proposed)",
+  ...reportSchemaKit.obj({
+    ...keptProps,
+    schema_version: { const: ARBITER_REPORT_V2_SCHEMA_VERSION },
+    policy,
+    prs: reportSchemaKit.arr(prRow, 2e4),
+    retrospective: reportSchemaKit.obj({
+      status: reportSchemaKit.en(["available", "unavailable"]),
+      unavailable_reasons: unavailable,
+      heads: reportSchemaKit.arr(head, 4),
+      calibrations: reportSchemaKit.arr(calibration, 8),
+      results: reportSchemaKit.arr(result, 64)
+    })
+  }),
+  $defs: v1.$defs
+});
 
 // ../core/src/task-descriptor-schema.ts
 var HOKUSAI_TASK_DESCRIPTOR_V1_JSON_SCHEMA = Object.freeze({
@@ -9704,8 +9890,8 @@ function resolveReplays(events17) {
     }
   }
   const resolvedDecisions = decisions.map((decision2, index) => {
-    const target = events17[index]?.replay_of_event_id;
-    return decision2 === "supersede_prior" && (target === void 0 || !firstById.has(target)) ? "accept_first" : decision2;
+    const target2 = events17[index]?.replay_of_event_id;
+    return decision2 === "supersede_prior" && (target2 === void 0 || !firstById.has(target2)) ? "accept_first" : decision2;
   });
   return {
     contributing: [...firstById.values()].filter(
@@ -9756,14 +9942,14 @@ function reconcileCumulative(events17) {
       }
       const usage = emptyTokenUsage();
       for (const field of TASK_COST_TOKEN_FIELDS) {
-        const result = differenceField(
+        const result2 = differenceField(
           event17.usage[field],
           baseline.usage[field],
           markBackward,
           (value) => value
         );
-        usage[field] = result.delta;
-        baseline.usage[field] = result.baseline;
+        usage[field] = result2.delta;
+        baseline.usage[field] = result2.baseline;
       }
       const actual = differenceField(
         event17.actual_cost_usd,
@@ -16161,7 +16347,7 @@ function createRunCli(profile17, impls) {
           CLI_EXIT_CODES.UNKNOWN_ERROR
         );
       }
-      const result2 = await declineRecommendationImpl(
+      const result3 = await declineRecommendationImpl(
         {
           correlationId: parsed.correlationId.trim(),
           ...parsed.reason?.trim() ? { reason: parsed.reason.trim() } : {}
@@ -16171,10 +16357,10 @@ function createRunCli(profile17, impls) {
           ...parsed.configPath ? { configPath: parsed.configPath } : {}
         }
       );
-      if (!result2.ok) {
-        return toMessage(parsed, result2.error.message, CLI_EXIT_CODES.UNKNOWN_ERROR);
+      if (!result3.ok) {
+        return toMessage(parsed, result3.error.message, CLI_EXIT_CODES.UNKNOWN_ERROR);
       }
-      const body = parsed.json ? JSON.stringify(result2.value, null, 2) : `Declined recommendation for correlation ${result2.value.correlationId}.
+      const body = parsed.json ? JSON.stringify(result3.value, null, 2) : `Declined recommendation for correlation ${result3.value.correlationId}.
 `;
       return {
         exitCode: CLI_EXIT_CODES.OK,
@@ -16212,7 +16398,7 @@ function createRunCli(profile17, impls) {
         ...parsed.maxCostUsd !== void 0 ? { max_cost_usd: String(parsed.maxCostUsd) } : {}
       }
     };
-    const result = await routeTaskImpl(routeInputWithObjective, {
+    const result2 = await routeTaskImpl(routeInputWithObjective, {
       apiClient: client,
       registry,
       settings: {
@@ -16221,26 +16407,26 @@ function createRunCli(profile17, impls) {
       },
       ...parsed.configPath ? { configPath: parsed.configPath } : {}
     });
-    if (!result.ok) {
-      if (result.error.code === "NETWORK_ERROR") {
+    if (!result2.ok) {
+      if (result2.error.code === "NETWORK_ERROR") {
         return toMessage(
           parsed,
           `Could not reach Hokusai (${config.apiBaseUrl}). Check connectivity and retry. Use /hokusai:doctor for details.`,
           CLI_EXIT_CODES.NETWORK_ERROR
         );
       }
-      if (result.error.code === "PROVIDER_NOT_ALLOWED" || result.error.code === "MODEL_NOT_ALLOWED" || result.error.code === "MODEL_UNAVAILABLE" || result.error.code === "UNKNOWN_MODEL") {
-        const suggestions = Array.isArray(result.error.details?.suggestions) ? result.error.details.suggestions.join(", ") : "none available";
-        const recommendedModel = extractModelId(result.error.message);
+      if (result2.error.code === "PROVIDER_NOT_ALLOWED" || result2.error.code === "MODEL_NOT_ALLOWED" || result2.error.code === "MODEL_UNAVAILABLE" || result2.error.code === "UNKNOWN_MODEL") {
+        const suggestions = Array.isArray(result2.error.details?.suggestions) ? result2.error.details.suggestions.join(", ") : "none available";
+        const recommendedModel = extractModelId(result2.error.message);
         return toMessage(
           parsed,
           `Hokusai recommended a model not available in ${profile17.harnessLabel} (${recommendedModel}). Suggested fallbacks: ${suggestions}.`,
           CLI_EXIT_CODES.UNSUPPORTED_MODEL
         );
       }
-      return toMessage(parsed, result.error.message, CLI_EXIT_CODES.UNKNOWN_ERROR);
+      return toMessage(parsed, result2.error.message, CLI_EXIT_CODES.UNKNOWN_ERROR);
     }
-    const recommendation = result.value.recommendation;
+    const recommendation = result2.value.recommendation;
     if (parsed.json) {
       return {
         exitCode: CLI_EXIT_CODES.OK,
@@ -16258,11 +16444,11 @@ function createRunCli(profile17, impls) {
                 ...alternative.confidence === void 0 ? {} : { confidence: alternative.confidence }
               }))
             } : {},
-            correlationId: result.value.correlationId,
-            routingDecisionId: result.value.routingDecisionId,
-            handoff: result.value.handoff,
-            ...result.value.route?.requestId ? { requestId: result.value.route.requestId } : {},
-            ...result.value.route?.routeId ? { routeId: result.value.route.routeId } : {}
+            correlationId: result2.value.correlationId,
+            routingDecisionId: result2.value.routingDecisionId,
+            handoff: result2.value.handoff,
+            ...result2.value.route?.requestId ? { requestId: result2.value.route.requestId } : {},
+            ...result2.value.route?.routeId ? { routeId: result2.value.route.routeId } : {}
           },
           null,
           2
@@ -16273,11 +16459,11 @@ function createRunCli(profile17, impls) {
     }
     const display = displayTaskRecommendation(recommendation);
     const lines = [...display.lines];
-    lines.push(`Correlation ID: ${result.value.correlationId}`);
+    lines.push(`Correlation ID: ${result2.value.correlationId}`);
     lines.push("");
-    lines.push(...profile17.renderHandoff(result.value.handoff));
-    if (result.value.route?.requestId) {
-      lines.push(`Request ID: ${result.value.route.requestId}`);
+    lines.push(...profile17.renderHandoff(result2.value.handoff));
+    if (result2.value.route?.requestId) {
+      lines.push(`Request ID: ${result2.value.route.requestId}`);
     }
     return {
       exitCode: CLI_EXIT_CODES.OK,
@@ -16469,20 +16655,20 @@ async function defaultReadStdin() {
   }
   return chunks.join("");
 }
-function buildHumanSendLines(result) {
+function buildHumanSendLines(result2) {
   const lines = [
     "Outcome report submitted.",
-    `Correlation id: ${result.report.correlationId}`,
-    `Completion status: ${result.report.completionStatus}`
+    `Correlation id: ${result2.report.correlationId}`,
+    `Completion status: ${result2.report.completionStatus}`
   ];
-  if (result.response?.status) {
-    lines.push(`Server status: ${result.response.status}`);
+  if (result2.response?.status) {
+    lines.push(`Server status: ${result2.response.status}`);
   }
   return lines;
 }
-function renderSuccess(parsed, result, stderrNotes) {
-  const preview2 = "preview" in result ? result.preview : { lines: [], payload: result.report };
-  const isSubmitted = !("preview" in result) && result.submitted;
+function renderSuccess(parsed, result2, stderrNotes) {
+  const preview2 = "preview" in result2 ? result2.preview : { lines: [], payload: result2.report };
+  const isSubmitted = !("preview" in result2) && result2.submitted;
   const mode = isSubmitted ? "submitted" : "preview";
   if (parsed.json) {
     return {
@@ -16491,9 +16677,9 @@ function renderSuccess(parsed, result, stderrNotes) {
         {
           mode,
           submitted: isSubmitted,
-          report: result.report,
+          report: result2.report,
           preview: preview2,
-          ...!("preview" in result) && result.response ? { response: result.response } : {}
+          ...!("preview" in result2) && result2.response ? { response: result2.response } : {}
         },
         null,
         2
@@ -16503,7 +16689,7 @@ function renderSuccess(parsed, result, stderrNotes) {
 ` : ""
     };
   }
-  const lines = "preview" in result ? [...result.preview.lines] : [...buildHumanSendLines(result)];
+  const lines = "preview" in result2 ? [...result2.preview.lines] : [...buildHumanSendLines(result2)];
   if (!parsed.send) {
     lines.push(
       parsed.dryRun ? "Dry run: no outcome was submitted." : "Preview only. Re-run with --send to submit this report."
@@ -16701,7 +16887,7 @@ function createRunReportCli(profile17, impls) {
       ...parsed.wallClockSeconds !== void 0 ? { wallClockSeconds: parsed.wallClockSeconds } : {}
     };
     try {
-      const result = parsed.send ? await reportTaskOutcomeImpl(reportInput, {
+      const result2 = parsed.send ? await reportTaskOutcomeImpl(reportInput, {
         apiClient: deps.createClient?.(config) ?? new HokusaiClient({
           apiKey: config.apiKey,
           baseUrl: config.apiBaseUrl
@@ -16713,11 +16899,11 @@ function createRunReportCli(profile17, impls) {
         dryRun: parsed.dryRun,
         ...parsed.configPath ? { configPath: parsed.configPath } : {}
       });
-      if (!result.ok) {
-        const code = result.error.code === "OUTCOME_VALIDATION_FAILED" || result.error.code === "CONTRIBUTION_UNAVAILABLE" || result.error.code === "CONTRIBUTION_VALIDATION_FAILED" ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR : result.error.code === "NETWORK_ERROR" ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
-        return toMessage2(parsed, result.error.message, code, result.error.details);
+      if (!result2.ok) {
+        const code = result2.error.code === "OUTCOME_VALIDATION_FAILED" || result2.error.code === "CONTRIBUTION_UNAVAILABLE" || result2.error.code === "CONTRIBUTION_VALIDATION_FAILED" ? REPORT_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR : result2.error.code === "NETWORK_ERROR" ? REPORT_CLI_EXIT_CODES.NETWORK_ERROR : REPORT_CLI_EXIT_CODES.UNKNOWN_ERROR;
+        return toMessage2(parsed, result2.error.message, code, result2.error.details);
       }
-      return renderSuccess(parsed, result.value, stderrNotes);
+      return renderSuccess(parsed, result2.value, stderrNotes);
     } catch (error) {
       if (error instanceof HokusaiNetworkError) {
         return toMessage2(
@@ -17005,39 +17191,39 @@ function createRunPrivacyCli(_profile, impls) {
       );
     }
     if (parsed.subcommand === "list") {
-      const result = await impls.listRoutingDecisions(
+      const result2 = await impls.listRoutingDecisions(
         { ...parsed.limit !== void 0 ? { limit: parsed.limit } : {} },
         {
           ...parsed.configPath ? { configPath: parsed.configPath } : {},
           env
         }
       );
-      if (!result.ok) {
-        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+      if (!result2.ok) {
+        return fail3(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
-      if (result.value.decisions.length === 0) {
+      if (result2.value.decisions.length === 0) {
         return ok2(
-          `${renderWarnings(result.value.warnings)}No records found.
+          `${renderWarnings(result2.value.warnings)}No records found.
 `,
           parsed.json,
           {
             subcommand: "list",
-            result: result.value.decisions,
-            ...result.value.warnings ? { warnings: result.value.warnings } : {}
+            result: result2.value.decisions,
+            ...result2.value.warnings ? { warnings: result2.value.warnings } : {}
           }
         );
       }
-      const lines = result.value.decisions.map(
+      const lines = result2.value.decisions.map(
         (entry2) => `${entry2.createdAt} ${entry2.correlationId} ${entry2.recommendedModelId ?? "unknown-model"} ${entry2.status ?? "unknown-status"}`
       );
       return ok2(
-        `${renderWarnings(result.value.warnings)}${lines.join("\n")}
+        `${renderWarnings(result2.value.warnings)}${lines.join("\n")}
 `,
         parsed.json,
         {
           subcommand: "list",
-          result: result.value.decisions,
-          ...result.value.warnings ? { warnings: result.value.warnings } : {}
+          result: result2.value.decisions,
+          ...result2.value.warnings ? { warnings: result2.value.warnings } : {}
         }
       );
     }
@@ -17049,65 +17235,65 @@ function createRunPrivacyCli(_profile, impls) {
           parsed.json
         );
       }
-      const result = await impls.previewStoredDecision(
+      const result2 = await impls.previewStoredDecision(
         { correlationId: parsed.correlationId, debug: parsed.debug },
         {
           ...parsed.configPath ? { configPath: parsed.configPath } : {},
           env
         }
       );
-      if (!result.ok) {
+      if (!result2.ok) {
         return fail3(
-          result.error.message,
+          result2.error.message,
           PRIVACY_CLI_EXIT_CODES.OUTCOME_VALIDATION_ERROR,
           parsed.json
         );
       }
       return ok2(
-        `${renderWarnings(result.value.warnings)}${JSON.stringify(result.value, null, 2)}
+        `${renderWarnings(result2.value.warnings)}${JSON.stringify(result2.value, null, 2)}
 `,
         parsed.json,
         {
           subcommand: "preview",
-          result: result.value,
-          ...result.value.warnings ? { warnings: result.value.warnings } : {}
+          result: result2.value,
+          ...result2.value.warnings ? { warnings: result2.value.warnings } : {}
         }
       );
     }
     if (parsed.subcommand === "audit") {
-      const result = await impls.listSubmissionAudit(
+      const result2 = await impls.listSubmissionAudit(
         { ...parsed.limit !== void 0 ? { limit: parsed.limit } : {} },
         {
           ...parsed.configPath ? { configPath: parsed.configPath } : {},
           env
         }
       );
-      if (!result.ok) {
-        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+      if (!result2.ok) {
+        return fail3(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
-      if (result.value.entries.length === 0) {
+      if (result2.value.entries.length === 0) {
         return ok2(
-          `${renderWarnings(result.value.warnings)}No audit entries found.
+          `${renderWarnings(result2.value.warnings)}No audit entries found.
 `,
           parsed.json,
           {
             subcommand: "audit",
-            result: result.value.entries,
-            ...result.value.warnings ? { warnings: result.value.warnings } : {}
+            result: result2.value.entries,
+            ...result2.value.warnings ? { warnings: result2.value.warnings } : {}
           }
         );
       }
-      const lines = result.value.entries.map(
+      const lines = result2.value.entries.map(
         (entry2) => `${new Date(entry2.timestamp).toISOString()} ${entry2.kind} ${entry2.status} ${entry2.correlationId}${entry2.error ? ` ${entry2.error}` : ""}`
       );
       return ok2(
-        `${renderWarnings(result.value.warnings)}${lines.join("\n")}
+        `${renderWarnings(result2.value.warnings)}${lines.join("\n")}
 `,
         parsed.json,
         {
           subcommand: "audit",
-          result: result.value.entries,
-          ...result.value.warnings ? { warnings: result.value.warnings } : {}
+          result: result2.value.entries,
+          ...result2.value.warnings ? { warnings: result2.value.warnings } : {}
         }
       );
     }
@@ -17126,20 +17312,20 @@ function createRunPrivacyCli(_profile, impls) {
           parsed.json
         );
       }
-      const result = await impls.clearPrivacyState(
+      const result2 = await impls.clearPrivacyState(
         { scope: parsed.scope },
         {
           ...parsed.configPath ? { configPath: parsed.configPath } : {},
           env
         }
       );
-      if (!result.ok) {
-        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+      if (!result2.ok) {
+        return fail3(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
       return ok2(`Cleared ${parsed.scope} privacy state.
 `, parsed.json, {
         subcommand: "clear",
-        result: result.value
+        result: result2.value
       });
     }
     if (parsed.subcommand === "reporting") {
@@ -17151,35 +17337,35 @@ function createRunPrivacyCli(_profile, impls) {
         );
       }
       if (parsed.action === "status") {
-        const result2 = await impls.getReportingStatus({
+        const result3 = await impls.getReportingStatus({
           ...parsed.configPath ? { configPath: parsed.configPath } : {},
           env
         });
-        if (!result2.ok) {
-          return fail3(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+        if (!result3.ok) {
+          return fail3(result3.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
         }
         return ok2(
-          `Outcome reporting is ${result2.value.enabled ? "enabled" : "disabled"} (${result2.value.source}).
+          `Outcome reporting is ${result3.value.enabled ? "enabled" : "disabled"} (${result3.value.source}).
 `,
           parsed.json,
-          { subcommand: "reporting", result: result2.value }
+          { subcommand: "reporting", result: result3.value }
         );
       }
-      const result = await impls.setReportingEnabled(
+      const result2 = await impls.setReportingEnabled(
         { enabled: parsed.action === "on" },
         {
           ...parsed.configPath ? { configPath: parsed.configPath } : {},
           env
         }
       );
-      if (!result.ok) {
-        return fail3(result.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
+      if (!result2.ok) {
+        return fail3(result2.error.message, PRIVACY_CLI_EXIT_CODES.UNKNOWN_ERROR, parsed.json);
       }
       return ok2(
-        `Outcome reporting ${result.value.enabled ? "enabled" : "disabled"}.
+        `Outcome reporting ${result2.value.enabled ? "enabled" : "disabled"}.
 `,
         parsed.json,
-        { subcommand: "reporting", result: result.value }
+        { subcommand: "reporting", result: result2.value }
       );
     }
     if (parsed.subcommand === "debug") {
@@ -17476,9 +17662,9 @@ function redactStringArray(entries, config) {
     if (typeof entry2 !== "string" || entry2.trim().length === 0) {
       continue;
     }
-    const result = redact(entry2, config);
-    output.push(result.output);
-    redactions.push(...result.redactions);
+    const result2 = redact(entry2, config);
+    output.push(result2.output);
+    redactions.push(...result2.redactions);
   }
   return {
     output: output.length > 0 ? output : void 0,
@@ -18715,12 +18901,12 @@ async function collectSessionFiles(taskId, options, defaultWindow) {
     mergeDiagnostics2(diagnostics, read.diagnostics);
   }
   const extract = options.harness === "claude-code" ? extractClaudeCodeUsage : extractCodexUsage;
-  const result = extract({
+  const result2 = extract({
     boundary,
     files
   });
-  mergeDiagnostics2(diagnostics, result.diagnostics);
-  return { inputs: result.inputs, diagnostics, fileCount: files.length };
+  mergeDiagnostics2(diagnostics, result2.diagnostics);
+  return { inputs: result2.inputs, diagnostics, fileCount: files.length };
 }
 function mergeDiagnostics2(into, from) {
   for (const [code, count] of Object.entries(from)) {
@@ -19179,19 +19365,19 @@ function createTrackerWithInternals(options = {}) {
       bumpDiagnostic("duplicate_event");
       return { status: "duplicate", eventId: eventId2 };
     }
-    const result = engineFor(harness, providerContract).ingest(input);
-    if (result.status === "accepted") {
-      acceptedEvents.push(result.event);
-      seenEventIds.add(result.event.event_id);
+    const result2 = engineFor(harness, providerContract).ingest(input);
+    if (result2.status === "accepted") {
+      acceptedEvents.push(result2.event);
+      seenEventIds.add(result2.event.event_id);
       captureKinds.add(kind);
-      return { status: "accepted", eventId: result.event.event_id };
+      return { status: "accepted", eventId: result2.event.event_id };
     }
-    if (result.status === "duplicate") {
+    if (result2.status === "duplicate") {
       bumpDiagnostic("duplicate_event");
-      return { status: "duplicate", eventId: result.eventId };
+      return { status: "duplicate", eventId: result2.eventId };
     }
     bumpDiagnostic("invalid_usage");
-    return { status: "rejected", reason: result.reason };
+    return { status: "rejected", reason: result2.reason };
   }
   function recordUsageVia(kind, record) {
     if (notAnObject(record)) {
@@ -19319,8 +19505,8 @@ function createTrackerWithInternals(options = {}) {
     const results = await ledger.appendMany(toLedgerEntries(pending));
     persistedCount += pending.length;
     let appended = 0;
-    for (const result of results) {
-      if (result.status === "appended") appended += 1;
+    for (const result2 of results) {
+      if (result2.status === "appended") appended += 1;
     }
     return { appended, duplicates: results.length - appended };
   }
@@ -19499,10 +19685,10 @@ async function measureTask(options, fn) {
   const listener = (payload) => dispatchPayload(internals, payload, options.mapEvent);
   let fnError;
   let fnThrew = false;
-  let result;
+  let result2;
   if (subscription !== null) subscription.add(eventName, listener);
   try {
-    result = await fn(tracker);
+    result2 = await fn(tracker);
   } catch (error) {
     fnThrew = true;
     fnError = error;
@@ -19547,7 +19733,7 @@ async function measureTask(options, fn) {
     attachTaskCost(fnError, cost);
     throw fnError;
   }
-  return { result, cost };
+  return { result: result2, cost };
 }
 
 // ../costs/src/ledger/ledger.ts

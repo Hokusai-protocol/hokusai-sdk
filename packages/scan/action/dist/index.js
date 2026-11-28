@@ -1080,11 +1080,11 @@ function finalizeCandidateFeaturesV1(...projections) {
       candidate[name] = value;
     }
   }
-  const result = validateCandidateFeaturesV1(candidate);
-  if (!result.ok) {
-    throw new CandidateFeaturesBuildError(result.errors);
+  const result2 = validateCandidateFeaturesV1(candidate);
+  if (!result2.ok) {
+    throw new CandidateFeaturesBuildError(result2.errors);
   }
-  return result.value;
+  return result2.value;
 }
 function candidateFeatureValueJsonSchema(name, nullable2 = true) {
   return definitionJsonSchema(CANDIDATE_FEATURE_DEFINITIONS[name], nullable2);
@@ -3183,6 +3183,25 @@ var ARBITER_REPORT_V1_JSON_SCHEMA = Object.freeze({
   }),
   $defs: { candidateFeatures: featureSchema }
 });
+var reportSchemaKit = Object.freeze({
+  str,
+  en,
+  num,
+  int,
+  nullable,
+  arr,
+  obj,
+  ref,
+  id,
+  modelId,
+  timestamp,
+  date,
+  semver,
+  reasons,
+  basis,
+  cell,
+  horizon
+});
 function structural(schema, value, path4, errors, root) {
   const fail2 = (code, message) => errors.push({ path: path4 || "$", code, message });
   if ("$ref" in schema) {
@@ -3267,11 +3286,9 @@ function structural(schema, value, path4, errors, root) {
   else if (schema.type === "null" && value !== null)
     fail2("invalid_type", "Expected null.");
 }
-function invariant(report) {
-  const errors = [];
-  const add2 = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
+function descriptiveInvariants(report, hasProvenance, add2) {
   if (report.scan.horizons_days.some(
-    (horizon2, index) => index > 0 && horizon2 <= report.scan.horizons_days[index - 1]
+    (horizon3, index) => index > 0 && horizon3 <= report.scan.horizons_days[index - 1]
   ))
     add2("horizons_not_ascending", "scan.horizons_days");
   const checkCell = (c, path4, basis2) => {
@@ -3283,12 +3300,12 @@ function invariant(report) {
       add2("ci_out_of_order", path4);
     if (basis2 && c.basis !== basis2)
       add2("descriptive_section_with_prediction_cell", path4);
-    if (c.basis === "out_of_sample_prediction" && !report.model_provenance)
+    if (c.basis === "out_of_sample_prediction" && !hasProvenance)
       add2("prediction_without_provenance", path4);
   };
   const sections = report.aggregates;
   for (const [name, s] of Object.entries(sections)) {
-    if (s.basis === "out_of_sample_prediction" && !report.model_provenance)
+    if (s.basis === "out_of_sample_prediction" && !hasProvenance)
       add2("prediction_without_provenance", `aggregates.${name}`);
     if (s.status === "suppressed" && !s.suppression_reasons.length)
       add2("section_status_mismatch", `aggregates.${name}`);
@@ -3335,8 +3352,6 @@ function invariant(report) {
   if (report.prs.length !== report.coverage.prs_enumerated || report.coverage.attribution.agent.identified_agent + report.coverage.attribution.agent.identified_human_signal + report.coverage.attribution.agent.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.harness.identified + report.coverage.attribution.harness.unknown !== report.coverage.prs_enumerated || report.coverage.attribution.exact_model.identified + report.coverage.attribution.exact_model.unknown !== report.coverage.prs_enumerated)
     add2("coverage_sum_mismatch", "coverage");
   report.prs.forEach((pr2, i) => {
-    if (pr2.prediction && !report.model_provenance)
-      add2("prediction_without_provenance", `prs[${i}].prediction`);
     if (pr2.labels.length !== report.scan.horizons_days.length || new Set(pr2.labels.map((l) => l.horizon_days)).size !== report.scan.horizons_days.length || pr2.labels.some((l) => !report.scan.horizons_days.includes(l.horizon_days)))
       add2("labels_horizon_mismatch", `prs[${i}].labels`);
     pr2.labels.forEach((l, j) => {
@@ -3348,6 +3363,20 @@ function invariant(report) {
           `prs[${i}].labels[${j}].outcome.report_outcome`
         );
     });
+  });
+  return { checkCell };
+}
+function invariant(report) {
+  const errors = [];
+  const add2 = (code, path4) => errors.push({ code: "invalid_value", path: path4, message: code });
+  const { checkCell } = descriptiveInvariants(
+    report,
+    report.model_provenance !== null,
+    add2
+  );
+  report.prs.forEach((pr2, i) => {
+    if (pr2.prediction && !report.model_provenance)
+      add2("prediction_without_provenance", `prs[${i}].prediction`);
   });
   if (report.retrospective) {
     if (!report.model_provenance)
@@ -3385,6 +3414,173 @@ function validateArbiterReportV1(input) {
     };
   }
 }
+
+// ../core/src/arbiter-report-v2.ts
+var ARBITER_REPORT_V2_SCHEMA_VERSION = "arbiter_report/v2";
+var RETROSPECTIVE_TARGETS = Object.freeze(
+  Object.keys(CORRECTIVE_REWORK_DEFINITIONS)
+);
+var RETROSPECTIVE_SEGMENTS = ["all", "agent_attributed"];
+var RETROSPECTIVE_CALIBRATION_KINDS = [
+  "portable",
+  "repo_calibrated"
+];
+var PREDICTION_EXCLUSION_REASONS = [
+  "merged_before_split",
+  "in_calibration_rows",
+  "dependency_bot"
+];
+var PREDICTION_NOT_SCORED_REASONS = [
+  "missing_merge_time_inputs",
+  "unsupported_input"
+];
+var TARGET_NOT_EVALUABLE_REASONS = [
+  "horizon_not_mature",
+  "label_missing"
+];
+var RETROSPECTIVE_UNAVAILABLE_REASONS = [
+  "no_artifact",
+  "artifact_unverified",
+  "provenance_invalid",
+  "target_not_supported",
+  "local_calibration_undefined",
+  "below_min_local_labels",
+  "class_requirements_unmet"
+];
+var sha256 = reportSchemaKit.str("^[0-9a-f]{64}$");
+var counted = (values) => reportSchemaKit.arr(reportSchemaKit.obj({ reason: reportSchemaKit.en(values), count: reportSchemaKit.int(1) }));
+var horizon2 = reportSchemaKit.horizon;
+var target = reportSchemaKit.en(RETROSPECTIVE_TARGETS);
+var v1 = structuredClone(
+  ARBITER_REPORT_V1_JSON_SCHEMA
+);
+var v1Pr = v1.properties.prs.items;
+var v1Policy = v1.properties.policy;
+var without = (props, drop) => Object.fromEntries(
+  Object.entries(props).filter(([key]) => !drop.includes(key))
+);
+var prProps = without(v1Pr.properties, ["prediction"]);
+var prRow = reportSchemaKit.obj({
+  ...prProps,
+  agent_at_merge: reportSchemaKit.en(["agent", "not_agent_signal", "unknown"]),
+  targets: reportSchemaKit.arr(
+    reportSchemaKit.obj({
+      target,
+      horizon_days: horizon2,
+      status: reportSchemaKit.en(["mature", "immature", "missing"]),
+      positive: reportSchemaKit.nullable({ type: "boolean" })
+    }),
+    RETROSPECTIVE_TARGETS.length * 3
+  ),
+  predictions: reportSchemaKit.arr(
+    reportSchemaKit.obj({
+      calibration_ref: reportSchemaKit.id,
+      status: reportSchemaKit.en(["scored", "not_scored", "excluded"]),
+      reason: reportSchemaKit.nullable(
+        reportSchemaKit.en([
+          ...PREDICTION_EXCLUSION_REASONS,
+          ...PREDICTION_NOT_SCORED_REASONS
+        ])
+      ),
+      score: reportSchemaKit.nullable(reportSchemaKit.num(0, 1)),
+      flagged: reportSchemaKit.nullable({ type: "boolean" })
+    }),
+    16
+  )
+});
+var policy = reportSchemaKit.obj({
+  ...v1Policy.properties,
+  min_local_calibration_labels: reportSchemaKit.nullable(reportSchemaKit.int(1))
+});
+var unavailable = reportSchemaKit.arr(reportSchemaKit.en(RETROSPECTIVE_UNAVAILABLE_REASONS));
+var head = reportSchemaKit.obj({
+  head_ref: reportSchemaKit.id,
+  head_id: reportSchemaKit.id,
+  head_version: reportSchemaKit.semver,
+  artifact_sha256: sha256,
+  artifact_format: reportSchemaKit.id,
+  feature_contract: reportSchemaKit.obj({ id: reportSchemaKit.id, version: reportSchemaKit.semver }),
+  target,
+  horizon_days: horizon2,
+  score_direction: { const: "higher_is_riskier" },
+  training: reportSchemaKit.obj({
+    corpus_id: reportSchemaKit.id,
+    dataset_version: reportSchemaKit.semver,
+    repo_count: reportSchemaKit.int(1),
+    repo_membership: reportSchemaKit.en(["excluded", "included"]),
+    split: reportSchemaKit.en(["leave_repo_out", "time_split"]),
+    split_manifest_sha256: sha256,
+    rows_merged_before: reportSchemaKit.timestamp,
+    labels_observed_by: reportSchemaKit.timestamp
+  }),
+  trained_at: reportSchemaKit.timestamp
+});
+var calibration = reportSchemaKit.obj({
+  calibration_ref: reportSchemaKit.id,
+  head_ref: reportSchemaKit.id,
+  kind: reportSchemaKit.en(RETROSPECTIVE_CALIBRATION_KINDS),
+  version: reportSchemaKit.nullable(reportSchemaKit.semver),
+  status: reportSchemaKit.en(["available", "unavailable"]),
+  unavailable_reasons: unavailable,
+  threshold: reportSchemaKit.nullable(
+    reportSchemaKit.obj({ value: reportSchemaKit.num(0, 1), comparison: { const: "gte" } })
+  ),
+  fit: reportSchemaKit.nullable(
+    reportSchemaKit.obj({
+      method: reportSchemaKit.id,
+      rows_merged_before: reportSchemaKit.timestamp,
+      labels_observed_by: reportSchemaKit.timestamp,
+      n_rows: reportSchemaKit.int(),
+      n_positive: reportSchemaKit.int()
+    })
+  )
+});
+var result = reportSchemaKit.obj({
+  target,
+  horizon_days: horizon2,
+  calibration_ref: reportSchemaKit.id,
+  segment: reportSchemaKit.en(RETROSPECTIVE_SEGMENTS),
+  basis: { const: "out_of_sample_prediction" },
+  status: reportSchemaKit.en(["shown", "suppressed"]),
+  suppression_reasons: reportSchemaKit.reasons,
+  counts: reportSchemaKit.obj({
+    eligible: reportSchemaKit.int(),
+    scored: reportSchemaKit.int(),
+    evaluable: reportSchemaKit.int(),
+    flagged: reportSchemaKit.int(),
+    positive: reportSchemaKit.int(),
+    tp: reportSchemaKit.int(),
+    fp: reportSchemaKit.int(),
+    fn: reportSchemaKit.int(),
+    tn: reportSchemaKit.int()
+  }),
+  excluded: counted(PREDICTION_EXCLUSION_REASONS),
+  not_scored: counted(PREDICTION_NOT_SCORED_REASONS),
+  not_evaluable: counted(TARGET_NOT_EVALUABLE_REASONS),
+  precision: reportSchemaKit.cell,
+  recall: reportSchemaKit.cell,
+  flag_rate: reportSchemaKit.cell
+});
+var keptProps = without(v1.properties, ["retrospective", "model_provenance"]);
+var ARBITER_REPORT_V2_JSON_SCHEMA = Object.freeze({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.hokus.ai/arbiter_report/v2.json",
+  title: "Hokusai arbiter_report/v2 (proposed)",
+  ...reportSchemaKit.obj({
+    ...keptProps,
+    schema_version: { const: ARBITER_REPORT_V2_SCHEMA_VERSION },
+    policy,
+    prs: reportSchemaKit.arr(prRow, 2e4),
+    retrospective: reportSchemaKit.obj({
+      status: reportSchemaKit.en(["available", "unavailable"]),
+      unavailable_reasons: unavailable,
+      heads: reportSchemaKit.arr(head, 4),
+      calibrations: reportSchemaKit.arr(calibration, 8),
+      results: reportSchemaKit.arr(result, 64)
+    })
+  }),
+  $defs: v1.$defs
+});
 
 // ../core/src/arbiter-shadow-record.ts
 var ARBITER_SHADOW_SCORE_SCHEMA_VERSION = "arbiter_shadow_score/v1";
@@ -10025,32 +10221,32 @@ function stripCommentsAndStrings(source, extension) {
 }
 function collectTypeErrors(checkoutDir, config, timeoutMs) {
   if (config.typecheckCommand) {
-    const result2 = runShellCommand(config.typecheckCommand, checkoutDir, timeoutMs);
-    if (result2 === null) return null;
-    const combined = `${result2.stdout}
-${result2.stderr}`;
-    if (result2.failed || result2.exitCode < 0) return null;
+    const result3 = runShellCommand(config.typecheckCommand, checkoutDir, timeoutMs);
+    if (result3 === null) return null;
+    const combined = `${result3.stdout}
+${result3.stderr}`;
+    if (result3.failed || result3.exitCode < 0) return null;
     return countTscErrors(combined);
   }
   const staticConfig = join2(checkoutDir, "tsconfig.static.json");
   const rootConfig = join2(checkoutDir, "tsconfig.json");
   const project = existsSync(staticConfig) ? "tsconfig.static.json" : existsSync(rootConfig) ? "tsconfig.json" : null;
   if (!project) return null;
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "npx",
     ["--no-install", "tsc", "--noEmit", "-p", project],
     { cwd: checkoutDir, timeout: timeoutMs, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 }
   );
-  if (result.failed || result.exitCode < 0) return null;
-  return countTscErrors(`${result.stdout}
-${result.stderr}`);
+  if (result2.failed || result2.exitCode < 0) return null;
+  return countTscErrors(`${result2.stdout}
+${result2.stderr}`);
 }
 function collectLintErrors(checkoutDir, config, timeoutMs) {
   if (config.lintCommand) {
-    const result2 = runShellCommand(config.lintCommand, checkoutDir, timeoutMs);
-    if (result2 === null) return null;
-    if (result2.failed || result2.exitCode < 0) return null;
-    return sumEslintErrors(result2.stdout);
+    const result3 = runShellCommand(config.lintCommand, checkoutDir, timeoutMs);
+    if (result3 === null) return null;
+    if (result3.failed || result3.exitCode < 0) return null;
+    return sumEslintErrors(result3.stdout);
   }
   const eslintConfigs = [
     "eslint.config.js",
@@ -10066,33 +10262,33 @@ function collectLintErrors(checkoutDir, config, timeoutMs) {
   ];
   const hasConfig = eslintConfigs.some((name) => existsSync(join2(checkoutDir, name)));
   if (!hasConfig) return null;
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "npx",
     ["--no-install", "eslint", ".", "--format", "json"],
     { cwd: checkoutDir, timeout: timeoutMs, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 }
   );
-  if (result.failed || result.exitCode < 0) return null;
-  return sumEslintErrors(result.stdout);
+  if (result2.failed || result2.exitCode < 0) return null;
+  return sumEslintErrors(result2.stdout);
 }
 function collectBuildOk(checkoutDir, config, timeoutMs, ciEvidence) {
   if (config.buildCommand) {
-    const result = runShellCommand(config.buildCommand, checkoutDir, timeoutMs);
-    if (result === null) return { value: null, evidence: null };
-    if (result.failed || result.exitCode < 0) return { value: null, evidence: null };
-    return { value: result.exitCode === 0, evidence: "local-build" };
+    const result2 = runShellCommand(config.buildCommand, checkoutDir, timeoutMs);
+    if (result2 === null) return { value: null, evidence: null };
+    if (result2.failed || result2.exitCode < 0) return { value: null, evidence: null };
+    return { value: result2.exitCode === 0, evidence: "local-build" };
   }
   const pkgPath = join2(checkoutDir, "package.json");
   if (existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
       if (pkg.scripts?.build) {
-        const result = execArgvCommand(
+        const result2 = execArgvCommand(
           "npm",
           ["run", "build", "--silent"],
           { cwd: checkoutDir, timeout: timeoutMs, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 }
         );
-        if (result.failed || result.exitCode < 0) return { value: null, evidence: null };
-        return { value: result.exitCode === 0, evidence: "local-build" };
+        if (result2.failed || result2.exitCode < 0) return { value: null, evidence: null };
+        return { value: result2.exitCode === 0, evidence: "local-build" };
       }
     } catch {
     }
@@ -10104,15 +10300,15 @@ function collectBuildOk(checkoutDir, config, timeoutMs, ciEvidence) {
   return { value: null, evidence: null };
 }
 function collectCiBuildEvidence(prNumber, repoDir) {
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "gh",
     ["pr", "checks", prNumber, "--json", "name,state,bucket"],
     { cwd: repoDir, timeout: 3e4, encoding: "utf-8", maxBuffer: 8 * 1024 * 1024 }
   );
-  if (result.failed || result.exitCode < 0 || !result.stdout.trim()) return null;
+  if (result2.failed || result2.exitCode < 0 || !result2.stdout.trim()) return null;
   let checks;
   try {
-    checks = JSON.parse(result.stdout);
+    checks = JSON.parse(result2.stdout);
   } catch {
     return null;
   }
@@ -10230,23 +10426,23 @@ function getExtension(path4) {
   return base.slice(lastDot).toLowerCase();
 }
 function runShellCommand(command, cwd, timeoutMs) {
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "/bin/sh",
     ["-c", command],
     { cwd, timeout: timeoutMs, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 }
   );
-  return result;
+  return result2;
 }
 function runGit(cwd, args, timeoutMs, options = {}) {
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "git",
     args,
     { cwd, timeout: timeoutMs, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 }
   );
-  if (result.failed) return null;
-  if (result.exitCode !== 0 && !options.allowFailure) return null;
-  if (result.exitCode !== 0 && options.allowFailure) return null;
-  return result.stdout.trimEnd();
+  if (result2.failed) return null;
+  if (result2.exitCode !== 0 && !options.allowFailure) return null;
+  if (result2.exitCode !== 0 && options.allowFailure) return null;
+  return result2.stdout.trimEnd();
 }
 function collectStaticFeatures(options) {
   const checkoutDir = resolve(options.checkoutDir);
@@ -10372,9 +10568,9 @@ function extractCandidateFeatures(options) {
   return candidate;
 }
 function validateCandidateFeatures(value) {
-  const result = validateCandidateFeaturesV1(value);
-  if (result.ok) return [];
-  return result.errors.map((error) => ({ field: error.path, message: error.message }));
+  const result2 = validateCandidateFeaturesV1(value);
+  if (result2.ok) return [];
+  return result2.errors.map((error) => ({ field: error.path, message: error.message }));
 }
 function collectDiffStats(checkoutDir, baseRef) {
   if (!baseRef || !isExistingDir(checkoutDir)) return null;
@@ -10423,14 +10619,14 @@ function resolveBaseRef(checkoutDir, prBaseRefName, explicitBaseRef) {
 }
 function fetchPullRequestEvidence(prNumber, repoDir) {
   if (!/^\d+$/.test(prNumber) || !isExistingDir(repoDir)) return null;
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "gh",
     ["pr", "view", prNumber, "--json", "baseRefName"],
     { cwd: repoDir, timeout: 15e3, encoding: "utf-8" }
   );
-  if (result.failed || result.exitCode !== 0 || !result.stdout.trim()) return null;
+  if (result2.failed || result2.exitCode !== 0 || !result2.stdout.trim()) return null;
   try {
-    const parsed = JSON.parse(result.stdout);
+    const parsed = JSON.parse(result2.stdout);
     return typeof parsed.baseRefName === "string" && parsed.baseRefName.length > 0 ? { baseRefName: parsed.baseRefName } : null;
   } catch {
     return null;
@@ -10438,15 +10634,15 @@ function fetchPullRequestEvidence(prNumber, repoDir) {
 }
 function collectTestPassRate(prNumber, repoDir) {
   if (!/^\d+$/.test(prNumber) || !isExistingDir(repoDir)) return null;
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "gh",
     ["pr", "checks", prNumber, "--json", "name,state,bucket"],
     { cwd: repoDir, timeout: 15e3, encoding: "utf-8", maxBuffer: 8 * 1024 * 1024 }
   );
-  if (result.failed || result.exitCode < 0 || !result.stdout.trim()) return null;
+  if (result2.failed || result2.exitCode < 0 || !result2.stdout.trim()) return null;
   let checks;
   try {
-    checks = JSON.parse(result.stdout);
+    checks = JSON.parse(result2.stdout);
   } catch {
     return null;
   }
@@ -10468,15 +10664,15 @@ function collectTestPassRate(prNumber, repoDir) {
 }
 function collectReviewEvidence(prNumber, repoDir) {
   if (!/^\d+$/.test(prNumber) || !isExistingDir(repoDir)) return null;
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "gh",
     ["pr", "view", prNumber, "--json", "reviews"],
     { cwd: repoDir, timeout: 15e3, encoding: "utf-8", maxBuffer: 8 * 1024 * 1024 }
   );
-  if (result.failed || result.exitCode !== 0 || !result.stdout.trim()) return null;
+  if (result2.failed || result2.exitCode !== 0 || !result2.stdout.trim()) return null;
   let reviews;
   try {
-    const parsed = JSON.parse(result.stdout);
+    const parsed = JSON.parse(result2.stdout);
     reviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
   } catch {
     return null;
@@ -10633,15 +10829,15 @@ function safe(fn, fallback) {
   }
 }
 function runGit2(cwd, args, options = {}) {
-  const result = execArgvCommand(
+  const result2 = execArgvCommand(
     "git",
     args,
     { cwd, timeout: 3e4, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 }
   );
-  if (result.failed) return null;
-  if (result.exitCode !== 0 && !options.allowFailure) return null;
-  if (result.exitCode !== 0 && options.allowFailure) return null;
-  return result.stdout.trimEnd();
+  if (result2.failed) return null;
+  if (result2.exitCode !== 0 && !options.allowFailure) return null;
+  if (result2.exitCode !== 0 && options.allowFailure) return null;
+  return result2.stdout.trimEnd();
 }
 
 // src/diff-parsing.ts
@@ -10675,28 +10871,28 @@ var SURVIVAL_LABELLER_VERSION = "1.4.0";
 var SURVIVAL_NORMALIZATION_VERSION = "1.0.0";
 var DAY_SECONDS = 86400;
 var GIT_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
-function assertIntegrationBranch(target) {
-  if (target.integrationBranch === "main" && target.integrationMode !== "direct") {
+function assertIntegrationBranch(target2) {
+  if (target2.integrationBranch === "main" && target2.integrationMode !== "direct") {
     throw new Error(
       'survival-labeller: integrationBranch "main" requires integrationMode "direct" (S2 v1.1.0): squash promotion rewrites the SHA lineage the labeller needs'
     );
   }
 }
-function enumerateMergedPrs(target, deps, options = {}) {
-  assertIntegrationBranch(target);
+function enumerateMergedPrs(target2, deps, options = {}) {
+  assertIntegrationBranch(target2);
   const maxCount = options.maxCount ?? 1e3;
-  const result = deps.runGit([
+  const result2 = deps.runGit([
     "log",
     "--first-parent",
     `--max-count=${maxCount}`,
     "--pretty=format:%H%x09%P%x09%ct%x09%s",
-    target.integrationBranch
+    target2.integrationBranch
   ]);
-  if (result.exitCode !== 0) {
-    throw new Error(`survival-labeller: cannot walk ${target.integrationBranch}: ${result.stderr.trim()}`);
+  if (result2.exitCode !== 0) {
+    throw new Error(`survival-labeller: cannot walk ${target2.integrationBranch}: ${result2.stderr.trim()}`);
   }
   const refs = [];
-  for (const line of result.stdout.split(/\r?\n/)) {
+  for (const line of result2.stdout.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const [sha2, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
     const subject = subjectParts.join("	").trim();
@@ -10707,7 +10903,7 @@ function enumerateMergedPrs(target, deps, options = {}) {
     if (prNumber === null) continue;
     refs.push({
       prNumber,
-      prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${prNumber}`,
+      prUrl: `https://github.com/${target2.owner}/${target2.repo}/pull/${prNumber}`,
       mergeSha: sha2,
       parentSha: parents[0],
       headSha: parents.length >= 2 ? parents[1] : sha2,
@@ -10717,12 +10913,12 @@ function enumerateMergedPrs(target, deps, options = {}) {
   }
   return refs;
 }
-function resolveMergedPr(target, deps, prUrl, options = {}) {
-  assertIntegrationBranch(target);
+function resolveMergedPr(target2, deps, prUrl, options = {}) {
+  assertIntegrationBranch(target2);
   const numberMatch = prUrl.match(/\/pull\/(\d+)\b/);
   const prNumber = numberMatch ? Number(numberMatch[1]) : null;
   if (prNumber !== null) {
-    const enumerated = enumerateMergedPrs(target, deps, { maxCount: options.searchLimit ?? 5e3 });
+    const enumerated = enumerateMergedPrs(target2, deps, { maxCount: options.searchLimit ?? 5e3 });
     const match = enumerated.find((ref3) => ref3.prNumber === prNumber);
     if (match) return { ...match, prUrl };
   }
@@ -10737,13 +10933,13 @@ function resolveMergedPr(target, deps, prUrl, options = {}) {
     "merge-base",
     "--is-ancestor",
     metadata.mergeCommitSha,
-    target.integrationBranch
+    target2.integrationBranch
   ]);
   if (ancestor.exitCode !== 0) {
     return {
       prUrl,
       reason: "inaccessible_history",
-      detail: `merge commit ${metadata.mergeCommitSha} is not on ${target.integrationBranch}`
+      detail: `merge commit ${metadata.mergeCommitSha} is not on ${target2.integrationBranch}`
     };
   }
   const info = deps.runGit(["log", "-1", "--pretty=format:%H%x09%P%x09%ct%x09%s", metadata.mergeCommitSha]);
@@ -10824,10 +11020,10 @@ function countCoveredLines(range, covered) {
 }
 var WHITESPACE_DIFF_ARGS = ["-U0", "-w", "--ignore-blank-lines", "--find-renames", "--no-color"];
 function buildSubstrate(deps, pr2) {
-  const result = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr2.parentSha, pr2.mergeSha]);
-  if (result.exitCode !== 0) return null;
+  const result2 = deps.runGit(["diff", ...WHITESPACE_DIFF_ARGS, pr2.parentSha, pr2.mergeSha]);
+  if (result2.exitCode !== 0) return null;
   const files = [];
-  for (const entry2 of parseZeroContextDiff(result.stdout)) {
+  for (const entry2 of parseZeroContextDiff(result2.stdout)) {
     if (entry2.hunks.length === 0) continue;
     const path4 = entry2.newPath ?? entry2.oldPath;
     if (!path4) continue;
@@ -10854,9 +11050,9 @@ function blobsAt(deps, sha2, paths) {
   const unique2 = [...new Set(paths)];
   for (let i = 0; i < unique2.length; i += LS_TREE_CHUNK) {
     const chunk = unique2.slice(i, i + LS_TREE_CHUNK);
-    const result = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha2, "--", ...chunk]);
-    if (result.exitCode !== 0) continue;
-    for (const entry2 of result.stdout.split("\0")) {
+    const result2 = deps.runGit(["--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha2, "--", ...chunk]);
+    if (result2.exitCode !== 0) continue;
+    for (const entry2 of result2.stdout.split("\0")) {
       const tab = entry2.indexOf("	");
       if (tab < 0) continue;
       const oid = entry2.slice(0, tab).split(" ")[2];
@@ -10968,11 +11164,11 @@ function analyseForward(deps, pr2, substrate, terminalSha, baseBlobs) {
   };
 }
 var BOT_LOGIN_PATTERN = /(?:\[bot\]|bot|robot)$/i;
-function isFollowupReference(ref3, target) {
-  const sameRepo = new RegExp(`^https://github\\.com/${escapeRegExp(target.owner)}/${escapeRegExp(target.repo)}/(?:issues|pull)/\\d+`, "i");
+function isFollowupReference(ref3, target2) {
+  const sameRepo = new RegExp(`^https://github\\.com/${escapeRegExp(target2.owner)}/${escapeRegExp(target2.repo)}/(?:issues|pull)/\\d+`, "i");
   if (!sameRepo.test(ref3.url)) return false;
   if (ref3.sourceAuthorType === "Bot" || ref3.sourceAuthorLogin && BOT_LOGIN_PATTERN.test(ref3.sourceAuthorLogin)) return false;
-  if (typeof ref3.sourceBaseRef === "string" && ref3.sourceBaseRef !== target.integrationBranch) return false;
+  if (typeof ref3.sourceBaseRef === "string" && ref3.sourceBaseRef !== target2.integrationBranch) return false;
   return true;
 }
 function escapeRegExp(value) {
@@ -10998,7 +11194,7 @@ function classifyCommitActor(commit) {
 function attributeUndoers(deps, pr2, terminalSha, touchedPaths, extraVotes) {
   const votes = new Set(extraVotes);
   if (touchedPaths.length > 0) {
-    const result = deps.runGit([
+    const result2 = deps.runGit([
       "log",
       "--no-merges",
       "--pretty=format:%H%x1f%an%x1f%ae%x1f%B%x1e",
@@ -11006,8 +11202,8 @@ function attributeUndoers(deps, pr2, terminalSha, touchedPaths, extraVotes) {
       "--",
       ...touchedPaths
     ]);
-    if (result.exitCode === 0) {
-      for (const record of result.stdout.split("")) {
+    if (result2.exitCode === 0) {
+      for (const record of result2.stdout.split("")) {
         if (!record.trim()) continue;
         const [, authorName = "", authorEmail = "", body = ""] = record.split("");
         const actor = classifyCommitActor({ authorName, authorEmail, body });
@@ -11069,10 +11265,10 @@ var REASON_CODE_ORDER = [
   "substantial_rewrite",
   "no_evidence"
 ];
-function missingLabel(pr2, target, deps, horizon2, reason, options = {}) {
+function missingLabel(pr2, target2, deps, horizon3, reason, options = {}) {
   return buildArbiterSurvivalLabel({
     prUrl: pr2.prUrl,
-    horizon_days: horizon2,
+    horizon_days: horizon3,
     label_provenance: "harvested",
     line_ranges: options.lineRanges ?? [],
     outcome: {
@@ -11089,19 +11285,19 @@ function missingLabel(pr2, target, deps, horizon2, reason, options = {}) {
       pr_head_sha: pr2.headSha,
       merge_sha: pr2.mergeSha,
       horizon_terminal_sha: options.terminalSha ?? pr2.mergeSha,
-      integration_branch: target.integrationBranch,
-      integration_mode: target.integrationMode ?? "promotion",
+      integration_branch: target2.integrationBranch,
+      integration_mode: target2.integrationMode ?? "promotion",
       computed_at: deps.now().toISOString()
     }
   });
 }
 function buildHorizonTerminalIndex(deps, branch) {
-  const result = deps.runGit(["log", "--first-parent", "--pretty=format:%H %ct", branch]);
-  if (result.exitCode !== 0) return null;
+  const result2 = deps.runGit(["log", "--first-parent", "--pretty=format:%H %ct", branch]);
+  if (result2.exitCode !== 0) return null;
   const shas = [];
   const prefixMin = [];
   let min = Number.POSITIVE_INFINITY;
-  for (const line of result.stdout.split("\n")) {
+  for (const line of result2.stdout.split("\n")) {
     const [sha2, ct] = line.split(" ");
     const epoch = Number(ct);
     if (!sha2 || !Number.isFinite(epoch)) continue;
@@ -11121,22 +11317,22 @@ function lookupHorizonTerminal(index, cutoffEpoch) {
   }
   return index.shas[lo] ?? null;
 }
-function resolveHorizonTerminal(deps, target, cutoffEpoch, index) {
+function resolveHorizonTerminal(deps, target2, cutoffEpoch, index) {
   if (index) return lookupHorizonTerminal(index, cutoffEpoch);
   const cutoffIso = new Date(cutoffEpoch * 1e3).toISOString().replace(/\.\d{3}Z$/, "Z");
-  const result = deps.runGit([
+  const result2 = deps.runGit([
     "log",
     "--first-parent",
     "--max-count=1",
     `--until=${cutoffIso}`,
     "--pretty=format:%H",
-    target.integrationBranch
+    target2.integrationBranch
   ]);
-  if (result.exitCode !== 0) return null;
-  return result.stdout.trim() || null;
+  if (result2.exitCode !== 0) return null;
+  return result2.stdout.trim() || null;
 }
-function labelMergedPr(target, deps, pr2, options = {}) {
-  assertIntegrationBranch(target);
+function labelMergedPr(target2, deps, pr2, options = {}) {
+  assertIntegrationBranch(target2);
   const horizons = options.horizons ?? HORIZONS;
   const nowEpoch = Math.floor(deps.now().getTime() / 1e3);
   const substrate = buildSubstrate(deps, pr2);
@@ -11157,7 +11353,7 @@ function labelMergedPr(target, deps, pr2, options = {}) {
       }
     }
     return crossReferences.some(
-      (ref3) => ref3.createdAtEpoch > pr2.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target)
+      (ref3) => ref3.createdAtEpoch > pr2.mergedAtEpoch && ref3.createdAtEpoch <= cutoffEpoch && isFollowupReference(ref3, target2)
     );
   };
   const issueKeys = extractIssueKeys(pr2.subject);
@@ -11171,32 +11367,32 @@ function labelMergedPr(target, deps, pr2, options = {}) {
     );
   };
   const labels = [];
-  for (const horizon2 of horizons) {
-    const cutoffEpoch = pr2.mergedAtEpoch + horizon2 * DAY_SECONDS;
+  for (const horizon3 of horizons) {
+    const cutoffEpoch = pr2.mergedAtEpoch + horizon3 * DAY_SECONDS;
     if (cutoffEpoch > nowEpoch) {
-      labels.push(missingLabel(pr2, target, deps, horizon2, "missing_horizon", {
+      labels.push(missingLabel(pr2, target2, deps, horizon3, "missing_horizon", {
         lineRanges: substrate?.lineRanges
       }));
       continue;
     }
     if (!substrate) {
-      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history"));
+      labels.push(missingLabel(pr2, target2, deps, horizon3, "inaccessible_history"));
       continue;
     }
     if (substrate.totalLines === 0) {
-      labels.push(missingLabel(pr2, target, deps, horizon2, "insufficient_line_range_substrate"));
+      labels.push(missingLabel(pr2, target2, deps, horizon3, "insufficient_line_range_substrate"));
       continue;
     }
-    const terminalSha = resolveHorizonTerminal(deps, target, cutoffEpoch, options.horizonTerminalIndex);
+    const terminalSha = resolveHorizonTerminal(deps, target2, cutoffEpoch, options.horizonTerminalIndex);
     if (!terminalSha) {
-      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history", {
+      labels.push(missingLabel(pr2, target2, deps, horizon3, "inaccessible_history", {
         lineRanges: substrate.lineRanges
       }));
       continue;
     }
     const analysis = analyseForward(deps, pr2, substrate, terminalSha, baseBlobs);
     if (!analysis) {
-      labels.push(missingLabel(pr2, target, deps, horizon2, "inaccessible_history", {
+      labels.push(missingLabel(pr2, target2, deps, horizon3, "inaccessible_history", {
         terminalSha,
         lineRanges: substrate.lineRanges
       }));
@@ -11227,7 +11423,7 @@ function labelMergedPr(target, deps, pr2, options = {}) {
     if (codes.size === 0) codes.add("no_evidence");
     labels.push(buildArbiterSurvivalLabel({
       prUrl: pr2.prUrl,
-      horizon_days: horizon2,
+      horizon_days: horizon3,
       label_provenance: "harvested",
       line_ranges: substrate.lineRanges,
       outcome: {
@@ -11244,8 +11440,8 @@ function labelMergedPr(target, deps, pr2, options = {}) {
         pr_head_sha: pr2.headSha,
         merge_sha: pr2.mergeSha,
         horizon_terminal_sha: terminalSha,
-        integration_branch: target.integrationBranch,
-        integration_mode: target.integrationMode ?? "promotion",
+        integration_branch: target2.integrationBranch,
+        integration_mode: target2.integrationMode ?? "promotion",
         computed_at: deps.now().toISOString()
       }
     }));
@@ -11294,9 +11490,9 @@ function scanContractVersion() {
 var ScanUpstreamError = class extends Error {
   name = "ScanUpstreamError";
 };
-function classifyUpstreamFailure(result) {
-  const stderr = result.stderr;
-  if (result.failed) {
+function classifyUpstreamFailure(result2) {
+  const stderr = result2.stderr;
+  if (result2.failed) {
     return "gh executable not found; install GitHub CLI or run with --offline";
   }
   if (/HTTP 401|authentication|not logged in|GH_TOKEN|GITHUB_TOKEN/i.test(stderr)) {
@@ -11312,18 +11508,18 @@ function classifyUpstreamFailure(result) {
   if (/HTTP 404|could not resolve|no pull requests found|not found/i.test(stderr)) {
     return "GitHub resource not found";
   }
-  if (result.exitCode === -1 || /timed? ?out|ETIMEDOUT/i.test(stderr)) {
+  if (result2.exitCode === -1 || /timed? ?out|ETIMEDOUT/i.test(stderr)) {
     return "GitHub request timed out";
   }
-  return `GitHub request failed (gh exit ${result.exitCode})`;
+  return `GitHub request failed (gh exit ${result2.exitCode})`;
 }
 var isRateLimited = (stderr) => /rate limit|HTTP 429/i.test(stderr);
 var SECONDARY_LIMIT_WAIT_MS = 6e4;
 function ghRateLimitResetMs(env) {
-  const result = execArgvCommand("gh", ["api", "rate_limit"], { env });
-  if (result.exitCode !== 0) return null;
+  const result2 = execArgvCommand("gh", ["api", "rate_limit"], { env });
+  if (result2.exitCode !== 0) return null;
   try {
-    const resources = JSON.parse(result.stdout).resources ?? {};
+    const resources = JSON.parse(result2.stdout).resources ?? {};
     const exhausted = Object.values(resources).filter((r) => r.remaining === 0 && typeof r.reset === "number");
     return exhausted.length ? Math.max(...exhausted.map((r) => r.reset * 1e3)) : null;
   } catch {
@@ -11338,8 +11534,8 @@ function withRateLimitWait(run, wait, env) {
   let waited = 0;
   return (args) => {
     for (; ; ) {
-      const result = run(args);
-      if (result.exitCode === 0 || !isRateLimited(result.stderr) || waited >= wait.maxWaitMs) return result;
+      const result2 = run(args);
+      if (result2.exitCode === 0 || !isRateLimited(result2.stderr) || waited >= wait.maxWaitMs) return result2;
       const reset = resetAtMs();
       const ms2 = Math.min(wait.maxWaitMs - waited, reset === null ? SECONDARY_LIMIT_WAIT_MS : Math.max(0, reset - nowMs()) + 5e3);
       wait.onWait?.(ms2);
@@ -11348,33 +11544,33 @@ function withRateLimitWait(run, wait, env) {
     }
   };
 }
-function createDefaultDeps(target, options = {}) {
-  const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+function createDefaultDeps(target2, options = {}) {
+  const env = target2.token ? { ...process.env, GH_TOKEN: target2.token } : process.env;
   const strict = options.strictUpstream === true;
-  const runGit3 = (args) => execArgvCommand("git", ["-C", target.repoDir, ...args], {
+  const runGit3 = (args) => execArgvCommand("git", ["-C", target2.repoDir, ...args], {
     env,
     maxBuffer: GIT_OUTPUT_MAX_BUFFER
   });
   const runGh = withRateLimitWait(
-    (args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir }),
+    (args) => execArgvCommand("gh", [...args], { env, cwd: target2.repoDir }),
     options.rateLimitWait,
     env
   );
   const github = {
     getPrMetadata(prUrl) {
-      const result = runGh([
+      const result2 = runGh([
         "pr",
         "view",
         prUrl,
         "--json",
         "number,title,state,mergedAt,mergeCommit,headRefOid"
       ]);
-      if (result.exitCode !== 0) {
-        if (strict) throw new ScanUpstreamError(classifyUpstreamFailure(result));
+      if (result2.exitCode !== 0) {
+        if (strict) throw new ScanUpstreamError(classifyUpstreamFailure(result2));
         return null;
       }
       try {
-        const parsed = JSON.parse(result.stdout);
+        const parsed = JSON.parse(result2.stdout);
         if (typeof parsed.number !== "number") return null;
         return {
           number: parsed.number,
@@ -11389,17 +11585,17 @@ function createDefaultDeps(target, options = {}) {
       }
     },
     listCrossReferences(prNumber) {
-      const result = runGh([
+      const result2 = runGh([
         "api",
-        `repos/${target.owner}/${target.repo}/issues/${prNumber}/timeline?per_page=100`,
+        `repos/${target2.owner}/${target2.repo}/issues/${prNumber}/timeline?per_page=100`,
         "-H",
         "Accept: application/vnd.github+json"
       ]);
-      if (result.exitCode !== 0) {
+      if (result2.exitCode !== 0) {
         return [];
       }
       try {
-        const events17 = JSON.parse(result.stdout);
+        const events17 = JSON.parse(result2.stdout);
         return events17.filter((event17) => event17.event === "cross-referenced" && event17.created_at).map((event17) => ({
           createdAtEpoch: Math.floor(Date.parse(event17.created_at) / 1e3),
           url: event17.source?.issue?.html_url ?? "",
@@ -11420,23 +11616,23 @@ function createOfflineGitHubClient() {
     listCrossReferences: () => []
   };
 }
-function createDefaultScanGitHubClient(target, options = {}) {
-  const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+function createDefaultScanGitHubClient(target2, options = {}) {
+  const env = target2.token ? { ...process.env, GH_TOKEN: target2.token } : process.env;
   const runGh = withRateLimitWait(
-    options.runGh ?? ((args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 })),
+    options.runGh ?? ((args) => execArgvCommand("gh", [...args], { env, cwd: target2.repoDir, maxBuffer: 16 * 1024 * 1024 })),
     options.rateLimitWait,
     env
   );
-  const fail2 = (result) => {
-    throw new ScanUpstreamError(classifyUpstreamFailure(result));
+  const fail2 = (result2) => {
+    throw new ScanUpstreamError(classifyUpstreamFailure(result2));
   };
   const api = (path4) => {
-    const result = runGh(["api", path4, "-H", "Accept: application/vnd.github+json"]);
-    if (result.exitCode !== 0) {
-      if (/HTTP 404/i.test(result.stderr)) return "";
-      return fail2(result);
+    const result2 = runGh(["api", path4, "-H", "Accept: application/vnd.github+json"]);
+    if (result2.exitCode !== 0) {
+      if (/HTTP 404/i.test(result2.stderr)) return "";
+      return fail2(result2);
     }
-    return result.stdout;
+    return result2.stdout;
   };
   const parse = (text) => {
     try {
@@ -11452,9 +11648,9 @@ function createDefaultScanGitHubClient(target, options = {}) {
   };
   const pullViaGraphql = (number) => {
     const query = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){number title body author{login __typename} headRefName headRefOid labels(first:100){nodes{name}} mergedAt}}}";
-    const result = runGh(["api", "graphql", "-f", `query=${query}`, "-f", `o=${target.owner}`, "-f", `r=${target.repo}`, "-F", `n=${number}`]);
-    if (result.exitCode !== 0) return fail2(result);
-    const pr2 = parse(result.stdout)?.data?.repository?.pullRequest;
+    const result2 = runGh(["api", "graphql", "-f", `query=${query}`, "-f", `o=${target2.owner}`, "-f", `r=${target2.repo}`, "-F", `n=${number}`]);
+    if (result2.exitCode !== 0) return fail2(result2);
+    const pr2 = parse(result2.stdout)?.data?.repository?.pullRequest;
     if (!pr2) return null;
     return toPull({
       ...pr2.number !== void 0 ? { number: pr2.number } : {},
@@ -11469,25 +11665,25 @@ function createDefaultScanGitHubClient(target, options = {}) {
   return {
     async getRepo() {
       await Promise.resolve();
-      const repo = parse(api(`repos/${target.owner}/${target.repo}`));
+      const repo = parse(api(`repos/${target2.owner}/${target2.repo}`));
       if (!repo?.default_branch) throw new ScanUpstreamError("GitHub repository metadata is unavailable");
       return { defaultBranch: repo.default_branch, private: repo.private === true };
     },
     async getPullRequest(number) {
       await Promise.resolve();
-      const result = runGh(["api", `repos/${target.owner}/${target.repo}/pulls/${number}`, "-H", "Accept: application/vnd.github+json"]);
-      if (result.exitCode !== 0) {
-        if (/HTTP 404/i.test(result.stderr)) return null;
-        if (/HTTP 422/i.test(result.stderr) && /too many files/i.test(result.stderr)) return pullViaGraphql(number);
-        return fail2(result);
+      const result2 = runGh(["api", `repos/${target2.owner}/${target2.repo}/pulls/${number}`, "-H", "Accept: application/vnd.github+json"]);
+      if (result2.exitCode !== 0) {
+        if (/HTTP 404/i.test(result2.stderr)) return null;
+        if (/HTTP 422/i.test(result2.stderr) && /too many files/i.test(result2.stderr)) return pullViaGraphql(number);
+        return fail2(result2);
       }
-      return toPull(parse(result.stdout));
+      return toPull(parse(result2.stdout));
     },
     async listPullCommits(number) {
       await Promise.resolve();
       const messages = [];
       for (let page = 1; page <= 100; page++) {
-        const commits = parse(api(`repos/${target.owner}/${target.repo}/pulls/${number}/commits?per_page=100&page=${page}`)) ?? [];
+        const commits = parse(api(`repos/${target2.owner}/${target2.repo}/pulls/${number}/commits?per_page=100&page=${page}`)) ?? [];
         messages.push(...commits.flatMap((commit) => commit.commit?.message ? [commit.commit.message] : []));
         if (commits.length < 100) break;
       }
@@ -11495,7 +11691,7 @@ function createDefaultScanGitHubClient(target, options = {}) {
     },
     async getCheckConclusion(sha2) {
       await Promise.resolve();
-      const checks = parse(api(`repos/${target.owner}/${target.repo}/commits/${sha2}/check-runs?per_page=100`));
+      const checks = parse(api(`repos/${target2.owner}/${target2.repo}/commits/${sha2}/check-runs?per_page=100`));
       const conclusions = (checks?.check_runs ?? []).map((check) => check.conclusion).filter((x) => typeof x === "string");
       if (!conclusions.length) return "none";
       if (conclusions.some((x) => x === "failure" || x === "timed_out" || x === "action_required")) return "failure";
@@ -11720,8 +11916,8 @@ import { join as join4 } from "node:path";
 var EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 function isAncestor(runGit3, sha2, ref3) {
   try {
-    const result = runGit3(["merge-base", "--is-ancestor", sha2, ref3]);
-    return result.exitCode === 0;
+    const result2 = runGit3(["merge-base", "--is-ancestor", sha2, ref3]);
+    return result2.exitCode === 0;
   } catch {
     return false;
   }
@@ -11739,11 +11935,11 @@ function discoverMerges(opts) {
   const format = "%H%x09%P%x09%ct%x09%s";
   const sinceArgs = cutoffEpoch > 0 ? [`--since=${new Date(cutoffEpoch * 1e3).toISOString()}`] : [];
   const args = useBootstrapWindow ? ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, ...sinceArgs, ref3] : ["log", "--first-parent", "--reverse", `--pretty=format:${format}`, `${cursor}..${ref3}`];
-  const result = runGit3(args);
-  if (result.exitCode !== 0) {
+  const result2 = runGit3(args);
+  if (result2.exitCode !== 0) {
     throw new ShadowError("NOT_A_GIT_REPO");
   }
-  for (const line of result.stdout.split("\n")) {
+  for (const line of result2.stdout.split("\n")) {
     if (!line.trim()) continue;
     const [mergeSha, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
     if (!mergeSha || !/^[0-9a-f]{40}$/.test(mergeSha)) continue;
@@ -11810,9 +12006,9 @@ function readJsonl(file, validate) {
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line);
-        const result = validate(parsed);
-        if (result.ok && result.value) {
-          rows.push(result.value);
+        const result2 = validate(parsed);
+        if (result2.ok && result2.value) {
+          rows.push(result2.value);
         } else {
           malformed++;
         }
@@ -11826,8 +12022,8 @@ function readJsonl(file, validate) {
 }
 function appendJsonl(file, rows, validate) {
   for (const row of rows) {
-    const result = validate(row);
-    if (!result.ok) {
+    const result2 = validate(row);
+    if (!result2.ok) {
       throw new ShadowError("INVALID_ROW");
     }
   }
@@ -11856,9 +12052,9 @@ function readState(dir, repo, scorerId, scorerVersion) {
   try {
     const content = fs.readFileSync(stateFile, "utf-8");
     const parsed = JSON.parse(content);
-    const result = validateShadowState(parsed);
-    if (result.ok) {
-      return { state: result.value, corrupt: false };
+    const result2 = validateShadowState(parsed);
+    if (result2.ok) {
+      return { state: result2.value, corrupt: false };
     } else {
       return {
         state: {
@@ -11882,8 +12078,8 @@ function readState(dir, repo, scorerId, scorerVersion) {
 }
 function writeState(dir, state2) {
   const stateFile = path.join(dir, "state.json");
-  const result = validateShadowState(state2);
-  if (!result.ok) {
+  const result2 = validateShadowState(state2);
+  if (!result2.ok) {
     throw new ShadowError("INVALID_ROW");
   }
   writeFileAtomic(stateFile, JSON.stringify(state2, null, 2));
@@ -12053,7 +12249,7 @@ function runShadowBackfill(opts) {
   const {
     dataDir,
     horizonDays,
-    target,
+    target: target2,
     deps,
     now,
     log,
@@ -12091,7 +12287,7 @@ function runShadowBackfill(opts) {
   let labelled = 0;
   let skipped = 0;
   if (candidates.length > 0) {
-    const allMergedPrs = enumerate(target, deps, { maxCount });
+    const allMergedPrs = enumerate(target2, deps, { maxCount });
     const byMergeSha = new Map(allMergedPrs.map((p) => [p.mergeSha, p]));
     for (const score of candidates) {
       try {
@@ -12101,17 +12297,17 @@ function runShadowBackfill(opts) {
           skipped++;
           continue;
         }
-        const labelResults = label2(target, deps, prRef, {
+        const labelResults = label2(target2, deps, prRef, {
           horizons: [horizonDays],
           allMergedPrs,
           includeLinkedReferences: false
         });
-        const result = labelResults[0];
-        if (!result) {
+        const result2 = labelResults[0];
+        if (!result2) {
           pending++;
           continue;
         }
-        if (result.outcome.reason_codes.includes("missing_horizon")) {
+        if (result2.outcome.reason_codes.includes("missing_horizon")) {
           pending++;
           continue;
         }
@@ -12122,14 +12318,14 @@ function runShadowBackfill(opts) {
           merge_sha: score.merge_sha,
           horizon_days: horizonDays,
           labelled_at: now().toISOString(),
-          survived: result.outcome.survived,
+          survived: result2.outcome.survived,
           label: {
-            schema_version: result.schema_version,
-            prUrl: result.prUrl,
-            horizon_days: result.horizon_days,
-            label_provenance: result.label_provenance,
-            outcome: result.outcome,
-            envelope: result.envelope
+            schema_version: result2.schema_version,
+            prUrl: result2.prUrl,
+            horizon_days: result2.horizon_days,
+            label_provenance: result2.label_provenance,
+            outcome: result2.outcome,
+            envelope: result2.envelope
           }
         };
         const validation = validateShadowOutcomeRow(outcome2);
@@ -12316,11 +12512,11 @@ function parsePositiveInt(raw, fallback) {
 }
 function parseHorizon(raw) {
   const value = raw === void 0 ? 30 : Number(raw);
-  const horizon2 = HORIZONS.find((h) => h === value);
-  if (horizon2 === void 0) {
+  const horizon3 = HORIZONS.find((h) => h === value);
+  if (horizon3 === void 0) {
     throw new ShadowError("INVALID_ARG");
   }
-  return horizon2;
+  return horizon3;
 }
 function makeGitRunner(dir) {
   return (args) => execArgvCommand("git", ["-C", dir, ...args], { maxBuffer: GIT_OUTPUT_MAX_BUFFER });
@@ -12339,9 +12535,9 @@ function checkRepoPreconditions(repoDir, runGit3) {
   }
 }
 function detectGithubRepo(runGit3) {
-  const result = runGit3(["remote", "get-url", "origin"]);
-  if (result.exitCode !== 0) return null;
-  const match = result.stdout.trim().match(/[/:]([^/:]+)\/([^/]+?)(?:\.git)?$/);
+  const result2 = runGit3(["remote", "get-url", "origin"]);
+  if (result2.exitCode !== 0) return null;
+  const match = result2.stdout.trim().match(/[/:]([^/:]+)\/([^/]+?)(?:\.git)?$/);
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
 }
@@ -12395,7 +12591,7 @@ function runShadowCli(command, args, io) {
       throw new ShadowError("INVALID_ARG");
     }
     if (command === "shadow-score") {
-      const result = runShadowScore({
+      const result2 = runShadowScore({
         dataDir,
         repo: repoSlug2,
         integrationBranch,
@@ -12407,19 +12603,19 @@ function runShadowCli(command, args, io) {
         log,
         scorer: BASELINE_V0
       });
-      log(`SHADOW_OK scored=${result.scored} skipped=${result.skipped} status=${result.status}`);
+      log(`SHADOW_OK scored=${result2.scored} skipped=${result2.skipped} status=${result2.status}`);
     } else {
-      const target = {
+      const target2 = {
         owner: githubRepo.owner,
         repo: githubRepo.repo,
         integrationBranch,
         repoDir
       };
-      const deps = createDefaultDeps(target, { now });
+      const deps = createDefaultDeps(target2, { now });
       deps.github = createOfflineGitHubClient();
-      const result = runShadowBackfill({ dataDir, horizonDays, target, deps, now, log });
+      const result2 = runShadowBackfill({ dataDir, horizonDays, target: target2, deps, now, log });
       log(
-        `SHADOW_OK labelled=${result.labelled} pending=${result.pending} skipped=${result.skipped} unlabellable=${result.unlabellable}`
+        `SHADOW_OK labelled=${result2.labelled} pending=${result2.pending} skipped=${result2.skipped} unlabellable=${result2.unlabellable}`
       );
     }
     return { exitCode: 0 };
@@ -12736,7 +12932,7 @@ function agentMarkerColumns(markers) {
 // src/corpus/features.ts
 var MANIFEST_COLUMNS = REWORK_RISK_FEATURE_MANIFEST.entries.map((entry2) => entry2.name);
 var CI_FAILED_STATES = ["FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"];
-var sha256 = (text) => createHash3("sha256").update(text).digest("hex");
+var sha2562 = (text) => createHash3("sha256").update(text).digest("hex");
 var hours = (ms2) => Number((ms2 / 36e5).toFixed(4));
 function ms(at2) {
   return Date.parse(at2);
@@ -12838,8 +13034,8 @@ function processColumns(evidence3, ci2, asOf, historicalOnly) {
     "feature.process.github_label_count": labels ? labels.length : null,
     "feature.process.title_chars": title === null ? null : title.length,
     "feature.process.body_chars": body === null ? null : body.length,
-    "feature.content.title_sha256": title === null ? null : sha256(title),
-    "feature.content.body_sha256": body === null ? null : sha256(body),
+    "feature.content.title_sha256": title === null ? null : sha2562(title),
+    "feature.content.body_sha256": body === null ? null : sha2562(body),
     ...ciColumns
   };
 }
@@ -12989,8 +13185,8 @@ function normalizeEvidence(pr2) {
   };
 }
 function normalizeCi(pr2) {
-  const head = pr2["commits"].nodes?.[0];
-  const rollup = head?.commit.statusCheckRollup;
+  const head2 = pr2["commits"].nodes?.[0];
+  const rollup = head2?.commit.statusCheckRollup;
   if (!rollup) return null;
   return {
     pr_number: pr2.number,
@@ -13155,9 +13351,9 @@ function buildLandingIndex(runGit3, branch, originals) {
   let position = null;
   let order = [];
   if (rebased.length) {
-    const result = runGit3(["rev-list", "--first-parent", "--reverse", branch]);
-    if (result.exitCode !== 0) throw new Error(`szz: cannot list ${branch}: ${result.stderr.trim()}`);
-    order = result.stdout.split("\n").filter(Boolean);
+    const result2 = runGit3(["rev-list", "--first-parent", "--reverse", branch]);
+    if (result2.exitCode !== 0) throw new Error(`szz: cannot list ${branch}: ${result2.stderr.trim()}`);
+    order = result2.stdout.split("\n").filter(Boolean);
     position = new Map(order.map((sha2, i) => [sha2, i]));
   }
   for (const pr2 of originals) {
@@ -13214,7 +13410,7 @@ function blameFix(runGit3, fix, landing, sinceEpoch) {
   if (files > SZZ_SKIP_FILES || changedLines > SZZ_SKIP_CHANGED_LINES) return { status: "skipped", files, changedLines };
   const blamed = /* @__PURE__ */ new Map();
   for (const [path4, list] of ranges) {
-    const result = runGit3([
+    const result2 = runGit3([
       "blame",
       "--first-parent",
       "-w",
@@ -13227,10 +13423,10 @@ function blameFix(runGit3, fix, landing, sinceEpoch) {
       "--",
       path4
     ]);
-    if (result.exitCode !== 0) throw new Error(`szz: cannot blame ${path4} at ${fix.parentSha}: ${result.stderr.trim()}`);
+    if (result2.exitCode !== 0) throw new Error(`szz: cannot blame ${path4} at ${fix.parentSha}: ${result2.stderr.trim()}`);
     let sha2 = null;
     let boundary = false;
-    for (const line of result.stdout.split("\n")) {
+    for (const line of result2.stdout.split("\n")) {
       const header = line.match(/^([0-9a-f]{40}) \d+ \d+(?: \d+)?$/);
       if (header) {
         sha2 = header[1];
@@ -13252,7 +13448,7 @@ var CORRECTIVE_LABELLER_VERSION = "1.0.0";
 var MAX_FIX_LAG_SECONDS = 60 * 86400;
 var LINE_SURVIVAL_MAX_LINES = 2e4;
 function readRevertCommits(runGit3, branch, from, until) {
-  const result = runGit3([
+  const result2 = runGit3([
     "log",
     "--first-parent",
     "--reverse",
@@ -13266,9 +13462,9 @@ function readRevertCommits(runGit3, branch, from, until) {
     "--pretty=format:%H%x1f%P%x1f%ct%x1f%s%x1f%b%x1e",
     branch
   ]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result.stderr.trim()}`);
+  if (result2.exitCode !== 0) throw new Error(`corrective: cannot read reverts on ${branch}: ${result2.stderr.trim()}`);
   const out = [];
-  for (const entry2 of result.stdout.split("")) {
+  for (const entry2 of result2.stdout.split("")) {
     const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
     const epoch = Number.parseInt(epochText, 10);
     if (!/^[0-9a-f]{40}$/.test(sha2) || !Number.isFinite(epoch) || epoch * 1e3 < from.getTime() || epoch * 1e3 >= until.getTime()) continue;
@@ -13396,9 +13592,9 @@ ${event17.body}`;
     if (isRevert(event17)) {
       const exclusion = common ?? revertExclusion(event17);
       const reason = evidence2("revert_reason", revertReasonClass(event17));
-      for (const target of revertTargets(event17, text, input.repo, index)) {
-        const ofRevert = REVERT_TITLE.test(target.original.title) ? "revert_of_revert" : null;
-        add2(target.original, event17, "revert", [target.evidence, reason], ofRevert ?? exclusion);
+      for (const target2 of revertTargets(event17, text, input.repo, index)) {
+        const ofRevert = REVERT_TITLE.test(target2.original.title) ? "revert_of_revert" : null;
+        add2(target2.original, event17, "revert", [target2.evidence, reason], ofRevert ?? exclusion);
       }
       continue;
     }
@@ -13606,9 +13802,9 @@ function buildRepairPair(candidate, original, fix, runGit3) {
   };
 }
 function changedFiles(runGit3, from, to) {
-  const result = runGit3(["diff", "--name-status", "--no-renames", "-z", from, to]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
-  const parts = result.stdout.split("\0").filter(Boolean);
+  const result2 = runGit3(["diff", "--name-status", "--no-renames", "-z", from, to]);
+  if (result2.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result2.stderr.trim()}`);
+  const parts = result2.stdout.split("\0").filter(Boolean);
   const out = [];
   for (let i = 0; i + 1 < parts.length; i += 2) out.push({ status: parts[i].charAt(0), path: parts[i + 1] });
   return out;
@@ -13616,9 +13812,9 @@ function changedFiles(runGit3, from, to) {
 function existingPaths(runGit3, sha2, paths) {
   const out = [];
   for (let i = 0; i < paths.length; i += 200) {
-    const result = runGit3(["ls-tree", "-r", "--name-only", "-z", sha2, "--", ...paths.slice(i, i + 200)]);
-    if (result.exitCode !== 0) throw new Error(`corrective: cannot list ${sha2}: ${result.stderr.trim()}`);
-    out.push(...result.stdout.split("\0").filter(Boolean));
+    const result2 = runGit3(["ls-tree", "-r", "--name-only", "-z", sha2, "--", ...paths.slice(i, i + 200)]);
+    if (result2.exitCode !== 0) throw new Error(`corrective: cannot list ${sha2}: ${result2.stderr.trim()}`);
+    out.push(...result2.stdout.split("\0").filter(Boolean));
   }
   return out;
 }
@@ -13638,10 +13834,10 @@ function lineSurvival(runGit3, original, fixParent) {
   return Math.round((1 - lost / total) * 1e4) / 1e4;
 }
 function addedLineCount(runGit3, from, to) {
-  const result = runGit3(["diff", "--numstat", "--no-renames", from, to]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  const result2 = runGit3(["diff", "--numstat", "--no-renames", from, to]);
+  if (result2.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result2.stderr.trim()}`);
   let total = 0;
-  for (const line of result.stdout.split("\n")) {
+  for (const line of result2.stdout.split("\n")) {
     const added = Number(line.split("	")[0]);
     if (Number.isFinite(added)) total += added;
   }
@@ -13650,11 +13846,11 @@ function addedLineCount(runGit3, from, to) {
 function diffLines(runGit3, from, to, side, paths) {
   const out = /* @__PURE__ */ new Map();
   if (paths && paths.length === 0) return out;
-  const result = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", from, to, ...paths ? ["--", ...paths] : []]);
-  if (result.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result.stderr.trim()}`);
+  const result2 = runGit3(["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames", from, to, ...paths ? ["--", ...paths] : []]);
+  if (result2.exitCode !== 0) throw new Error(`corrective: cannot diff ${from}..${to}: ${result2.stderr.trim()}`);
   let file = null;
   let inHeader = false;
-  for (const line of result.stdout.split("\n")) {
+  for (const line of result2.stdout.split("\n")) {
     if (line.startsWith("diff --git ")) {
       file = null;
       inHeader = true;
@@ -13761,28 +13957,28 @@ function correctiveCorpusRepo(input, deps) {
     szz: { ...szz, skipped: szz.skipped - blameFailures, failed: blameFailures }
   };
 }
-function summarizeCorrective(result, originals) {
+function summarizeCorrective(result2, originals) {
   const count = (items, key) => items.reduce((acc, item) => (acc[key(item)] = (acc[key(item)] ?? 0) + 1, acc), {});
   const byHorizon = {};
-  for (const row of result.corrective) {
+  for (const row of result2.corrective) {
     const h = byHorizon[row.horizon_days] ??= { rows: 0, true: 0, false: 0, null: 0, true_share: null };
     h.rows++;
     h[String(row.corrective)]++;
   }
   for (const h of Object.values(byHorizon)) h.true_share = h.true + h.false ? Math.round(h.true / (h.true + h.false) * 1e4) / 1e4 : null;
-  const flagged = new Set(result.repairPairs.map((p) => p.original.pr_url));
+  const flagged = new Set(result2.repairPairs.map((p) => p.original.pr_url));
   return {
-    candidates: result.candidates.length,
-    candidates_by_proxy_status: count(result.candidates, (c) => `${c.proxy}:${c.status}`),
-    exclusions: count(result.candidates.filter((c) => c.exclusion_code), (c) => c.exclusion_code),
+    candidates: result2.candidates.length,
+    candidates_by_proxy_status: count(result2.candidates, (c) => `${c.proxy}:${c.status}`),
+    exclusions: count(result2.candidates.filter((c) => c.exclusion_code), (c) => c.exclusion_code),
     revert_reasons: count(
-      result.candidates.filter((c) => c.proxy === "revert" && c.status === "accepted"),
+      result2.candidates.filter((c) => c.proxy === "revert" && c.status === "accepted"),
       (c) => c.evidence.find((e) => e.kind === "revert_reason")?.ref ?? "unstated"
     ),
-    szz: result.szz,
-    repair_pairs: result.repairPairs.length,
-    direct_push_fixes: result.repairPairs.filter((p) => p.fix.pr_url === null).length,
-    failed_pairs: result.failedPairs.length,
+    szz: result2.szz,
+    repair_pairs: result2.repairPairs.length,
+    direct_push_fixes: result2.repairPairs.filter((p) => p.fix.pr_url === null).length,
+    failed_pairs: result2.failedPairs.length,
     originals,
     originals_with_fix_60d: flagged.size,
     originals_with_fix_60d_share: originals ? Math.round(flagged.size / originals * 1e4) / 1e4 : null,
@@ -13797,18 +13993,18 @@ var OUTPUT_LIMIT = 1024 ** 3;
 var MAX_COMPLEXITY_FILE_BYTES = 2 * 1024 ** 2;
 var EMPTY_TREE_SHA2 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 function gitBuffer(gitDir, args, input) {
-  const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], {
+  const result2 = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], {
     maxBuffer: OUTPUT_LIMIT,
     stdio: ["pipe", "pipe", "ignore"],
     ...input === void 0 ? {} : { input }
   });
-  return { ok: result.status === 0, stdout: result.stdout ?? Buffer.alloc(0) };
+  return { ok: result2.status === 0, stdout: result2.stdout ?? Buffer.alloc(0) };
 }
 function forEachGitRecord(gitDir, args, scratch, separator, onRecord) {
   const out = openSync2(scratch, "w");
   try {
-    const result = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], { stdio: ["ignore", out, "pipe"], maxBuffer: 16 * 1024 ** 2 });
-    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${String(result.stderr).trim().split("\n").pop()}`);
+    const result2 = spawnSync("git", ["--no-lazy-fetch", "-C", gitDir, ...args], { stdio: ["ignore", out, "pipe"], maxBuffer: 16 * 1024 ** 2 });
+    if (result2.status !== 0) throw new Error(`git ${args[0]} failed: ${String(result2.stderr).trim().split("\n").pop()}`);
   } finally {
     closeSync2(out);
   }
@@ -14230,10 +14426,10 @@ function runCorpusFeatures(input) {
       const kind = step;
       const records = readRecords(repoDir);
       const numbers = (kind === "ci" ? records.filter((record) => record.merged_at >= CI_CAPTURE_FROM) : records).map((record) => record.pr_number);
-      const result = captureRepo(kind, entry2.repo, repoDir, numbers, input.graphql, log);
-      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, prs: numbers.length, ...result })}
+      const result2 = captureRepo(kind, entry2.repo, repoDir, numbers, input.graphql, log);
+      io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, prs: numbers.length, ...result2 })}
 `);
-      if (result.failed) failures++;
+      if (result2.failed) failures++;
     } catch (error) {
       failures++;
       io.writeStdout(`${JSON.stringify({ repo: entry2.repo, step, error: error.message.slice(0, 200) })}
@@ -14389,7 +14585,7 @@ function replayRepo(input) {
     landingMessage: landingMessage(record, index),
     git: gitColumns({ index, gitDir, record, authorEmails: authorEmails(record, evidence3) })
   });
-  const result = { repo, cuts: anchors.length, totals: emptyTally(), by_landed_by: {}, items: [] };
+  const result2 = { repo, cuts: anchors.length, totals: emptyTally(), by_landed_by: {}, items: [] };
   anchors.forEach((anchor, cutNumber) => {
     const cutPosition = landing(anchor);
     const cutSha = line[cutPosition];
@@ -14411,12 +14607,12 @@ function replayRepo(input) {
       if (perturbed.length === 0) tally.perturbed_identical = 1;
       if (controlChanged) tally.control_changed = 1;
       if (leaky) tally.leaky_reading_differs = 1;
-      add(result.totals, tally);
-      add(result.by_landed_by[record.landed_by] ??= emptyTally(), tally);
-      result.items.push({ pr_number: record.pr_number, landed_by: record.landed_by, cut_sha: cutSha, replay, perturbed, control_changed: controlChanged, leaky_reading_differs: leaky });
+      add(result2.totals, tally);
+      add(result2.by_landed_by[record.landed_by] ??= emptyTally(), tally);
+      result2.items.push({ pr_number: record.pr_number, landed_by: record.landed_by, cut_sha: cutSha, replay, perturbed, control_changed: controlChanged, leaky_reading_differs: leaky });
     }
   });
-  return result;
+  return result2;
 }
 function runFeatureReplay(input) {
   const { io, log } = input;
@@ -14444,11 +14640,11 @@ function runFeatureReplay(input) {
   development.forEach((entry2, position) => {
     const label2 = `development repo ${position + 1}/${development.length}`;
     try {
-      const result = replayRepo({ repo: entry2.repo, repoDir: join9(input.cacheRoot, entry2.repo.replace("/", "__")), seed, cuts: input.cuts, perCut: input.perCut, log, label: label2 });
-      writeFileSync4(join9(input.outDir, `replay-${position + 1}.json`), `${JSON.stringify(result, null, 2)}
+      const result2 = replayRepo({ repo: entry2.repo, repoDir: join9(input.cacheRoot, entry2.repo.replace("/", "__")), seed, cuts: input.cuts, perCut: input.perCut, log, label: label2 });
+      writeFileSync4(join9(input.outDir, `replay-${position + 1}.json`), `${JSON.stringify(result2, null, 2)}
 `);
-      add(totals, result.totals);
-      for (const [type, tally] of Object.entries(result.by_landed_by)) add(byLandedBy[type] ??= emptyTally(), tally);
+      add(totals, result2.totals);
+      for (const [type, tally] of Object.entries(result2.by_landed_by)) add(byLandedBy[type] ??= emptyTally(), tally);
     } catch (error) {
       failures++;
       log(`error: ${label2}: ${error.message.slice(0, 200)}`);
@@ -14595,7 +14791,7 @@ function auditShare(plan, stratum) {
 }
 function auditedUrls(picked, plan, stratum, seed) {
   return new Set(
-    seededOrder(picked, (u) => sha2562(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * auditShare(plan, stratum))).map((u) => u.pr_url)
+    seededOrder(picked, (u) => sha2563(seed, "audit", u.pr_url)).slice(0, Math.ceil(picked.length * auditShare(plan, stratum))).map((u) => u.pr_url)
   );
 }
 function extendAudit(items, plan, seed) {
@@ -14611,7 +14807,7 @@ function parseLabellers(raw) {
   if (l.a === l.b) throw new Error("plan.labellers.a and .b must be different models");
   return { a: l.a, b: l.b };
 }
-var sha2562 = (...parts) => createHash7("sha256").update(parts.join("\0")).digest("hex");
+var sha2563 = (...parts) => createHash7("sha256").update(parts.join("\0")).digest("hex");
 function seededOrder(list, key) {
   return list.map((item) => [key(item), item]).sort((a, b) => a[0].localeCompare(b[0])).map(([, item]) => item);
 }
@@ -14699,10 +14895,10 @@ function drawCalibrationSample(units, plan, seed) {
       else byRepo.set(u.repo, [u]);
     }
     for (const [repo, list] of byRepo) {
-      byRepo.set(repo, seededOrder(list, (u) => sha2562(seed, stratum, u.pr_url)));
+      byRepo.set(repo, seededOrder(list, (u) => sha2563(seed, stratum, u.pr_url)));
       cells.set(`${repo}\0${stratum}`, { repo, stratum, population: list.length, sampled: 0 });
     }
-    const repos = seededOrder([...byRepo.keys()], (repo) => sha2562(seed, "repo", stratum, repo));
+    const repos = seededOrder([...byRepo.keys()], (repo) => sha2563(seed, "repo", stratum, repo));
     const want = plan.allocation[stratum];
     const picked = [];
     if (plan.repo_allocation) {
@@ -14725,13 +14921,13 @@ function drawCalibrationSample(units, plan, seed) {
     }
     if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
     const doubles = new Set(
-      seededOrder(picked, (u) => sha2562(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
+      seededOrder(picked, (u) => sha2563(seed, "double", u.pr_url)).slice(0, Math.ceil(picked.length * plan.double_label_share)).map((u) => u.pr_url)
     );
     const audited = auditedUrls(picked, plan, stratum, seed);
-    for (const unit of picked) items.push({ ...unit, item_id: sha2562(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
+    for (const unit of picked) items.push({ ...unit, item_id: sha2563(seed, "item", unit.pr_url).slice(0, 12), double: doubles.has(unit.pr_url), audit: audited.has(unit.pr_url) });
   }
   return {
-    items: seededOrder(items, (i) => sha2562(seed, "order", i.item_id)),
+    items: seededOrder(items, (i) => sha2563(seed, "order", i.item_id)),
     cells: [...cells.values()].sort((x, y) => x.repo.localeCompare(y.repo) || CALIBRATION_STRATA.indexOf(x.stratum) - CALIBRATION_STRATA.indexOf(y.stratum)),
     shortfalls
   };
@@ -14912,7 +15108,7 @@ var recallOf = (positive) => (rows) => {
   return den ? num2 / den : null;
 };
 function prng(seed) {
-  let a = parseInt(sha2562(seed, "bootstrap").slice(0, 8), 16) >>> 0;
+  let a = parseInt(sha2563(seed, "bootstrap").slice(0, 8), 16) >>> 0;
   return () => {
     a = a + 1831565813 >>> 0;
     let t = a;
@@ -15002,7 +15198,7 @@ function scoreCalibration(input) {
     if (d.precision.estimate === null || d.precision.estimate < plan.definition_precision_floor) continue;
     if (!chosen || (d.recall.estimate ?? 0) > (chosen.recall.estimate ?? 0)) chosen = d;
   }
-  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha2562(seed, "pseudonym", repo));
+  const repoNames = seededOrder([...new Set(items.map((i) => i.repo))], (repo) => sha2563(seed, "pseudonym", repo));
   const anyProxy = (item) => item.proxies.length > 0;
   const repos = repoNames.map((repo, i) => {
     const subset = rows.filter((r) => r.item.repo === repo);
@@ -15170,9 +15366,9 @@ var EVIDENCE_DIFF_MAX_CHARS = 6e4;
 var EVIDENCE_RELATED_MAX = 15;
 var EVIDENCE_RELATED_MAX_FILES = 50;
 function git(runGit3, args) {
-  const result = runGit3(args);
-  if (result.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim().split("\n").pop()}`);
-  return result.stdout;
+  const result2 = runGit3(args);
+  if (result2.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${result2.stderr.trim().split("\n").pop()}`);
+  return result2.stdout;
 }
 function cap(diff) {
   return diff.length > EVIDENCE_DIFF_MAX_CHARS ? { diff: `${diff.slice(0, EVIDENCE_DIFF_MAX_CHARS)}
@@ -15280,26 +15476,26 @@ function scoreGold(sheet, items, passShare) {
   const rows = sheetBody(sheet);
   const col = (name) => SHEET_COLUMNS.indexOf(name);
   const byId = new Map(rows.map((r) => [r[col("item_id")].trim(), r]));
-  const result = { items: items.length, correct: 0, unlabelled: 0, min_correct: Math.ceil(passShare * items.length), passed: false, exclusion: { matched: 0, of: 0 }, missed_fix_cited: { cited: 0, of: 0 }, per_item: [] };
+  const result2 = { items: items.length, correct: 0, unlabelled: 0, min_correct: Math.ceil(passShare * items.length), passed: false, exclusion: { matched: 0, of: 0 }, missed_fix_cited: { cited: 0, of: 0 }, per_item: [] };
   for (const g of items) {
     const r = byId.get(g.item_id);
     const get = (name) => (r?.[col(name)] ?? "").trim();
     const got = get("corrective").toLowerCase();
-    if (!CALIBRATION_VERDICTS.includes(got)) result.unlabelled++;
+    if (!CALIBRATION_VERDICTS.includes(got)) result2.unlabelled++;
     const correct = got === g.expected.corrective;
-    if (correct) result.correct++;
+    if (correct) result2.correct++;
     if (correct && got === "no" && g.candidate_fixes.length) {
-      result.exclusion.of++;
-      if (get("exclusion_code").toLowerCase() === g.expected.exclusion_code) result.exclusion.matched++;
+      result2.exclusion.of++;
+      if (get("exclusion_code").toLowerCase() === g.expected.exclusion_code) result2.exclusion.matched++;
     }
     if (correct && g.kind === "missed_fix") {
-      result.missed_fix_cited.of++;
-      if (g.expected.fix_url && get("notes").includes(g.expected.fix_url)) result.missed_fix_cited.cited++;
+      result2.missed_fix_cited.of++;
+      if (g.expected.fix_url && get("notes").includes(g.expected.fix_url)) result2.missed_fix_cited.cited++;
     }
-    result.per_item.push({ item_id: g.item_id, kind: g.kind, expected: g.expected.corrective, got: got || "(blank)", correct, notes: get("notes") });
+    result2.per_item.push({ item_id: g.item_id, kind: g.kind, expected: g.expected.corrective, got: got || "(blank)", correct, notes: get("notes") });
   }
-  result.passed = result.correct >= result.min_correct;
-  return result;
+  result2.passed = result2.correct >= result2.min_correct;
+  return result2;
 }
 
 // src/corpus/pr-refs.ts
@@ -15346,10 +15542,10 @@ var SEARCH_CAP = 1e3;
 var DAY_MS2 = 864e5;
 var EMPTY_TREE_SHA3 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 var isoDay = (ms2) => new Date(ms2).toISOString().slice(0, 10);
-function enumerateCorpusRepo(target, deps) {
-  const commits = readFirstParent(target, deps.runGit);
-  const rollups = readRollupMembers(target, deps.runGit, commits);
-  const apiPrs = fetchMergedPrs(target, deps);
+function enumerateCorpusRepo(target2, deps) {
+  const commits = readFirstParent(target2, deps.runGit);
+  const rollups = readRollupMembers(target2, deps.runGit, commits);
+  const apiPrs = fetchMergedPrs(target2, deps);
   const byNumber = new Map(apiPrs.map((pr2) => [pr2.number, pr2]));
   const byMergeSha = /* @__PURE__ */ new Map();
   for (const pr2 of apiPrs) {
@@ -15360,7 +15556,7 @@ function enumerateCorpusRepo(target, deps) {
   }
   const named = [...commits.flatMap((c) => c.prNumbers), ...[...rollups.values()].flat().map((m) => m.prNumber)];
   const missing = [...new Set(named)].filter((n) => !byNumber.has(n));
-  for (const pr2 of fetchPrsByNumber(target.repo, missing, deps)) byNumber.set(pr2.number, pr2);
+  for (const pr2 of fetchPrsByNumber(target2.repo, missing, deps)) byNumber.set(pr2.number, pr2);
   const records = [];
   const mapped = /* @__PURE__ */ new Set();
   const used = /* @__PURE__ */ new Set();
@@ -15370,7 +15566,7 @@ function enumerateCorpusRepo(target, deps) {
   let rollupUnresolved = 0;
   const recordByNumber = /* @__PURE__ */ new Map();
   const toRecord = (pr2, landing, fields) => ({
-    repo: target.repo,
+    repo: target2.repo,
     pr_number: pr2.number,
     pr_url: pr2.url,
     merged_at: pr2.mergedAt ?? new Date(landing.epoch * 1e3).toISOString(),
@@ -15444,13 +15640,13 @@ function enumerateCorpusRepo(target, deps) {
       recordByNumber.set(pr2.number, record);
     }
   }
-  const defaultNames = new Set(target.defaultBranchNames);
+  const defaultNames = new Set(target2.defaultBranchNames);
   const unmapped = commits.filter((c) => !mapped.has(c.sha));
   const audit = auditUnmapped(unmapped.filter((c) => !c.isRevert), deps.pullsForCommit, unmapped.length);
   const stats = {
-    repo: target.repo,
-    branch: target.branch,
-    window: { from: target.from.toISOString(), until: target.until.toISOString() },
+    repo: target2.repo,
+    branch: target2.branch,
+    window: { from: target2.from.toISOString(), until: target2.until.toISOString() },
     first_parent_commits: commits.length,
     mapped_commits: mapped.size,
     mapped_share: commits.length ? Number((mapped.size / commits.length).toFixed(4)) : null,
@@ -15491,49 +15687,49 @@ function auditUnmapped(unmapped, pullsForCommit, unmappedTotal) {
     }
   };
 }
-function readFirstParent(target, runGit3) {
+function readFirstParent(target2, runGit3) {
   const commits = [];
   const seen = /* @__PURE__ */ new Set();
-  const start = target.from.getTime();
-  const end = target.until.getTime();
+  const start = target2.from.getTime();
+  const end = target2.until.getTime();
   for (let lo = start; lo < end; lo += 30 * DAY_MS2) {
     const hi = Math.min(lo + 30 * DAY_MS2, end);
-    const result = runGit3([
+    const result2 = runGit3([
       "log",
       "--first-parent",
       "--reverse",
       `--since=${new Date(lo).toISOString()}`,
       `--until=${new Date(hi).toISOString()}`,
       "--pretty=format:%H%x1f%P%x1f%ct%x1f%s%x1f%b%x1e",
-      target.branch
+      target2.branch
     ]);
-    if (result.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target.branch}: ${result.stderr.trim()}`);
-    for (const entry2 of result.stdout.split("")) {
+    if (result2.exitCode !== 0) throw new Error(`corpus: cannot read first-parent history of ${target2.branch}: ${result2.stderr.trim()}`);
+    for (const entry2 of result2.stdout.split("")) {
       const [sha2 = "", parents = "", epochText = "", subject = "", body = ""] = entry2.replace(/^\n/, "").split("");
       if (!/^[0-9a-f]{40}$/.test(sha2) || seen.has(sha2)) continue;
       const epoch = Number.parseInt(epochText, 10);
       if (!Number.isFinite(epoch) || epoch * 1e3 < lo || epoch * 1e3 >= hi) continue;
       seen.add(sha2);
-      commits.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target.repo), isRevert: /^revert\b/i.test(subject.trim()) });
+      commits.push({ sha: sha2, parents: parents.trim().split(/\s+/).filter(Boolean), epoch, prNumbers: extractCorpusPrNumbers(subject, body, target2.repo), isRevert: /^revert\b/i.test(subject.trim()) });
     }
   }
   return commits;
 }
 var ROLLUP_MERGE = /^Rollup merge of #(\d+)\b/;
-function readRollupMembers(target, runGit3, commits) {
+function readRollupMembers(target2, runGit3, commits) {
   const out = /* @__PURE__ */ new Map();
   if (!commits.some((c) => c.parents.length > 1)) return out;
-  const result = runGit3([
+  const result2 = runGit3([
     "log",
     "--grep=^Rollup merge of #",
-    `--since=${new Date(target.from.getTime() - 30 * DAY_MS2).toISOString()}`,
-    `--until=${target.until.toISOString()}`,
+    `--since=${new Date(target2.from.getTime() - 30 * DAY_MS2).toISOString()}`,
+    `--until=${target2.until.toISOString()}`,
     "--pretty=format:%H%x1f%P%x1f%s%x1e",
-    target.branch
+    target2.branch
   ]);
-  if (result.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target.branch}: ${result.stderr.trim()}`);
+  if (result2.exitCode !== 0) throw new Error(`corpus: cannot read rollup merges on ${target2.branch}: ${result2.stderr.trim()}`);
   const bySha = /* @__PURE__ */ new Map();
-  for (const entry2 of result.stdout.split("")) {
+  for (const entry2 of result2.stdout.split("")) {
     const [sha2 = "", parents = "", subject = ""] = entry2.replace(/^\n/, "").split("");
     const prNumber = Number(subject.trim().match(ROLLUP_MERGE)?.[1]);
     const parentSha = parents.trim().split(/\s+/)[0];
@@ -15546,13 +15742,13 @@ function readRollupMembers(target, runGit3, commits) {
   }
   return out;
 }
-function fetchMergedPrs(target, deps) {
+function fetchMergedPrs(target2, deps) {
   const out = /* @__PURE__ */ new Map();
-  const pending = [[target.from.getTime(), target.until.getTime() - DAY_MS2]];
+  const pending = [[target2.from.getTime(), target2.until.getTime() - DAY_MS2]];
   while (pending.length) {
     const [lo, hi] = pending.shift();
     const range = `${isoDay(lo)}..${isoDay(hi)}`;
-    const q = `repo:${target.repo} is:pr is:merged merged:${range}`;
+    const q = `repo:${target2.repo} is:pr is:merged merged:${range}`;
     const cacheKey = `merged:${range}`;
     const cached = deps.cache?.get(cacheKey);
     if (cached) {
@@ -15574,7 +15770,7 @@ function fetchMergedPrs(target, deps) {
       after = page.pageInfo.endCursor;
     }
     deps.cache?.set(cacheKey, slice);
-    deps.onDiagnostic?.(`info: ${target.repo} ${range}: ${slice.length} merged PRs`);
+    deps.onDiagnostic?.(`info: ${target2.repo} ${range}: ${slice.length} merged PRs`);
     for (const pr2 of slice) out.set(pr2.number, pr2);
   }
   return [...out.values()];
@@ -15647,7 +15843,7 @@ function prefetchedGithubClient(crossReferences) {
   };
 }
 function labelCorpusRepo(input, deps) {
-  const target = { owner: input.owner, repo: input.repo, integrationBranch: input.branch, integrationMode: "direct", repoDir: input.repoDir };
+  const target2 = { owner: input.owner, repo: input.repo, integrationBranch: input.branch, integrationMode: "direct", repoDir: input.repoDir };
   const labellerDeps = { runGit: deps.runGit, github: deps.github, now: deps.now, onDiagnostic: deps.onDiagnostic };
   const all = input.records.map(toMergedPrRef);
   const horizonTerminalIndex = buildHorizonTerminalIndex(labellerDeps, input.branch) ?? void 0;
@@ -15656,7 +15852,7 @@ function labelCorpusRepo(input, deps) {
   for (const [i, pr2] of all.entries()) {
     if (i > 0 && i % 500 === 0) deps.onDiagnostic?.(`info: ${input.owner}/${input.repo}: labelled ${i}/${all.length} PRs`);
     try {
-      rows.push(...labelMergedPr(target, labellerDeps, pr2, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
+      rows.push(...labelMergedPr(target2, labellerDeps, pr2, { horizons: input.horizons, allMergedPrs: all, horizonTerminalIndex }));
     } catch (error) {
       failed.push(pr2.prNumber);
       deps.onDiagnostic?.(`error: failed to label ${pr2.prUrl}: ${String(error).slice(0, 200)}`);
@@ -15916,9 +16112,9 @@ var CORPUS_COMMANDS = [
 var RETRYABLE = /HTTP 50[234]|secondary rate limit|abuse|timed? ?out|ETIMEDOUT|ECONNRESET|was submitted too quickly|Something went wrong while executing your query|connection reset by peer|unexpected EOF|error connecting to|could not resolve host|unexpected end of JSON input/i;
 var RATE_LIMITED = /rate limit (?:already )?exceeded|RATE_LIMITED/i;
 function secondsUntilReset() {
-  const result = execArgvCommand("gh", ["api", "rate_limit", "--jq", "[.resources.graphql, .resources.core] | map(select(.remaining < 50) | .reset) | max // 0"], { encoding: "utf8" });
-  const reset = Number(result.stdout.trim());
-  if (result.exitCode !== 0 || !Number.isFinite(reset) || reset === 0) return 60;
+  const result2 = execArgvCommand("gh", ["api", "rate_limit", "--jq", "[.resources.graphql, .resources.core] | map(select(.remaining < 50) | .reset) | max // 0"], { encoding: "utf8" });
+  const reset = Number(result2.stdout.trim());
+  if (result2.exitCode !== 0 || !Number.isFinite(reset) || reset === 0) return 60;
   return Math.max(30, reset - Math.floor(Date.now() / 1e3) + 5);
 }
 var blockingSleep = (ms2) => {
@@ -15932,11 +16128,11 @@ function createGhGraphql(sleep, log) {
       args.push(typeof value === "number" ? "-F" : "-f", `${key}=${value}`);
     }
     for (let attempt2 = 0; ; attempt2++) {
-      const result = execArgvCommand("gh", args, { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
-      const parsed = parseGraphqlResponse(result.stdout);
+      const result2 = execArgvCommand("gh", args, { encoding: "utf8", maxBuffer: GIT_OUTPUT_MAX_BUFFER });
+      const parsed = parseGraphqlResponse(result2.stdout);
       if (parsed?.data && (parsed.errors ?? []).every((error) => error.type === "NOT_FOUND")) return parsed.data;
-      if (result.exitCode === 0 && parsed?.errors?.length) throw new Error(`GitHub GraphQL error: ${parsed.errors[0].message}`);
-      const stderr = result.stderr || result.stdout;
+      if (result2.exitCode === 0 && parsed?.errors?.length) throw new Error(`GitHub GraphQL error: ${parsed.errors[0].message}`);
+      const stderr = result2.stderr || result2.stdout;
       if (RATE_LIMITED.test(stderr) && attempt2 < 48) {
         const wait = secondsUntilReset();
         log(`warn: GitHub rate limit reached; waiting ${wait}s for the window to reset`);
@@ -15963,20 +16159,20 @@ function parseGraphqlResponse(stdout) {
 function createGhPullsForCommit(repo, sleep, log) {
   return (sha2) => {
     for (let attempt2 = 0; ; attempt2++) {
-      const result = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha2}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
-      if (result.exitCode === 0) return JSON.parse(result.stdout || "[]");
-      if (RATE_LIMITED.test(result.stderr) && attempt2 < 48) {
+      const result2 = execArgvCommand("gh", ["api", `repos/${repo}/commits/${sha2}/pulls`, "--jq", "[.[] | .number]"], { encoding: "utf8" });
+      if (result2.exitCode === 0) return JSON.parse(result2.stdout || "[]");
+      if (RATE_LIMITED.test(result2.stderr) && attempt2 < 48) {
         const wait = secondsUntilReset();
         log(`warn: GitHub rate limit reached; waiting ${wait}s for the window to reset`);
         sleep(wait * 1e3);
         continue;
       }
-      if (RETRYABLE.test(result.stderr) && attempt2 < 6) {
-        log(`warn: GitHub ${result.stderr.split("\n")[0]?.slice(0, 80)}; retrying`);
+      if (RETRYABLE.test(result2.stderr) && attempt2 < 6) {
+        log(`warn: GitHub ${result2.stderr.split("\n")[0]?.slice(0, 80)}; retrying`);
         sleep(2e3 * 2 ** attempt2);
         continue;
       }
-      throw new Error(`GitHub request failed: ${result.stderr.split("\n")[0]?.slice(0, 200)}`);
+      throw new Error(`GitHub request failed: ${result2.stderr.split("\n")[0]?.slice(0, 200)}`);
     }
   };
 }
@@ -16329,25 +16525,25 @@ function runCorrective(entries, cacheRoot, window, asOf, graphql, io, log) {
       log(`info: ${entry2.repo}: fetching labels for ${new Set(closing).size} closed issues`);
       const issues = prefetchIssueMeta(entry2.repo, closing, graphql, cache);
       const s2Rows = readGzipJsonlMembers(s2Path);
-      const result = correctiveCorpusRepo(
+      const result2 = correctiveCorpusRepo(
         { repo: entry2.repo, branch, originals, laterPrs, from: window.from, asOf, crossReferences, issues, szz: true, s2Rows },
         { runGit: runGit3, now: () => /* @__PURE__ */ new Date(), onDiagnostic: log }
       );
-      writeJsonl(join10(repoDir, "candidates.jsonl.gz"), result.candidates, { gzip: true });
-      writeJsonl(join10(repoDir, "repair_pairs.jsonl.gz"), result.repairPairs, { gzip: true });
-      writeJsonl(join10(repoDir, "corrective.jsonl.gz"), result.corrective, { gzip: true });
+      writeJsonl(join10(repoDir, "candidates.jsonl.gz"), result2.candidates, { gzip: true });
+      writeJsonl(join10(repoDir, "repair_pairs.jsonl.gz"), result2.repairPairs, { gzip: true });
+      writeJsonl(join10(repoDir, "corrective.jsonl.gz"), result2.corrective, { gzip: true });
       const summary = {
         repo: entry2.repo,
         as_of: asOf.toISOString(),
         later_prs: laterPrs.length,
-        ...summarizeCorrective(result, originals.length),
+        ...summarizeCorrective(result2, originals.length),
         wall_clock_seconds: Math.round((Date.now() - started) / 1e3)
       };
       writeFileSync5(join10(repoDir, "corrective.summary.json"), `${JSON.stringify(summary, null, 2)}
 `);
       io.writeStdout(`${JSON.stringify(summary)}
 `);
-      if (result.failedPairs.length || result.szz.failed) failures++;
+      if (result2.failedPairs.length || result2.szz.failed) failures++;
     } catch (error) {
       failures++;
       io.writeStdout(`${JSON.stringify({ repo: entry2.repo, error: error.message })}
@@ -16406,7 +16602,7 @@ function runCorrectiveDerive(entries, cacheRoot, definition, io, log) {
 }
 var REPORT_INPUTS = ["s2.jsonl.gz", "candidates.jsonl.gz", "repair_pairs.jsonl.gz", "corrective.jsonl.gz"];
 function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, log) {
-  const sha2563 = (bytes) => createHash9("sha256").update(bytes).digest("hex");
+  const sha2564 = (bytes) => createHash9("sha256").update(bytes).digest("hex");
   const repos = [];
   const inputs = [];
   const versions = { s2: /* @__PURE__ */ new Set(), corrective: /* @__PURE__ */ new Set() };
@@ -16417,10 +16613,10 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
     const repoDir = join10(cacheRoot, `${owner}__${name}`);
     try {
       for (const file of REPORT_INPUTS) if (!existsSync7(join10(repoDir, file))) throw new Error(`missing ${file}; run corpus-label and corpus-corrective first`);
-      const counted = (file, onRow) => {
+      const counted2 = (file, onRow) => {
         const path4 = join10(repoDir, file);
         const bytes = readFileSync7(path4);
-        const record = { repo: entry2.repo, file, sha256: sha2563(bytes), bytes: bytes.length, rows: 0 };
+        const record = { repo: entry2.repo, file, sha256: sha2564(bytes), bytes: bytes.length, rows: 0 };
         inputs.push(record);
         return (function* () {
           for (const row of readGzipJsonlMembers(path4)) {
@@ -16433,13 +16629,13 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
       const checkAsOf = (value, file) => {
         if (value.slice(0, 10) !== day) throw new Error(`${file} is labelled as of ${value}, not ${day}`);
       };
-      const s2Rows = counted("s2.jsonl.gz", (r) => versions.s2.add(`schema ${r.schema_version}, labeller ${r.envelope.labeller_version}`));
-      const candidates = counted("candidates.jsonl.gz", (r) => checkAsOf(r.envelope.as_of, "candidates.jsonl.gz"));
-      const correctiveRows = counted("corrective.jsonl.gz", (r) => {
+      const s2Rows = counted2("s2.jsonl.gz", (r) => versions.s2.add(`schema ${r.schema_version}, labeller ${r.envelope.labeller_version}`));
+      const candidates = counted2("candidates.jsonl.gz", (r) => checkAsOf(r.envelope.as_of, "candidates.jsonl.gz"));
+      const correctiveRows = counted2("corrective.jsonl.gz", (r) => {
         checkAsOf(r.envelope.as_of, "corrective.jsonl.gz");
         versions.corrective.add(`schema ${r.schema_version}, definition ${r.envelope.definition_version}, labeller ${r.envelope.labeller_version}`);
       });
-      const pairs = counted("repair_pairs.jsonl.gz", () => {
+      const pairs = counted2("repair_pairs.jsonl.gz", () => {
       })[Symbol.iterator]();
       while (!pairs.next().done) ;
       const summary = summarizeCorpusRepo({ repo: entry2.repo, tier: entry2.tier ?? null, mergeConvention: entry2.observed_merge_convention ?? null, s2Rows, candidates, correctiveRows });
@@ -16457,11 +16653,11 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   const manifest = {
     report_version: CORPUS_REPORT_VERSION,
     as_of: asOf.toISOString(),
-    cohort_manifest_sha256: sha2563(manifestBytes),
+    cohort_manifest_sha256: sha2564(manifestBytes),
     label_versions: { s2: [...versions.s2].sort(), corrective: [...versions.corrective].sort() },
     inputs
   };
-  const run_id = sha2563(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
+  const run_id = sha2564(Buffer.from(JSON.stringify(manifest))).slice(0, 16);
   mkdirSync5(outDir, { recursive: true });
   writeFileSync5(join10(outDir, "run-manifest.json"), `${JSON.stringify({ run_id, ...manifest, flags: flags.map(({ code, repos: r, merge_convention, resolution }) => ({ code, repos: r, merge_convention, resolution })), convention_findings: findings }, null, 2)}
 `);
@@ -16474,7 +16670,7 @@ function runReport(entries, cacheRoot, asOf, manifestBytes, notes, outDir, io, l
   return { exitCode: unresolved ? 1 : 0 };
 }
 function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slicePath, outDir, seedArg, io, log, excludeSamplePaths = []) {
-  const sha2563 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
+  const sha2564 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
   const excludedUrls = /* @__PURE__ */ new Set();
   const excludedSamples = [];
   let plan;
@@ -16495,7 +16691,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
       const prior = JSON.parse(bytes2.toString("utf8"));
       if (!Array.isArray(prior.items) || !prior.items.length) throw new Error(`--exclude-sample ${path4} has no items`);
       for (const item of prior.items) excludedUrls.add(item.pr_url);
-      excludedSamples.push({ sample_sha256: sha2563(bytes2), items: prior.items.length });
+      excludedSamples.push({ sample_sha256: sha2564(bytes2), items: prior.items.length });
     }
   } catch (error) {
     io.writeStderr(`error: ${error.message}
@@ -16515,7 +16711,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
       for (const file2 of files) {
         const path4 = join10(repoDir, file2);
         if (!existsSync7(path4)) throw new Error(`missing ${file2}; run corpus-corrective first`);
-        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2563(readFileSync7(path4)) });
+        inputs.push({ repo: entry2.repo, file: file2, sha256: sha2564(readFileSync7(path4)) });
       }
       units.push(
         ...classifyCalibrationRepo({
@@ -16543,9 +16739,9 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
     procedure: "hok-3269-calibration-sample",
     sampler_version: CALIBRATION_SAMPLER_VERSION,
     plan,
-    plan_sha256: sha2563(planBytes),
-    cohort_manifest_sha256: sha2563(manifestBytes),
-    excluded_slice_sha256: sha2563(sliceBytes),
+    plan_sha256: sha2564(planBytes),
+    cohort_manifest_sha256: sha2564(manifestBytes),
+    excluded_slice_sha256: sha2564(sliceBytes),
     seed,
     inputs,
     cells: sample.cells,
@@ -16559,7 +16755,7 @@ function runCalibrationSample(entries, manifestBytes, cacheRoot, planPath, slice
   writeFileSync5(join10(outDir, "sample.json"), bytes, { mode: 384, flag: "wx" });
   const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, sample.items.filter((i) => i.stratum === s).length]));
   io.writeStdout(
-    `${JSON.stringify({ sample_sha256: sha2563(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
+    `${JSON.stringify({ sample_sha256: sha2564(bytes), items: sample.items.length, double: sample.items.filter((i) => i.double).length, audit: sample.items.filter((i) => i.audit).length, repos, strata, shortfalls: sample.shortfalls })}
 `
   );
   return { exitCode: 0 };
@@ -16653,7 +16849,7 @@ function appendSheetRows(sheet, extra) {
 var TOPUP_PLAN_FIELDS = /* @__PURE__ */ new Set(["plan_version", "human_audit_share_by_stratum", "pick_needs_human_precision"]);
 function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
   try {
-    const sha2563 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
+    const sha2564 = (bytes2) => createHash9("sha256").update(bytes2).digest("hex");
     const samplePath = join10(sampleDir, "sample.json");
     const sample = JSON.parse(readFileSync7(samplePath, "utf8"));
     if (sample.procedure !== "hok-3269-calibration-sample") throw new Error(`${sampleDir}/sample.json is not a calibration sample`);
@@ -16697,7 +16893,7 @@ function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
     const next = {
       ...sample,
       plan,
-      plan_sha256: sha2563(planBytes),
+      plan_sha256: sha2564(planBytes),
       items,
       audit_topups: [...sample.audit_topups ?? [], { plan_version: plan.plan_version, from_plan_version: sample.plan.plan_version, added: added.length, gold_item_ids: hidden.map((g) => g.item_id), at: (/* @__PURE__ */ new Date()).toISOString() }]
     };
@@ -16707,7 +16903,7 @@ function runCalibrationTopup(sampleDir, planPath, goldPath, io) {
     writeFileSync5(priorGoldPath, goldBytes, { mode: 384 });
     const strata = Object.fromEntries(CALIBRATION_STRATA.map((s) => [s, added.filter((i) => i.stratum === s).length]).filter(([, n]) => n > 0));
     io.writeStdout(
-      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha2563(bytes), gold_sha256: sha2563(goldBytes) })}
+      `${JSON.stringify({ added: added.length, added_by_stratum: strata, hidden: hidden.length, sheet_rows: added.length + hidden.length, sheet: blankPath, sample_sha256: sha2564(bytes), gold_sha256: sha2564(goldBytes) })}
 `
     );
     return { exitCode: 0 };
@@ -16823,15 +17019,15 @@ function rowsCells(row) {
     ([key]) => key === "cell" || key === "ratio" || key.endsWith("_rate")
   ).map(([, value]) => value);
 }
-function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
+function applyReportSuppression(draft, policy2 = DEFAULT_REPORT_POLICY) {
   const report = structuredClone(draft);
-  report.policy = structuredClone(policy);
+  report.policy = structuredClone(policy2);
   const executed = report.prs.filter(
     (pr2) => pr2.attribution.exact_model.evidence === "first_party_executed"
   );
   const executedRate = executed.length / Math.max(1, report.coverage.prs_enumerated);
-  const exact = report.coverage.attribution.exact_model.rate >= policy.min_exact_model_coverage && executedRate >= policy.min_exact_model_coverage;
-  const harness = report.coverage.attribution.harness.rate >= policy.min_harness_coverage;
+  const exact = report.coverage.attribution.exact_model.rate >= policy2.min_exact_model_coverage && executedRate >= policy2.min_exact_model_coverage;
+  const harness = report.coverage.attribution.harness.rate >= policy2.min_harness_coverage;
   const comparablePriced = executed.filter(
     (pr2) => pr2.cost?.actual_usd !== null && pr2.cost?.actual_usd !== void 0
   ).length;
@@ -16840,12 +17036,12 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
     comparablePriced
   );
   const actualCoverage = priced / Math.max(1, executed.length);
-  const actual = !!report.cost && !report.cost.actual.suppressed && priced >= policy.min_cell_n && actualCoverage >= policy.min_cost_coverage;
+  const actual = !!report.cost && !report.cost.actual.suppressed && priced >= policy2.min_cell_n && actualCoverage >= policy2.min_cost_coverage;
   const eligibility = report.eligibility;
   eligibility.exact_model_table = exact;
   eligibility.harness_table = harness;
   eligibility.cost_adjusted_by_model = exact && actual;
-  eligibility.retrospective = !!report.model_provenance && !!report.retrospective && report.retrospective.n_reworked >= policy.min_reworked_for_retrospective;
+  eligibility.retrospective = !!report.model_provenance && !!report.retrospective && report.retrospective.n_reworked >= policy2.min_reworked_for_retrospective;
   const modelReasons = exact ? [] : harness ? ["exact_model_coverage_below_floor", "harness_only_evidence"] : ["exact_model_coverage_below_floor"];
   const harnessReasons = harness ? [] : ["harness_coverage_below_floor"];
   const costReasons = exact ? actual ? [] : ["cost_coverage_below_floor"] : modelReasons;
@@ -16860,7 +17056,7 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
     const reason = sectionReasons[name];
     for (const row of section2.rows)
       for (const cell2 of rowsCells(row)) {
-        if (cell2.n < policy.min_cell_n) hide(cell2, ["n_below_floor"]);
+        if (cell2.n < policy2.min_cell_n) hide(cell2, ["n_below_floor"]);
         if (reason.length) hide(cell2, reason);
       }
     const cells = section2.rows.flatMap(
@@ -16887,20 +17083,20 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
     ...modelReasons,
     ...harnessReasons,
     ...costReasons,
-    ...report.coverage.attribution.agent.rate < policy.min_agent_coverage ? ["agent_coverage_below_floor"] : []
+    ...report.coverage.attribution.agent.rate < policy2.min_agent_coverage ? ["agent_coverage_below_floor"] : []
   ]);
   if (report.retrospective) {
     const reasons2 = [];
     if (!report.model_provenance) reasons2.push("no_model_provenance");
-    if (report.retrospective.n_reworked < policy.min_reworked_for_retrospective)
+    if (report.retrospective.n_reworked < policy2.min_reworked_for_retrospective)
       reasons2.push("reworked_below_floor");
     for (const [name, cell2] of Object.entries({
       precision: report.retrospective.precision,
       recall: report.retrospective.recall,
       flagged_share: report.retrospective.flagged_share
     })) {
-      if (cell2.n < policy.min_cell_n) hide(cell2, ["n_below_floor"]);
-      if (name !== "flagged_share" && cell2.n < policy.min_reworked_for_retrospective)
+      if (cell2.n < policy2.min_cell_n) hide(cell2, ["n_below_floor"]);
+      if (name !== "flagged_share" && cell2.n < policy2.min_reworked_for_retrospective)
         hide(cell2, ["reworked_below_floor"]);
       if (reasons2.length) hide(cell2, reasons2);
     }
@@ -16916,7 +17112,7 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
   }
   if (report.cost) {
     for (const part of [report.cost.actual, report.cost.estimated])
-      if (part.prs_priced < policy.min_cell_n) {
+      if (part.prs_priced < policy2.min_cell_n) {
         part.total_usd = null;
         part.suppressed = true;
         part.suppression_reasons = ordered([
@@ -17203,9 +17399,9 @@ function runExampleBatch(opts, deps) {
       waitForRateLimit(deps, opts.minRateRemaining ?? 500);
       deps.log(`${step} ${repo}`);
       const started = deps.now();
-      const result = deps.runScan(repo, opts.asOf, paths[step]);
-      const ok = result.exitCode === 0 && existsSync8(paths[step]);
-      rs.steps[step] = { status: ok ? "done" : "failed", wall_ms: deps.now() - started, exit_code: result.exitCode, at: stamp(), ...ok ? {} : { detail: result.stderrTail.slice(-400) } };
+      const result2 = deps.runScan(repo, opts.asOf, paths[step]);
+      const ok = result2.exitCode === 0 && existsSync8(paths[step]);
+      rs.steps[step] = { status: ok ? "done" : "failed", wall_ms: deps.now() - started, exit_code: result2.exitCode, at: stamp(), ...ok ? {} : { detail: result2.stderrTail.slice(-400) } };
       save();
       if (!ok) break;
     }
@@ -17287,7 +17483,7 @@ function runExampleCli(command, argv, io) {
     }
     const rescanPath = path4("rescan");
     const pagePath = path4("page");
-    const result = reviewExampleReport({
+    const result2 = reviewExampleReport({
       report: readJson(reportPath),
       expectedRepo: values.repo,
       exclusion,
@@ -17295,16 +17491,16 @@ function runExampleCli(command, argv, io) {
       ...pagePath ? { pageText: htmlToText(readFileSync9(pagePath, "utf8")) } : {},
       expectedVersions: { scanner: SCAN_VERSION }
     });
-    const out = `${JSON.stringify(result, null, 2)}
+    const out = `${JSON.stringify(result2, null, 2)}
 `;
     const outPath = path4("out");
     if (outPath) writeFileSync7(outPath, out);
     else io.writeStdout(out);
-    for (const c of result.checks) io.writeStderr(`${c.passed ? "pass" : "FAIL"} ${c.code}${c.detail ? `: ${c.detail}` : ""}
+    for (const c of result2.checks) io.writeStderr(`${c.passed ? "pass" : "FAIL"} ${c.code}${c.detail ? `: ${c.detail}` : ""}
 `);
-    io.writeStderr(`${result.passed ? result.borderline ? "PASSED (borderline: needs review)" : "PASSED" : "FAILED"}
+    io.writeStderr(`${result2.passed ? result2.borderline ? "PASSED (borderline: needs review)" : "PASSED" : "FAILED"}
 `);
-    return { exitCode: result.passed ? 0 : 1 };
+    return { exitCode: result2.passed ? 0 : 1 };
   }
   const probePath = path4("probe");
   const outDir = path4("out");
@@ -17462,8 +17658,8 @@ function makeCell(k, n) {
 function ratioCell(ratio3, n, ci2) {
   return { basis: "descriptive", n, value: ratio3, ci: ci2 ? { low: ci2.low, high: ci2.high, level: 0.95 } : null, suppressed: false, suppression_reasons: [] };
 }
-function labelAt(pr2, horizon2) {
-  return pr2.labels.find((label2) => label2.horizon_days === horizon2);
+function labelAt(pr2, horizon3) {
+  return pr2.labels.find((label2) => label2.horizon_days === horizon3);
 }
 function bucketFor(pr2, feature, cuts) {
   if (feature === "tests_changed") return pr2.features.tests_changed === null ? null : pr2.features.tests_changed ? "true" : "false";
@@ -17592,8 +17788,8 @@ function canonicalJson(value) {
   }
   return JSON.stringify(value);
 }
-function emitReport(draft, policy = DEFAULT_REPORT_POLICY) {
-  const report = applyReportSuppression(draft, policy);
+function emitReport(draft, policy2 = DEFAULT_REPORT_POLICY) {
+  const report = applyReportSuppression(draft, policy2);
   const validation = validateArbiterReportV1(report);
   if (!validation.ok) throw new Error(`Invalid arbiter_report/v1: ${validation.errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`);
   return `${JSON.stringify(JSON.parse(canonicalJson(report)), null, 2)}
@@ -17836,10 +18032,10 @@ function enumerateWindow(options) {
   }
   const fmt = "%H%x09%P%x09%ct%x09%s";
   const args = bootstrap2 ? ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, ...cutoff > 0 ? [`--since=${from.toISOString()}`] : [], branch] : ["log", "--first-parent", "--reverse", `--pretty=format:${fmt}`, `${cursor}..${branch}`];
-  const result = runGit3(args);
-  if (result.exitCode !== 0) throw new Error("Unable to enumerate integration branch history");
+  const result2 = runGit3(args);
+  if (result2.exitCode !== 0) throw new Error("Unable to enumerate integration branch history");
   const merges = [];
-  for (const line of result.stdout.split("\n")) {
+  for (const line of result2.stdout.split("\n")) {
     if (!line.trim()) continue;
     const [sha2, parentsText = "", epochText = "", ...subjectParts] = line.split("	");
     if (!sha2 || !/^[0-9a-f]{40}$/.test(sha2)) continue;
@@ -17917,7 +18113,7 @@ function validLabel(value) {
   return exactKeys(outcome2, ["survived", "survival_ratio", "reverted", "undone_by", "followup", "report_outcome", "reason_codes"]) && (typeof outcome2.survived === "boolean" || outcome2.survived === null) && (typeof outcome2.survival_ratio === "number" || outcome2.survival_ratio === null) && (typeof outcome2.reverted === "boolean" || outcome2.reverted === null) && (outcome2.undone_by === "human" || outcome2.undone_by === "agent" || outcome2.undone_by === null) && (typeof outcome2.followup === "boolean" || outcome2.followup === null) && ["survived", "followup", "substantially_rewritten", "reverted", null].includes(outcome2.report_outcome) && Array.isArray(outcome2.reason_codes) && outcome2.reason_codes.every((code) => typeof code === "string" && REASON_CODES.includes(code));
 }
 function validLabelsByHorizon(value) {
-  return object(value) && Object.entries(value).every(([horizon2, label2]) => /^(14|30|60)$/.test(horizon2) && validLabel(label2) && String(label2.horizon_days) === horizon2);
+  return object(value) && Object.entries(value).every(([horizon3, label2]) => /^(14|30|60)$/.test(horizon3) && validLabel(label2) && String(label2.horizon_days) === horizon3);
 }
 function readScanState(dir, versions, isAncestor2) {
   const statePath = path2.join(dir, "state.json");
@@ -17957,7 +18153,7 @@ var ScanStageFailureError = class extends Error {
     this.name = "ScanStageFailureError";
   }
 };
-async function runReportScan(target, deps, options) {
+async function runReportScan(target2, deps, options) {
   const now = deps.now();
   const maxLookback = options.maxLookbackDays ?? 730;
   const requested = options.lookbackDays ?? 180;
@@ -17965,16 +18161,16 @@ async function runReportScan(target, deps, options) {
   if (requested > maxLookback) deps.onDiagnostic?.(`warn: lookback clamped to ${maxLookback} days`);
   const maxPrs = options.maxPrs ?? 500;
   const from = new Date(now.getTime() - lookbackDays * 864e5);
-  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
-  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha2) => isAncestor(deps.runGit, sha2, target.integrationBranch)) : null;
+  const stateVersions = { scannerVersion: options.scannerVersion, labellerVersion: SCAN_CONTRACT.labellerVersion, normalizationVersion: SCAN_CONTRACT.normalizationVersion, integrationBranch: target2.integrationBranch, config: { horizons: options.horizons ?? [14, 30, 60], attributionConfig: options.attributionConfig ?? {}, staticAnalysis: options.staticAnalysis ?? "off", features: ["candidate_features/v1"] } };
+  const cached = options.stateDir ? readScanState(options.stateDir, stateVersions, (sha2) => isAncestor(deps.runGit, sha2, target2.integrationBranch)) : null;
   if (cached?.invalidated) deps.onDiagnostic?.("info: incremental cache invalidated; performing a full rescan");
-  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
+  const enumerated = enumerateWindow({ runGit: deps.runGit, branch: target2.integrationBranch, from, to: now, cursor: cached?.header?.last_seen_merge_sha ?? null, maxPrs: maxPrs + 1 });
   let merges = enumerated.merges;
   if (merges.length > maxPrs) {
     merges = merges.slice(-maxPrs);
     deps.onDiagnostic?.(`warn: capped report at newest ${maxPrs} PRs`);
   }
-  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges;
+  const allLocal = enumerateWindow({ runGit: deps.runGit, branch: target2.integrationBranch, from: /* @__PURE__ */ new Date(0), to: now }).merges;
   const reportMergeShas = new Set(allLocal.filter((merge) => merge.mergedAtEpoch >= Math.floor(from.getTime() / 1e3) && merge.mergedAtEpoch <= Math.floor(now.getTime() / 1e3)).slice(-maxPrs).map((merge) => merge.mergeSha));
   merges = merges.filter((merge) => reportMergeShas.has(merge.mergeSha));
   const config = resolveAttributionConfig(options.attributionConfig);
@@ -17986,10 +18182,10 @@ async function runReportScan(target, deps, options) {
   const stateBySha = new Map((cached?.rows ?? []).map((row) => [row.merge_sha, row]));
   const horizons = options.horizons ?? [14, 30, 60];
   const label2 = deps.label ?? labelMergedPr;
-  const labellerTarget = { owner: target.owner, repo: target.repo, repoDir: target.repoDir, integrationBranch: target.integrationBranch, integrationMode: target.integrationMode };
+  const labellerTarget = { owner: target2.owner, repo: target2.repo, repoDir: target2.repoDir, integrationBranch: target2.integrationBranch, integrationMode: target2.integrationMode };
   const refs = allLocal.flatMap((merge) => merge.prNumber === null ? [] : [{
     prNumber: merge.prNumber,
-    prUrl: `https://github.com/${target.owner}/${target.repo}/pull/${merge.prNumber}`,
+    prUrl: `https://github.com/${target2.owner}/${target2.repo}/pull/${merge.prNumber}`,
     mergeSha: merge.mergeSha,
     parentSha: merge.parentSha,
     headSha: merge.headSha,
@@ -18058,12 +18254,12 @@ ${pr2.body ?? ""}` }
       const ref3 = refBySha.get(merge.mergeSha);
       const labelCache = previous?.labels_by_horizon ?? {};
       const labelsByHorizon = /* @__PURE__ */ new Map();
-      for (const horizon2 of horizons) {
-        const old = labelCache[String(horizon2)];
-        const matured = merge.mergedAtEpoch + horizon2 * 86400 <= Math.floor(now.getTime() / 1e3);
-        if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
+      for (const horizon3 of horizons) {
+        const old = labelCache[String(horizon3)];
+        const matured = merge.mergedAtEpoch + horizon3 * 86400 <= Math.floor(now.getTime() / 1e3);
+        if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon3, old);
       }
-      if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
+      if (horizons.some((horizon3) => !labelsByHorizon.has(horizon3))) {
         const fresh = label2(labellerTarget, deps.labeller, ref3, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
         for (const item of fresh) {
           const old = labelCache[String(item.horizon_days)];
@@ -18071,7 +18267,7 @@ ${pr2.body ?? ""}` }
           labelsByHorizon.set(item.horizon_days, old && matured && !old.outcome.reason_codes.includes("missing_horizon") ? old : item);
         }
       }
-      const labels = horizons.map((horizon2) => labelsByHorizon.get(horizon2)).filter((item) => !!item);
+      const labels = horizons.map((horizon3) => labelsByHorizon.get(horizon3)).filter((item) => !!item);
       const reportRow = { pr_number: prNumber, merged_at: mergedAt, attribution, features, labels, cost: null, prediction: null };
       reportRows.set(merge.mergeSha, reportRow);
       stateBySha.set(merge.mergeSha, { merge_sha: merge.mergeSha, merged_at_epoch: merge.mergedAtEpoch, pr_number: prNumber, merged_at: mergedAt, attribution, features, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
@@ -18087,12 +18283,12 @@ ${pr2.body ?? ""}` }
     const ref3 = refBySha.get(previous.merge_sha);
     if (!ref3) continue;
     const labelsByHorizon = /* @__PURE__ */ new Map();
-    for (const horizon2 of horizons) {
-      const old = previous.labels_by_horizon[String(horizon2)];
-      const matured = previous.merged_at_epoch + horizon2 * 86400 <= Math.floor(now.getTime() / 1e3);
-      if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon2, old);
+    for (const horizon3 of horizons) {
+      const old = previous.labels_by_horizon[String(horizon3)];
+      const matured = previous.merged_at_epoch + horizon3 * 86400 <= Math.floor(now.getTime() / 1e3);
+      if (old && matured && !old.outcome.reason_codes.includes("missing_horizon")) labelsByHorizon.set(horizon3, old);
     }
-    if (horizons.some((horizon2) => !labelsByHorizon.has(horizon2))) {
+    if (horizons.some((horizon3) => !labelsByHorizon.has(horizon3))) {
       const fresh = label2(labellerTarget, deps.labeller, ref3, { horizons, allMergedPrs: refs }).map(projectSurvivalLabel);
       for (const item of fresh) {
         const old = previous.labels_by_horizon[String(item.horizon_days)];
@@ -18100,7 +18296,7 @@ ${pr2.body ?? ""}` }
         labelsByHorizon.set(item.horizon_days, old && matured && !old.outcome.reason_codes.includes("missing_horizon") ? old : item);
       }
     }
-    const labels = horizons.map((horizon2) => labelsByHorizon.get(horizon2)).filter((item) => !!item);
+    const labels = horizons.map((horizon3) => labelsByHorizon.get(horizon3)).filter((item) => !!item);
     const reportRow = { pr_number: previous.pr_number, merged_at: previous.merged_at, attribution: previous.attribution, features: previous.features, labels, cost: null, prediction: null };
     reportRows.set(previous.merge_sha, reportRow);
     stateBySha.set(previous.merge_sha, { ...previous, labels_by_horizon: Object.fromEntries(labels.map((item) => [String(item.horizon_days), item])) });
@@ -18115,9 +18311,9 @@ ${pr2.body ?? ""}` }
   const rows = [...reportRows.values()];
   const dates = rows.map((pr2) => pr2.merged_at).sort();
   return buildReportDraft({
-    owner: target.owner,
-    repo: target.repo,
-    integrationBranch: target.integrationBranch,
+    owner: target2.owner,
+    repo: target2.repo,
+    integrationBranch: target2.integrationBranch,
     scannerVersion: options.scannerVersion,
     scannedAt: now.toISOString(),
     asOf: now.toISOString(),
@@ -18296,20 +18492,20 @@ function runScanCli(argv, io) {
       return { exitCode: command === void 0 ? EXIT_INVALID_INPUT : EXIT_OK, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command.startsWith("shadow-")) {
-      const result = runShadowCli(command, rest, {
+      const result2 = runShadowCli(command, rest, {
         log: (line) => io.writeStdout(`${line}
 `),
         cwd: process.cwd()
       });
-      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+      return { exitCode: result2.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command.startsWith("example-")) {
-      const result = runExampleCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd(), env: io.env });
-      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+      const result2 = runExampleCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd(), env: io.env });
+      return { exitCode: result2.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command.startsWith("corpus-")) {
-      const result = runCorpusCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd() });
-      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+      const result2 = runCorpusCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd() });
+      return { exitCode: result2.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
     if (command !== "label" && command !== "extract" && command !== "scan") {
       throw new ScanInputError(`unknown subcommand ${command}; expected label, extract, or scan`);
@@ -18432,8 +18628,8 @@ async function runReportCli(argv, io) {
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
       temporaryRepo = mkdtempSync3(join14(tmpdir3(), "hokusai-report-"));
-      const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
-      if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
+      const result2 = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
+      if (result2.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
     } else {
       throw new ScanInputError("report requires --repo <local checkout> or a public GitHub URL");
@@ -18460,10 +18656,10 @@ async function runReportCli(argv, io) {
         recentFirstParentSubjects: log.stdout.split("\n"),
         explicitMode: explicitMode ?? null,
         headRefLookup: (number) => {
-          const result = execArgvCommand("gh", ["pr", "view", String(number), "--json", "headRefName"], { cwd: repoDir, ...context.token ? { env: { ...process.env, GH_TOKEN: context.token } } : {} });
-          if (result.exitCode !== 0) return null;
+          const result2 = execArgvCommand("gh", ["pr", "view", String(number), "--json", "headRefName"], { cwd: repoDir, ...context.token ? { env: { ...process.env, GH_TOKEN: context.token } } : {} });
+          if (result2.exitCode !== 0) return null;
           try {
-            return JSON.parse(result.stdout).headRefName ?? null;
+            return JSON.parse(result2.stdout).headRefName ?? null;
           } catch {
             return null;
           }
@@ -18589,9 +18785,9 @@ function resolveRepoDir(raw) {
   return repoDir;
 }
 function detectGithubRepo2(repoDir) {
-  const result = execArgvCommand("git", ["-C", repoDir, "remote", "get-url", "origin"]);
-  if (result.exitCode !== 0) return null;
-  const match = result.stdout.toString().trim().match(/[/:]([^/:]+)\/([^/]+?)(?:\.git)?$/);
+  const result2 = execArgvCommand("git", ["-C", repoDir, "remote", "get-url", "origin"]);
+  if (result2.exitCode !== 0) return null;
+  const match = result2.stdout.toString().trim().match(/[/:]([^/:]+)\/([^/]+?)(?:\.git)?$/);
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
 }
@@ -18609,7 +18805,7 @@ function requireGithubRepo(context, repoDir, explicit) {
 function buildLabellerWorld(context, params) {
   const diag = makeDiagnostics(context);
   const githubRepo = requireGithubRepo(context, params.repoDir, params.githubRepo);
-  const target = {
+  const target2 = {
     owner: githubRepo.owner,
     repo: githubRepo.repo,
     integrationBranch: params.integrationBranch,
@@ -18618,7 +18814,7 @@ function buildLabellerWorld(context, params) {
     ...context.token !== void 0 ? { token: context.token } : {}
   };
   const asOf = params.asOf;
-  const deps = createDefaultDeps(target, {
+  const deps = createDefaultDeps(target2, {
     strictUpstream: true,
     ...asOf ? { now: () => asOf } : {},
     rateLimitWait: params.rateLimitWait
@@ -18627,15 +18823,15 @@ function buildLabellerWorld(context, params) {
     deps.github = createOfflineGitHubClient();
   }
   deps.onDiagnostic = (message) => diag.warn(message);
-  return { target, deps };
+  return { target: target2, deps };
 }
 function collectLabels(context, params, prFilter) {
   const diag = makeDiagnostics(context);
-  const { target, deps } = buildLabellerWorld(context, params);
-  const allMergedPrs = enumerateMergedPrs(target, deps, { maxCount: params.maxPrs });
+  const { target: target2, deps } = buildLabellerWorld(context, params);
+  const allMergedPrs = enumerateMergedPrs(target2, deps, { maxCount: params.maxPrs });
   let prs;
   if (params.prUrl !== void 0) {
-    const resolved = resolveMergedPr(target, deps, params.prUrl, { searchLimit: params.maxPrs });
+    const resolved = resolveMergedPr(target2, deps, params.prUrl, { searchLimit: params.maxPrs });
     if (isSkippedPr(resolved)) {
       if (resolved.reason === "unmerged_pr") {
         throw new ScanInputError(`${resolved.prUrl}: ${resolved.detail}`);
@@ -18650,7 +18846,7 @@ function collectLabels(context, params, prFilter) {
   const labels = [];
   for (const pr2 of prs) {
     try {
-      labels.push(...labelMergedPr(target, deps, pr2, {
+      labels.push(...labelMergedPr(target2, deps, pr2, {
         horizons: params.horizons,
         allMergedPrs,
         ...params.includeLinkedReferences === void 0 ? {} : { includeLinkedReferences: params.includeLinkedReferences }
@@ -18660,11 +18856,11 @@ function collectLabels(context, params, prFilter) {
       diag.error(`failed to label ${pr2.prUrl}: ${String(error)}`);
     }
   }
-  const summary = summarizeLabels(`${target.owner}/${target.repo}`, labels);
+  const summary = summarizeLabels(`${target2.owner}/${target2.repo}`, labels);
   diag.info(`summary ${JSON.stringify(summary)}`);
-  for (const [horizon2, bucket] of Object.entries(summary.horizons)) {
+  for (const [horizon3, bucket] of Object.entries(summary.horizons)) {
     context.summaryLines.push(
-      `${horizon2}d: ${bucket.rows} rows, ${bucket.missing} missing, survival_rate ${bucket.survival_rate ?? "n/a"}`
+      `${horizon3}d: ${bucket.rows} rows, ${bucket.missing} missing, survival_rate ${bucket.survival_rate ?? "n/a"}`
     );
   }
   return labels;
@@ -18738,26 +18934,26 @@ async function main() {
   const env = { ...process.env };
   const token = readActionInput(process.env, "token");
   if (token !== void 0) env.GITHUB_TOKEN = token;
-  const result = await runScanCliAsync(argv, {
+  const result2 = await runScanCliAsync(argv, {
     writeStdout: (text) => process.stdout.write(text),
     writeStderr: (text) => process.stderr.write(text),
     env
   });
-  if (result.exitCode === 0) {
-    writeGithubKeyValue(process.env.GITHUB_OUTPUT, "output-path", result.outputPath ?? outputPath);
+  if (result2.exitCode === 0) {
+    writeGithubKeyValue(process.env.GITHUB_OUTPUT, "output-path", result2.outputPath ?? outputPath);
     writeGithubKeyValue(process.env.GITHUB_OUTPUT, "contract-version", scanContractVersion());
-    writeGithubKeyValue(process.env.GITHUB_OUTPUT, "row-count", String(result.rowCount));
+    writeGithubKeyValue(process.env.GITHUB_OUTPUT, "row-count", String(result2.rowCount));
     if (process.env.GITHUB_STEP_SUMMARY) {
       const summary = [
         "### hokusai-scan",
         "",
-        ...result.summaryLines.map((line) => `- ${line}`),
+        ...result2.summaryLines.map((line) => `- ${line}`),
         ""
       ].join("\n");
       appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}
 `);
     }
   }
-  return result.exitCode;
+  return result2.exitCode;
 }
 process.exitCode = await main();
