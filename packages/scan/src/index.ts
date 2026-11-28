@@ -198,6 +198,7 @@ export { attributePullRequest, resolveAttributionConfig, toReportAttribution, At
 export { enumerateWindow, type EnumerateWindowOptions, type EnumerateWindowResult, type WindowMerge } from './orchestrate/enumerate.js';
 export { resolveIntegrationBranch, IntegrationBranchError, type IntegrationBranchEvidence } from './orchestrate/integration-branch.js';
 export { runReportScan, type RunReportScanOptions, type ScanReportDeps, type ScanReportTarget } from './orchestrate/scan-report.js';
+export type { MergeEvidenceResult, MergeEvidenceRow, MissingEvidenceReason } from './orchestrate/merge-evidence.js';
 export { createOfflineScanGitHubClient, type ScanGitHubClient, type ScanPullRequest, type ScanRepository, type CheckConclusion } from './orchestrate/github.js';
 
 export { readScanState, writeScanState, scanConfigHash, type ScanStateHeader, type ScanStateRow, type ScanStateSnapshot, type ScanStateVersions } from './orchestrate/state.js';

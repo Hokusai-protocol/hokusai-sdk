@@ -81,6 +81,18 @@ remains experimental until the pipeline endpoint is available. Attribution is
 ported into `packages/scan/src/attribution/`; wavemill can retire its copy in a
 follow-up.
 
+Report scans can pass an `onMergeEvidence` callback to receive merge-time
+derived values, bounded missing counts, and `agent_at_merge` separately from
+the v1 report. The callback receives no raw source, text, paths, or author
+identifiers; this evidence is not included in the report or its checkpoint.
+The adapter uses the corpus historical readers and pins two-parent merges to
+their landing and base commits. A single-parent landing can be either a squash
+or the last commit of a rebase, and today's PR commit count cannot prove which.
+Until a merge-time head and base can be verified, the adapter leaves its git
+inputs and commit-based negative attribution unavailable rather than guessing.
+Author-specific prior-commit counts also remain unavailable when the PR author's
+historical commit-email mapping cannot be established from immutable evidence.
+
 ## Where things are
 
 - Contract modules: `packages/core/src/{candidate-features,arbiter-survival-label,arbiter-report}.ts`

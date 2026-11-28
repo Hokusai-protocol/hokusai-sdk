@@ -521,7 +521,7 @@ function bucketFilesTouched(count: number | null | undefined): CandidateFilesTou
   return '16_plus';
 }
 
-function bucketDescription(taskText: string | undefined): CandidateDescriptionLengthBucket | null {
+export function bucketDescription(taskText: string | undefined): CandidateDescriptionLengthBucket | null {
   const trimmed = taskText?.trim();
   if (!trimmed) return null;
   const tokens = Math.ceil(trimmed.length / 4);
