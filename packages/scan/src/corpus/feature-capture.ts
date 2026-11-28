@@ -86,6 +86,28 @@ function drainConnections(pr: PrResponse, repo: string, graphql: GraphqlRunner, 
   }
 }
 
+/** Single-PR pages stay below GitHub's cross-PR timeline cap; reject gaps and broken cursors. */
+function drainCompleteConnections(pr: PrResponse, repo: string, graphql: GraphqlRunner, followUps: Record<string, { args: string; nodes: string }>): void {
+  for (const [key, follow] of Object.entries(followUps)) {
+    const first = pr[key] as Connection<unknown> | undefined;
+    if (!first) throw new Error('Missing evidence connection');
+    let page = first;
+    const seen = new Set<string>();
+    for (;;) {
+      if (!page.pageInfo || typeof page.pageInfo.hasNextPage !== 'boolean' || !Array.isArray(page.nodes) || page.nodes.some((node) => node === null)) throw new Error('Incomplete evidence page');
+      if (!page.pageInfo.hasNextPage) break;
+      const cursor = page.pageInfo.endCursor;
+      if (!cursor || seen.has(cursor)) throw new Error('Invalid evidence cursor');
+      seen.add(cursor);
+      const result = runQuery(graphql, repo, `pr: pullRequest(number:${pr.number}){ ${key}(${follow.args}first:100,after:${JSON.stringify(cursor)}){ ${follow.nodes} } }`);
+      const next = result['pr']?.[key] as Connection<unknown> | undefined;
+      if (!next || !Array.isArray(next.nodes)) throw new Error('Missing evidence page');
+      first.nodes = [...(first.nodes ?? []), ...next.nodes];
+      page = next;
+    }
+  }
+}
+
 interface RawReview { id: string; state: string; submittedAt: string | null; author: { login: string } | null }
 type RawTimeline = { __typename: string; createdAt: string; label?: { name: string } | null; previousTitle?: string; currentTitle?: string; previousReviewState?: string | null; review?: { id: string } | null };
 interface RawEdit { editedAt: string; diff: string | null }
@@ -156,10 +178,18 @@ export type CapturedItem<T> = { pr_number: number; value: T | null; error: strin
 
 /** Capture one PR in memory, without writing raw evidence or upstream errors to disk or diagnostics. */
 export function capturePrEvidence(repo: string, number: number, graphql: GraphqlRunner): PrEvidence | null {
-  const evidence = fetchBatch<PrEvidence>('evidence', repo, [number], graphql, () => {})[0];
-  const timeline = fetchTimeline(repo, [number], graphql, () => {})[0];
-  if (evidence?.error || timeline?.error || !evidence?.value || !timeline?.value) return null;
-  return { ...evidence.value, ...timeline.value };
+  try {
+    const pr = runQuery(graphql, repo, `pr: pullRequest(number:${number}){ ${EVIDENCE_FIELDS} }`)['pr'];
+    const timeline = runQuery(graphql, repo, `pr: pullRequest(number:${number}){ ${TIMELINE_FIELDS} }`)['pr'];
+    if (!pr || !timeline) return null;
+    drainCompleteConnections(pr, repo, graphql, FOLLOW_UPS);
+    drainCompleteConnections(timeline, repo, graphql, TIMELINE_FOLLOW_UP);
+    if (pr.number !== number || timeline.number !== number || typeof pr['title'] !== 'string' || (pr['body'] !== null && typeof pr['body'] !== 'string')) return null;
+    if (present<RawTimeline>(timeline['timelineItems']).some((event) => event.__typename === 'RenamedTitleEvent' && (typeof event.previousTitle !== 'string' || typeof event.currentTitle !== 'string'))) return null;
+    return { ...normalizeEvidence(pr), ...normalizeTimeline(timeline), history_complete: { title: true, body: true } };
+  } catch {
+    return null;
+  }
 }
 
 /** Capture CI from an immutable commit, never the PR's mutable current head. */

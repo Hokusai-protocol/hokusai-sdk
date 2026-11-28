@@ -197,7 +197,7 @@ describe('the canaries', () => {
 
   it('replays historical-only events and CI while observing a pre-merge review', () => {
     const ci: CiEvidence = { pr_number: 9, contexts: [{ at: day(10, 11), failed: false }] };
-    const captured = { ...base, body_edits: [{ at: day(10, 6), body: 'original' }] };
+    const captured = { ...base, body_edits: [{ at: day(10, 6), body: 'original' }], history_complete: { title: true, body: true } };
     const historical = (value: PrEvidence, checks: CiEvidence) => extractPrFeatures({ record, evidence: value, ci: checks, git: {}, historicalOnly: true, mergedHeadCommitOids: new Set() });
     const baseline = historical(captured, ci);
     const after = historical(withPostMergeActivity(captured, day(10)), { ...ci, contexts: [...ci.contexts, { at: day(11), failed: true }] });

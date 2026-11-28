@@ -80,13 +80,28 @@ describe('state at as_of', () => {
 });
 
 describe('extractPrFeatures', () => {
+  it('uses unchanged text when capture proves history is complete', () => {
+    const value = { ...evidence, title: 'original', body: 'Generated with Claude Code', renames: [], body_edits: [], head_ref: 'ordinary', commits: [], history_complete: { title: true, body: true } };
+    const row = extractPrFeatures({ record, evidence: value, ci: null, git: {}, historicalOnly: true, mergedHeadCommitOids: new Set() });
+    expect(row.features).toMatchObject({ 'feature.process.title_chars': 8, 'feature.process.body_chars': value.body.length, 'segment.agent.marked_by_body': true });
+  });
+
+  it('recovers the original title from a later rename when history is complete', () => {
+    expect(titleAt({ ...evidence, history_complete: { title: true, body: true }, renames: [{ at: AFTER, from: 'original', to: 'later' }] }, AS_OF, true)).toBe('original');
+  });
+
+  it('keeps text unknown if capture is truncated', () => {
+    const value = { ...evidence, history_complete: { title: false, body: false } };
+    expect(titleAt(value, AS_OF, true)).toBeNull();
+    expect(bodyAt(value, AS_OF, true)).toBeNull();
+  });
   it('keeps unavailable historical text missing after later edits', () => {
     const before = { ...evidence, title: 'initial', body: 'initial', renames: [], body_edits: [] };
     const after = { ...before, title: 'later', body: 'later', renames: [{ at: AFTER, from: 'initial', to: 'later' }], body_edits: [{ at: AFTER, body: 'later' }] };
     const project = (value: PrEvidence) => extractPrFeatures({ record, evidence: value, ci: null, git: {}, historicalOnly: true }).features;
     expect(project(before)).toEqual(project(after));
     expect(project(before)).toMatchObject({ 'feature.process.title_chars': null, 'feature.process.body_chars': null });
-    expect(project({ ...before, renames: [{ at: BEFORE, from: 'initial', to: 'changed' }] })['feature.process.title_chars']).toBe(7);
+    expect(project({ ...before, history_complete: { title: true, body: true }, renames: [{ at: BEFORE, from: 'initial', to: 'changed' }] })['feature.process.title_chars']).toBe(7);
   });
 
   it('rejects an invalid cutoff even without captured evidence', () => {

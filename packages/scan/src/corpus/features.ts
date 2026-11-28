@@ -40,6 +40,8 @@ export interface PrEvidence {
   renames: { at: string; from: string; to: string }[];
   /** Full body versions. When a body was edited, the oldest is the original. */
   body_edits: { at: string; body: string | null }[];
+  /** True only when the corresponding capture was completely paginated without truncation. */
+  history_complete?: { title: boolean; body: boolean };
   commits: EvidenceCommit[];
 }
 
@@ -84,17 +86,18 @@ function byTime<T extends { at: string }>(events: readonly T[]): T[] {
 export function titleAt(evidence: PrEvidence, asOf: string): string;
 export function titleAt(evidence: PrEvidence, asOf: string, historicalOnly: true): string | null;
 export function titleAt(evidence: PrEvidence, asOf: string, historicalOnly = false): string | null {
+  if (historicalOnly && evidence.history_complete?.title !== true) return null;
   const renames = byTime(evidence.renames);
-  if (renames.length === 0) return historicalOnly ? null : evidence.title;
+  if (renames.length === 0) return evidence.title;
   const cutoff = ms(asOf);
   const seen = renames.filter((rename) => ms(rename.at) <= cutoff);
-  if (historicalOnly) return seen.at(-1)?.to ?? null;
   return seen.at(-1)?.to ?? renames[0]!.from;
 }
 
 /** The body at `as_of`, from edit history, or null when that version is gone. */
 export function bodyAt(evidence: PrEvidence, asOf: string, historicalOnly = false): string | null {
-  if (evidence.body_edits.length === 0) return historicalOnly ? null : evidence.body ?? '';
+  if (historicalOnly && evidence.history_complete?.body !== true) return null;
+  if (evidence.body_edits.length === 0) return evidence.body ?? '';
   const cutoff = ms(asOf);
   return byTime(evidence.body_edits).filter((edit) => ms(edit.at) <= cutoff).at(-1)?.body ?? null;
 }

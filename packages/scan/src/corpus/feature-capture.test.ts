@@ -29,17 +29,35 @@ const fromBatch = (query: string) => [...query.matchAll(/pr(\d+): pullRequest\(n
 
 describe('in-memory capture', () => {
   it('joins separately captured timeline events and returns no partial evidence on failure', () => {
-    const graphql: GraphqlRunner = () => ({ repository: { pr1: apiPr(1, {
+    const graphql: GraphqlRunner = () => ({ repository: { pr: apiPr(1, {
       timelineItems: page([{ __typename: 'LabeledEvent', createdAt: '2026-01-01T01:00:00Z', label: { name: 'bug' } }]),
     }) } });
     expect(capturePrEvidence('example/repo', 1, graphql)?.label_events).toEqual([
       { at: '2026-01-01T01:00:00Z', action: 'added', label: 'bug' },
     ]);
+    expect(capturePrEvidence('example/repo', 1, graphql)?.history_complete).toEqual({ title: true, body: true });
     let calls = 0;
     expect(capturePrEvidence('example/repo', 1, (query, variables) => {
       if (++calls === 2) throw new Error('private upstream detail');
       return graphql(query, variables);
     })).toBeNull();
+  });
+
+  it('rejects missing nodes and repeated pagination cursors', () => {
+    expect(capturePrEvidence('example/repo', 1, () => ({ repository: { pr: apiPr(1, { userContentEdits: page([null]) }) } }))).toBeNull();
+    expect(capturePrEvidence('example/repo', 1, () => ({ repository: { pr: apiPr(1, { userContentEdits: page([], true, 'same') }) } }))).toBeNull();
+    expect(capturePrEvidence('example/repo', 1, () => ({ repository: { pr: apiPr(1, { body: undefined }) } }))).toBeNull();
+  });
+
+  it('marks history complete only after the last edit and timeline pages', () => {
+    const graphql: GraphqlRunner = (query) => {
+      if (query.includes('userContentEdits(first:100,after:')) return { repository: { pr: { userContentEdits: page([{ editedAt: '2026-01-02T01:00:00Z', diff: 'later' }]) } } };
+      if (query.includes('timelineItems(itemTypes:') && query.includes('after:')) return { repository: { pr: { timelineItems: page([]) } } };
+      return { repository: { pr: apiPr(1, { userContentEdits: page([], true, 'edit-next'), timelineItems: page([], true, 'timeline-next') }) } };
+    };
+    const captured = capturePrEvidence('example/repo', 1, graphql);
+    expect(captured?.history_complete).toEqual({ title: true, body: true });
+    expect(captured?.body_edits).toEqual([{ at: '2026-01-02T01:00:00Z', body: 'later' }]);
   });
 });
 
