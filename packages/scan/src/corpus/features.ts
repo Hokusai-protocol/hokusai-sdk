@@ -197,10 +197,11 @@ function processColumns(evidence: PrEvidence | null, ci: CiEvidence | null, asOf
 
 const MERGE_SUBJECT = /^Merge (?:branch|remote-tracking branch|pull request|tag|commit)\b|^Merge .+ into .+/;
 
-function markerCommits(evidence: PrEvidence | null): AgentMarkerCommit[] | null {
+function markerCommits(evidence: PrEvidence | null, reachable?: ReadonlySet<string>): AgentMarkerCommit[] | null {
   if (!evidence) return null;
   // Updating a branch from main leaves a merge commit that says nothing about who wrote the PR.
   return evidence.commits
+    .filter((commit) => reachable === undefined || reachable.has(commit.oid))
     .filter((commit) => !MERGE_SUBJECT.test(commit.message))
     .map((commit) => ({
       message: commit.message,
@@ -218,14 +219,15 @@ export interface ExtractInput {
   git: GitFeatureColumns;
   /** For customer scans, never infer text from a current-state snapshot. */
   historicalOnly?: boolean;
+  /** Commit OIDs proven reachable from the immutable head at merge; absent means unknown. */
+  mergedHeadCommitOids?: ReadonlySet<string>;
 }
 
 /** One row. Every manifest column is present, and no others. */
 export function extractPrFeatures(input: ExtractInput): FeatureRow {
   const { record, evidence, ci, git } = input;
   const asOf = record.merged_at;
-  const cutoffErrors = validateEvidenceAsOf([], asOf);
-  if (cutoffErrors.length) throw new Error('pr evidence: invalid merge timestamp');
+  if (input.historicalOnly && validateEvidenceAsOf([], asOf).length) throw new Error('pr evidence: invalid merge timestamp');
   if (evidence) {
     assertReadableEvidence(evidence, ci, asOf);
     if (evidence.pr_number !== record.pr_number) throw new Error(`evidence is for PR ${evidence.pr_number}, not ${record.pr_number}`);
@@ -236,10 +238,10 @@ export function extractPrFeatures(input: ExtractInput): FeatureRow {
 
   const body = evidence ? bodyAt(evidence, asOf, input.historicalOnly) : null;
   const markers = detectAgentMarkers({
-    authorLogin: input.historicalOnly ? null : record.author_login,
-    authorType: input.historicalOnly ? null : record.author_type,
-    headRef: input.historicalOnly ? null : evidence?.head_ref ?? null,
-    commits: input.historicalOnly ? null : markerCommits(evidence),
+    authorLogin: record.author_login,
+    authorType: record.author_type,
+    headRef: evidence?.head_ref ?? null,
+    commits: input.historicalOnly && input.mergedHeadCommitOids === undefined ? null : markerCommits(evidence, input.historicalOnly ? input.mergedHeadCommitOids : undefined),
     body,
     ...(body === null ? { bodyUnavailable: true } : {}),
     ...(input.landingMessage ? { landingMessage: input.landingMessage } : {}),
@@ -249,11 +251,10 @@ export function extractPrFeatures(input: ExtractInput): FeatureRow {
     ...Object.fromEntries(MANIFEST_COLUMNS.map((column) => [column, null])),
     'feature.shape.member_commits': record.member_commits,
     'feature.shape.diff_uncertain': record.batched,
-    'feature.author.is_bot': input.historicalOnly || record.author_type === null ? null : record.author_type === 'Bot',
+    'feature.author.is_bot': record.author_type === null ? null : record.author_type === 'Bot',
     ...git,
     ...processColumns(evidence, ci, asOf, input.historicalOnly === true),
     ...agentMarkerColumns(markers),
-    ...(input.historicalOnly ? { 'segment.agent.marked_by_account': null, 'segment.agent.marked_by_branch': null, 'segment.author.dependency_bot': null } : {}),
   };
   const undeclared = Object.keys(features).filter((column) => !MANIFEST_COLUMNS.includes(column));
   if (undeclared.length) throw new Error(`undeclared feature columns: ${undeclared.join(', ')}`);

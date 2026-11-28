@@ -90,7 +90,18 @@ describe('extractPrFeatures', () => {
   });
 
   it('rejects an invalid cutoff even without captured evidence', () => {
-    expect(() => extractPrFeatures({ record: { ...record, merged_at: 'invalid' }, evidence: null, ci: null, git: {} })).toThrow();
+    expect(() => extractPrFeatures({ record: { ...record, merged_at: 'invalid' }, evidence: null, ci: null, git: {}, historicalOnly: true })).toThrow();
+  });
+  it('uses fixed attribution evidence and excludes commits outside the merged head', () => {
+    const run = (overRecord: Partial<CorpusPrRecord>, overEvidence: Partial<PrEvidence>) => extractPrFeatures({
+      record: { ...record, ...overRecord }, evidence: { ...evidence, head_ref: 'ordinary', body_edits: [], commits: [], ...overEvidence }, ci: null, git: {}, historicalOnly: true,
+      mergedHeadCommitOids: new Set(['before']),
+    }).features;
+    expect(run({ author_login: 'copilot-swe-agent', author_type: 'Bot' }, {})['segment.agent.marked_by_account']).toBe(true);
+    expect(run({}, { head_ref: 'claude/fix' })['segment.agent.marked_by_branch']).toBe(true);
+    const commit = { oid: 'before', message: 'fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>', author_name: null, author_email: null, author_login: null };
+    expect(run({}, { commits: [commit] })['segment.agent.marked_by_commit']).toBe(true);
+    expect(run({}, { commits: [{ ...commit, oid: 'after' }] })['feature.agent.marker_present']).toBeNull();
   });
   it('writes every manifest column and no others', () => {
     const row = extract(evidence);

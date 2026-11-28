@@ -195,6 +195,16 @@ describe('the canaries', () => {
   };
   const extract = (value: PrEvidence, ci: CiEvidence | null = null, over: CorpusPrRecord = record) => extractPrFeatures({ record: over, evidence: value, ci, git: {} });
 
+  it('replays historical-only events and CI while observing a pre-merge review', () => {
+    const ci: CiEvidence = { pr_number: 9, contexts: [{ at: day(10, 11), failed: false }] };
+    const captured = { ...base, body_edits: [{ at: day(10, 6), body: 'original' }] };
+    const historical = (value: PrEvidence, checks: CiEvidence) => extractPrFeatures({ record, evidence: value, ci: checks, git: {}, historicalOnly: true, mergedHeadCommitOids: new Set() });
+    const baseline = historical(captured, ci);
+    const after = historical(withPostMergeActivity(captured, day(10)), { ...ci, contexts: [...ci.contexts, { at: day(11), failed: true }] });
+    expect(JSON.stringify(after)).toBe(JSON.stringify(baseline));
+    expect(differingColumns(baseline, historical(withPreMergeReview(captured, day(10)), ci))).toContain('feature.process.review_count');
+  });
+
   it('post-merge activity changes nothing', () => {
     expect(differingColumns(extract(base), extract(withPostMergeActivity(base, day(10))))).toEqual([]);
     expect(differingColumns(extract(base), extract(base, null, blankPostMergeRecord(record)))).toEqual([]);
