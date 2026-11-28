@@ -66,10 +66,10 @@ function buildActionArgv(env) {
 }
 
 // src/cli-core.ts
-import { existsSync as existsSync9, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readFileSync as readFileSync9, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname4, join as join13, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync3, readFileSync as readFileSync11, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync9 } from "node:fs";
+import { dirname as dirname5, join as join14, resolve as resolve7 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
-import { parseArgs as parseArgs4 } from "node:util";
+import { parseArgs as parseArgs5 } from "node:util";
 
 // src/candidate-features.ts
 import { statSync as statSync2 } from "node:fs";
@@ -11317,6 +11317,37 @@ function classifyUpstreamFailure(result) {
   }
   return `GitHub request failed (gh exit ${result.exitCode})`;
 }
+var isRateLimited = (stderr) => /rate limit|HTTP 429/i.test(stderr);
+var SECONDARY_LIMIT_WAIT_MS = 6e4;
+function ghRateLimitResetMs(env) {
+  const result = execArgvCommand("gh", ["api", "rate_limit"], { env });
+  if (result.exitCode !== 0) return null;
+  try {
+    const resources = JSON.parse(result.stdout).resources ?? {};
+    const exhausted = Object.values(resources).filter((r) => r.remaining === 0 && typeof r.reset === "number");
+    return exhausted.length ? Math.max(...exhausted.map((r) => r.reset * 1e3)) : null;
+  } catch {
+    return null;
+  }
+}
+function withRateLimitWait(run, wait, env) {
+  if (!wait) return run;
+  const sleep = wait.sleep ?? ((ms2) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms2));
+  const nowMs = wait.nowMs ?? Date.now;
+  const resetAtMs = wait.resetAtMs ?? (() => ghRateLimitResetMs(env));
+  let waited = 0;
+  return (args) => {
+    for (; ; ) {
+      const result = run(args);
+      if (result.exitCode === 0 || !isRateLimited(result.stderr) || waited >= wait.maxWaitMs) return result;
+      const reset = resetAtMs();
+      const ms2 = Math.min(wait.maxWaitMs - waited, reset === null ? SECONDARY_LIMIT_WAIT_MS : Math.max(0, reset - nowMs()) + 5e3);
+      wait.onWait?.(ms2);
+      sleep(ms2);
+      waited += ms2;
+    }
+  };
+}
 function createDefaultDeps(target, options = {}) {
   const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
   const strict = options.strictUpstream === true;
@@ -11324,7 +11355,11 @@ function createDefaultDeps(target, options = {}) {
     env,
     maxBuffer: GIT_OUTPUT_MAX_BUFFER
   });
-  const runGh = (args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir });
+  const runGh = withRateLimitWait(
+    (args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir }),
+    options.rateLimitWait,
+    env
+  );
   const github = {
     getPrMetadata(prUrl) {
       const result = runGh([
@@ -11385,13 +11420,21 @@ function createOfflineGitHubClient() {
     listCrossReferences: () => []
   };
 }
-function createDefaultScanGitHubClient(target) {
+function createDefaultScanGitHubClient(target, options = {}) {
   const env = target.token ? { ...process.env, GH_TOKEN: target.token } : process.env;
+  const runGh = withRateLimitWait(
+    options.runGh ?? ((args) => execArgvCommand("gh", [...args], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 })),
+    options.rateLimitWait,
+    env
+  );
+  const fail2 = (result) => {
+    throw new ScanUpstreamError(classifyUpstreamFailure(result));
+  };
   const api = (path4) => {
-    const result = execArgvCommand("gh", ["api", path4, "-H", "Accept: application/vnd.github+json"], { env, cwd: target.repoDir, maxBuffer: 16 * 1024 * 1024 });
+    const result = runGh(["api", path4, "-H", "Accept: application/vnd.github+json"]);
     if (result.exitCode !== 0) {
       if (/HTTP 404/i.test(result.stderr)) return "";
-      throw new ScanUpstreamError(classifyUpstreamFailure(result));
+      return fail2(result);
     }
     return result.stdout;
   };
@@ -11402,6 +11445,27 @@ function createDefaultScanGitHubClient(target) {
       throw new ScanUpstreamError("GitHub returned malformed JSON");
     }
   };
+  const toPull = (raw) => {
+    if (!raw) return null;
+    if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
+    return { number: raw.number, title: raw.title ?? "", body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label2) => label2.name ? [label2.name] : []), mergedAt: raw.merged_at };
+  };
+  const pullViaGraphql = (number) => {
+    const query = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){number title body author{login __typename} headRefName headRefOid labels(first:100){nodes{name}} mergedAt}}}";
+    const result = runGh(["api", "graphql", "-f", `query=${query}`, "-f", `o=${target.owner}`, "-f", `r=${target.repo}`, "-F", `n=${number}`]);
+    if (result.exitCode !== 0) return fail2(result);
+    const pr2 = parse(result.stdout)?.data?.repository?.pullRequest;
+    if (!pr2) return null;
+    return toPull({
+      ...pr2.number !== void 0 ? { number: pr2.number } : {},
+      ...pr2.title !== void 0 ? { title: pr2.title } : {},
+      body: pr2.body ?? null,
+      user: pr2.author ? { ...pr2.author.login !== void 0 ? { login: pr2.author.login } : {}, ...pr2.author.__typename !== void 0 ? { type: pr2.author.__typename } : {} } : null,
+      head: { ...pr2.headRefName !== void 0 ? { ref: pr2.headRefName } : {}, ...pr2.headRefOid !== void 0 ? { sha: pr2.headRefOid } : {} },
+      labels: pr2.labels?.nodes ?? [],
+      merged_at: pr2.mergedAt ?? null
+    });
+  };
   return {
     async getRepo() {
       await Promise.resolve();
@@ -11411,10 +11475,13 @@ function createDefaultScanGitHubClient(target) {
     },
     async getPullRequest(number) {
       await Promise.resolve();
-      const raw = parse(api(`repos/${target.owner}/${target.repo}/pulls/${number}`));
-      if (!raw) return null;
-      if (!raw.number || !raw.head?.ref || !raw.head.sha || !raw.merged_at) return null;
-      return { number: raw.number, title: raw.title ?? "", body: raw.body ?? null, authorLogin: raw.user?.login ?? null, authorType: raw.user?.type ?? null, headRef: raw.head.ref, headSha: raw.head.sha, labels: (raw.labels ?? []).flatMap((label2) => label2.name ? [label2.name] : []), mergedAt: raw.merged_at };
+      const result = runGh(["api", `repos/${target.owner}/${target.repo}/pulls/${number}`, "-H", "Accept: application/vnd.github+json"]);
+      if (result.exitCode !== 0) {
+        if (/HTTP 404/i.test(result.stderr)) return null;
+        if (/HTTP 422/i.test(result.stderr) && /too many files/i.test(result.stderr)) return pullViaGraphql(number);
+        return fail2(result);
+      }
+      return toPull(parse(result.stdout));
     },
     async listPullCommits(number) {
       await Promise.resolve();
@@ -12322,7 +12389,7 @@ function runShadowCli(command, args, io) {
     if (!githubRepo) {
       throw new ShadowError("INVALID_ARG");
     }
-    const repoSlug = `${githubRepo.owner}/${githubRepo.repo}`;
+    const repoSlug2 = `${githubRepo.owner}/${githubRepo.repo}`;
     const integrationBranch = values["integration-branch"];
     if (!integrationBranch || integrationBranch === "main") {
       throw new ShadowError("INVALID_ARG");
@@ -12330,7 +12397,7 @@ function runShadowCli(command, args, io) {
     if (command === "shadow-score") {
       const result = runShadowScore({
         dataDir,
-        repo: repoSlug,
+        repo: repoSlug2,
         integrationBranch,
         threshold,
         bootstrapDays,
@@ -14498,6 +14565,11 @@ function parseCalibrationPlan(raw) {
     }
   }
   if (plan.pick_needs_human_precision !== void 0 && typeof plan.pick_needs_human_precision !== "boolean") throw new Error("plan.pick_needs_human_precision must be a boolean");
+  const repoAllocation = plan.repo_allocation;
+  if (repoAllocation !== void 0) {
+    if (!repoAllocation || repoAllocation.mode !== "proportional") throw new Error("plan.repo_allocation.mode must be 'proportional'");
+    if (!Number.isInteger(repoAllocation.min_per_repo) || repoAllocation.min_per_repo < 0) throw new Error("plan.repo_allocation.min_per_repo must be a non-negative integer");
+  }
   return {
     plan_version: plan.plan_version,
     horizon_days: num2("horizon_days", (v) => Number.isInteger(v) && v > 0),
@@ -14510,7 +14582,8 @@ function parseCalibrationPlan(raw) {
     kappa_floor: num2("kappa_floor", (v) => v > 0 && v <= 1),
     definition_precision_floor: num2("definition_precision_floor", (v) => v > 0 && v <= 1),
     ...byStratum !== void 0 && { human_audit_share_by_stratum: plan.human_audit_share_by_stratum },
-    ...plan.pick_needs_human_precision !== void 0 && { pick_needs_human_precision: plan.pick_needs_human_precision }
+    ...plan.pick_needs_human_precision !== void 0 && { pick_needs_human_precision: plan.pick_needs_human_precision },
+    ...repoAllocation !== void 0 && { repo_allocation: { mode: "proportional", min_per_repo: repoAllocation.min_per_repo } }
   };
 }
 function auditShare(plan, stratum) {
@@ -14577,6 +14650,38 @@ function classifyCalibrationRepo(input) {
   }
   return units;
 }
+function proportionalQuotas(repos, population, want, min) {
+  let floorLeft = want;
+  const quota = new Map(
+    repos.map((r) => {
+      const q = Math.min(min, population(r), floorLeft);
+      floorLeft -= q;
+      return [r, q];
+    })
+  );
+  let left = floorLeft;
+  while (left > 0) {
+    const open = repos.filter((r) => quota.get(r) < population(r));
+    if (!open.length) break;
+    const total = open.reduce((a, r) => a + population(r), 0);
+    const share = open.map((r) => ({ r, exact: left * population(r) / total }));
+    let given = 0;
+    for (const { r, exact } of share) {
+      const add2 = Math.min(Math.floor(exact), population(r) - quota.get(r));
+      quota.set(r, quota.get(r) + add2);
+      given += add2;
+    }
+    const byRemainder = share.filter(({ r }) => quota.get(r) < population(r)).sort((x, y) => y.exact % 1 - x.exact % 1);
+    for (const { r } of byRemainder) {
+      if (given >= left) break;
+      quota.set(r, quota.get(r) + 1);
+      given++;
+    }
+    left -= given;
+    if (!given) break;
+  }
+  return quota;
+}
 function drawCalibrationSample(units, plan, seed) {
   const items = [];
   const cells = /* @__PURE__ */ new Map();
@@ -14596,16 +14701,23 @@ function drawCalibrationSample(units, plan, seed) {
     const repos = seededOrder([...byRepo.keys()], (repo) => sha2562(seed, "repo", stratum, repo));
     const want = plan.allocation[stratum];
     const picked = [];
-    for (let round = 0; picked.length < want; round++) {
-      let any = false;
-      for (const repo of repos) {
-        const unit = byRepo.get(repo)[round];
-        if (!unit || picked.length >= want) continue;
-        picked.push(unit);
-        cells.get(`${repo}\0${stratum}`).sampled++;
-        any = true;
+    if (plan.repo_allocation) {
+      for (const [repo, quota] of proportionalQuotas(repos, (repo2) => byRepo.get(repo2).length, want, plan.repo_allocation.min_per_repo)) {
+        picked.push(...byRepo.get(repo).slice(0, quota));
+        cells.get(`${repo}\0${stratum}`).sampled += quota;
       }
-      if (!any) break;
+    } else {
+      for (let round = 0; picked.length < want; round++) {
+        let any = false;
+        for (const repo of repos) {
+          const unit = byRepo.get(repo)[round];
+          if (!unit || picked.length >= want) continue;
+          picked.push(unit);
+          cells.get(`${repo}\0${stratum}`).sampled++;
+          any = true;
+        }
+        if (!any) break;
+      }
     }
     if (picked.length < want) shortfalls.push({ stratum, allocated: want, drawn: picked.length });
     const doubles = new Set(
@@ -16662,79 +16774,16 @@ function runCalibrationEvidence(cacheRoot, sampleDir, io, log) {
   return { exitCode: 0 };
 }
 
-// src/orchestrate/github.ts
-function createOfflineScanGitHubClient() {
-  return {
-    offline: true,
-    async getRepo() {
-      await Promise.resolve();
-      return { defaultBranch: "", private: false };
-    },
-    async getPullRequest() {
-      await Promise.resolve();
-      return null;
-    },
-    async listPullCommits() {
-      await Promise.resolve();
-      return [];
-    },
-    async getCheckConclusion() {
-      await Promise.resolve();
-      return null;
-    }
-  };
-}
+// src/version.ts
+var SCAN_VERSION = "0.9.0";
 
-// src/orchestrate/integration-branch.ts
-var IntegrationBranchError = class extends Error {
-  exitCode = 2;
-  constructor(message) {
-    super(message);
-    this.name = "IntegrationBranchError";
-  }
-};
-var MAIN_GUIDANCE = "integration branch resolves to main and no promotion branch was detected. Pass --integration-branch <ref>, or --integration-mode direct if PRs merge straight into main (S2 v1.1.0).";
-var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
-var SQUASH2 = /\(#(\d+)\)\s*$/;
-function resolveIntegrationBranch(evidence3) {
-  const explicit = evidence3.explicitBranch?.trim();
-  const explicitMode = evidence3.explicitMode ?? null;
-  if (explicit) {
-    if (explicit.toLowerCase() === "main" && explicitMode !== "direct") throw new IntegrationBranchError(MAIN_GUIDANCE);
-    return { branch: explicit, mode: explicitMode ?? "promotion", detected: false, summary: "explicit integration branch" };
-  }
-  if (!evidence3.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
-  if (evidence3.defaultBranch.toLowerCase() !== "main") return { branch: evidence3.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
-  if (explicitMode === "direct") return { branch: evidence3.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
-  const counts = /* @__PURE__ */ new Map();
-  let promotions = 0;
-  for (const subject of evidence3.recentFirstParentSubjects.slice(0, 200)) {
-    let number = null;
-    let ref3 = null;
-    const merge = subject.match(PR_MERGE);
-    const squash = subject.match(SQUASH2);
-    if (merge) {
-      number = Number(merge[1]);
-      ref3 = merge[2];
-    } else if (squash) {
-      number = Number(squash[1]);
-      ref3 = evidence3.headRefLookup(number);
-    }
-    if (!number || !ref3 || !ref3.includes("/")) continue;
-    promotions++;
-    counts.set(ref3, (counts.get(ref3) ?? 0) + 1);
-  }
-  const winner = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence3.remoteBranchExists(winner[0])) {
-    return { branch: winner[0], mode: "promotion", detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
-  }
-  throw new IntegrationBranchError(MAIN_GUIDANCE);
-}
-
-// src/orchestrate/scan-report.ts
-import * as fs3 from "node:fs";
-import * as os from "node:os";
-import * as path3 from "node:path";
+// src/example-reports/cli.ts
+import { execFileSync as execFileSync2, spawnSync as spawnSync2 } from "node:child_process";
+import { createHash as createHash11 } from "node:crypto";
+import { existsSync as existsSync9, readFileSync as readFileSync9, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname3, resolve as resolve6 } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs as parseArgs4 } from "node:util";
 
 // src/report/suppression.ts
 var DEFAULT_REPORT_POLICY = Object.freeze({
@@ -16876,6 +16925,524 @@ function applyReportSuppression(draft, policy = DEFAULT_REPORT_POLICY) {
   if (!valid.ok) throw new ArbiterReportBuildError(valid.errors);
   return valid.value;
 }
+
+// src/example-reports/batch.ts
+import { existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync8, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join11 } from "node:path";
+
+// src/example-reports/review.ts
+import { isDeepStrictEqual } from "node:util";
+
+// src/example-reports/select.ts
+import { createHash as createHash10 } from "node:crypto";
+var repoKey = (repo) => repo.trim().toLowerCase();
+function hashRepo(salt, repo) {
+  return createHash10("sha256").update(salt).update("\0").update(repoKey(repo)).digest("hex");
+}
+var REPO2 = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+function parseExampleManifest(value, minReworked) {
+  const m = value;
+  const fail2 = (why) => {
+    throw new Error(`example manifest: ${why}`);
+  };
+  if (!m || typeof m !== "object") fail2("not an object");
+  if (typeof m.manifest_version !== "string") fail2("manifest_version missing");
+  if (!Array.isArray(m.exclude_corpus_manifests) || m.exclude_corpus_manifests.length === 0)
+    fail2("exclude_corpus_manifests must list at least one corpus manifest");
+  if (!Number.isInteger(m.window_days) || m.window_days < 90) fail2("window_days must be an integer \u2265 90");
+  if (!Number.isInteger(m.horizon_days) || m.horizon_days < 1) fail2("horizon_days must be a positive integer");
+  const t = m.thresholds;
+  if (!t || typeof t !== "object") fail2("thresholds missing");
+  for (const key of ["min_merged_prs_per_year", "min_revert_prs_per_year"])
+    if (!Number.isFinite(t[key]) || t[key] < 0) fail2(`thresholds.${key} must be a number \u2265 0`);
+  for (const key of ["min_base_is_default_share", "min_pr_mapped_commit_share", "min_agent_share"])
+    if (!Number.isFinite(t[key]) || t[key] < 0 || t[key] > 1) fail2(`thresholds.${key} must be in [0, 1]`);
+  if (t.min_revert_prs_per_year < minReworked)
+    fail2(`thresholds.min_revert_prs_per_year ${t.min_revert_prs_per_year} is below the report's retrospective floor ${minReworked}`);
+  if (!Array.isArray(t.supported_conventions) || t.supported_conventions.length === 0) fail2("thresholds.supported_conventions missing");
+  if (!Array.isArray(m.candidates) || m.candidates.length === 0) fail2("candidates missing");
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of m.candidates) {
+    if (typeof c?.repo !== "string" || !REPO2.test(c.repo)) fail2(`bad candidate repo ${JSON.stringify(c?.repo)}`);
+    if (seen.has(repoKey(c.repo))) fail2(`duplicate candidate ${c.repo}`);
+    seen.add(repoKey(c.repo));
+    if (typeof c.batch !== "string" || !c.batch) fail2(`candidate ${c.repo} has no batch`);
+    if (!["primary", "swap", "dry_run"].includes(c.role)) fail2(`candidate ${c.repo} has bad role ${JSON.stringify(c.role)}`);
+  }
+  return m;
+}
+var TrainingExclusion = class {
+  repos = /* @__PURE__ */ new Set();
+  hashes = /* @__PURE__ */ new Set();
+  salt = null;
+  addCorpusManifest(manifest) {
+    for (const entry2 of [...manifest.repos ?? [], ...manifest.alternates ?? []]) this.repos.add(repoKey(entry2.repo));
+    return this;
+  }
+  /** A private list: `{ salt, sha256: [...] }` built with `hashRepo`. */
+  addHashedList(list) {
+    if (typeof list?.salt !== "string" || !list.salt || !Array.isArray(list.sha256)) throw new Error("hashed exclusion list needs salt and sha256[]");
+    if (this.salt !== null && this.salt !== list.salt) throw new Error("hashed exclusion lists must share one salt");
+    this.salt = list.salt;
+    for (const h of list.sha256) this.hashes.add(String(h).toLowerCase());
+    return this;
+  }
+  get size() {
+    return this.repos.size + this.hashes.size;
+  }
+  has(repo) {
+    if (this.repos.has(repoKey(repo))) return true;
+    return this.salt !== null && this.hashes.has(hashRepo(this.salt, repo));
+  }
+};
+
+// src/example-reports/review.ts
+var EXAMPLE_REVIEW_VERSION = "0.1.0";
+var APPROVED_PHRASES = [/possible defect revert \(lower confidence\)/gi];
+var HARD_COPY_RULES = [
+  {
+    // §5.1: never say judge, grade, evaluate or review about what the model does.
+    rule: "model_action_verb",
+    pattern: /\b(?:hokusai|rework risk|the model|our model|the score|this score|the prediction)\b[^.!?\n]{0,40}?\b(?:judg(?:e|es|ed|ing|ment)|grad(?:e|es|ed|ing)|evaluat(?:e|es|ed|ing|ion)|review(?:s|ed|ing)?)\b/gi
+  },
+  // §2: "Arbiter" is the internal codename only.
+  { rule: "internal_name", pattern: /\barbiter\b/gi },
+  // §3: never expose raw label names.
+  { rule: "raw_label_name", pattern: /\b(?:substantially_rewritten|substantially rewritten|followup|follow-up label|survival|survived)\b/gi },
+  // §5.6 and the cr-0.2.0 decision: the claim is "reverted or repaired", not a defect.
+  { rule: "defect_claim", pattern: /\b(?:corrective|caused by a bug|defect(?:s|ive)?|buggy)\b/gi },
+  // §5.4 and §5.9: advisory only; never a gate, never blocks or merges.
+  {
+    rule: "gate_or_block",
+    pattern: /\b(?:block(?:s|ed|ing)?|gat(?:e|es|ed|ing))\s+(?:the\s+|your\s+)?(?:merges?|prs?|pull requests?|deploys?)\b|\bmerge gate\b|\bgatekeep\w*|\bauto-?merg\w*/gi
+  },
+  // §7.4.
+  { rule: "merged_without_review", pattern: /\bmerged without review\b/gi },
+  // §5.11 and the report contract: illustrative content never reaches a live report.
+  { rule: "illustrative_content", pattern: /\b(?:illustrative|lorem ipsum|placeholder|sample data|example data|fixture|hokusai-fixtures)\b/gi }
+];
+var SOFT_COPY_RULES = [
+  { rule: "judgement_word", pattern: /\b(?:judg\w*|grad(?:e|es|ed|ing)|evaluat\w*|verdict)\b/gi }
+];
+function findAll(text, rules) {
+  const out = [];
+  for (const { rule, pattern } of rules) for (const m of text.matchAll(pattern)) out.push({ rule, match: m[0] });
+  return out;
+}
+function checkCopy(text) {
+  let t = text;
+  for (const p of APPROVED_PHRASES) t = t.replace(p, " ");
+  const hard = findAll(t, HARD_COPY_RULES);
+  if (/\blearns? from outcomes\b/i.test(t) && !/\bacross organi[sz]ations\b|\bowned by\b/i.test(t))
+    hard.push({ rule: "learns_from_outcomes_alone", match: "learns from outcomes" });
+  return { hard, soft: findAll(t, SOFT_COPY_RULES) };
+}
+function htmlToText(html) {
+  return html.replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/\s+/g, " ").trim();
+}
+function thresholdForms(t) {
+  const pct3 = t * 100;
+  const forms = /* @__PURE__ */ new Set([`${Math.round(pct3)}%`, `${Math.round(pct3 * 10) / 10}%`, `${pct3.toFixed(1)}%`, String(t), t.toFixed(2)]);
+  return [...forms];
+}
+function withoutVolatile(r) {
+  const copy = structuredClone(r);
+  copy.scan.scanned_at = "";
+  return copy;
+}
+function firstDifference(a, b, path4 = "$") {
+  if (isDeepStrictEqual(a, b)) return null;
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const keys = /* @__PURE__ */ new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const k of keys) {
+      const d = firstDifference(a[k], b[k], Array.isArray(a) ? `${path4}[${k}]` : `${path4}.${k}`);
+      if (d) return d;
+    }
+  }
+  return path4;
+}
+function reviewExampleReport(input) {
+  const checks = [];
+  const borderline = [];
+  const add2 = (code, passed, detail) => checks.push(detail === void 0 ? { code, passed } : { code, passed, detail });
+  const finish = () => {
+    const passed = checks.every((c) => c.passed);
+    return { review_version: EXAMPLE_REVIEW_VERSION, repo: input.expectedRepo, passed, borderline: passed && borderline.length > 0, checks, borderline_reasons: borderline };
+  };
+  const valid = validateArbiterReportV1(input.report);
+  if (!valid.ok) {
+    add2("schema_valid", false, valid.errors.slice(0, 5).map((e) => `${e.path}: ${e.code}`).join("; "));
+    return finish();
+  }
+  add2("schema_valid", true);
+  const r = valid.value;
+  const repo = `${r.repo.owner}/${r.repo.name}`;
+  add2("real_data", r.data_origin === "scan" && repoKey(r.repo.owner) !== "hokusai-fixtures", r.data_origin === "scan" ? void 0 : `data_origin ${r.data_origin}`);
+  add2("repo_matches_candidate", repoKey(repo) === repoKey(input.expectedRepo), repoKey(repo) === repoKey(input.expectedRepo) ? void 0 : `payload is ${repo}`);
+  const inCorpus = input.exclusion.has(repo);
+  const claimsTraining = r.model_provenance?.repo_in_training_set === true;
+  add2("not_training_repo", !inCorpus && !claimsTraining, inCorpus ? "in_training_or_holdout" : claimsTraining ? "model_provenance.repo_in_training_set is true" : void 0);
+  const retro = r.retrospective;
+  add2("retrospective_present", !!retro && !retro.suppressed, !retro ? "no retrospective section" : retro.suppressed ? `suppressed: ${retro.suppression_reasons.join(", ")}` : void 0);
+  const prov = r.model_provenance;
+  const scored = r.prs.filter((pr2) => pr2.prediction);
+  if (!prov) add2("out_of_sample_provenance", false, "model_provenance missing");
+  else if (prov.split === "time_split") {
+    const split = Date.parse(prov.split_date);
+    const early = scored.filter((pr2) => Date.parse(pr2.merged_at) <= split);
+    add2("out_of_sample_provenance", early.length === 0, early.length ? `${early.length} scored PRs merged on or before split_date ${prov.split_date}` : void 0);
+  } else add2("out_of_sample_provenance", !prov.repo_in_training_set, prov.repo_in_training_set ? "leave_repo_out but repo_in_training_set" : void 0);
+  if (!retro) add2("threshold_consistent", false, "no retrospective section");
+  else {
+    const wrong = scored.filter((pr2) => pr2.prediction.flagged !== pr2.prediction.score >= retro.threshold).length;
+    const flagged = scored.filter((pr2) => pr2.prediction.flagged).length;
+    const share = scored.length ? flagged / scored.length : null;
+    const fs4 = retro.flagged_share;
+    const shareOff = !fs4.suppressed && (fs4.n !== scored.length || share === null || Math.abs((fs4.value ?? -1) - share) > 1e-4);
+    add2(
+      "threshold_consistent",
+      wrong === 0 && !shareOff,
+      wrong ? `${wrong} PRs flagged inconsistently with threshold ${retro.threshold}` : shareOff ? `flagged_share ${fs4.value} over ${fs4.n} does not match ${flagged}/${scored.length} scored PRs` : void 0
+    );
+  }
+  add2("policy_is_default", isDeepStrictEqual(r.policy, DEFAULT_REPORT_POLICY), isDeepStrictEqual(r.policy, DEFAULT_REPORT_POLICY) ? void 0 : `policy ${r.policy.policy_version} differs from the default floors`);
+  try {
+    const again = applyReportSuppression(r, DEFAULT_REPORT_POLICY);
+    const diff = firstDifference(again, r);
+    add2("suppression_consistent", diff === null, diff ? `re-applying suppression changes ${diff}` : void 0);
+  } catch (error) {
+    add2("suppression_consistent", false, error.message.slice(0, 200));
+  }
+  if (input.rescan === void 0) add2("rescan_reproduces", false, "no re-scan supplied");
+  else {
+    const again = validateArbiterReportV1(input.rescan);
+    if (!again.ok) add2("rescan_reproduces", false, "re-scan payload is invalid");
+    else {
+      const diff = firstDifference(withoutVolatile(again.value), withoutVolatile(r));
+      add2("rescan_reproduces", diff === null, diff ? `re-scan differs at ${diff}` : void 0);
+    }
+  }
+  if (input.pageText === void 0) {
+    add2("threshold_shown", false, "no rendered page supplied");
+    add2("copy_vocabulary", false, "no rendered page supplied");
+  } else {
+    const text = input.pageText;
+    if (!retro) add2("threshold_shown", false, "no retrospective section");
+    else {
+      const forms = thresholdForms(retro.threshold);
+      const shown = forms.some((f) => text.includes(f));
+      add2("threshold_shown", shown, shown ? void 0 : `page shows none of ${forms.join(", ")}`);
+    }
+    const copy = checkCopy(text);
+    add2("copy_vocabulary", copy.hard.length === 0, copy.hard.length ? copy.hard.slice(0, 5).map((f) => `${f.rule}: "${f.match}"`).join("; ") : void 0);
+    for (const f of copy.soft) borderline.push(`copy ${f.rule}: "${f.match}"`);
+  }
+  const v = input.expectedVersions ?? {};
+  const mismatches = [];
+  if (!r.scan.scanner.version) mismatches.push("scanner version missing");
+  if (!r.scan.contracts.labeller_version) mismatches.push("labeller version missing");
+  if (prov && !prov.head_version) mismatches.push("head version missing");
+  if (v.scanner && v.scanner !== r.scan.scanner.version) mismatches.push(`scanner ${r.scan.scanner.version} \u2260 ${v.scanner}`);
+  if (v.labeller_version && v.labeller_version !== r.scan.contracts.labeller_version) mismatches.push(`labeller ${r.scan.contracts.labeller_version} \u2260 ${v.labeller_version}`);
+  if (v.head_version && v.head_version !== prov?.head_version) mismatches.push(`head ${prov?.head_version ?? "none"} \u2260 ${v.head_version}`);
+  add2("versions_recorded", mismatches.length === 0, mismatches.length ? mismatches.join("; ") : void 0);
+  const p = r.policy;
+  if (retro && !retro.suppressed && retro.n_reworked < 1.5 * p.min_reworked_for_retrospective)
+    borderline.push(`n_reworked ${retro.n_reworked} is under 1.5\xD7 the floor ${p.min_reworked_for_retrospective}`);
+  if (retro) {
+    for (const [name, cell2] of Object.entries({ precision: retro.precision, recall: retro.recall, flagged_share: retro.flagged_share }))
+      if (!cell2.suppressed && cell2.n < 2 * p.min_cell_n) borderline.push(`retrospective ${name} n ${cell2.n} is under 2\xD7 the cell floor ${p.min_cell_n}`);
+  }
+  const agentRate = r.coverage.attribution.agent.rate;
+  if (agentRate >= p.min_agent_coverage && agentRate < p.min_agent_coverage + 0.1)
+    borderline.push(`agent attribution coverage ${agentRate} is within 0.1 of the floor ${p.min_agent_coverage}`);
+  return finish();
+}
+
+// src/example-reports/batch.ts
+var EXAMPLE_BATCH_VERSION = "0.1.0";
+var repoSlug = (repo) => repo.replace("/", "__");
+function runExampleBatch(opts, deps) {
+  mkdirSync6(opts.outDir, { recursive: true });
+  const statePath = join11(opts.outDir, "batch-state.json");
+  const runPath = join11(opts.outDir, "run.json");
+  const state2 = existsSync8(statePath) ? JSON.parse(readFileSync8(statePath, "utf8")) : { batch_version: EXAMPLE_BATCH_VERSION, batch: opts.batch, as_of: opts.asOf, repos: {} };
+  if (state2.batch !== opts.batch || state2.as_of !== opts.asOf) {
+    throw new Error(`${statePath} belongs to batch ${state2.batch} as of ${state2.as_of}; use a new --out for ${opts.batch} as of ${opts.asOf}`);
+  }
+  const save = () => writeFileSync6(statePath, `${JSON.stringify(state2, null, 2)}
+`);
+  save();
+  writeFileSync6(runPath, `${JSON.stringify({ batch_version: EXAMPLE_BATCH_VERSION, batch: opts.batch, as_of: opts.asOf, ...opts.runInfo }, null, 2)}
+`);
+  const roles = new Set(opts.roles ?? ["primary"]);
+  const eligible = new Map(opts.probe.results.map((r) => [r.repo.toLowerCase(), r.eligible]));
+  const targets = opts.manifest.candidates.filter((c) => c.batch === opts.batch && roles.has(c.role) && (!opts.only || repoKey(c.repo) === repoKey(opts.only)));
+  const stamp = () => new Date(deps.now()).toISOString();
+  for (const candidate of targets) {
+    const repo = candidate.repo;
+    const rs = state2.repos[repo] ??= { repo, role: candidate.role, steps: {} };
+    if (eligible.get(repo.toLowerCase()) !== true || opts.exclusion.has(repo)) {
+      deps.log(`skip ${repo}: not eligible in the probe`);
+      save();
+      continue;
+    }
+    const dir = join11(opts.outDir, repoSlug(repo));
+    mkdirSync6(dir, { recursive: true });
+    const paths = { scan: join11(dir, "report.json"), rescan: join11(dir, "rescan.json"), review: join11(dir, "review.json") };
+    for (const step of opts.rescan === false ? ["scan"] : ["scan", "rescan"]) {
+      if (!opts.force && rs.steps[step]?.status === "done" && existsSync8(paths[step])) continue;
+      waitForRateLimit(deps, opts.minRateRemaining ?? 500);
+      deps.log(`${step} ${repo}`);
+      const started = deps.now();
+      const result = deps.runScan(repo, opts.asOf, paths[step]);
+      const ok = result.exitCode === 0 && existsSync8(paths[step]);
+      rs.steps[step] = { status: ok ? "done" : "failed", wall_ms: deps.now() - started, exit_code: result.exitCode, at: stamp(), ...ok ? {} : { detail: result.stderrTail.slice(-400) } };
+      save();
+      if (!ok) break;
+    }
+    rs.steps.score = { status: "unavailable", detail: "out-of-sample scoring is HOK-2826", at: stamp() };
+    rs.steps.render = { status: "unavailable", detail: "the report section is HOK-2828", at: stamp() };
+    if (rs.steps.scan?.status === "done") {
+      const started = deps.now();
+      const read = (p) => existsSync8(p) ? JSON.parse(readFileSync8(p, "utf8")) : void 0;
+      const review = reviewExampleReport({ report: read(paths.scan), rescan: read(paths.rescan), expectedRepo: repo, exclusion: opts.exclusion, expectedVersions: { scanner: opts.versions.scanner } });
+      writeFileSync6(paths.review, `${JSON.stringify(review, null, 2)}
+`);
+      rs.steps.review = { status: "done", wall_ms: deps.now() - started, at: stamp() };
+      rs.review = { passed: review.passed, borderline: review.borderline, borderline_reasons: review.borderline_reasons, failed: review.checks.filter((c) => !c.passed).map((c) => c.code) };
+    }
+    save();
+  }
+  return state2;
+}
+function waitForRateLimit(deps, minRemaining) {
+  const limit = deps.rateLimit();
+  if (!limit || limit.remaining >= minRemaining) return;
+  const waitMs = Math.max(0, limit.resetAt - deps.now()) + 5e3;
+  deps.log(`rate limit: ${limit.remaining} left, waiting ${Math.ceil(waitMs / 1e3)}s for the reset`);
+  deps.sleep(waitMs);
+}
+
+// src/example-reports/cli.ts
+var SCAN_TIMEOUT_MS = 4 * 60 * 60 * 1e3;
+var EXAMPLE_COMMANDS = ["example-review", "example-batch"];
+var OPTIONS2 = {
+  report: { type: "string" },
+  rescan: { type: "string" },
+  page: { type: "string" },
+  repo: { type: "string" },
+  manifest: { type: "string" },
+  probe: { type: "string" },
+  batch: { type: "string" },
+  out: { type: "string" },
+  "as-of": { type: "string" },
+  roles: { type: "string" },
+  force: { type: "boolean" },
+  "no-rescan": { type: "boolean" }
+};
+var sha256File = (p) => createHash11("sha256").update(readFileSync9(p)).digest("hex");
+var readJson = (p) => JSON.parse(readFileSync9(p, "utf8"));
+function loadExclusion(manifest, manifestPath) {
+  const ex = new TrainingExclusion();
+  let root = dirname3(manifestPath);
+  for (let i = 0; i < 6 && !manifest.exclude_corpus_manifests.every((rel) => existsSync9(resolve6(root, rel))); i++) root = dirname3(root);
+  for (const rel of manifest.exclude_corpus_manifests) ex.addCorpusManifest(readJson(resolve6(root, rel)));
+  return ex;
+}
+function runExampleCli(command, argv, io) {
+  if (!EXAMPLE_COMMANDS.includes(command)) {
+    io.writeStderr(`error: unknown command ${command}; expected one of ${EXAMPLE_COMMANDS.join(", ")}
+`);
+    return { exitCode: 2 };
+  }
+  let values;
+  let manifest;
+  let manifestPath;
+  try {
+    ({ values } = parseArgs4({ args: [...argv], options: OPTIONS2, strict: true, allowPositionals: false }));
+    if (typeof values.manifest !== "string") throw new Error(`${command} needs --manifest <example manifest>`);
+    manifestPath = resolve6(io.cwd, values.manifest);
+    manifest = parseExampleManifest(readJson(manifestPath), DEFAULT_REPORT_POLICY.min_reworked_for_retrospective);
+  } catch (error) {
+    io.writeStderr(`error: ${error.message}
+`);
+    return { exitCode: 2 };
+  }
+  const exclusion = loadExclusion(manifest, manifestPath);
+  const path4 = (k) => typeof values[k] === "string" ? resolve6(io.cwd, values[k]) : void 0;
+  if (command === "example-review") {
+    const reportPath = path4("report");
+    if (!reportPath || typeof values.repo !== "string") {
+      io.writeStderr("error: example-review needs --report <json> and --repo <owner/name>\n");
+      return { exitCode: 2 };
+    }
+    const rescanPath = path4("rescan");
+    const pagePath = path4("page");
+    const result = reviewExampleReport({
+      report: readJson(reportPath),
+      expectedRepo: values.repo,
+      exclusion,
+      ...rescanPath ? { rescan: readJson(rescanPath) } : {},
+      ...pagePath ? { pageText: htmlToText(readFileSync9(pagePath, "utf8")) } : {},
+      expectedVersions: { scanner: SCAN_VERSION }
+    });
+    const out = `${JSON.stringify(result, null, 2)}
+`;
+    const outPath = path4("out");
+    if (outPath) writeFileSync7(outPath, out);
+    else io.writeStdout(out);
+    for (const c of result.checks) io.writeStderr(`${c.passed ? "pass" : "FAIL"} ${c.code}${c.detail ? `: ${c.detail}` : ""}
+`);
+    io.writeStderr(`${result.passed ? result.borderline ? "PASSED (borderline: needs review)" : "PASSED" : "FAILED"}
+`);
+    return { exitCode: result.passed ? 0 : 1 };
+  }
+  const probePath = path4("probe");
+  const outDir = path4("out");
+  if (!probePath || !outDir || typeof values.batch !== "string") {
+    io.writeStderr("error: example-batch needs --probe <probe.json>, --batch <name> and --out <dir>\n");
+    return { exitCode: 2 };
+  }
+  const probe = readJson(probePath);
+  const asOf = typeof values["as-of"] === "string" ? new Date(values["as-of"]).toISOString() : probe.as_of;
+  const cliPath = fileURLToPath(new URL("../cli.js", import.meta.url));
+  const env = { ...io.env };
+  if (!env.GITHUB_TOKEN) {
+    try {
+      env.GITHUB_TOKEN = execFileSync2("gh", ["auth", "token"], { encoding: "utf8" }).trim();
+    } catch {
+    }
+  }
+  const state2 = runExampleBatch(
+    {
+      manifest,
+      probe,
+      batch: values.batch,
+      roles: typeof values.roles === "string" ? values.roles.split(",") : ["primary"],
+      outDir,
+      asOf,
+      exclusion,
+      versions: { scanner: SCAN_VERSION },
+      runInfo: {
+        scanner: { package: "@hokusai/scan", version: SCAN_VERSION },
+        labeller_version: SCAN_CONTRACT.labellerVersion,
+        normalization_version: SCAN_CONTRACT.normalizationVersion,
+        report_policy: DEFAULT_REPORT_POLICY.policy_version,
+        model: null,
+        label_definition: null,
+        manifest_sha256: sha256File(manifestPath),
+        probe_sha256: sha256File(probePath)
+      },
+      force: values.force === true,
+      rescan: values["no-rescan"] !== true,
+      ...typeof values.repo === "string" ? { only: values.repo } : {}
+    },
+    {
+      // Example repos merge PRs into the default branch (the probe's base_is_default bar), so the scan runs in direct mode.
+      // One large scan can spend most of an hour's REST budget, so scans wait out rate limits rather than lose their work.
+      runScan: (repo, at2, outPath) => {
+        const r = spawnSync2(process.execPath, [cliPath, "report", repo, "--integration-mode", "direct", "--as-of", at2, "--out", outPath, "--no-state", "--wait-on-rate-limit"], { env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: SCAN_TIMEOUT_MS });
+        if (r.error) return { exitCode: 1, stderrTail: `scan did not finish: ${r.error.message}` };
+        return { exitCode: r.status ?? 1, stderrTail: (r.stderr ?? "").split("\n").slice(-5).join("\n") };
+      },
+      rateLimit: () => {
+        try {
+          const raw = execFileSync2("gh", ["api", "rate_limit"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+          const r = JSON.parse(raw).resources;
+          const tight = [r.core, r.graphql].sort((a, b) => a.remaining - b.remaining)[0];
+          return { remaining: tight.remaining, resetAt: tight.reset * 1e3 };
+        } catch {
+          return null;
+        }
+      },
+      sleep: (ms2) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms2),
+      now: () => Date.now(),
+      log: (line) => io.writeStderr(`${line}
+`)
+    }
+  );
+  const rows = Object.values(state2.repos).map((r) => {
+    const t = (s) => s?.wall_ms === void 0 ? "\u2013" : `${Math.round(s.wall_ms / 1e3)}s`;
+    return `| ${r.repo} | ${r.steps.scan?.status ?? "\u2013"} ${t(r.steps.scan)} | ${r.steps.rescan?.status ?? "\u2013"} ${t(r.steps.rescan)} | ${r.steps.score?.status ?? "\u2013"} | ${r.review ? r.review.passed ? r.review.borderline ? "pass (borderline)" : "pass" : `fail: ${r.review.failed.join(", ")}` : "\u2013"} |`;
+  });
+  io.writeStdout(["| repo | scan | rescan | score | review |", "|---|---|---|---|---|", ...rows].join("\n") + "\n");
+  return { exitCode: 0 };
+}
+
+// src/orchestrate/github.ts
+function createOfflineScanGitHubClient() {
+  return {
+    offline: true,
+    async getRepo() {
+      await Promise.resolve();
+      return { defaultBranch: "", private: false };
+    },
+    async getPullRequest() {
+      await Promise.resolve();
+      return null;
+    },
+    async listPullCommits() {
+      await Promise.resolve();
+      return [];
+    },
+    async getCheckConclusion() {
+      await Promise.resolve();
+      return null;
+    }
+  };
+}
+
+// src/orchestrate/integration-branch.ts
+var IntegrationBranchError = class extends Error {
+  exitCode = 2;
+  constructor(message) {
+    super(message);
+    this.name = "IntegrationBranchError";
+  }
+};
+var MAIN_GUIDANCE = "integration branch resolves to main and no promotion branch was detected. Pass --integration-branch <ref>, or --integration-mode direct if PRs merge straight into main (S2 v1.1.0).";
+var PR_MERGE = /^Merge pull request #(\d+) from [^/]+\/(.+)$/i;
+var SQUASH2 = /\(#(\d+)\)\s*$/;
+function resolveIntegrationBranch(evidence3) {
+  const explicit = evidence3.explicitBranch?.trim();
+  const explicitMode = evidence3.explicitMode ?? null;
+  if (explicit) {
+    if (explicit.toLowerCase() === "main" && explicitMode !== "direct") throw new IntegrationBranchError(MAIN_GUIDANCE);
+    return { branch: explicit, mode: explicitMode ?? "promotion", detected: false, summary: "explicit integration branch" };
+  }
+  if (!evidence3.defaultBranch) throw new IntegrationBranchError("Repository default branch is missing.");
+  if (evidence3.defaultBranch.toLowerCase() !== "main") return { branch: evidence3.defaultBranch, mode: explicitMode ?? "direct", detected: false, summary: "repository default branch" };
+  if (explicitMode === "direct") return { branch: evidence3.defaultBranch, mode: "direct", detected: false, summary: "default branch, direct merge (explicit)" };
+  const counts = /* @__PURE__ */ new Map();
+  let promotions = 0;
+  for (const subject of evidence3.recentFirstParentSubjects.slice(0, 200)) {
+    let number = null;
+    let ref3 = null;
+    const merge = subject.match(PR_MERGE);
+    const squash = subject.match(SQUASH2);
+    if (merge) {
+      number = Number(merge[1]);
+      ref3 = merge[2];
+    } else if (squash) {
+      number = Number(squash[1]);
+      ref3 = evidence3.headRefLookup(number);
+    }
+    if (!number || !ref3 || !ref3.includes("/")) continue;
+    promotions++;
+    counts.set(ref3, (counts.get(ref3) ?? 0) + 1);
+  }
+  const winner = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  if (winner && promotions > 0 && winner[1] / promotions >= 0.6 && evidence3.remoteBranchExists(winner[0])) {
+    return { branch: winner[0], mode: "promotion", detected: true, summary: `detected ${winner[0]} in ${winner[1]}/${promotions} promotion merges` };
+  }
+  throw new IntegrationBranchError(MAIN_GUIDANCE);
+}
+
+// src/orchestrate/scan-report.ts
+import * as fs3 from "node:fs";
+import * as os from "node:os";
+import * as path3 from "node:path";
 
 // src/report/aggregate.ts
 var OUTCOMES = ["survived", "followup", "substantially_rewritten", "reverted"];
@@ -17282,9 +17849,9 @@ function enumerateWindow(options) {
 // src/orchestrate/state.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash12 } from "node:crypto";
 function scanConfigHash(config) {
-  return createHash10("sha256").update(stableJson(config)).digest("hex");
+  return createHash12("sha256").update(stableJson(config)).digest("hex");
 }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -17627,7 +18194,7 @@ scan     --repo <path> --integration-branch <name> --pr <n> [common options]
 report   [<github-url|owner/name>] [--repo <path>] [--integration-branch <name>]
          [--integration-mode promotion|direct]
          [--lookback-days <n>] [--max-prs <n>] [--horizons 14,30,60]
-         [--state-dir <path>] [--contribute [--dry-run]]
+         [--state-dir <path>] [--contribute [--dry-run]] [--wait-on-rate-limit]
 
 shadow-score     --data-dir <path> --integration-branch <name> [--repo <path>]
                  [--github-repo <owner/name>] [--threshold 0.5]
@@ -17665,6 +18232,11 @@ corpus-feature-replay --manifest <cohort.json> --cache-dir <path> --exclude-slic
                  (leakage replay on sampled development-repo PRs; stdout holds pooled counts only; HOK-3023)
 corpus-feature-audit --columns <columns.json> [--allow-segments] | --print-manifest
                  (HOK-3023 leakage validator; exit 1 means leakage, 2 means bad input)
+
+example-review   --report <json> --repo <owner/name> --manifest <example manifest> [--rescan <json>] [--page <html>] [--out <json>]
+                 (automated honesty checks on one example report; exit 1 means it cannot be published; HOK-3515)
+example-batch    --manifest <example manifest> --probe <probe.json> --batch <name> --out <dir> [--as-of <iso>] [--roles primary,swap] [--repo <owner/name>] [--force] [--no-rescan]
+                 (scan, re-scan and review every eligible repo of a batch; resumable; HOK-3515)
 `;
 var OPTION_SPEC = {
   "repo": { type: "string" },
@@ -17688,6 +18260,7 @@ var OPTION_SPEC = {
   "static-analysis": { type: "string" },
   "state-dir": { type: "string" },
   "no-state": { type: "boolean" },
+  "wait-on-rate-limit": { type: "boolean" },
   "attribution-config": { type: "string" },
   "contribute": { type: "boolean" },
   "dry-run": { type: "boolean" },
@@ -17722,6 +18295,10 @@ function runScanCli(argv, io) {
       });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
     }
+    if (command.startsWith("example-")) {
+      const result = runExampleCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd(), env: io.env });
+      return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
+    }
     if (command.startsWith("corpus-")) {
       const result = runCorpusCli(command, rest, { writeStdout: io.writeStdout, writeStderr: io.writeStderr, cwd: process.cwd() });
       return { exitCode: result.exitCode, rowCount: 0, outputPath: null, summaryLines: [] };
@@ -17731,7 +18308,7 @@ function runScanCli(argv, io) {
     }
     let values;
     try {
-      ({ values } = parseArgs4({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
+      ({ values } = parseArgs5({ args: [...rest], options: OPTION_SPEC, strict: true, allowPositionals: false }));
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -17789,9 +18366,9 @@ function runScanCli(argv, io) {
     if (outSpec === "-") {
       io.writeStdout(output);
     } else {
-      outputPath = resolve6(outSpec);
-      mkdirSync7(dirname4(outputPath), { recursive: true });
-      writeFileSync7(outputPath, output);
+      outputPath = resolve7(outSpec);
+      mkdirSync8(dirname5(outputPath), { recursive: true });
+      writeFileSync9(outputPath, output);
     }
     context.summaryLines.unshift(`contract ${scanContractVersion()}`, `rows ${rowCount}`);
     return { exitCode: EXIT_OK, rowCount, outputPath, summaryLines: context.summaryLines };
@@ -17824,7 +18401,7 @@ async function runReportCli(argv, io) {
   try {
     let parsed;
     try {
-      parsed = parseArgs4({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
+      parsed = parseArgs5({ args: [...argv], options: OPTION_SPEC, strict: true, allowPositionals: true });
     } catch (error) {
       throw new ScanInputError(error.message);
     }
@@ -17846,7 +18423,7 @@ async function runReportCli(argv, io) {
     let repoDir;
     if (values.repo) repoDir = resolveRepoDir(values.repo);
     else if (!offline && targetFromPositional?.url) {
-      temporaryRepo = mkdtempSync3(join13(tmpdir3(), "hokusai-report-"));
+      temporaryRepo = mkdtempSync3(join14(tmpdir3(), "hokusai-report-"));
       const result = execArgvCommand("git", ["clone", "--no-tags", targetFromPositional.url, temporaryRepo], { env: context.token ? { ...process.env, GH_TOKEN: context.token } : process.env });
       if (result.exitCode !== 0) throw new ScanUpstreamError("Unable to clone the public repository");
       repoDir = temporaryRepo;
@@ -17855,8 +18432,9 @@ async function runReportCli(argv, io) {
     }
     const resolvedGithub = requireGithubRepo(context, repoDir, github ?? void 0);
     const asOf = validateAsOf(values["as-of"]) ?? /* @__PURE__ */ new Date();
-    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...context.token ? { token: context.token } : {} });
-    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: "develop", githubRepo: resolvedGithub });
+    const rateLimitWait = values["wait-on-rate-limit"] === true ? { maxWaitMs: 2 * 60 * 60 * 1e3, onWait: (ms2) => makeDiagnostics(context).warn(`GitHub rate limit reached; waiting ${Math.ceil(ms2 / 1e3)}s`) } : void 0;
+    const scanGithub = offline ? createOfflineScanGitHubClient() : createDefaultScanGitHubClient({ ...resolvedGithub, repoDir, ...context.token ? { token: context.token } : {} }, { rateLimitWait });
+    const reportDeps = buildLabellerWorld(context, { repoDir, offline, asOf, integrationBranch: "develop", githubRepo: resolvedGithub, rateLimitWait });
     if (offline) reportDeps.deps.github = createOfflineGitHubClient();
     const repoMetadata = offline ? { defaultBranch: values["integration-branch"] ?? "", private: false } : await scanGithub.getRepo();
     const explicitBranch = values["integration-branch"];
@@ -17903,7 +18481,7 @@ async function runReportCli(argv, io) {
     const configPath = values["attribution-config"];
     if (configPath) {
       try {
-        attributionConfig = JSON.parse(readFileSync9(resolve6(configPath), "utf8"));
+        attributionConfig = JSON.parse(readFileSync11(resolve7(configPath), "utf8"));
       } catch {
         throw new ScanInputError("--attribution-config must point to valid JSON");
       }
@@ -17914,7 +18492,7 @@ async function runReportCli(argv, io) {
       if (error instanceof AttributionConfigError) throw new ScanInputError(error.message);
       throw error;
     }
-    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join13(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
+    const stateDir = values["state-dir"] ?? (values["no-state"] === true ? void 0 : join14(repoDir, ".git", "hokusai-scan", `${resolvedGithub.owner}__${resolvedGithub.repo}`));
     let saveState;
     const draft = await runReportScan({ ...resolvedGithub, repoDir, integrationBranch, integrationMode }, {
       runGit: reportDeps.deps.runGit,
@@ -17923,19 +18501,19 @@ async function runReportCli(argv, io) {
       now: () => asOf,
       onDiagnostic: (line) => io.writeStderr(`${line.startsWith("info:") || line.startsWith("warn:") || line.startsWith("error:") ? "" : "info: "}${line}
 `)
-    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: "0.4.0", onStateSave: (save) => {
+    }, { lookbackDays: lookback, maxLookbackDays: maxLookback, maxPrs, horizons, attributionConfig, staticAnalysis, scannerVersion: SCAN_VERSION, onStateSave: (save) => {
       saveState = save;
     }, ...stateDir ? { stateDir } : {} });
     const output = emitReport(draft);
     const outSpec = values.out ?? "-";
-    const outputPath = outSpec === "-" ? null : resolve6(outSpec);
+    const outputPath = outSpec === "-" ? null : resolve7(outSpec);
     if (values.contribute === true) {
       const built = buildContributionPayload(JSON.parse(output));
       if (values["dry-run"] === true) {
         if (outSpec === "-") io.writeStdout(built.body);
         else {
-          mkdirSync7(dirname4(outputPath), { recursive: true });
-          writeFileSync7(outputPath, built.body);
+          mkdirSync8(dirname5(outputPath), { recursive: true });
+          writeFileSync9(outputPath, built.body);
         }
       } else {
         const apiKeyName = validateTokenEnvName(values["api-key-env"] ?? "HOKUSAI_API_KEY");
@@ -17944,14 +18522,14 @@ async function runReportCli(argv, io) {
         const transport = (input, init) => fetch(input, init);
         await submitReport(transport, built, { baseUrl: io.env.HOKUSAI_BASE_URL ?? "https://api.hokus.ai", apiKey });
         if (outSpec !== "-") {
-          mkdirSync7(dirname4(outputPath), { recursive: true });
-          writeFileSync7(outputPath, output);
+          mkdirSync8(dirname5(outputPath), { recursive: true });
+          writeFileSync9(outputPath, output);
         }
       }
     } else if (outSpec === "-") io.writeStdout(output);
     else {
-      mkdirSync7(dirname4(outputPath), { recursive: true });
-      writeFileSync7(outputPath, output);
+      mkdirSync8(dirname5(outputPath), { recursive: true });
+      writeFileSync9(outputPath, output);
     }
     try {
       saveState?.();
@@ -17988,8 +18566,8 @@ function parseGithubTarget(value) {
   return { owner: match[1], repo: match[2], url: `https://github.com/${match[1]}/${match[2]}.git` };
 }
 function resolveRepoDir(raw) {
-  const repoDir = resolve6(validateRepoDir(raw));
-  if (!existsSync9(repoDir) || !statSync4(repoDir).isDirectory()) {
+  const repoDir = resolve7(validateRepoDir(raw));
+  if (!existsSync11(repoDir) || !statSync4(repoDir).isDirectory()) {
     throw new ScanInputError("--repo path does not exist");
   }
   const inside = execArgvCommand("git", ["-C", repoDir, "rev-parse", "--is-inside-work-tree"]);
@@ -18034,7 +18612,8 @@ function buildLabellerWorld(context, params) {
   const asOf = params.asOf;
   const deps = createDefaultDeps(target, {
     strictUpstream: true,
-    ...asOf ? { now: () => asOf } : {}
+    ...asOf ? { now: () => asOf } : {},
+    rateLimitWait: params.rateLimitWait
   });
   if (params.offline) {
     deps.github = createOfflineGitHubClient();

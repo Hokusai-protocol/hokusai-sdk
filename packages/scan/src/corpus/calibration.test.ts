@@ -8,6 +8,7 @@ import {
   classifyCalibrationRepo,
   cohensKappa,
   drawCalibrationSample,
+  proportionalQuotas,
   extendAudit,
   parseCalibrationPlan,
   parseCsv,
@@ -174,6 +175,38 @@ describe('drawCalibrationSample', () => {
   it('reports a stratum too small for its allocation', () => {
     const small = drawCalibrationSample(population(['a/one'], 1), plan, SEED);
     expect(small.shortfalls).toContainEqual({ stratum: 'revert', allocated: 2, drawn: 1 });
+  });
+});
+
+describe('proportional repo allocation', () => {
+  const pop: Record<string, number> = { big: 600, mid: 100, small: 30, tiny: 2 };
+  const repos = Object.keys(pop);
+
+  it('gives each repo its floor, then splits the rest by population', () => {
+    const q = proportionalQuotas(repos, (r) => pop[r]!, 40, 4);
+    expect([...q.values()].reduce((a, b) => a + b, 0)).toBe(40);
+    expect(q.get('tiny')).toBe(2); // capped at its population
+    expect(q.get('big')).toBeGreaterThan(q.get('mid')!);
+    expect(q.get('small')).toBeGreaterThanOrEqual(4);
+  });
+
+  it('stops at the population when a stratum runs out', () => {
+    expect([...proportionalQuotas(['a', 'b'], () => 3, 10, 1).values()]).toEqual([3, 3]);
+  });
+
+  it('never exceeds the allocation when the floors alone would', () => {
+    expect([...proportionalQuotas(['a', 'b', 'c'], () => 10, 2, 1).values()]).toEqual([1, 1, 0]);
+  });
+
+  it('draws by quota, records cell sizes, and keeps round-robin as the default', () => {
+    const units = population(['a/one', 'b/two', 'c/three'], 3);
+    const prop = parseCalibrationPlan({ ...plan, plan_version: 'test-prop', repo_allocation: { mode: 'proportional', min_per_repo: 1 } });
+    const drawn = drawCalibrationSample(units, prop, SEED);
+    expect(drawn.items).toHaveLength(16);
+    expect(drawn.cells.reduce((s, c) => s + c.sampled, 0)).toBe(16);
+    expect(drawCalibrationSample(units, prop, SEED).items.map((i) => i.item_id)).toEqual(drawn.items.map((i) => i.item_id));
+    expect(() => parseCalibrationPlan({ ...plan, repo_allocation: { mode: 'equal', min_per_repo: 1 } })).toThrow("must be 'proportional'");
+    expect(() => parseCalibrationPlan({ ...plan, repo_allocation: { mode: 'proportional', min_per_repo: -1 } })).toThrow('non-negative');
   });
 });
 

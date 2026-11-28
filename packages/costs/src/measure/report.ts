@@ -261,7 +261,7 @@ const DIAGNOSTIC_MESSAGES: Record<TaskCostReportDiagnosticCode, string> = {
   codex_cache_exceeds_input:
     'reported cache tokens exceeded input tokens; uncached input was clamped to zero',
   unpriced_service_tier:
-    'a response ran on a non-Standard service tier, which the built-in table does not price; it was left unpriced',
+    'a response ran on a service tier the built-in table does not price; it was left unpriced',
   // Mapped / tracker-level codes.
   malformed_line: 'a session-file line was malformed and skipped',
   invalid_record: 'a record was not a usable record shape',

@@ -438,14 +438,18 @@ export {
   OPENROUTER_MODEL_PRICING,
   appliedRates,
   MODEL_PRICING_AS_OF,
+  OPENAI_FAST_TIER_MODELS,
+  OPENAI_FAST_TIER_MULTIPLIER,
   OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
   OPENAI_MODEL_PRICING,
   OPENAI_MODEL_PRICING_AS_OF,
+  OPENAI_SERVICE_TIER_PRICING_AS_OF,
   computeActualCostUsd,
   normalizeModelId,
   resolveModelPrice,
   type LongContextPrice,
   type ModelPrice,
+  type OpenAiServiceTier,
   type TokenCostInput,
 } from './pricing.js';
 export {
